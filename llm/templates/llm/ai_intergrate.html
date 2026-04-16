@@ -1,0 +1,214 @@
+{% extends 'pages/base.html' %}
+{% load custom_filters %}
+
+{% block title %}AI 통합{% endblock %}
+
+{% block content %}
+
+<div style="display: flex; align-items: center; margin-bottom: 20px; font-weight: bold; font-size: 1.3rem; color: #3a3a3a;">
+    <div class="gradient-bar"></div>
+    AI 프롬프트
+</div>
+
+<style>
+    #output-box img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+</style>
+
+<div style="display: flex; height: 100vh; box-sizing: border-box;">
+
+    <!-- 왼편 40% -->
+    <div style="flex: 0 0 40%; display: flex; flex-direction: column; padding-left: 20px; box-sizing: border-box;">
+        
+        <!-- 문서/챕터/항목/데이터 선택 -->
+        <div style="flex: 0 0 auto; margin-bottom: 20px;">
+            <form method="get" action="">
+                <!-- 대상 문서 -->
+                <div class="form-row" style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <label for="docid" style="width: 120px;">대상 문서 :</label>
+                    <select name="docid" id="docid" required onchange="this.form.submit()" style="width: 300px;">
+                        {% for doc in docs %}
+                        <option value="{{ doc.docid }}" {% if docid|stringformat:"s" == doc.docid|stringformat:"s" %}selected{% endif %}>{{ doc.docnm }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 챕터 목록 -->
+                <div class="form-row" style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <label for="chapteruid" style="width: 120px;">챕터 목록 :</label>
+                    <select name="chapteruid" id="chapteruid" onchange="this.form.submit()" style="width: 300px;">
+                        {% for chapter in chapters %}
+                        <option value="{{ chapter.chapteruid }}" {% if chapteruid|stringformat:"s" == chapter.chapteruid|stringformat:"s" %}selected{% endif %}>{{ chapter.chapternm }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 항목 목록 -->
+                <div class="form-row" style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <label for="objectnm" style="width: 120px;">항목 목록 :</label>
+                    <select name="objectnm" id="objectnm" onchange="this.form.submit()" style="width: 300px;">
+                        <option value="">-- 항목을 선택하세요 --</option>
+                        {% for object in objects %}
+                            <option value="{{ object.objectnm }}" {% if objectnm == object.objectnm %}selected{% endif %}>
+                                {{ object.objectnm }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 데이터 목록 -->
+                <div class="form-row" style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <label for="datauid" style="width: 120px;">데이터 목록 :</label>
+                    <select id="datauid" name="datauid" onchange="this.form.submit()" required style="width: 300px;">
+                        <option value="">--- 선택 ---</option>
+                        {% for data in datas %}
+                        <option value="{{ data.datauid }}" {% if data.datauid|stringformat:"s" == datauid|stringformat:"s" %}selected{% endif %}>
+                            {{ data.datanm }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </div>
+
+        <!-- 프롬프트 입력창 -->
+        <div style="flex: 1; display: flex; flex-direction: column; margin-bottom: 10px;">
+            <h4 style="margin-bottom: 10px; font-weight: bold;">프롬프트</h4>
+            <form id="prompt-form" class="prompt-form" method="POST" style="flex: 1; display: flex; flex-direction: column;">
+                {% csrf_token %}
+                <input type="hidden" name="docid" value="{{ selected_docid }}">
+                <input type="hidden" name="chapteruid" value="{{ selected_chapteruid }}">
+                <input type="hidden" name="objectnm" value="{{ selected_objectnm }}">
+                <input type="hidden" name="datauid" value="{{ selected_datauid }}">
+                
+                <textarea name="prompt" id="prompt" placeholder="예: 2024년 월별 판매금액에 대해 분석해주세요." 
+                          style="flex: 1; width: 100%; padding: 8px; font-size: 1rem; box-sizing: border-box; resize: none;"></textarea>
+            </form>
+        </div>
+
+        <!-- 버튼들 -->
+        <div style="flex: 0 0 auto; margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" id="btn-prompt-form">미리보기</button>
+            <button type="button" class="btn btn-primary" id="btn-save">저장</button>
+            <button type="button" class="btn btn-secondary" id="btn-reset">초기화</button>
+            <button type="button" class="btn btn-danger" id="btn-delete">삭제</button>
+        </div>
+
+    </div>
+
+    <!-- 오른편 60% -->
+    <div style="flex: 0 0 60%; display: flex; flex-direction: column; margin-left: 25px; padding-right: 20px; box-sizing: border-box;">
+        <h4 style="margin-bottom: 10px; font-weight: bold;">미리보기 결과</h4>
+        <div id="output-box" readonly style="flex: 1; width: 100%; min-height: 300px; overflow: auto;"></div>
+    </div>
+
+</div>
+
+
+<script>
+
+    document.getElementById("btn-prompt-form").addEventListener("click", function (e) {
+        e.preventDefault();
+
+        const prompt = document.getElementById("prompt").value.trim();
+        const outputArea = document.getElementById("output-box");
+        
+        // if (!prompt) {
+        //     outputArea.value = "프롬프트를 입력해주세요.";
+        //     return;
+        // }
+
+        // outputArea.value = "처리 중입니다...";
+        // outputArea.innerHTML = '<div style="color: #666; font-size: 0.9em; text-align: center; margin-top: 50px;">작성 중입니다. 조금만 기다려 주십시오...</div>';
+        outputArea.innerHTML = '<div id="loading-message" style="color: #666; font-size: 0.9em; text-align: center; margin-top: 50px;">작성 중입니다. 조금만 기다려 주십시오...</div>';
+
+
+        // FormData로 모든 form 데이터 수집
+        const formData = new FormData(document.getElementById("prompt-form"));
+
+        // POST 요청으로 변경
+        fetch("{% url 'ai_intergrate' %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            // body: formData
+            // body: `prompt=${encodeURIComponent(prompt)}`
+            body: new URLSearchParams({
+                "prompt": prompt,
+                "docid": document.querySelector("[name=docid]").value,
+                "chapteruid": document.querySelector("[name=chapteruid]").value,
+                "objectnm": document.querySelector("[name=objectnm]").value,
+                "datauid": document.querySelector("[name=datauid]").value
+            }),
+            credentials: "include"
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('네트워크 응답이 올바르지 않습니다.');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("message_type:", data.message_type);
+            console.log("image_data length:", data.image_data?.length);
+
+            outputArea.innerHTML = "";
+
+            if (data.message_type === "image") {
+                const img = document.createElement("img");
+                img.src = "data:image/png;base64," + data.image_data.trim();    //jeff : .trim() 추가
+                img.style.maxWidth = "100%";
+                img.style.height = "auto";
+                outputArea.appendChild(img);
+            } 
+            else if (data.message_type === "text") {
+                const div = document.createElement("div");
+                div.className = "response-text";
+                div.textContent = data.message;
+                outputArea.appendChild(div);
+            } 
+            else if (data.message_type === "table") {
+                const div = document.createElement("div");
+                div.innerHTML = data.message;
+                outputArea.appendChild(div);
+            } 
+            else if (data.message_type === "error") {
+                outputArea.innerHTML = `<div style="color: red;">오류: ${data.message}</div>`;
+            } 
+            else {
+                outputArea.innerHTML = '<div>결과가 없습니다.</div>';
+            }
+        })
+        .catch(err => {
+            outputArea.innerHTML = `<div style="color: red;">오류가 발생했습니다: ${err.message}</div>`;
+            console.error('에러 발생:', err);
+        });
+    });
+
+    document.getElementById("btn-save").addEventListener("click", function() {
+        alert("저장 기능을 구현해주세요.");
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", function() {
+        document.getElementById("prompt").value = "";
+        document.getElementById("output-box").innerHTML = "";
+    });
+
+    document.getElementById("btn-delete").addEventListener("click", function() {
+        if (confirm("정말 삭제하시겠습니까?")) {
+            alert("삭제 기능을 구현해주세요.");
+        }
+    });
+
+</script>
+
+</body>
+
+
+{% endblock %}
+

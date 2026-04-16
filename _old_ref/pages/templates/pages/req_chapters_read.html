@@ -1,0 +1,795 @@
+{% extends 'pages/base.html' %}
+{% load static %}
+{% block title %}챕터 목록{% endblock %}
+
+{% block content %}
+<style>
+  /* jeff 20251118 1045 */
+  #loading-text {
+    text-align: left;
+  }
+  /* jeff end */
+
+  img {
+      width: 100%;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* 버튼 로딩 상태 */
+  .btn-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  .btn-loading .btn-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 6px;
+  }
+
+  .info {
+    text-align: center;
+  }
+  
+  /* 아래 항목들은 페이지 나누기 표현을 위하여 필수 항목 */
+  .page-break__label { position: relative; }
+  .page-break{ position:relative; clear:both; padding:5px 0; display:flex; align-items:center; justify-content:center; 
+    width: 100%; }
+  .page-break:after{ content:""; position:absolute; border-bottom:2px dashed #c4c4c4;width:100%;
+    z-index: 0; }
+  .page-break__label{ position:relative; z-index:1; padding:.3em .6em; display:block; text-transform:uppercase; border:1px solid #c4c4c4; border-radius:2px; 
+                      font-family:Helvetica,Arial,Tahoma,Verdana,Sans-Serif; font-size:.75em; font-weight:700; color:#333;
+                      background:#fff; box-shadow:2px 2px 1px rgba(0,0,0,.15); 
+                      -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none;user-select:none }
+  @media print{ .a4-frame { max-height: none; overflow: visible; } .page-break{padding:0} .page-break:after{display:none} }
+
+  .a4-frame::before {
+    border: none;
+  }
+
+  /* ==============================
+    스크롤 가능한 A4 프레임
+  ============================== */
+  .a4-frame {
+    width: 234mm;
+    max-height: 52vh;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    position: relative; /* sticky 기준 */
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    white-space: pre-line;
+    /* padding: 8px; */
+  }
+
+  /* 헤더 고정 (sticky 안정화 버전) */
+  .a4-frame table {
+    width: 100%;
+    border-collapse: separate !important;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+  .a4-frame thead {
+    position: relative;
+    top: 0;
+    z-index: 5;
+    display: table-header-group; /* 브라우저별 안정성 확보 */
+    background: #fff;
+    box-shadow: 0 2px 2px rgba(0,0,0,0.05);
+  }
+  .a4-frame th {
+    position: relative;
+    background: var(--primary-color);
+    color: #fff;
+    font-weight: bold;
+    text-align: center;
+  }
+
+  /* 스크롤바 커스터마이징 */
+  .a4-frame::-webkit-scrollbar {
+    width: 8px;
+  }
+  .a4-frame::-webkit-scrollbar-thumb {
+    background-color: rgba(120, 120, 120, 0.3);
+    border-radius: 4px;
+  }
+  .a4-frame::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(120, 120, 120, 0.5);
+  }
+</style>
+
+<div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>
+      챕터 목록: {{ gendocs_data.gendocnm }}
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center;">
+    <button type="button" class="icon-btn" id="help-btn">
+      <img src="{% static 'icons/help.svg' %}" title="도움말" class="icon-img config-icon">
+    </button>
+    <button type="button" class="icon-btn" id="back-btn">
+      <img src="{% static 'icons/back.svg' %}" title="뒤로가기" class="icon-img config-icon">
+    </button>
+  </div>
+</div>
+
+<!-- gendocs_data 상세 정보 -->
+{% if gendocs_data %}
+  <div class="form-filter-group">
+    <div class="filter-item">
+      <label style="width: 80px;">매개변수: </label>
+      <label style="width: 312px">{{ gendocs_data.finalnm_joined|default_if_none:'' }}</label>
+    </div>
+    <div class="filter-item">
+      <label style="width: 120px;">문서 작성 일시: </label>
+      <label style="width: 120px;">{{ gendocs_data.createfiledts|default_if_none:'' }}</label>
+    </div>
+    <div class="filter-item">
+      <label style="width: 120px;">문서 업로드 일시: </label>
+      <label style="width: 120px;">{{ gendocs_data.updatefiledts|default_if_none:'' }}</label>
+    </div>
+  </div>
+{% endif %}
+
+<div style="display: flex; margin-top: 20px;">
+  <!-- 좌측 -->
+  <div style="flex: 1.1;">
+    <!-- genchapter_data 테이블 -->
+    <div class="table-container">
+      {% if genchapter_data %}
+        <table class="table table-bordered table-sm">
+          <thead>
+            <tr>
+              <th style="width: 20%;">챕터명</th>
+              <th style="width:  6%;">작성자</th>
+              <th style="width:  9%;">작성<br>일시</th>
+              <th style="width:  7%;">신규<br>작성</th>
+              <th style="width:  6%;">업로더</th>
+              <th style="width:  9%;">업로드<br>일시</th>
+              <th style="width:  7%;">신규<br>업로드</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for chap in genchapter_data %}
+            <tr data-gendocuid="{{ chap.gendocuid }}"
+                data-genchapteruid="{{ chap.genchapteruid }}">
+              <td>{{ chap.chapternm }}</td>
+              <td class="info" >{{ chap.createuser|default_if_none:'' }}</td>
+              <td class="info" >{{ chap.createfiledts|default_if_none:'' }}</td>
+              <td class="info" >{% if chap.new_chapteryn %}√{% else %}{% endif %}</td>
+              <td class="info" >{{ chap.updateuser|default_if_none:'' }}</td>
+              <td class="info" >{{ chap.updatefiledts|default_if_none:'' }}</td>
+              <td class="info" >{% if chap.new_uploadyn %}√{% else %}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  </div>
+  <!-- 우측 -->
+   <div style="flex: 1; margin-left: 10px;">
+    <div id="contents-container" hidden>
+      <div id="card-button" class="form-group-left" style="justify-content: center; margin-bottom: 10px; gap: 25px;">
+      </div>
+      <div id="contents-button" class="form-group-left" style="justify-content: center; margin-bottom: 10px; gap: 25px;">
+      </div>
+      <div class="a4-frame" id="contents">
+      </div>
+    </div>
+   </div>
+</div>
+
+
+<div class="form-group-left" style="justify-content: center; margin-top: 10px;">
+  {% if request.session.user.editbuttonyn == "Y" %}
+  <button id="rewriteBtn_doc" type="button" class="icon-btn" {% if gendocs_data.closeyn %}disabled{% endif %}  onclick="doc_rewrite('{{ gendocs_data.gendocuid }}')">
+      <div class="icon-wrapper">
+          <img src="{% static 'icons/doc-write.svg' %}" class="icon-img config-icon" title="문서 일괄 작성">
+          <span class="icon-label">문서 일괄 작성</span>
+      </div>
+  </button>
+  {% endif %}
+  <button type="button" class="icon-btn" onclick="move_doc_write()">
+      <div class="icon-wrapper">
+          <img src="{% static 'icons/doc-merge-write.svg' %}" class="icon-img config-icon" title="문서 조합 작성">
+          <span class="icon-label">문서 조합 작성</span>
+      </div>
+  </button>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="formatLoading">
+  <div class="loading-content">
+    <div class="spinner"></div>
+    <div id="loading-text" style="text-align: left; white-space: pre-line;"></div>
+    <div style="text-align: left;">잠시만 기다려 주세요.</div>
+
+  </div>
+</div>
+
+<script>  
+  const isEditinYn = "{{ request.session.user.editbuttonyn }}" === "Y";
+  let genchapteruid = null;
+
+
+// 로딩 상태 관리 함수들
+  function showLoading(genchapteruid, type) {
+    const overlay = document.getElementById('formatLoading');
+    const uploadBtn = document.getElementById(`uploadBtn_${genchapteruid}`);
+    const chapterBtn = document.getElementById(`rewriteBtn_chapter_${genchapteruid}`);
+    const docBtn = document.getElementById('rewriteBtn_doc');
+    const text = document.getElementById('loading-text');
+    
+    // 오버레이 표시
+    overlay.style.display = 'flex';
+
+    
+    if (type == 'doc'){
+      text.textContent = '문서 작업 중'
+    } 
+    else if (type == 'upload'){
+      text.textContent = '문서 업로드 중'
+    }
+    else if (type == 'chapter'){
+      text.textContent = '챕터 작성 중'
+    } else if (type == 'read'){
+      text.textContent = '조회 중입니다...';
+    }
+  }
+
+  function hideLoading(genchapteruid, type) {
+    const overlay = document.getElementById('formatLoading');
+    const uploadBtn = document.getElementById(`uploadBtn_${genchapteruid}`);
+    const chapterBtn = document.getElementById(`rewriteBtn_chapter_${genchapteruid}`);
+    const docBtn = document.getElementById('rewriteBtn_doc');
+    const text = document.getElementById('loading-text');
+    
+    // 오버레이 숨기기
+    overlay.style.display = 'none';
+    text.textContent = '';
+  }
+
+  // 문서 작성 화면으로 이동
+  function move_doc_write() {
+    const gendocid = "{{ gendocs_data.gendocuid }}";  //document.getElementById('gendocs').value
+
+    sessionStorage.setItem("chapters_read_gendocuid", gendocid)
+
+    if (genchapteruid !== null && genchapteruid !== undefined) {
+      sessionStorage.setItem("chapters_read_genchapteruid", genchapteruid);
+      // url += `&genchapteruid=${genchapteruid}`;
+    } else {
+      sessionStorage.removeItem("chapters_read_genchapteruid");
+    }
+
+    const url = `/req/req_doc_write/?gendocs=${gendocid}`;
+    // window.open(url);
+    location.href = url;
+  }
+
+  // 작성 된 항목 조회
+  function chapter_show(genchapteruid, type) {
+    const container = document.getElementById('contents-container');
+    const card = document.getElementById('card-button');
+    const buttons = document.getElementById('contents-button');
+    const contents_body = document.getElementById('contents');
+    // console.log(genchapteruid, ' / ', type)
+    
+    // 1️⃣ 컨테이너 숨기고 로딩 시작
+    container.hidden = true;
+    showLoading(genchapteruid, 'read');
+    document.getElementById('loading-text').textContent = '조회 중입니다...';
+
+    fetch('/req/chapter_detail_read/', {
+      method: 'POST',
+      credentials: "include",   // 👈 여기
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify({
+        genchapteruid: genchapteruid,
+        sep: 'chapter',
+        type: type
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      // 2️⃣ 로딩 완료 → 스피너 제거
+      hideLoading(genchapteruid, 'read');
+
+      // 3️⃣ 컨테이너 다시 표시
+      container.hidden = false;
+
+      let cards = '';
+      let autoyn = '';
+      let uploadyn = '';
+      if (type == 'auto') {
+        autoyn = 'selected'
+        uploadyn = ''
+      } else {
+        autoyn = ''
+        uploadyn = 'selected'
+      }
+      
+      cards = `
+        <div class="doc-card-container" style="width: 48%; text-align:center;">
+          <div id="auto-card" class="chapter-card `+ autoyn +`" onclick="chapter_show('${ genchapteruid }', 'auto')"> 작성 챕터 조회</div>
+        </div>
+        <div class="doc-card-container" style="width: 48%; text-align:center;">
+          <div id="upload-card" class="chapter-card `+ uploadyn +`" onclick="chapter_show('${ genchapteruid }', 'upload')"> 업로드 챕터 조회</div>
+        </div>`;
+
+      // 버튼 구성
+      let btns = '';
+      // 항목 관리 -> configuration
+      const object = `<button type="button" class="icon-btn" onclick="chapter_object('${ genchapteruid }')">
+                        <div class="icon-wrapper">
+                            <img src="{% static 'icons/configuration.svg' %}" class="icon-img config-icon" title="항목 관리">
+                            <span class="icon-label">항목 관리</span>
+                        </div>
+                      </button>`;
+      // 챕터 (재)작성 -> doc-write
+      let closeyn = '';
+      let closed = '';
+      if (data.closeyn){
+        closeyn = 'disabled'
+        closed = 'disable-icon'
+      }
+
+      let rewrite = ''
+      let upload = ''
+
+      if (isEditinYn){
+        // 챕터 재작성
+        rewrite = `<button type="button" class="icon-btn" ${ closeyn } id="rewriteBtn_chapter_${ genchapteruid }" onclick="chapter_rewrite('${ genchapteruid }')">
+                      <div class="icon-wrapper">
+                          <img src="{% static 'icons/chapter-write.svg' %}" class="icon-img config-icon ${ closed }" title="챕터 (재)작성">
+                          <span class="icon-label">챕터 (재)작성</span>
+                      </div>
+                    </button>`;
+        // 수정 챕터 업로드
+        upload = `<input type="file" id="file_input_${ genchapteruid }" style="display:none" onchange="upload_chapter_file('${ genchapteruid }', '${ data.gendocuid }')">
+                  <button type="button" class="icon-btn" id="uploadBtn_${ genchapteruid }" onclick="document.getElementById('file_input_${ genchapteruid }').click()">
+                    <div class="icon-wrapper">
+                        <img src="{% static 'icons/upload.svg' %}" class="icon-img config-icon" title="수정 챕터 업로드">
+                        <span class="icon-label">수정 챕터 업로드</span>
+                    </div>
+                  </button>`;
+    }
+      
+      // 다운로드 버튼
+      let download = '';
+      let disabled = '';
+      let disableyn = '';
+      let onclick_path = `downloadInMemory('${ data.file_path }', '${ data.file_name }')`;
+      let text = '작성 챕터 다운로드'
+      
+      if (!data.file_path){
+        disabled = `disable-icon`
+        disableyn = 'disabled'
+      }
+
+      if (!data.inmemoryyn) {
+        text = `수정 챕터 다운로드`
+        onclick_path = `downloadFile('${ data.file_path }', '${ data.file_name }')`
+      }
+
+      download = `<button type="button" class="icon-btn" ${ disableyn } onclick="${ onclick_path }">
+                    <div class="icon-wrapper">
+                        <img src="{% static 'icons/download.svg' %}" class="icon-img config-icon ${disabled}" title="${ text }">
+                        <span class="icon-label">${ text }</span>
+                    </div>
+                  </button>`;
+      
+      seperate = `</div><div style="gap: 20px; width:48%; text-align:left;">`
+
+      btns = `<div style="gap: 20px; width:48%; text-align:right;">` + rewrite + object + seperate + download + upload + `</div>`; 
+
+      card.innerHTML = cards;
+      buttons.innerHTML = btns;
+      contents_body.innerHTML = data.contents;
+    })
+    .catch(err => {
+      hideLoading(genchapteruid, 'read');
+      alert('조회 중 오류가 발생했습니다: ' + err.message);
+    });
+  }
+
+
+function doc_rewrite(gendocuid){
+    showLoading(gendocuid, 'doc');
+    
+    let errorList = [];  // ✅ 에러 누적 저장
+    let lastProgressState = null;    // jeff 20251120 1410
+
+    fetch('/req/doc_rewrite/', {
+      method: 'POST',
+      credentials: "include",   // 👈 여기
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify({ gendocuid: gendocuid })
+    })
+    .then(async response => {
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value);
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.substring(6);
+            try {
+              const data = JSON.parse(jsonStr);
+              
+              // 진행률 표시
+              if (data.type === 'progress') {
+                if (data.chapter_index && data.chapter_total && data.current && data.total) {
+                  const chapterName = data.chapter_name || `챕터 ${data.chapter_index}`;
+                  const chapterPercent = Math.round(((data.chapter_index - 1) / data.chapter_total) * 100);
+                  const itemPercent = Math.round(((data.current - 1) / data.total) * 100);
+                  
+                  const progressHTML = 
+                    `<strong>${chapterName}</strong><br>` +
+                    `&nbsp;&nbsp;완료: ${data.chapter_index - 1}/${data.chapter_total} 챕터 (${chapterPercent}%)<br>` +
+                    `&nbsp;&nbsp;챕터 ${data.chapter_index} 진행: ${data.current}/${data.total} 항목 (${itemPercent}%)`;
+                  
+                  document.getElementById('loading-text').innerHTML = progressHTML;
+                  lastProgressState = progressHTML;  // ✅ 저장
+                } 
+                else if (data.chapter_index) {
+                  if (data.chapter_index === data.chapter_total) {
+                    const lastChapterHTML = `모든 챕터 작성을 완료했습니다. 마지막 정리 중입니다.`;
+                    document.getElementById('loading-text').innerHTML = lastChapterHTML;
+                  } 
+                  else {
+                    const betweenChapterHTML = `챕터 ${data.chapter_total}개 중 ${data.chapter_index+1}번째 챕터를 준비하고 있습니다.`;
+                    document.getElementById('loading-text').innerHTML = betweenChapterHTML;
+                  }
+                }
+              }
+
+              // ✅ 항목 에러 (중단하지 않고 누적)
+              else if (data.type === 'item_error') {
+                errorList.push({
+                  chapter: data.chapter_name || '알 수 없음',
+                  object: data.object_name || '알 수 없음',
+                  error: data.error || data.message
+                });
+                console.warn('항목 실패:', data.object_name, data.error);
+                // ✅ 계속 진행 (return 없음)
+              }
+              // ✅ 치명적 에러 (중단)
+              else if (data.type === 'error') {
+                hideLoading(gendocuid, 'doc');
+                alert('서버 오류: ' + data.message);
+                return;
+              }
+              // ✅ 최종 완료
+              else if (data.type === 'complete') {
+                hideLoading(gendocuid, 'doc');
+                
+                // 에러 목록 표시
+                if (errorList.length > 0) {
+                  let errorMsg = `문서 작성 완료!\n\n⚠️ ${errorList.length}개 항목 실패:\n\n`;
+                  errorList.forEach((err, idx) => {
+                    errorMsg += `${idx + 1}. [${err.chapter}] ${err.object}\n   ${err.error}\n\n`;
+                  });
+                  alert(errorMsg);
+                } else {
+                  alert('문서 작성 완료!');
+                }
+                
+                location.reload();
+                return;
+              }
+            } catch (e) {
+              console.error('JSON 파싱 오류:', e);
+            }
+          }
+        }
+      }
+    })
+    .catch(error => {
+      hideLoading(gendocuid, 'doc');
+      console.error('전체 에러:', error);
+      alert('요청 중 오류 발생: ' + error.message);
+    });
+  }
+
+  // 챕터 재작성
+  function chapter_rewrite(genchapteruid) {
+    showLoading(genchapteruid, 'chapter');
+
+    fetch('/req/chapter_rewrite/', {
+      method: 'POST',
+      credentials: "include",   // 👈 여기
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify({ genchapteruid: genchapteruid })
+    })
+    .then(async response => {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        
+        const text = decoder.decode(value);
+        const lines = text.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.substring(6);
+            try {
+              const data = JSON.parse(jsonStr);
+              
+              /*if (data.type === 'progress') {
+                console.log(`진행중: ${data.current}/${data.total}`);
+                // UI 업데이트
+              } */
+              if (data.type === 'progress') {
+                const percent = Math.round((data.current / data.total) * 100);
+                document.getElementById('loading-text').textContent = 
+                  `챕터 작성 중: ${data.current}/${data.total} (${percent}%)`;
+                console.log(`진행중: ${data.current}/${data.total}`);
+              }             
+              else if (data.type === 'complete') {
+                console.log('complete 받음:', data);
+                if (data.success == true) {
+                  // ✅ 최종 완료
+                  hideLoading(genchapteruid, 'chapter');
+                  alert('챕터 작성이 완료 되었습니다.');
+                  location.reload();
+                  return; // 루프 종료
+                } 
+                else {
+                  console.log(`진행중 완료: ${data.message || ''}`);
+                }
+              } 
+              else if (data.type === 'error') {
+                hideLoading(genchapteruid, 'chapter');
+                alert('오류: ' + data.message);
+                return; // 루프 종료
+              }
+            } catch (e) {
+              console.error('JSON 파싱 오류:', e);
+            }
+          }
+        }
+      }
+    })
+    .catch(error => {
+      hideLoading(genchapteruid, 'chapter');
+      console.error('전체 에러:', error);
+      alert('오류 발생: ' + error.message);
+    });
+  }
+
+
+  // 항목 관리 화면 이동
+  function chapter_object(genchapteruid) {
+    
+    const params = new URLSearchParams(window.location.search);
+    const gendocs = params.get('gendocs');
+    
+    sessionStorage.setItem("path", 'req_chapters_read')
+    sessionStorage.setItem("chapters_read_gendocuid", gendocs)
+
+    // 화면 이동
+    const url = `/req/chapter_objects_read/?genchapteruid=${genchapteruid}`;
+    // window.open(url);
+    location.href = url;
+  }
+
+  // 문서 업로드
+  function upload_chapter_file(genchapteruid, gendocuid) {
+    const fileInput = document.getElementById(`file_input_${genchapteruid}`);
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('genchapteruid', genchapteruid);
+    formData.append('gendocuid', gendocuid);
+
+    // 로딩 시작
+    showLoading(genchapteruid, 'upload');
+
+    fetch('/req/genchapter_file_upload/', {
+      method: 'POST',
+      credentials: "include",   // 👈 여기
+      headers: {
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        // 로딩 종료
+        hideLoading(genchapteruid, 'upload');
+        alert('업로드 완료');
+        window.location.reload();
+      } else {
+        alert('업로드 실패: ' + data.message);
+      }
+    })
+    .catch(err => {
+      // 로딩 종료
+      hideLoading(genchapteruid, 'upload');
+      alert('오류: ' + err.message);
+    });
+  }
+
+  // ESC 키로 로딩 취소 (선택사항)
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const overlay = document.getElementById('loadingOverlay');
+      if (overlay.style.display === 'flex') {
+        console.log('사용자가 ESC로 취소 시도');
+      }
+    }
+  });
+
+// 다운로드용 csrf
+function getCSRFToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+}
+
+// URL 기반 다운로드 (Supabase 등)
+function downloadFile(url, filename) {
+  fetch(url)
+    .then(response => response.blob())
+    .then(blob => {
+        const a = document.createElement('a');
+        const url = window.URL.createObjectURL(blob);
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    })
+    .catch(error => {
+        console.error('Download failed:', error);
+        window.open(url, '_blank');
+    });
+}
+
+// InMemory 파일 (POST로 전달 → 서버에서 Content-Disposition 헤더로 파일명 보장)
+function downloadInMemory(fileData, filename) {
+  fetch("/req/download_inmemory_docx/", {
+      method: "POST",
+      credentials: "include",   // 👈 여기
+      headers: { "Content-Type": "application/json", "X-CSRFToken": getCSRFToken() },
+      body: JSON.stringify({ file_data: fileData, file_name: filename })
+  })
+  .then(res => res.blob())
+  .then(blob => {
+      const a = document.createElement('a');
+      const objUrl = window.URL.createObjectURL(blob);
+      a.href = objUrl;
+      a.download = filename; // 서버도 지정하지만 JS에서도 fallback
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objUrl);
+  })
+  .catch(err => console.error("Download failed:", err));
+}
+
+// thead 튕김 방지용 reflow 보정
+document.addEventListener("DOMContentLoaded", () => {
+  const frame = document.querySelector('.a4-frame');
+  if (!frame) return;
+
+  frame.addEventListener('scroll', (e) => {
+    const tables = e.currentTarget.querySelectorAll('table');
+    tables.forEach(tbl => {
+      const thead = tbl.querySelector('thead');
+      if (thead) {
+        // 살짝 강제 리플로우 시켜서 튕김 방지
+        thead.style.transform = `translateY(${e.currentTarget.scrollTop}px)`;
+        requestAnimationFrame(() => {
+          thead.style.transform = '';
+        });
+      }
+    });
+  });
+
+
+  // 각 행 선택을 위한 코드
+  const rows = document.querySelectorAll("table tbody tr[data-gendocuid]");
+  rows.forEach(row => {
+    row.addEventListener("click", function() {
+      // console.log('ClickClick')
+      // 1️⃣ 기존 선택 제거
+      rows.forEach(r => r.classList.remove("selected-row"));
+
+      // 2️⃣ 현재 행 하이라이트
+      this.classList.add("selected-row");
+
+      genchapteruid = this.dataset.genchapteruid
+      // console.log('생성 시작')
+      chapter_show(genchapteruid, 'auto')
+      sessionStorage.setItem("chapters_read_genchapteruid", genchapteruid);
+      // console.log('생성 종료')
+    })
+  });
+
+  // ✅ 페이지 복귀 시 선택 상태 복원
+  const savedChapterUid  = sessionStorage.getItem("chapters_read_genchapteruid");
+  if (savedChapterUid ) {
+    const savedRow = document.querySelector(`tr[data-genchapteruid="${savedChapterUid}"]`);
+    if (savedRow) {
+      savedRow.click(); // 기존 로직 재사용 (우측 필드까지 자동 세팅됨)
+    }
+  }
+
+  sessionStorage.removeItem("path")
+  sessionStorage.removeItem("chapters_read_gendocuid")
+  sessionStorage.removeItem("chapters_read_genchapteruid")
+
+});
+
+document.getElementById("help-btn").addEventListener("click", () => {
+  // 1. 현재 페이지의 URL 정보
+  const url = window.location.href;
+  // 2. URL 객체로 파싱
+  const urlObj = new URL(window.location.href);
+  // 3. help 모달 호출
+  show_help_base_modal(urlObj.pathname)
+})
+
+document.getElementById("back-btn").addEventListener("click", () => {
+  
+  const path = sessionStorage.getItem('path')
+  const doc_list = sessionStorage.getItem('doc_list_gendocuid')
+  const doc_status = sessionStorage.getItem('doc_status_gendocuid')
+
+  if (path == 'req_doc_status' || doc_status){
+    const gendocuid = sessionStorage.getItem('doc_status_gendocuid')
+    url = `/req/req_doc_status/?gendocs=${gendocuid}`;
+  } else if (path == 'req_doc_list' || doc_list) {
+    const str = sessionStorage.getItem('doc_list_start_date')
+    const end = sessionStorage.getItem('doc_list_end_date')
+    url = `/req/req_doc_list/?start_date=${str}&end_date=${end}`;
+  } else {
+    url = `/req/req_doc_list/`;
+  }
+  
+  location.href = url
+});
+</script>
+
+{% endblock %}

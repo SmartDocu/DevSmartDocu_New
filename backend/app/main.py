@@ -1,19 +1,48 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import settings, i18n, master_docs
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-app = FastAPI()
+from backend.app.config import settings
+from backend.app.routers import router
 
-# CORS 설정
+app = FastAPI(
+    title="Smart Document API",
+    version="1.0.0",
+    docs_url="/api/swagger",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend origin
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 라우터 등록
-app.include_router(i18n.router)
-app.include_router(settings.router)  # <- frontend 호출용 settings API
-app.include_router(master_docs.router)
+app.include_router(router, prefix="/api")
+
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    return {"status": "ok", "version": "1.0.0"}
+
+
+# ─── React SPA 서빙 ─────────────────────────────────────────────────────────
+_DIST = Path("frontend/dist")
+
+if _DIST.exists():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    async def favicon():
+        return FileResponse(_DIST / "favicon.svg")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        index = _DIST / "index.html"
+        return FileResponse(index)

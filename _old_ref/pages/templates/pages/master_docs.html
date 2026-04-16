@@ -1,0 +1,1042 @@
+{% extends 'pages/base.html' %}
+{% block title %}문서 관리{% endblock %}
+
+{% load static %}
+
+{% block content %}
+<style>
+/* 🔹 modal 전체 배경 */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  display: none;
+  z-index: 9999;
+
+  /* 중앙 정렬 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 🔹 modal 내부 박스 */
+.modal-content {
+  position: relative;
+  background: #fff;
+  padding: 20px;
+  border-radius: 6px;
+  width: 500px;
+  max-width: 90%;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+  #dataset-modal .modal-content h3 {
+    text-align: center;
+    padding-bottom: 10px;
+    /* border-bottom: 1px solid #ddd; */
+    margin-bottom: 20px;
+  }
+
+.data_modal_close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  color: #555;
+  cursor: pointer;
+}
+.data_modal_close:hover {
+  color: var(--selected-row);
+}
+.data-button-wrapper {
+  text-align: center;
+  margin: 10px 0 12px 0;
+}
+.data-button {
+  padding: 6px 14px;
+  margin: 0 3px;
+  border: 1px solid var(--primary-500);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.data-button.active {
+  background: var(--primary-500);
+  color: #fff;
+  font-weight: bold;
+}
+</style>
+
+<div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>문서 관리</div>
+  </div>
+</div>
+
+
+<div style="display: flex; gap: 30px; padding-right: 10px;">
+  <!-- 좌측 표  --> 
+  <!-- 좌측 카드형 문서 목록 -->
+  <div style="flex: 1; padding-right: 20px;">
+    <h3>문서 목록</h3> 
+    <div class="chapter-card-container">
+      {% for doc in docs %}
+        <div class="chapter-card" data-docid="{{ doc.docid }}" data-projectid="{{ doc.projectid }}"data-editbuttonyn="{{ doc.editbuttonyn }}">
+          <!-- <div class="card-header">{{ doc.projectnm }}</div> -->
+          <div class="card-title">{{ doc.docnm }}-{{ doc.projectnm }}</div>
+          <!-- <div class="card-desc">{{ doc.docdesc|default_if_none:"" }}</div>
+          <button type="button" class="btn-tbl btn-primary doc-select-btn" data-docid="{{ doc.docid }}">선택</button> -->
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 📗 가운데: 문서 상세 -->
+  <div style="flex: 1.5; padding: 0 20px;">
+    <h3>문서 상세</h3>
+    <form id="doc-detail-form" enctype="multipart/form-data">
+      <input type="hidden" name="docid" id="docid">
+
+      <div class="form-group">
+        <label for="projectid">프로젝트명:</label>
+        <!-- 수정 가능 시 -->
+        <select name="projectid" id="projectid" required>
+          <option value="">프로젝트를 선택하세요</option>
+          {% for p in project_list %}
+            <option value="{{ p.projectid }}">{{ p.projectnm }}</option>
+          {% endfor %}
+        </select>
+        <!-- 읽기 전용 표시용 -->
+        <span id="projectnm-text"
+              style="display:none; padding:6px 4px; font-weight:600;">
+        </span>
+      </div>
+
+      <div class = "form-group"> 
+        <label>문서명:</label>
+        <input type="text" name="docnm" id="docnm">
+      </div>
+
+      <div class = "form-group"> 
+        <label>문서설명:</label>
+        <textarea name="docdesc" id="docdesc" rows="3"></textarea>
+      </div>      
+
+      <div class="form-group">
+        <label>서식 파일 업로드(머리글, 바닥글):</label>
+        <!-- 숨겨진 실제 파일 input -->
+        <input type="file" name="templatefile" id="templatefile" style="display:none;">
+        
+        <!-- 현재 템플릿 및 업로드 버튼 -->
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button type="button" id="upload-btn" class="icon-btn">
+            <img src="{% static 'icons/upload.svg' %}" title="업로드" class="icon-img new-icon">
+          </button>
+          <span id="current-template-name">적용할 서식 파일 없음</span>
+        </div>
+      </div>
+
+      <div class="button-group" id="doc-buttons">
+        <button id="reset-btn" type="button" class="icon-btn always-show">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/new.svg' %}" class="icon-img new-icon" title="신규">
+            <span class="icon-label">신규</span>
+          </div>
+        </button>
+
+        <button id="save-btn" type="button" class="icon-btn edit-only">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/save.svg' %}" class="icon-img save-icon" title="저장">
+            <span class="icon-label">저장</span>
+          </div>
+        </button>
+
+        <button id="delete-btn" type="button" class="icon-btn edit-only">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/delete.svg' %}" class="icon-img del-icon" title="삭제">
+            <span class="icon-label">삭제</span>
+          </div>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 오른쪽: 매개변수 목록 -->
+  <div style="flex: 2; padding-left: 20px;">
+  <h3>매개변수 관리</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>매개변수명</th>
+          <th>예시값</th>
+          <th>operator</th>
+          <th>순번</th>
+          <!-- <th>숫자</th> -->
+          <th>데이터</th>
+        </tr>
+      </thead>
+      <tbody id="param-body">
+        <tr><td colspan="5">문서를 선택하세요.</td></tr>
+      </tbody>
+    </table>
+
+      <!-- 추가/수정 폼 -->
+    <form id="param-form" style="padding-top: 15px;">
+      <input type="hidden" name="paramuid" id="paramuid">
+      <input type="hidden" name="docid" id="param-docid">
+
+      <div class = "form-group-left">
+        <label for="paramnm">매개변수명</label>
+        <input type="text" id="paramnm" name="paramnm">
+      </div>
+
+      <div class = "form-group-left">
+        <label for="orderno">순번</label>
+        <input type="number" id="orderno" name="orderno">
+      </div>
+
+      <div class = "form-group-left">
+        <label for="samplevalue">예시값</label>
+        <input type="text" id="samplevalue" name="samplevalue">
+      </div>
+        
+      <div class="form-group-left">
+        <label for="operator">Operator</label>
+        <select id="operator" name="operator">
+          <option value="=">=</option>
+          <option value=">=">>=</option>
+          <option value="<="><=</option>
+          <option value=">">></option>
+          <option value="<"><</option>
+        </select>
+      </div>
+
+      <!-- <div class = "form-group-left" style = "display: block;">
+        <label for="intyn">숫자</label>
+        <input type="checkbox" id="intyn" name="intyn" style="margin-left: 50px;">
+      </div> -->
+
+      <!-- 🔹 데이터셋 설정 영역 -->
+      <div class="form-group-left" style="display:flex; align-items:center; gap:10px;">
+        <label>데이터</label>
+        <span id="dataset-status">미사용</span>
+        <button type="button" id="dataset-setting-btn" class="btn btn-link">
+          연동자료 설정
+        </button>
+        <button type="button" id="dataset-clear-btn" class="btn btn-link" style="display:none;">
+          해제
+        </button>
+      </div>
+
+      <!-- hidden (저장용) -->
+      <input type="hidden" id="datasetyn" name="datasetyn" value="N">
+      <input type="hidden" id="datauid" name="datauid">
+      <input type="hidden" id="dataset_key">
+      <input type="hidden" id="dataset_name">
+      <input type="hidden" id="dataset_order">
+
+      <div>
+          <p>＊예시값은 추후 기준정보 입력 화면에서 해당 데이터 사용시 필요하기 때문에 반드시 입력해야합니다.</p>
+      </div>
+
+      <div class="button-group" id="param-buttons">
+        <button id="param-reset-btn" type="button" class="icon-btn always-show">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/new.svg' %}" class="icon-img new-icon" title="신규">
+            <span class="icon-label">신규</span>
+          </div>
+        </button>
+
+        <!-- 저장 버튼 -->
+        <button id="param-save-btn" type="button" class="icon-btn edit-only">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/save.svg' %}" class="icon-img save-icon" title="저장">
+            <span class="icon-label">저장</span>
+          </div>
+        </button>
+
+        <!-- 삭제 버튼 -->
+        <button id="param-delete-btn" type="button" class="icon-btn edit-only">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/delete.svg' %}" class="icon-img del-icon" title="삭제">
+            <span class="icon-label">삭제</span>
+          </div>
+        </button>
+      </div>
+    </form>
+
+    <div class="button-group">
+      <button id="param-map-btn"  type="button"  class="btn btn-link">매개변수 연결 &#x279C;</button>        
+    </div>
+      
+  </div>
+</div>
+
+<!-- 🔹 데이터셋 설정 Modal -->
+<div id="dataset-modal" class="modal" style="display:none;">
+  <div class="modal-content" style="width:500px;">
+
+    <button class="data_modal_close" onclick="closedataModal()">&times;</button>
+
+    <h3>데이터셋 설정</h3>
+
+    <div class="form-group">
+      <label>데이터 셋</label>
+      <select id="dataset-select">
+        <option value="">선택하세요</option>
+        {% for d in datas %}
+          <option value="{{ d.datauid }}">{{ d.datanm }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>값</label>
+      <select id="dataset-key"></select>
+    </div>
+
+    <div class="form-group">
+      <label>이름</label>
+      <select id="dataset-name"></select>
+    </div>
+
+    <div class="form-group">
+      <label>정렬</label>
+      <select id="dataset-order"></select>
+    </div>
+
+    <div class="data-button-wrapper" style="margin-top:15px;">
+      <button class="data-button active" type="button" id="dataset-confirm-btn">확인</button>
+      <button class="data-button" type="button" id="dataset-cancel-btn">취소</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="formatLoading">
+  <div class="loading-content">
+    <div class="spinner"></div>
+    <div id="loading-text" style="text-align: center;"></div>
+    <div >잠시만 기다려 주세요.</div>
+  </div>
+</div>
+
+<script>
+
+  // 로딩 상태 관리 함수들
+  function docs_showLoading(type) {
+    const overlay = document.getElementById('formatLoading');
+    const text = document.getElementById('loading-text');
+    
+    // 오버레이 표시
+    overlay.style.display = 'flex';
+    
+    if (type == 'save'){
+      text.textContent = '저장 중'
+    } else if (type == 'delete'){
+      text.textContent = '삭제 중'
+    } 
+  }
+
+  function docs_hideLoading() {
+    const overlay = document.getElementById('formatLoading');
+    const text = document.getElementById('loading-text');
+    
+    // 오버레이 숨기기
+    overlay.style.display = 'none';
+    text.textContent = '';
+  }
+
+const datasetBtn = document.getElementById("dataset-setting-btn");
+const datasetModal = document.getElementById("dataset-modal");
+
+
+datasetBtn.addEventListener("click", async () => {
+  const docid = document.getElementById("param-docid").value;
+
+  if (!docid) {
+    alert("먼저 문서를 선택하세요.");
+    return;
+  }
+
+  // 🔹 모달 열기 전 초기화
+  const keySel = document.getElementById("dataset-key");
+  const nameSel = document.getElementById("dataset-name");
+  const orderSel = document.getElementById("dataset-order");
+  keySel.innerHTML = '<option value="">선택하세요</option>';
+  nameSel.innerHTML = '<option value="">선택하세요</option>';
+  orderSel.innerHTML = '<option value="">선택하세요</option>';
+
+  try {
+    const res = await fetch(`/master/params_datasets/`, {
+      method: "POST",
+      credentials: "include", // 👈 쿠키 전송
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken")
+      },
+      body: JSON.stringify({ docid })
+    });
+
+    const json = await res.json();
+
+    const datasetSelect = document.getElementById("dataset-select");
+    datasetSelect.innerHTML = `<option value="">선택하세요</option>`;
+
+    json.datas.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.datauid;
+      opt.textContent = d.datanm;
+      datasetSelect.appendChild(opt);
+    });
+
+    // 🔹 이미 선택된 데이터셋 값이 있으면 세팅
+    // 모달 열기
+    const selectedDatasetUid = document.getElementById("datauid").value;
+
+    if (selectedDatasetUid) {
+      datasetSelect.value = selectedDatasetUid;
+
+      // 컬럼 로딩
+      const resCols = await fetch(`/master/params_dataset_cols/?datauid=${selectedDatasetUid}`);
+      const jsonCols = await resCols.json();
+
+      // 옵션 채움
+      keySel.innerHTML = '<option value="">선택하세요</option>';
+      nameSel.innerHTML = '<option value="">선택하세요</option>';
+      orderSel.innerHTML = '<option value="">선택하세요</option>';
+
+      jsonCols.datacols.forEach(col => {
+        const optKey = new Option(col.dispcolnm, col.querycolnm);
+        const optName = new Option(col.dispcolnm, col.querycolnm);
+        const optOrder = new Option(col.dispcolnm, col.querycolnm);
+
+        keySel.add(optKey);
+        nameSel.add(optName);
+        orderSel.add(optOrder);
+      });
+
+      // **여기서 hidden 입력값을 다시 정확히 읽어서 적용**
+      const savedKey   = document.getElementById("dataset_key").value;
+      const savedName  = document.getElementById("dataset_name").value;
+      const savedOrder = document.getElementById("dataset_order").value;
+
+      if (savedKey)   keySel.value   = savedKey;
+      if (savedName)  nameSel.value  = savedName;
+      if (savedOrder) orderSel.value = savedOrder;
+    }
+
+
+    datasetModal.style.display = "flex";
+  } catch (e) {
+    alert("데이터셋 목록을 불러오지 못했습니다.");
+    console.error(e);
+  }
+});
+
+const datasetClearBtn = document.getElementById("dataset-clear-btn");
+
+datasetClearBtn.addEventListener("click", () => {
+  if (!document.getElementById("paramuid").value) {
+    alert("먼저 매개변수를 선택하세요.");
+    return;
+  }
+
+  if (!confirm("이 매개변수의 연동자료를 해제하시겠습니까?")) return;
+
+  // 🔹 hidden 값 초기화
+  document.getElementById("datasetyn").value = "N";
+  document.getElementById("datauid").value = "";
+  document.getElementById("dataset_key").value = "";
+  document.getElementById("dataset_name").value = "";
+  document.getElementById("dataset_order").value = "";
+
+  // 🔹 상태 표시
+  document.getElementById("dataset-status").innerText = "미사용";
+
+  // 🔹 테이블 ✓ 제거 (프론트 데이터 반영)
+  const docid = document.getElementById("param-docid").value;
+  const paramuid = document.getElementById("paramuid").value;
+
+  if (allParams[docid]) {
+    const p = allParams[docid].find(x => x.paramuid === paramuid);
+    if (p) {
+      p.datauid = "";
+      p.keycolnm = "";
+      p.nmcolnm = "";
+      p.ordercolnm = "";
+    }
+  }
+
+  loadParams(docid);
+});
+
+document.getElementById("dataset-cancel-btn").addEventListener("click", () => {
+  datasetModal.style.display = "none";
+});
+
+
+  // 🔹 파일 업로드 버튼 커스텀
+const fileInput = document.getElementById('templatefile');
+const uploadBtn = document.getElementById('upload-btn');
+const templateNameSpan = document.getElementById('current-template-name');
+
+uploadBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length > 0) {
+    templateNameSpan.textContent = fileInput.files[0].name;
+  } else {
+    templateNameSpan.textContent = "적용할 서식 파일 없음";
+  }
+});
+
+const form = document.getElementById('doc-detail-form');
+
+// 🔹 문서 데이터
+const docsData = {};
+{% for doc in docs %}
+  docsData["{{ doc.docid }}"] = {
+    projectid: "{{ doc.projectid }}",
+    docid: "{{ doc.docid }}",
+    projectnm: "{{ doc.projectnm|escapejs }}", 
+    docnm: "{{ doc.docnm|escapejs }}",
+    docdesc: "{{ doc.docdesc|default:''|escapejs }}",
+    basetemplatenm: "{{ doc.basetemplatenm|default:'적용할 서식 파일 없음'|escapejs }}",
+    basetemplateurl: "{{ doc.basetemplateurl|default:''|escapejs }}",
+    editbuttonyn: "{{ doc.editbuttonyn }}"  //⬅️ 추가
+  };
+{% endfor %}
+
+// 🔹 매개변수 데이터
+const allParams = {};
+{% for p in params %}
+  if (!allParams["{{ p.docid }}"]) {
+    allParams["{{ p.docid }}"] = [];
+  }
+  allParams["{{ p.docid }}"].push({
+    paramuid: "{{ p.paramuid }}",
+    paramnm: "{{ p.paramnm|escapejs }}",
+    samplevalue: "{{ p.samplevalue|escapejs }}",
+    orderno: "{{ p.orderno|default:'' }}",
+    datauid: "{{ p.datauid|default:'' }}",
+    keycolnm: "{{ p.keycolnm|default:'' }}",
+    nmcolnm: "{{ p.nmcolnm|default:'' }}",
+    ordercolnm: "{{ p.ordercolnm|default:'' }}",
+    operator: "{{ p.operator|default:'='|escapejs|safe }}" 
+  });
+{% endfor %}
+
+
+// 기존 doc-select-btn 클릭 이벤트 제거 후, 카드 클릭으로 변경
+document.querySelectorAll('.chapter-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const docid = card.dataset.docid;
+    const doc = docsData[docid];
+    if (!doc) return;
+
+    // 🔹 selected 클래스 처리
+    document.querySelectorAll('.chapter-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+
+    // 🔹 상세 정보 채우기
+    form.docid.value = doc.docid;
+    form.projectid.value = doc.projectid || "";
+    form.docnm.value = doc.docnm;
+    form.docdesc.value = doc.docdesc;
+
+    const projectSelect = document.getElementById("projectid");
+    const projectText   = document.getElementById("projectnm-text");
+
+    // 🔥 카드 클릭 시에는 무조건 text 표시
+    showProjectText(doc.projectnm);
+
+    // 🔹 템플릿명 표시
+    const templateSpan = document.getElementById("current-template-name");
+    if (doc.basetemplateurl) {
+      const fileUrl = doc.basetemplateurl;
+      const filename = doc.basetemplatenm || 'template.docx';
+
+      templateSpan.innerHTML = `<a href="#" id="template-download-link">${filename}</a>`;
+
+      const downloadLink = document.getElementById("template-download-link");
+      downloadLink.addEventListener("click", async (e) => {
+        e.preventDefault();
+        try {
+          const res = await fetch(fileUrl);
+          if (!res.ok) throw new Error("파일을 불러올 수 없습니다.");
+
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        } catch (err) {
+          alert("다운로드 실패: " + err.message);
+        }
+      });
+    } else {
+      templateSpan.textContent = "적용할 서식 파일 없음";
+    }
+
+    const docButtons = document.getElementById("doc-buttons");
+    const paramButtons = document.getElementById("param-buttons");
+    const isEditable = doc.editbuttonyn === "Y";
+
+    // 항상 신규 버튼은 유지
+    document.querySelectorAll(".always-show").forEach(btn => {
+      btn.style.display = "inline-flex";
+    });
+
+    // 저장 / 삭제만 권한에 따라 제어
+    document.querySelectorAll(".edit-only").forEach(btn => {
+      btn.style.display = (doc.editbuttonyn === "Y") ? "inline-flex" : "none";
+    });
+
+
+    // 🔹 매개변수 초기화 및 로드
+    document.getElementById("param-form").reset();
+    document.getElementById("paramuid").value = "";
+    document.getElementById("param-docid").value = docid;
+
+    loadParams(docid);
+  });
+});
+
+// 🔹 매개변수 테이블 렌더링
+function loadParams(docid) {
+  const tbody = document.getElementById("param-body");
+  tbody.innerHTML = "";
+
+  const params = allParams[docid] || [];
+  if (params.length === 0) {
+    tbody.innerHTML = "<tr><td colspan='5'>매개변수가 없습니다</td></tr>";
+    return;
+  }
+
+  params.forEach(p => {
+    const row = document.createElement("tr");
+    row.dataset.paramuid = p.paramuid;
+    const datasetMark = p.datauid ? "✓" : "";
+
+    row.innerHTML = `
+      <td>${p.paramnm}</td>
+      <td>${(p.samplevalue && p.samplevalue !== "None") ? p.samplevalue : ''}</td>
+      <td style="text-align:center;">${p.operator}</td>
+      <td style="text-align:center;">${p.orderno}</td>
+      <td style="text-align:center;">${datasetMark}</td>
+    `;
+
+    row.addEventListener("click", () => {
+      // 🔹 선택된 행 표시 (기존 선택 제거)
+      document.querySelectorAll("#param-body tr").forEach(r => r.classList.remove("selected-row"));
+      row.classList.add("selected-row");
+
+      document.getElementById("paramuid").value = p.paramuid;
+      document.getElementById("paramnm").value = p.paramnm;
+      document.getElementById("samplevalue").value = (p.samplevalue && p.samplevalue !== "None") ? p.samplevalue : "";
+      // console.log("operator:", p.operator);
+      document.getElementById("operator").value = p.operator.trim();
+      document.getElementById("orderno").value = p.orderno;
+      document.getElementById("param-docid").value = docid;
+
+      /* ✅ dataset 상태 복원 */
+      if (p.datauid) {
+        document.getElementById("datasetyn").value = "Y";
+        document.getElementById("datauid").value = p.datauid;
+        document.getElementById("dataset_key").value = p.keycolnm;
+        document.getElementById("dataset_name").value = p.nmcolnm;
+        document.getElementById("dataset_order").value = p.ordercolnm;
+        document.getElementById("dataset-status").innerText = "사용";
+        document.getElementById("dataset-status").innerText = "사용";
+        document.getElementById("dataset-clear-btn").style.display = "inline-block";
+      } else {
+        document.getElementById("datasetyn").value = "N";
+        document.getElementById("datauid").value = "";
+        document.getElementById("dataset_key").value = "";
+        document.getElementById("dataset_name").value = "";
+        document.getElementById("dataset_order").value = "";
+        document.getElementById("dataset-status").innerText = "미사용";
+        document.getElementById("dataset-status").innerText = "미사용";
+        document.getElementById("dataset-clear-btn").style.display = "none";
+      }
+
+    });
+    tbody.appendChild(row);
+  });
+}
+
+// 🔹 매개변수 저장
+const paramsaveBtn = document.getElementById("param-save-btn");
+if (paramsaveBtn) {
+  paramsaveBtn.addEventListener("click", async () => {
+    const paramnm = document.getElementById("paramnm").value;
+    const orderno = document.getElementById("orderno").value;
+    const samplevalue = document.getElementById("samplevalue").value;
+    const operator = document.getElementById("operator").value;
+    const docid = document.getElementById("param-docid").value;
+    const paramuid = document.getElementById("paramuid").value;
+
+    if (!paramnm || !docid) {
+      alert("매개변수명과 문서 선택은 필수입니다.");
+      return;
+    }
+
+    // const data = { paramuid, paramnm, orderno, docid, samplevalue, intyn };
+
+    const data = {
+      paramuid,
+      paramnm,
+      orderno,
+      docid,
+      samplevalue,
+      operator,
+      // datasetyn: document.getElementById("datasetyn").value,
+      datauid: document.getElementById("datauid").value,
+      dataset_key: document.getElementById("dataset_key").value,
+      dataset_name: document.getElementById("dataset_name").value,
+      dataset_order: document.getElementById("dataset_order").value
+    };
+
+    docs_showLoading('save')
+
+    const res = await fetch("/master/params_save/", {
+      method: "POST",
+      credentials: "include",   // 👈 여기
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken")
+      },
+      body: JSON.stringify(data)
+    });
+
+    const json = await res.json();
+    if (json.result === "success") {
+      alert("매개변수 저장 완료");
+      docs_hideLoading()
+
+      // ✅ 매개변수 초기화
+      document.getElementById("param-form").reset();
+      document.getElementById("paramuid").value = "";
+
+      localStorage.setItem("selected_docid", docid); // ⬅️ 문서 선택 유지용
+      location.reload();
+    } else {
+      alert("저장 실패: " + json.message);
+      docs_hideLoading()
+    }
+  });
+}
+
+// 🔹 매개변수 초기화
+const paramresetBtn = document.getElementById("param-reset-btn");
+if (paramresetBtn) {
+  paramresetBtn.addEventListener("click", async () => {
+    document.getElementById("param-form").reset();
+    document.getElementById("paramuid").value = "";
+  });
+}
+
+// 🔹 매개변수 삭제
+const paramdeleteBtn = document.getElementById("param-delete-btn");
+if (paramdeleteBtn) {
+  paramdeleteBtn.addEventListener("click", async () => {
+    const paramuid = document.getElementById("paramuid").value;
+    const docid = document.getElementById("param-docid").value;
+
+    if (!paramuid) {
+      alert("삭제할 매개변수를 선택하세요.");
+      return;
+    }
+
+    if (!confirm("정말 삭제하시겠습니까?")) return;
+
+    docs_showLoading('delete')
+    const res = await fetch("/master/params_delete/", {
+      method: "POST",
+      credentials: "include",   // 👈 여기
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken")
+      },
+      body: JSON.stringify({ paramuid })
+    });
+
+    const json = await res.json();
+    if (json.success) {
+      alert("삭제 완료");
+      docs_hideLoading()
+
+      // ✅ 매개변수 초기화
+      document.getElementById("param-form").reset();
+      document.getElementById("paramuid").value = "";
+
+      localStorage.setItem("selected_docid", docid); // ⬅️ 문서 선택 유지용
+      location.reload();
+    } else {
+      alert("삭제 실패: " + json.error);
+      docs_hideLoading()
+    }
+  });
+}
+
+// 🔹 문서 저장
+const saveBtn = document.getElementById("save-btn");
+if (saveBtn) {
+  saveBtn.addEventListener("click", () => {
+    const formData = new FormData(form);
+
+    docs_showLoading('save')
+    fetch("{% url 'master_docs_save' %}", {
+      method: "POST",
+      credentials: "include",   // 👈 여기
+      headers: {
+        "X-CSRFToken": getCookie('csrftoken'),
+      },
+      body: formData,
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.result === "success") {
+        alert("문서 저장 완료");
+        docs_hideLoading()
+
+        form.reset();
+        form.docid.value = "";
+        document.getElementById("current-template-name").textContent = "적용할 서식 파일 없음";
+        document.getElementById("param-body").innerHTML = "<tr><td colspan='4'>문서를 선택하세요.</td></tr>";
+        
+        localStorage.removeItem("selected_docid");
+        
+        location.reload();
+      } else {
+        alert("저장 실패: " + data.message);
+        docs_hideLoading()
+      }
+    })
+    .catch(err => {
+      alert("저장 중 오류 발생");
+      docs_hideLoading()
+      // console.error(err);
+    });
+  });
+}
+
+// 🔹 문서 삭제
+const deleteBtn = document.getElementById("delete-btn");
+if (deleteBtn) {
+  deleteBtn.addEventListener("click", async () => { 
+    const docid = form.docid.value;
+    if (!docid) {
+      alert("삭제할 문서를 선택하세요.");
+      return;
+    }
+
+    if (!confirm("정말 삭제하시겠습니까?\n관련 된 모든 데이터가 삭제 되며, 삭제 후 되돌릴 수 없습니다.")) return;
+
+    docs_showLoading('delete')
+    try {
+      const response = await fetch("/master/docs_delete/", {
+        method: 'POST',
+        credentials: "include",   // 👈 여기
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({ docid })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert("문서가 삭제되었습니다.");
+        docs_hideLoading()
+        location.reload();
+        // ✅ 문서 초기화
+      //   form.reset();
+      //   form.docid.value = "";
+      //   document.getElementById("current-template-name").textContent = "선택된 문서 없음";
+      //   document.getElementById("param-body").innerHTML = "<tr><td colspan='4'>문서를 선택하세요.</td></tr>";
+        
+      //   localStorage.removeItem("selected_docid");
+
+      //   // 문서 목록에서 해당 행 제거
+      //   const card = document.querySelector(`.chapter-card[data-docid="${docid}"]`);
+      //   if (card) card.remove();
+
+      //   document.getElementById("param-docid").value = "";
+      //   document.getElementById("paramuid").value = "";
+      //   document.getElementById("paramnm").value = "";
+      //   document.getElementById("samplevalue").value = "";
+      //   document.getElementById("orderno").value = "";
+      //   document.getElementById("intyn").checked = false;
+      //   document.getElementById("param-form").reset();
+      // } else {
+        alert("삭제 실패: " + (data.error || ""));
+        docs_hideLoading()
+      }
+    } catch (error) {
+      alert("삭제 중 오류: " + error.message);
+      docs_hideLoading()
+    }
+  });
+}
+
+const paramMapBtn = document.getElementById("param-map-btn");
+if (paramMapBtn) {
+  paramMapBtn.addEventListener("click", () => {
+    const docid = document.getElementById("docid").value;
+
+    if (!docid) {
+      alert("먼저 문서를 선택하세요.");
+      return;
+    }
+
+    // ✅ docid를 GET 파라미터로 전달
+    window.location.href = `/master/doc_params/?docid=${docid}`;
+  });
+}
+
+// 🔹 문서 초기화
+const resetBtn = document.getElementById("reset-btn");
+if (resetBtn) {
+  resetBtn.addEventListener("click", () => { 
+    form.reset();
+    form.docid.value = "";
+    templateNameSpan.textContent = "적용할 서식 파일 없음";
+    fileInput.value = ""; // 파일 input 초기화
+    document.getElementById("param-body").innerHTML = "<tr><td colspan='4'>문서를 선택하세요.</td></tr>";
+    document.querySelectorAll('.chapter-card').forEach(card => card.classList.remove('selected'));
+ 
+    showProjectSelect();
+    
+    const paramForm = document.getElementById("param-form");
+    if (paramForm) {
+      paramForm.reset();
+      document.getElementById("paramuid").value = "";
+      document.getElementById("param-docid").value = "";
+      document.querySelectorAll("#param-body tr").forEach(r => r.classList.remove("selected-row"));
+    }
+
+    // 저장/삭제 버튼 보여주기
+    document.querySelectorAll(".edit-only").forEach(btn => {
+      btn.style.display = "inline-flex";
+    });    
+  });
+}
+
+// 🔹 선택된 문서 유지 처리
+window.addEventListener("load", () => {
+  const selectedDocId = localStorage.getItem("selected_docid");
+  if (selectedDocId) {
+    const card = document.querySelector(`.chapter-card[data-docid="${selectedDocId}"]`);
+    if (card) card.click();   // 🔥 클릭 이벤트 강제 실행
+    localStorage.removeItem("selected_docid");
+  }
+});
+
+
+// 🔹 CSRF 토큰
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.slice(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+document.getElementById("dataset-select").addEventListener("change", async (e) => {
+  const datauid = e.target.value;
+  if (!datauid) return;
+
+  const res = await fetch(`/master/params_dataset_cols/?datauid=${datauid}`);
+  const json = await res.json();
+
+  const keySel = document.getElementById("dataset-key");
+  const nameSel = document.getElementById("dataset-name");
+  const orderSel = document.getElementById("dataset-order");
+
+  [keySel, nameSel, orderSel].forEach(sel => sel.innerHTML = "");
+
+  json.datacols.forEach(col => {
+    const opt = `<option value="${col.querycolnm}">${col.dispcolnm}</option>`;
+    keySel.insertAdjacentHTML("beforeend", opt);
+    nameSel.insertAdjacentHTML("beforeend", opt);
+    orderSel.insertAdjacentHTML("beforeend", opt);
+  });
+});
+
+document.getElementById("dataset-confirm-btn").addEventListener("click", () => {
+  document.getElementById("datasetyn").value = "Y";
+  document.getElementById("dataset-status").innerText = "사용";
+
+  document.getElementById("datauid").value =
+    document.getElementById("dataset-select").value;
+
+  document.getElementById("dataset_key").value =
+    document.getElementById("dataset-key").value;
+
+  document.getElementById("dataset_name").value =
+    document.getElementById("dataset-name").value;
+
+  document.getElementById("dataset_order").value =
+    document.getElementById("dataset-order").value;
+
+  datasetModal.style.display = "none";
+});
+
+function closedataModal() {
+  document.getElementById("dataset-modal").style.display = "none";
+}
+
+/* ESC close */
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closedataModal();
+});
+
+// 초기 로딩 시에는 선택된 문서가 없으므로 저장/삭제 숨김
+window.addEventListener("DOMContentLoaded", () => {
+  const selectedDocId = localStorage.getItem("selected_docid");
+  if (!selectedDocId) {
+    document.querySelectorAll(".edit-only").forEach(btn => {
+      btn.style.display = "inline-flex";
+    });
+  }
+  showProjectSelect();   // 🔥 최초 로딩은 항상 select
+});
+
+function showProjectSelect() {
+  document.getElementById("projectid").style.display = "block";
+  document.getElementById("projectnm-text").style.display = "none";
+}
+
+function showProjectText(projectnm) {
+  document.getElementById("projectid").style.display = "none";
+  const textEl = document.getElementById("projectnm-text");
+  textEl.style.display = "block";
+  textEl.textContent = projectnm || "";
+}
+
+
+</script>
+
+
+{% endblock %}

@@ -1,0 +1,146 @@
+<style>
+/* 헬프 */
+.help_base_modal_content {
+    background: var(--white);
+    padding: 30px 25px;
+    border-radius: 12px;
+    width: 1000px;
+    height: 600px;
+    box-shadow: 0 8px 24px var(--black-shadow);
+    /* text-align: center; */
+    overflow-y: auto;
+}
+
+.alert {
+  background: var(--white);
+  padding: 30px 25px;
+  border-radius: 12px;
+  width: 200px;
+  height: 22px;
+  box-shadow: 0 8px 24px var(--black-shadow);
+  text-align: center;
+  background: var(--white);
+  transition: opacity 0.5s;
+}
+
+.hidden {
+  display: none;
+}
+
+.fadeout {
+  opacity: 0;
+}
+</style>
+
+<!-- 헬프 -->
+<div id="help_base_modal" class="base_modal_overlay" style="display: none;">
+  <div class="help_base_modal_content" style="position: relative">
+    <!-- ✅ 닫기 버튼 -->
+    <button id="help_base_modal_close" style="
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: transparent;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+    ">&times;</button>
+
+    <h2 style="font-weight: bold; text-align: center;">SmartDocu 헬프</h2>
+
+    <div id="html_content">
+
+    </div>
+
+    {% if messages %}
+      <ul class="form-error" style="margin-top: 20px; padding-left: 20px;">
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}      
+  </div>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="formatLoading">
+  <div class="loading-content">
+    <div class="spinner"></div>
+    <div id="loading-text" style="text-align: center;"></div>
+    <div >잠시만 기다려 주세요.</div>
+  </div>
+</div>
+
+<script>
+function help_showLoading() {
+  const overlay = document.getElementById('formatLoading');
+  const text = document.getElementById('loading-text');
+
+  
+  // 오버레이 숨기기
+  overlay.style.display = 'flex';
+  text.textContent = '도움말 불러 오는 중입니다...';
+}
+
+function help_hideLoading() {
+  const overlay = document.getElementById('formatLoading');
+  const text = document.getElementById('loading-text');
+  
+  // 오버레이 숨기기
+  overlay.style.display = 'none';
+  text.textContent = '';
+}
+
+// 헬프 모달
+function show_help_base_modal(page){
+  help_showLoading()
+  // 매개변수
+  // console.log(page);
+
+  fetch("{% url 'search_help' %}", {
+      method: "POST",
+      headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrftoken
+      },
+      body: JSON.stringify({url: page})
+  })
+  .then(res => {
+    if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+        help_hideLoading();
+    }
+    return res.json();
+  }).then(data => {
+    document.getElementById("help_base_modal").style.display = "flex";
+    // 여기서 data 사용
+    const area = document.getElementById('html_content')
+
+    const help_content = data.data[0]
+
+    if (help_content){
+      area.innerHTML = data.data[0]['desc']
+    } else {
+      area.innerHTML = '설명이 없습니다.'
+    }
+    
+    help_hideLoading();
+  })
+  .catch(err => {
+    alert(`호출 중 에러 발생 하였습니다. ${err}`);
+    help_hideLoading();
+  })
+}
+
+// 모달 관련 이벤트
+document.addEventListener("DOMContentLoaded", function () {
+  ////////// help 영역 시작
+  // help 모달 닫기
+  const help_base_closeBtn = document.getElementById("help_base_modal_close");
+  const help_base_modal = document.getElementById("help_base_modal");
+  help_base_closeBtn.addEventListener("click", function () {
+      help_base_modal.style.display = "none";
+  });
+});
+
+</script>

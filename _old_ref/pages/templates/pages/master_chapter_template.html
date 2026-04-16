@@ -1,0 +1,71 @@
+{% extends 'pages/base.html' %}
+
+{% block title %}
+문서 편집기
+{% endblock %}
+
+{% load static %}
+{% block content %}
+<style>
+  thead th {
+      background-color: transparent !important;
+      color: black;
+      font-weight: normal;
+  }
+  th, td {
+      padding: 0px !important;
+  }
+  tbody tr:nth-child(even){
+      background-color: transparent;
+  }
+  body tr:hover {
+      background-color: transparent;
+  }
+</style>
+  <!-- Vite dev 서버 연결 시 -->
+  <script src="{% static 'ckeditor/ckeditor.js' %}"></script>
+  <div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>챕터 템플릿 관리: {{ ChapterNm }}</div>
+  </div>
+
+  <button type="button" class="icon-btn" id="back-btn">
+    <img src="{% static 'icons/back.svg' %}" alt="뒤로가기" class="icon-img config-icon">
+  </button>
+</div>
+
+  <!-- 1️⃣ STATIC_URL 먼저 정의 -->
+<script>
+  sessionStorage.removeItem('chapter_template_chapteruid')
+  
+  window.STATIC_URL = "{% static '' %}";
+  
+  window.__INITIAL_DATA__ = {{initial_data}};
+</script>
+
+<!-- 2️⃣ Vue 빌드 파일 불러오기 -->
+<!-- 개발 환경: Vite dev server에서 Vue 앱 실행 -->
+<!-- <script type="module" src="http://localhost:5173/src/main.js"></script> -->
+<!-- 배포 환경: 빌드된 Vue 앱 JS 로딩 -->
+<link rel="stylesheet" href="{% static 'vue/assets/index.css' %}">
+<script type="module" src="{% static 'vue/assets/index.js' %}"></script>
+
+<div id="master_chapter_template_vue" style="width: 100%;" data-editbuttonyn="{{ editbuttonyn }}"></div>
+
+
+<script>
+document.getElementById("back-btn").addEventListener("click", () => {
+  
+  master_chapteruid = sessionStorage.getItem('master_chapters_chapteruid')
+
+  if (master_chapteruid){
+      url = `/master/chapters/?chapteruid=${master_chapteruid}`;
+  } else{
+      url = `/master/chapters/`;
+  }
+  sessionStorage.removeItem('master_chapters_chapteruid')
+  location.href = url
+});
+</script>
+{% endblock %}

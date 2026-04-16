@@ -1,0 +1,390 @@
+{% extends 'pages/base.html' %}
+{% load custom_filters %}
+{% load static %}
+
+{% block title %}차트 관리 (UI){% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>차트 관리 - {{selected_objectnm}}({{selected_chapternm}})</div>
+  </div>
+
+  <button type="button" class="icon-btn" id="back-btn">
+    <img src="{% static 'icons/back.svg' %}" alt="뒤로가기" class="icon-img config-icon">
+  </button>
+</div>
+
+<!-- 🔹 필터 form (hidden input 유지) -->
+<form method="get" action="" class="form-filter-group" id="filter-form">
+  <input type="hidden" id="docid" name="docid" value="{{ request.GET.docid }}">
+  <input type="hidden" id="chapteruid" name="chapteruid" value="{{ selected_chapteruid }}">
+  <input type="hidden" id="objectuid" name="objectuid" value="{{ selected_objectuid }}">
+  <input type="hidden" id="objectnm"  name="objectnm" value="{{ selected_objectnm }}">
+  <input type="hidden" id="datauid" name="datauid" value="{{ selected_datauid }}">
+  <input type="hidden" id="chart_type" name="chart_type" value="{{ selected_chart_type }}">
+</form>
+
+<div style="display: flex; gap: 30px; padding-right: 10px;">
+
+  <!-- 영역1: 데이터 카드 목록 -->
+  <div style="flex: 0 0 15%;">
+    <h4>데이터 목록</h4>
+    <div class="chapter-card-container" id="data-card-container">
+      {% for data in all_datas %}
+        <div class="chapter-card {% if selected_datauid == data.datauid %}selected{% endif %}"
+             data-datauid="{{ data.datauid }}"
+             data-datanm="{{ data.datanm|escape }}">
+          <div class="card-title">{{ data.datanm }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 영역2: 차트 유형 카드 목록 -->
+  <div style="flex: 0 0 15%;">
+    <h4>차트 유형</h4>
+    <div class="chapter-card-container" id="chart-card-container">
+      {% for chart in chart_types %}
+        <div class="chapter-card {% if selected_chart_type == chart.code %}selected{% endif %}"
+             data-chartcode="{{ chart.code }}"
+             data-chartname="{{ chart.name|escape }}">
+          <div class="card-title">{{ chart.name }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 영역3: 차트 설정 -->
+  <div id="value-settings" style="flex: 0 0 40%;">
+    <h3>차트 설정</h3>
+    <p>* 붉은 글씨는 필수값입니다.</p>
+
+    <div class="form-group-left">
+      <label style="width: 150px;">차트 크기 :</label>
+      <div style="display: flex; gap: 8px; flex: 1;">
+        <input type="number" step="1" name="chart_width" id="chart_width" placeholder="가로 (px)" value="{{ chart_config.chart_width|default:chart_width_default|default:500 }}" style="flex: 0.5;">
+        <input type="number" step="1" name="chart_height" id="chart_height" placeholder="세로 (px)" value="{{ chart_config.chart_height|default:chart_height_default|default:250 }}" style="flex: 0.5;">  
+      </div>
+    </div>
+
+    {% for field in value_settings %}
+      {% with chart_value=chart_config|get_item:field.key %}
+        {% with default_value=field.default|default:'' %}
+          {% with final_value=chart_value|default:default_value %}
+
+            <div class="form-group-left">
+              <label for="{{ field.key }}" 
+                    {% if field.required %}style="color: red; width: 150px; display: inline-block;"{% else %}style="width: 150px; display: inline-block;"{% endif %}>
+                {{ field.label }}
+              </label>
+
+              {% if field.type == "text" or field.type == "number" %}
+                <input type="{{ field.type }}" id="{{ field.key }}" name="{{ field.key }}" value="{{ final_value }}">
+
+              {% elif field.type == "select" %}
+                {% if field.key == "colorPalette" %}
+                  <select id="{{ field.key }}" name="{{ field.key }}" class="color-palette-select">
+                    {% for group in field.options %}
+                      <optgroup label="{{ group.group }}">
+                        {% for option in group.children %}
+                          <option value="{{ option.value }}"
+                                  {% if final_value == option.value %}selected{% endif %}
+                                  data-gradient="{{ option.preview_gradient }}">
+                            {{ option.label }}
+                          </option>
+                        {% endfor %}
+                      </optgroup>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  <select id="{{ field.key }}" name="{{ field.key }}">
+                    {% if not field.required %}
+                      <option value="">-- 선택하세요 --</option>
+                    {% endif %}
+                    {% for option in field.options %}
+                      <option value="{{ option.value }}" {% if final_value == option.value %}selected{% endif %}>
+                        {{ option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                {% endif %}
+              {% elif field.type == "boolean" %}
+                <label for="{{ field.key }}">
+                  <input type="checkbox" id="{{ field.key }}" name="{{ field.key }}" value="true" {% if final_value %}checked{% endif %}>
+                  {% if field.required %}<span style="color: red;">*</span>{% endif %}
+                </label>
+              {% endif %}
+            </div>
+
+          {% endwith %}
+        {% endwith %}
+      {% endwith %}
+    {% endfor %}
+
+    <!-- 액션 버튼 -->
+    <div class="button-group">
+      {% if selected_chart_type %}
+        {% if user.editbuttonyn == 'Y' %}
+        <button id="btn-reset" type="button" class="icon-btn">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/new.svg' %}" class="icon-img new-icon" title="신규">
+            <span class="icon-label">신규</span>
+          </div>  
+        </button>
+
+        <button id="btn-save" type="button" class="icon-btn">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/save.svg' %}" class="icon-img save-icon" title="저장">
+            <span class="icon-label">저장</span>
+          </div>  
+        </button>
+
+        <button id="btn-delete" type="button" class="icon-btn">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/delete.svg' %}" class="icon-img del-icon" title="삭제">
+            <span class="icon-label">삭제</span>
+          </div>  
+        </button>
+        {% endif %}
+        <button id="btn-preview" type="button" class="icon-btn">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/view.svg' %}" class="icon-img config-icon" title="미리보기">
+            <span class="icon-label">미리보기</span>
+          </div>       
+        </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- 우측: 미리보기 모달 -->
+  <div id="previewModal" class="modal_a4">
+    <div class="modal_a4-content">
+      <span id="closePreviewModal" class="close-a4">&times;</span>
+      <h3 style="text-align:center;">미리보기 결과</h3>
+      <div id="preview-content"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  // 🔹 카드 클릭 → form submit 기능
+  function setupCardSelection(containerId, hiddenInputId, dataAttr) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const cards = container.querySelectorAll(".chapter-card");
+    cards.forEach(card => {
+      card.addEventListener("click", () => {
+        // 선택 표시
+        cards.forEach(c => c.classList.remove("selected"));
+        card.classList.add("selected");
+
+        // hidden input 값 업데이트
+        const input = document.getElementById(hiddenInputId);
+        if (input) input.value = card.dataset[dataAttr];
+
+        // form submit
+        const form = document.getElementById("filter-form");
+        if (form) form.submit();
+      });
+    });
+  }
+
+  setupCardSelection("data-card-container", "datauid", "datauid");
+  setupCardSelection("chart-card-container", "chart_type", "chartcode");
+
+
+  // 🔹 color-palette select 초기화
+  const selects = document.querySelectorAll(".color-palette-select");
+  selects.forEach(select => {
+    function updateGradient(sel) {
+      const selectedOption = sel.options[sel.selectedIndex];
+      const gradient = selectedOption.getAttribute("data-gradient");
+      if (gradient) {
+        sel.style.backgroundImage = `linear-gradient(to right, ${gradient})`;
+        sel.style.color = '#000';
+      }
+    }
+    updateGradient(select);
+    select.addEventListener("change", () => updateGradient(select));
+  });
+
+  // 🔹 미리보기
+  document.getElementById("btn-preview").addEventListener("click", function () {
+    const inputs = document.querySelectorAll("#value-settings input, #value-settings select");
+    const properties = {};
+    inputs.forEach(input => {
+      if (input.type === "checkbox") properties[input.name] = input.checked;
+      else properties[input.name] = input.value;
+    });
+
+    const selectedDatauid = document.getElementById("datauid")?.value;
+    const selectedChartType = document.getElementById("chart_type")?.value;
+    const chartWidth = document.getElementById("chart_width")?.value;
+    const chartHeight = document.getElementById("chart_height")?.value;
+
+    if (chartWidth) properties["chart_width"] = chartWidth;
+    if (chartHeight) properties["chart_height"] = chartHeight;
+
+    if (!selectedDatauid || !selectedChartType) {
+      alert("데이터, 차트 유형을 모두 선택해주세요.");
+      return;
+    }
+
+    fetch("{% url 'master_chart_preview_png' %}", {
+      method: "POST",
+      credentials: "include",   // 👈 여기
+      headers: {"Content-Type": "application/json", "X-CSRFToken": "{{ csrf_token }}"},
+      body: JSON.stringify({ selected_datauid: selectedDatauid, selected_chart_type: selectedChartType, properties })
+    })
+    .then(res => { if(!res.ok) return res.json().then(err=>{throw new Error(err.error||"차트 생성 실패");}); return res.blob(); })
+    .then(blob => {
+      const imgURL = URL.createObjectURL(blob);
+      document.getElementById("preview-content").innerHTML = `<div class="a4-frame"><img src="${imgURL}" alt="차트 미리보기"></div>`;
+      document.getElementById("previewModal").style.display = "flex";
+    })
+    .catch(err => alert("차트 생성 실패 : " + err.message));
+  });
+
+  document.getElementById("closePreviewModal").onclick = function() {
+    document.getElementById("previewModal").style.display = "none";
+  };
+
+
+  // 🔹 저장
+const saveBtn = document.getElementById("btn-save");
+if (saveBtn) {
+  saveBtn.addEventListener("click", () => {
+    const inputs = document.querySelectorAll("#value-settings input, #value-settings select");
+    const chartConfig = {};
+    inputs.forEach(input => {
+      chartConfig[input.name] = input.type === "checkbox" ? input.checked : input.value;
+    });
+
+    const chapteruid = document.getElementById("chapteruid")?.value;
+    const objectnm = document.getElementById("objectnm")?.value;
+    const objectuid = document.getElementById("objectuid")?.value;
+    const datauid = document.getElementById("datauid")?.value;
+    const displaytype = document.getElementById("chart_type")?.value;
+
+    // 🔹 로그 출력
+    // console.log("chapteruid:", chapteruid);
+    // console.log("objectnm:", objectnm);
+    // console.log("objectuid:", objectuid);
+    // console.log("datauid:", datauid);
+    // console.log("displaytype:", displaytype);
+    
+    if (!chapteruid || !objectnm || !objectuid || !datauid || !displaytype) {
+      alert("모든 항목을 정확히 선택해주세요.");
+      return;
+    }
+
+    fetch("{% url 'master_charts_save' %}", {
+      method: "POST",
+      credentials: "include",   // 👈 여기
+      headers: {"Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": "{{ csrf_token }}"},
+      body: new URLSearchParams({
+        chapteruid, objectnm, objectuid, datauid, displaytype,
+        chartjson: JSON.stringify(chartConfig),
+        chart_width: document.getElementById("chart_width")?.value,
+        chart_height: document.getElementById("chart_height")?.value
+      })
+    })
+    .then(r=>r.json()).then(d=>{
+      if(d.success) alert("차트가 저장되었습니다."); else alert("저장 실패: "+(d.error||"알 수 없는 오류"));
+    }).catch(err=>alert("요청 중 오류 발생: "+err.message));
+  });
+}
+
+  // 🔹 초기화
+  function resetChartSettings() {
+      // 1️⃣ 입력값 초기화
+      const inputs = document.querySelectorAll("#value-settings input, #value-settings select");
+      inputs.forEach(input => { 
+          if(input.type==="checkbox") input.checked=false; 
+          else input.value=""; 
+      });
+
+      // 2️⃣ 미리보기 초기화
+      document.getElementById("preview-content").innerHTML="";
+
+      // 3️⃣ 차트 설정 영역 숨기기 (선택 UI에 따라 유지 가능)
+      document.getElementById("value-settings").style.display="none";
+
+      // 4️⃣ 카드 선택 초기화
+      const dataCards = document.querySelectorAll("#data-card-container .chapter-card");
+      dataCards.forEach(card => card.classList.remove("selected"));
+
+      const chartCards = document.querySelectorAll("#chart-card-container .chapter-card");
+      chartCards.forEach(card => card.classList.remove("selected"));
+
+      // 5️⃣ hidden input 초기화
+      document.getElementById("datauid").value = "";
+      document.getElementById("chart_type").value = "";
+
+      // 🔹 URL에서 datauid, chart_type 제거
+      const url = new URL(window.location);
+      url.searchParams.delete("datauid");
+      url.searchParams.delete("chart_type");
+      window.location.href = url.toString();
+  }
+
+const resetBtn = document.getElementById("btn-reset");
+if (resetBtn) {
+  resetBtn.addEventListener("click", resetChartSettings);
+}
+
+  // 🔹 삭제
+const deleteBtn = document.getElementById("btn-delete");
+if (deleteBtn) {
+  deleteBtn.addEventListener("click", () => {
+
+    if(!confirm("정말 삭제하시겠습니까?")) return;
+    const chapteruid=document.getElementById("chapteruid")?.value;
+    const objectnm=document.getElementById("objectnm")?.value;
+    if(!chapteruid||!objectnm){ alert("삭제할 챕터 또는 항목이 선택되지 않았습니다."); return; }
+    fetch("{% url 'master_charts_delete' %}",{
+      method:"POST",
+      credentials: "include",   // 👈 여기
+      headers:{"Content-Type":"application/json","X-CSRFToken":"{{ csrf_token }}"},
+      body: JSON.stringify({chapteruid,objectnm})
+    }).then(r=>r.json()).then(d=>{
+      if(d.success){ alert("삭제되었습니다."); resetChartSettings(); }
+      else alert("삭제 실패: "+(d.error||"알 수 없는 오류"));
+    }).catch(err=>alert("삭제 요청 중 오류가 발생했습니다."));
+  });
+}
+
+  // 🔹 뒤로가기
+document.getElementById("back-btn").addEventListener("click", () => {
+  const chapteruid = "{{ selected_chapteruid|escapejs }}";
+  const objectuid = "{{ selected_objectuid|escapejs }}";
+  const chapter_template_chapteruid = sessionStorage.getItem('chapter_template_chapteruid');
+  const chapter_objects_read_genchapteruid = sessionStorage.getItem('chapter_objects_read_genchapteruid');
+
+  if (chapter_template_chapteruid) {
+    window.location.href =
+      `/master/chapter_template/?chapteruid=${chapter_template_chapteruid}`;
+  } else if (chapter_objects_read_genchapteruid) {
+    window.location.href =
+      `/req/chapter_objects_read/?genchapteruid=${chapter_objects_read_genchapteruid}`;
+  } else if (chapteruid && objectuid) {
+    window.location.href =
+      `/master/object/?chapteruid=${chapteruid}&objectuid=${objectuid}`;
+  } else if (chapteruid) {
+    // objectuid 없는 경우라도 챕터까진 유지
+    window.location.href =
+      `/master/object/?chapteruid=${chapteruid}`;
+  } else {
+    window.location.href = `/master/object/`;
+  }
+});
+
+});
+</script>
+{% endblock %}

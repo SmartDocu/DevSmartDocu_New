@@ -1,0 +1,466 @@
+{% extends 'pages/base.html' %}
+{% block title %}데이터 관리{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div class="gradient-bar"></div>데이터 관리
+</div>
+
+<form method="get" action="" class="form-filter">
+  <label for="docid">대상 문서:</label>
+  <select name="docid" id="docid" required onchange="this.form.submit()">
+    {% for doc in docs %}
+      <option value="{{ doc.docid }}" {% if docid == doc.docid %}selected{% endif %}>{{ doc.docnm }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<div style="display: flex; gap: 30px; padding-right: 10px;">
+  <div style="flex: 25%;">
+    <h3>데이터 목록</h3>
+    <div class ="table-container">
+      <table id="docs-table">
+        <thead>
+          <tr>
+            <th>연결정보</th>
+            <th>데이터명</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for Data in Datas %}
+            <tr 
+              data-datauid="{{ Data.datauid }}"
+              data-datanm="{{ Data.datanm|escapejs }}"
+              data-connectcd="{{ Data.connectcd }}"
+            >
+              <td>{{ Data.connectcd }}</td>
+              <td>{{ Data.datanm }}</td>
+              <td style="text-align: center;">
+                <button type="button" class="btn-tbl btn-primary Data-select-btn" data-datauid="{{ Data.datauid }}">선택</button>
+              </td>
+            </tr>
+            {% with "query-json-"|add:Data.datauid as json_id %}
+              {{ Data.query|default:''|json_script:json_id }}
+            {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 가운데: 데이터 상세 정보 -->
+  <div style="flex: 35%;">
+    <h3>데이터 상세</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Param 이름</th>
+          <th>Sample 값</th>
+          <th>숫자여부</th>
+          <th>정렬순서</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for param in DataParams %}
+          <tr>
+            <td>{{ param.paramnm }}</td>
+            <td>{{ param.samplevalue }}</td>
+            <td style="text-align: center;">
+              {% if param.intyn %}
+                ✓
+              {% else %}
+                
+              {% endif %}
+            </td>
+            <td style="text-align: center;">{{ param.orderno }}</td>
+          </tr>
+        {% endfor %}
+        {% if DataParams|length == 0 %}
+          <tr><td colspan="3" style="text-align: center;">데이터 없음</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <div  style="padding-top: 15px;">
+      <div class="form-group">
+        <input type="hidden" id="datauid" value="">
+        <input type="hidden" id="current-docid" value="{{ docid }}">
+
+        <label for="data-connectcd">연결정보</label>
+        <select id="data-connectcd">
+          {% for conn in connectcd_list %}
+            <option value="{{ conn.connectcd }}">{{ conn.connectnm }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="data-datanm">데이터명</label>
+        <input type="text" id="data-datanm"/>
+      </div>
+
+      <div class="form-group">
+        <label for="data-query">쿼리</label>
+        <textarea
+        id="data-query"
+        rows="1"
+        oninput="autoResize(this)"
+        ></textarea>
+      </div>
+
+      <div class="button-group">
+        <button type="button" class="btn btn-secondary" id="btn-reset">초기화</button>
+        <button type="button" class="btn btn-primary" id="btn-save">저장</button>
+        <button type="button" class="btn btn-danger" id="btn-delete">삭제</button>
+        <button type="button" class="btn btn-secondary" id="btn-fill-cols">컬럼 정보 채우기</button>
+      </div>
+    </div>
+</div>
+
+<!-- 📗 오른쪽: 선택 데이터 컬럼 -->
+<div style="flex: 35%;">
+  <h3>데이터 컬럼</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Query Column</th>
+        <th>Display Column</th>
+        <th>Data Type</th>
+        <th>Measure 여부</th>
+      </tr>
+    </thead>
+    <tbody id="data-cols-tbody">
+      <tr><td colspan="4" style="text-align:center;">데이터를 선택해주세요</td></tr>
+    </tbody>
+  </table>
+
+
+  <!-- 저장 버튼 추가: 테이블 아래, 우측 정렬 -->
+  <div class="button-group">
+    <button type="button" class="btn btn-primary" id="btn-save-cols">컬럼 전체 저장</button>
+  </div>
+
+  <!-- <div id="query-cols-result"></div> -->
+</div>
+
+{{ DataCols|json_script:"data-cols-json" }}
+
+<script>
+function autoResize(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = (textarea.scrollHeight + 10 || 40) + 'px';
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  const textarea = document.getElementById("data-query");
+  autoResize(textarea); // 초기 높이 조정
+
+  // DataCols JSON 데이터 읽기
+  const dataCols = JSON.parse(document.getElementById("data-cols-json").textContent);
+
+  const buttons = document.querySelectorAll(".Data-select-btn");
+  buttons.forEach(btn => {
+    btn.addEventListener("click", function () {
+      
+      const row = this.closest("tr");
+      const datanm = row.querySelector("td:nth-child(2)").innerText.trim();
+      const connectcd = row.querySelector("td:nth-child(1)").innerText.trim();
+      const datauid = row.dataset.datauid;
+
+      // JSON 스크립트 태그 id = 'query-json-' + datauid
+      const queryScript = document.getElementById(`query-json-${datauid}`);
+      let query = "";
+      if (queryScript) {
+        query = JSON.parse(queryScript.textContent);
+      }
+
+      // 가운데 영역 폼 채우기
+      document.getElementById("data-datanm").value = datanm;
+      document.getElementById("data-query").value = query;
+      document.getElementById("data-connectcd").value = connectcd;
+      document.getElementById("datauid").value = datauid || "";
+
+      autoResize(document.getElementById("data-query")); // textarea 높이 조정
+
+      // 우측 영역 데이터 컬럼 테이블 업데이트
+      const tbody = document.getElementById("data-cols-tbody");
+      tbody.innerHTML = ""; // 초기화
+
+      if (!datauid) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">데이터를 선택해주세요</td></tr>`;
+        return;
+      }
+
+      // datauid 필터링
+      const filteredCols = dataCols.filter(col => String(col.datauid) === String(datauid));
+
+      if (filteredCols.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">컬럼이 없습니다.</td></tr>`;
+        return;
+      }
+
+      // 필터된 컬럼 각각 tr 생성
+      filteredCols.forEach(col => {
+        const tr = document.createElement("tr");
+
+        // measureyn 체크 여부 처리 (boolean or string 'true')
+        const isChecked = col.measureyn === true || col.measureyn === "true";
+
+        tr.innerHTML = `
+          <td>${col.querycolnm || ''}</td>
+          <td><input type="text" class="dispcolnm-input" value="${col.dispcolnm || ''}"></td>
+          <td>
+            <select class="datatypecd-select">
+              <option value="D" ${col.datatypecd === 'D' ? 'selected' : ''}>일자 (D)</option>
+              <option value="C" ${col.datatypecd === 'C' ? 'selected' : ''}>문자 (C)</option>
+              <option value="I" ${col.datatypecd === 'I' ? 'selected' : ''}>숫자 (I)</option>
+            </select>
+          </td>
+          <td style="text-align: center;">
+            <input type="checkbox" class="measureyn-checkbox" ${isChecked ? 'checked' : ''}>
+          </td>
+        `;
+
+        tr.dataset.datauid = col.datauid;
+        tr.dataset.querycolnm = col.querycolnm;
+
+        tbody.appendChild(tr);
+      });
+
+      // 기존 개별 저장 버튼 이벤트 관련 코드는 삭제했습니다.
+
+    });
+  });
+
+  // 초기화 버튼 동작
+  document.getElementById("btn-reset").addEventListener("click", function () {
+    document.getElementById("data-connectcd").value = "";
+    document.getElementById("data-datanm").value = "";
+    document.getElementById("data-query").value = "";
+    document.getElementById("datauid").value = "";
+
+    autoResize(document.getElementById("data-query"));
+
+    const tbody = document.getElementById("data-cols-tbody");
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">데이터를 선택해주세요</td></tr>`;
+  });
+
+  // 저장 버튼 동작
+  document.getElementById("btn-save").addEventListener("click", async function () {
+    const datauid = document.getElementById("datauid").value;
+    const docid = document.getElementById("current-docid").value;
+    const datanm = document.getElementById("data-datanm").value.trim();
+    const connectcd = document.getElementById("data-connectcd").value;
+    const query = document.getElementById("data-query").value.trim();
+
+    if (!docid || !datanm || !connectcd) {
+      alert("문서, 데이터명, 연결정보는 필수입니다.");
+      return;
+    }
+
+    const payload = {
+      datauid,
+      docid,
+      datanm,
+      connectcd,
+      query
+    };
+
+    try {
+      const res = await fetch("/master/datas_save/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await res.json();
+      if (result.result === "success") {
+        alert("저장 완료");
+        location.reload();
+      } else {
+        alert("저장 실패: " + (result.message || "오류"));
+      }
+    } catch (err) {
+      alert("저장 요청 실패: " + err.message);
+    }
+  });
+
+  // 삭제 버튼 동작
+  document.getElementById("btn-delete").addEventListener("click", async function () {
+    const datauid = document.getElementById("datauid").value;
+    if (!datauid) {
+      alert("삭제할 데이터를 선택해주세요.");
+      return;
+    }
+    if (!confirm("삭제하시겠습니까?")) return;
+
+    try {
+      const res = await fetch("/master/datas_delete/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({ datauid })
+      });
+
+      const result = await res.json();
+
+      if (result.result === "success") {
+        alert("삭제 완료");
+        location.reload();
+      } else {
+        alert("삭제 실패: " + (result.message || "오류"));
+      }
+    } catch (err) {
+      alert("삭제 요청 실패: " + err.message);
+    }
+  });
+
+  document.getElementById("btn-save-cols").addEventListener("click", async function () {
+  const tbody = document.getElementById("data-cols-tbody");
+  const rows = tbody.querySelectorAll("tr");
+
+  if (rows.length === 0) {
+    alert("저장할 데이터가 없습니다.");
+    return;
+  }
+
+  // 저장할 컬럼 데이터 배열 만들기
+  const colsToSave = [];
+
+  for (const tr of rows) {
+    const datauid = tr.dataset.datauid;
+    const querycolnm = tr.dataset.querycolnm;
+
+    if (!datauid || !querycolnm) continue;
+
+    const dispcolnm = tr.querySelector(".dispcolnm-input").value.trim();
+    const datatypecd = tr.querySelector(".datatypecd-select").value;
+    const measureyn = tr.querySelector(".measureyn-checkbox").checked;
+
+    colsToSave.push({
+      datauid,
+      querycolnm,
+      dispcolnm,
+      datatypecd,
+      measureyn
+    });
+  }
+
+  if (colsToSave.length === 0) {
+    alert("저장할 컬럼 데이터가 없습니다.");
+    return;
+  }
+
+  try {
+    const res = await fetch("/master/datacols_save/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken")
+      },
+      body: JSON.stringify(colsToSave)
+    });
+
+    const result = await res.json();
+
+    if (result.result === "success") {
+      alert("모든 컬럼이 성공적으로 저장되었습니다.");
+      location.reload(); // 화면 전체 새로고침
+    } else {
+      alert("저장 실패: " + (result.message || "오류"));
+    }
+  } catch (err) {
+    alert("저장 요청 실패: " + err.message);
+  }
+});
+
+
+
+  document.getElementById("btn-fill-cols").addEventListener("click", async function () {
+    if (!confirm("컬럼 정보가 이미 있을 경우 정보가 삭제 될 수 있습니다. 실행하시겠습니까?")) {
+      return;
+    }
+
+    const datauid = document.getElementById("datauid").value;
+    const docid = document.getElementById("current-docid").value;  // ✅ docid 가져오기
+
+    if (!datauid || !docid) {
+      alert("먼저 데이터를 선택해주세요.");
+      return;
+    }
+
+    // // sampleParams 추출
+    // const paramRows = document.querySelectorAll("table tbody tr");
+    // const sampleParams = {};
+
+    // paramRows.forEach(row => {
+    //   const cells = row.querySelectorAll("td");
+    //   if (cells.length >= 2) {
+    //     const paramnm = cells[0].textContent.trim();
+    //     const samplevalue = cells[1].textContent.trim();
+    //     if (paramnm && samplevalue) {
+    //       sampleParams[paramnm] = samplevalue;
+    //     }
+    //   }
+    // });
+
+    try {
+      const res = await fetch("/master/datacols_create/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({
+          datauid: datauid,
+          docid: docid  //  함께 전송
+          // params: sampleParams
+        })
+      });
+
+      const result = await res.json();
+
+      console.log("서버 응답 전체:", result);  // ★ 여기에 로그 추가 ★
+
+      if (result.error) {
+        document.getElementById("query-cols-result").innerText = "오류: " + result.error;
+        return;
+      }
+
+      // 성공 시 데이터 컬럼 표 새로고침을 위해 페이지 새로고침
+        alert("컬럼 정보가 저장되었습니다.");
+        location.reload();  // 전체 페이지 새로고침
+
+    } catch (err) {
+      document.getElementById("query-cols-result").innerText = "컬럼 정보 가져오기 중 오류 발생: " + err.message;
+    }
+  });
+
+});
+
+// CSRF 토큰 가져오기 함수 (Django CSRF 용)
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+</script>
+
+
+{% endblock %}

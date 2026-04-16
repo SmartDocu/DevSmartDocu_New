@@ -1,0 +1,314 @@
+{% extends 'pages/base.html' %}
+
+{% block title %}
+그룹 사용자 관리
+{% endblock %}
+
+{% block content %}
+<style>
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* 버튼 로딩 상태 */
+  .btn-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  .btn-loading .btn-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 6px;
+  }
+  .info{
+    text-align: center;
+  }
+</style>
+<div class="page-title">
+    <div class="gradient-bar"></div>
+    그룹 사용자 관리: {{ groupnm }}
+</div>
+
+<div style="display: flex; gap: 20px; min-height: 80%;">
+  <!-- 왼쪽 -->
+  <div style="flex: 1.5; border-right: 1px solid #ddd; padding-right: 20px;">
+    <h3>사용자 목록</h3>
+    <div class="table-container">
+      <table class="table table-bordered table-sm">
+        <thead>
+          <tr>
+            <th style="width: 35%;">이메일</th>
+            <th style="width: 25%;">사용자명</th>
+            <th style="width: 10%;">상태</th>
+            <th class="info"  style="width:20%;">생성일시</th>
+            <th class="info"  style="width:10%"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in groupusers %}
+          <tr data-groupid="{{ user.groupid }}"
+              data-useruid="{{ user.useruid }}"
+              data-usernm="{{ user.usernm }}"
+              data-email="{{ user.email }}"
+              data-useyn="{{ user.useyn }}"
+              data-creator="{{ user.creator }}"
+              data-creatornm="{{ user.creatornm}}"
+              data-createdts="{{ user.createdts }}">
+              <td><strong>{{ user.email }}</strong>
+                  {% if not user.useyn %}<small class="text-muted">(비활성)</small>{% endif %}
+              </td>
+              <td>
+                  <strong>{{ user.usernm }}</strong>
+                  {% if not user.useyn %}<small class="text-muted">(비활성)</small>{% endif %}
+              </td>
+              <td class="info">
+                  {% if user.useyn %}<span>활성</span>
+                  {% else %}<span>비활성</span>
+                  {% endif %}
+              </td>
+              <td class="info"><span class="text-muted">{{user.createdts}}</span></td>
+              <td class="info"><button class="btn-tbl btn-primary groups-select-btn" type="button">선택</button></td>
+          </tr>
+          {% empty %}
+          <tr>
+              <td colspan="5" class="text-center text-muted py-4">등록된 사용자가 없습니다.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    
+  </div>
+
+  <!-- 오른쪽 -->
+  <div style="flex: 1.5; padding-left: 20px;">
+    <h2>사용자 상세</h2>
+    <form id="groups-detail-form" enctype="multipart/form-data">
+      <input id="groupid" name="groupid" type="text" hidden>
+      <input id="useruid" name="useruid" type="text" hidden>
+      
+      <div class="form-group-left">
+        <label>이메일:</label>
+        <input id="email" name="email" type="text">
+      </div>
+
+      <div class="form-group-left">
+        <label>사용자명:</label>
+        <input id="usernm" name="usernm" type="text" disabled>
+      </div>
+
+      <div class="form-group-left">
+        <label>사용여부:</label>
+        <input id="useyn" name="useyn" type="checkbox" style="height: 20px;">
+      </div>
+
+      <div class="form-group-left">
+        <label>생성자:</label>
+        <input id="creator" name="creator" type="text" disabled>
+      </div>
+
+      <div class="form-group-left">
+        <label>생성일시:</label>
+        <input id="createdts" name="createdts" type="text" disabled>
+      </div>
+
+      <div class="button-group">
+        <button class="btn btn-secondary" id="reset-btn"  type="button">초기화</button>
+        <button class="btn btn-primary"   id="save-btn"   type="button">저장</button>
+        <button class="btn btn-danger"    id="delete-btn" type="button">삭제</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="formatLoading">
+  <div class="loading-content">
+    <div class="spinner"></div>
+    <div id="loading-text" style="text-align: center;"></div>
+    <div >잠시만 기다려 주세요.</div>
+  </div>
+</div>
+
+<script>
+// 페이지 로드 시 초기화 진행
+window.addEventListener('load', function() {
+  document.getElementById("groups-detail-form").reset();
+  document.getElementById("groupid").value = {{ groupid|safe }};
+});
+
+// 로딩 상태 관리 함수들
+  function showLoading(type) {
+    const overlay = document.getElementById('formatLoading');
+    const saveBtn = document.getElementById('save-btn');
+    const deleteBtn = document.getElementById('delete-btn');
+    const text = document.getElementById('loading-text');
+    
+    // 오버레이 표시
+    overlay.style.display = 'flex';
+
+    if (type == 'save'){
+      text.textContent = '사용자 저장 중'
+      // 버튼 로딩 상태로 변경
+      if (saveBtn) {
+        saveBtn.classList.add('btn-loading');
+        saveBtn.innerHTML = '<span class="btn-spinner"></span>처리 중...';
+        saveBtn.disabled = true;
+      }
+    }
+    else if (type == 'delete'){
+      text.textContent = '사용자 삭제 중'
+      // 버튼 로딩 상태로 변경
+      if (deleteBtn) {
+        deleteBtn.classList.add('btn-loading');
+        deleteBtn.innerHTML = '<span class="btn-spinner"></span>처리 중...';
+        deleteBtn.disabled = true;
+      }
+    }
+  }
+
+  function hideLoading(type) {
+    const overlay = document.getElementById('formatLoading');
+    const saveBtn = document.getElementById('save-btn');
+    const deleteBtn = document.getElementById('delete-btn');
+    const text = document.getElementById('loading-text');
+    
+    // 오버레이 숨기기
+    overlay.style.display = 'none';
+    
+    // 버튼 원래 상태로 복원
+    if (type == 'save'){
+      text.textContent = ''
+      // 버튼 로딩 상태로 변경
+      if (saveBtn) {
+        saveBtn.classList.remove('btn-loading');
+        saveBtn.innerHTML = '저장';
+        saveBtn.disabled = false;
+      }
+    }
+    else if (type == 'delete'){
+      text.textContent = ''
+      // 버튼 로딩 상태로 변경
+      if (deleteBtn) {
+        deleteBtn.classList.remove('btn-loading');
+        deleteBtn.innerHTML = '삭제';
+        deleteBtn.disabled = false;
+      }
+    }
+  }
+// 선택 클릭 시 우측 채우기
+document.querySelectorAll(".groups-select-btn").forEach(button => {
+  button.addEventListener("click", function () {
+    const row = this.closest("tr");
+    // console.log('Row: ', row )
+    document.getElementById("useruid").value = row.dataset.useruid;
+    document.getElementById("usernm").value = row.dataset.usernm;
+    document.getElementById("email").value = row.dataset.email;
+    document.getElementById("useyn").checked = row.dataset.useyn === "True";
+    document.getElementById("creator").value = row.dataset.creatornm;
+    document.getElementById("createdts").value = row.dataset.createdts;
+  });
+});
+
+// 초기화 버튼
+document.getElementById("reset-btn").addEventListener("click", () => {
+  document.getElementById("groups-detail-form").reset();
+  document.getElementById("useruid").value = "";
+});
+
+// 저장 버튼
+document.getElementById("save-btn").addEventListener("click", () => {
+  const form = document.getElementById("groups-detail-form");
+  const formData = new FormData(form);
+
+  showLoading('save')
+
+  fetch("{% url 'master_group_users_save' %}", {
+    method: "POST",
+    body: formData,
+    headers: {
+      "X-CSRFToken": getCookie("csrftoken")
+    }
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.result === "success") {
+      alert(data.message);
+      hideLoading('save')
+      location.reload();
+    } else {
+      alert("저장 실패: " + (data.message || "서버 오류"));
+      hideLoading('save')
+    }
+  })
+  .catch(err => {
+    alert("오류 발생: " + err.message);
+    hideLoading('save')
+  });
+});
+
+// 삭제 버튼
+document.getElementById("delete-btn").addEventListener("click", () => {
+  const groupid = document.getElementById("groupid").value;
+  const useruid = document.getElementById("useruid").value;
+  
+  if (!useruid) {
+    alert("삭제할 사용자를 선택하세요.");
+    return;
+  }
+
+  if (!confirm("정말 삭제하시겠습니까?")) return;
+
+  showLoading('delete')
+
+  fetch("{% url 'master_group_users_delete' %}", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCookie("csrftoken")
+    },
+    body: JSON.stringify({ groupid, useruid })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.result === "success") {
+      alert(data.message);
+      hideLoading('delete')
+      location.reload();
+    } else {
+      alert("삭제 실패: " + (data.message || "서버 오류"));
+      hideLoading('delete')
+    }
+  })
+  .catch(error => {
+    alert("오류 발생: " + error.message)
+    hideLoading('delete')
+  });
+});
+
+// 쿠키 정보
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+</script>
+
+{% endblock %}

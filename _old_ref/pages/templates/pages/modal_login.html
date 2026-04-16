@@ -1,0 +1,289 @@
+<style>
+/* 로그인 */
+.login_base_modal_content {
+    background: var(--white);
+    padding: 30px 25px;
+    border-radius: 12px;
+    width: 360px;
+    height: 410px;
+    box-shadow: 0 8px 24px var(--black-shadow);
+    text-align: center;
+}
+
+.alert {
+  background: var(--white);
+  padding: 30px 25px;
+  border-radius: 12px;
+  width: 200px;
+  height: 22px;
+  box-shadow: 0 8px 24px var(--black-shadow);
+  text-align: center;
+  background: var(--white);
+  transition: opacity 0.5s;
+}
+
+.hidden {
+  display: none;
+}
+
+.fadeout {
+  opacity: 0;
+}
+</style>
+
+<!-- 로그인 -->
+<div id="login_base_modal" class="base_modal_overlay" style="display: none;">
+    <div class="login_base_modal_content" style="position: relative">
+        <!-- ✅ 닫기 버튼 -->
+        <button id="login_base_modal_close" style="
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+        ">&times;</button>
+
+        <h2 style="font-weight: bold;">SmartDocu 로그인</h2>
+
+        <label class="modal_label">
+            <span class="modal_span">이메일</span>
+            <input type="email" id="login_email" placeholder="이메일" class="base_modal_input" style="width: 70%;" required/>
+        </label>
+
+        <label class="modal_label">
+            <span class="modal_span">비밀번호</span>
+            <input type="password" id="login_password" placeholder="비밀번호" class="base_modal_input" style="width: 70%;" required/>
+        </label>
+   
+        <!-- 비밀번호 재설정 토글 버튼 -->
+        <button id="toggle-reset" class="btn btn-save" style="margin-right: 20px;">비밀번호 재설정</button>
+
+        <button id="login_submit" class="btn btn-primary" style="margin-top: 8%" disabled>로그인</button>
+              
+        <!-- 처음에는 숨겨진 비밀번호 재설정 폼 -->
+        <div id="reset-form" style="display:none; margin-top: 20px;">
+          <form id="resetForm">
+            {% csrf_token %}
+            <label>비밀번호 재설정 이메일</label>
+            <input type="email" id="reset_email" name="reset_email" required placeholder="이메일 입력">
+            <button type="submit" class="btn btn-secondary" style="margin-top: 10px;">비밀번호 재설정 이메일 전송</button>
+          </form>
+          <div id="resetAlert" class="alert" style="display:none; margin-top:10px;"></div>
+        </div>
+
+        {% if messages %}
+          <ul class="form-error" style="margin-top: 20px; padding-left: 20px;">
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}      
+    </div>
+</div>
+
+<div id="loginAlert" class="base_modal_overlay" style="display: none;">
+  <div id="loginAlertContent" class="alert" style="position: relative;">
+  </div>
+</div>
+
+<script>
+// 로그인 모달
+function show_login_base_modal(page){
+    flag = page
+    // console.log(flag)
+    document.getElementById("login_base_modal").style.display = "flex";
+}
+// 로그인 저장 버튼 클릭 시
+document.getElementById('login_submit').addEventListener('click', async () => {
+    const email = document.getElementById('login_email').value.trim();
+    const password = document.getElementById('login_password').value;
+
+    if (!email) {
+      alert('이메일을 입력해주세요.');
+      return;
+    }
+    if (!password) {
+      alert('비밀번호를 입력해주세요.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('email', email);
+    formData.append('password', password);
+
+    const btn = document.getElementById('login_submit');
+    btn.disabled = true;
+    btn.textContent = '로그인 중...';
+
+    try {
+      const response = await fetch('/login/', {
+        method: 'POST',
+        credentials: "include",   // 👈 여기
+        headers: { 'X-CSRFToken': csrftoken },
+        body: formData
+      });
+      const data = await response.json();
+      
+      // console.log(data)
+
+      if (data.result === 'success') {
+        // alert(data.message || '로그인이 완료되었습니다.');
+        
+        const alertBox = document.getElementById("loginAlert");
+        const alertContent = document.getElementById("loginAlertContent");
+
+        // 표시
+        // alertBox.classList.remove("hidden");
+        alertBox.style.display = "flex";
+        alertContent.textContent = "로그인이 완료 되었습니다!"
+        document.getElementById("login_base_modal").style.display = "none";
+
+        // 1초 후 서서히 사라짐
+        setTimeout(() => {
+          alertBox.classList.add("fadeout");
+
+          // 애니메이션 후 완전히 숨김 처리
+          setTimeout(() => {
+            alertBox.style.display = "none";
+            alertBox.classList.remove("fadeout");
+            alertContent.textContent = "";
+            location.reload();
+          }, 500);
+
+        }, 1000);
+        
+      } else {
+        alert(data.message || '로그인 실패');
+      }
+    } catch (error) {
+        alert('서버와 통신 중 오류가 발생했습니다.');
+        // console.log(error)
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '로그인';
+    }
+  });
+
+// 모달 관련 이벤트
+document.addEventListener("DOMContentLoaded", function () {
+  ////////// Login 영역 시작
+  // login 모달 닫기
+  const login_base_closeBtn = document.getElementById("login_base_modal_close");
+  const login_base_modal = document.getElementById("login_base_modal");
+  login_base_closeBtn.addEventListener("click", function () {
+      login_base_modal.style.display = "none";
+      document.getElementById("login_email").value = '';
+      document.getElementById("login_password").value = '';
+      document.getElementById("login_submit").disabled = true;
+  });
+
+  // 로그인 영역
+  const login_emailInput = document.getElementById('login_email');
+  const login_passwordInput = document.getElementById('login_password');
+  const loginBtn = document.getElementById('login_submit');
+
+  // 로그인 영역 -> 이메일 입력 후 엔터 → 비밀번호로 포커스 이동
+  login_emailInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      login_passwordInput.focus();
+    }
+  });
+
+  // 로그인 영역 -> 비밀번호 입력 후 엔터 → 로그인 버튼 클릭
+  login_passwordInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!loginBtn.disabled) {
+        loginBtn.click();
+      }
+    }
+  });
+
+  // 로그인 버튼 활성화
+  const login_submitBtn = document.getElementById("login_submit");
+  const login_email = document.getElementById("login_email");
+  const login_password = document.getElementById("login_password");
+
+  function login_validateForm() {
+      const email_fill = login_email.value.trim().length > 0;
+      const password_fill = login_password.value.trim().length > 0;
+
+      const allValid = email_fill && password_fill
+
+      login_submitBtn.disabled = !allValid;
+  }
+  // 로그인 이벤트 연결
+  login_email.addEventListener("input", login_validateForm);
+  login_password.addEventListener("input", login_validateForm);
+  
+  function more_info_validateForm() {
+    const nameFilled = nameInput.value.trim().length > 0;
+    const phoneFilled = phoneInput.value.trim().length > 0;
+    const ageChecked = ageCheck.checked;
+    const termsChecked = termsCheck.checked;
+    
+    const allValid = nameFilled && phoneFilled && ageChecked && termsChecked;
+
+    info_submit.disabled = !allValid;
+  }
+  ////////// Login 영역 종료
+
+
+
+  document.getElementById('toggle-reset').addEventListener('click', function () {
+    const form = document.getElementById('reset-form');
+    if (form.style.display === 'none') {
+      form.style.display = 'block';
+      this.textContent = '비밀번호 재설정 닫기';
+    } else {
+      form.style.display = 'none';
+      this.textContent = '비밀번호 재설정';
+    }
+  });
+const resetForm = document.getElementById('resetForm');
+const resetEmail = document.getElementById('reset_email');
+const resetAlert = document.getElementById('resetAlert');
+
+resetForm.addEventListener("submit", async function(e){
+    e.preventDefault();
+    const email = resetEmail.value.trim();
+    if(!email) {
+        resetAlert.textContent = "이메일을 입력해주세요.";
+        resetAlert.style.display = "block";
+        return;
+    }
+
+    try {
+        const res = await fetch("{% url 'send_reset_email' %}", {
+            method: "POST",
+            credentials: "include",   // 👈 여기
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrftoken
+            },
+            body: JSON.stringify({email: email})
+        });
+        const data = await res.json();
+
+        resetAlert.textContent = data.messages;
+        resetAlert.style.display = "block";
+
+        setTimeout(() => {
+            resetAlert.style.display = "none";
+            document.getElementById("login_base_modal").style.display = "none"; // 모달 닫기
+        }, 2000); // 2초 후 자동 닫기
+
+    } catch(err) {
+        resetAlert.textContent = "서버 통신 중 오류가 발생했습니다.";
+        resetAlert.style.display = "block";
+        console.error(err);
+    }
+});
+
+
+});
+
+</script>

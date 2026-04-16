@@ -1,0 +1,89 @@
+{% extends 'pages/base.html' %}
+
+{% block title %}문서 작성{% endblock %}
+
+{% block content %}
+
+<div style="display: flex; align-items: center; margin-bottom: 20px; font-weight: bold; font-size: 1.3rem; color: #3a3a3a;">
+    <div class="gradient-bar"></div>
+    문서 작성
+</div>
+
+<!-- 대상 문서 선택 -->
+<form method="get" action="">
+  <div class="form-row" style="display: flex; align-items: center; margin-bottom: 15px;">
+    <label for="docid" style="width: 120px;">대상 문서 :</label>
+    <select name="docid" id="docid" required onchange="this.form.submit()" style="width: 300px;">
+      {% for doc in docs %}
+        <option value="{{ doc.docid }}" {% if docid|stringformat:"s" == doc.docid|stringformat:"s" %}selected{% endif %}>{{ doc.docnm }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<!-- 챕터 선택 -->
+<form method="get" action="">
+  <input type="hidden" name="docid" value="{{ docid }}">
+  <div class="form-row" style="display: flex; align-items: center; margin-bottom: 15px;">
+    <label for="chapteruid" style="width: 120px;">챕터 목록 :</label>
+    <select name="chapteruid" id="chapteruid" onchange="this.form.submit()" style="width: 300px;">
+      {% for chapter in chapters %}
+        <option value="{{ chapter.chapteruid }}" {% if chapteruid|stringformat:"s" == chapter.chapteruid|stringformat:"s" %}selected{% endif %}>{{ chapter.chapternm }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<div style="display: flex; gap: 20px;">
+  <!-- 왼쪽: 목록 -->
+  <div style="flex: 0 0 50%; overflow-x: auto;">
+    <h4>목록</h4>
+
+    {% if objects %}
+      <table border="1" cellpadding="5" cellspacing="0" style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left;">구분</th>
+            <th style="text-align: center;">데이터셋</th>
+            <th style="text-align: left;">object 명</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for obj in objects %}
+            <tr>
+              <td>{{ obj.type }}</td>
+              <td>{{ obj.datanm }}</td>
+              <td>{{ obj.name }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+
+  <!-- 오른쪽: 변환 -->
+  <div style="flex: 0 0 50%; overflow-x: auto;">
+    <h4>변환</h4>
+
+    {{ word_html|safe }}
+
+    <form method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="docid" value="{{ docid }}">
+      <input type="hidden" name="chapteruid" value="{{ chapteruid }}">
+
+      <button type="submit" name="action" value="convert"
+        style="padding: 6px 12px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        변환
+      </button>
+
+      <button type="submit" name="action" value="download"
+        style="padding: 6px 12px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">
+        다운로드
+      </button>
+    </form>
+
+  </div>
+</div>
+
+{% endblock %}

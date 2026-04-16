@@ -1,0 +1,362 @@
+{% extends 'pages/base.html' %}
+{% load static %}
+{% block title %}{% if type == "tenant" %}기업 등록 요청{% else %}기업 등록{% endif %}{% endblock %}
+{% block content %}
+<style>
+  .request-label{
+    width: 180px;
+  }
+  .request-value{
+    width: 200px !important;
+    flex: none !important;
+    /* text-align: right !important; */
+  }
+  .form-group-left{
+    margin-bottom: 13px;
+  }
+</style>
+
+
+<div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>기업 등록 {% if type == "tenant" %}요청{% else %}{% endif %}</div>
+  </div>
+
+</div>
+
+
+<div>
+  <div class="info">
+    <h3>화면 설명</h3>
+    {% if type == "tenant" %}
+      <p>Enterprise의 경우는 지정 서버 작업이 완료된 후 안내에 따라 사용하실 수 있습니다.</p>
+      <p>Enterprise는 20인 이상인 경우에 선택하실 수 있습니다.</p>
+    {% else %}
+      <p>Teams 는 기업을 등록 후 사용자 등록하여 사용하실 수 있습니다.</p>
+    {% endif %}
+  </div>
+
+  <!-- 상세정보 폼 -->
+  <div style="flex:40%;">
+    <h3>LLM 상세</h3>
+
+    <form id="request-detail-form" enctype="multipart/form-data">
+      <input name="type" value="{{ type }}" hidden>
+
+      <div class="form-group-left">
+        <label class="request-label">사용 모델:</label>
+        <label class="request-value" id="usemodel" name="usermodel">{% if type == "tenant" %}Enterprise{% else %}Teams{% endif %}</label>
+      </div>
+
+      <div class="form-group-left"> 
+        <label class="request-label">사용자수:</label>
+        <input class="request-value" style="text-align: right;" type="number" id="billingusercnt" name="billingusercnt" placeholder="예: 10">
+        <p style="margin-left: 10px;">＊ 사용자수는 월 동안 사용 가능했던 전체 사용자를 의미합니다.</p>
+      </div>
+
+      <div class="form-group-left">
+        <label class="request-label">요금(원) / 월:</label>
+        <input class="request-value" style="text-align: right;" type="text" id="price" name="price" value="{% if type == 'tenant' %}100,000{% else %}50,000{% endif %}" disabled>
+      </div>
+
+      <div class="form-group-left">
+        <label class="request-label">LLM 추가 사용 제한 여부:</label>
+        <div class="request-value">
+          <label><input type="radio" name="llmlimityn" value="false" checked> 미제한</label>
+          <label><input type="radio" name="llmlimityn" value="true"> 제한</label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <p style="margin-left:  80px;">＊ 제한: 월 인당 100만 입력 토큰 초과시 LLM 프롬프트 수행을 진행할 수 없습니다.</p>
+        <p style="margin-left:  80px;">＊ 미제한: 초과 입력 토큰 사용 시 100만 토큰당 5,000원/월 추가 비용을 청구합니다.</p>
+      </div>
+
+      
+      <div class="form-group-left">
+        <div class="info-left" style="align-self: flex-start;">
+          <h3>기업 정보</h3>
+          <!-- 기업 정보 시작 -->
+          <div class="tenant-info">
+            <div class="form-group-left">
+              <label class="request-label">회사(법인) 명칭:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="text" id="tenantnm" name="tenantnm">
+              </div>
+            </div>
+
+            {% if type == "tenant" %}
+            <div class="form-group-left">
+              <label class="request-label">법인(사업자) 등록번호:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="text" id="bizregno" name="bizregno">
+              </div>
+            </div>
+
+            <div style="margin-top: 10px;">
+              <input type="file" id="bizregfile" name="bizregfile" style="display:none">
+
+              <!-- 현재 파일 및 업로드 버튼 -->
+              <div style="display:none; align-items:center; gap:10px;">
+                <button type="button" id="upload-btn" class="icon-btn">
+                <img src="{% static 'icons/upload.svg' %}" title="업로드" class="icon-img new-icon">
+                </button>
+                <span id="current-bizregfile">사업자 등록증 사본 파일 없음</span>
+              </div>
+            </div>
+            {% else %}
+            {% endif %}
+            {% if type != "tenant" %}
+            <div class="form-group-left">
+              <label>기업 이미지:</label>
+              <!-- 숨겨진 실제 파일 input -->
+              <input type="file" name="iconfile" id="iconfile" style="display:none;">
+              
+              <!-- 현재 템플릿 및 업로드 버튼 -->
+              <div style="display:flex; align-items:center; gap:10px;">
+                <button type="button" id="icon-upload-btn" class="icon-btn">
+                  <img src="{% static 'icons/upload.svg' %}" title="업로드" class="icon-img new-icon">
+                </button>
+                <span id="current-iconfile-name">이미지 파일 없음</span>
+              </div>
+            </div>
+            {% else %}
+            {% endif %}
+          </div>
+        </div>
+        <!-- 기업 정보 종료 -->
+
+        <div class="info-right" style="align-self: flex-start; margin-left: 200px;">
+          <h3>서비스 담당자 정보</h3>
+          <!-- 서비스 담당자 정보 시작 -->
+          <div class="manager-info" >
+            <div class="form-group-left">
+              <label class="request-label">성명:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="text" id="managernm" name="managernm">
+              </div>
+            </div>
+
+            {% if type == "tenant" %}
+            <div class="form-group-left">
+              <label class="request-label">부서:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="text" id="managerdepart" name="managerdepart">
+              </div>
+            </div>
+
+            <div class="form-group-left">
+              <label class="request-label">직책:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="text" id="managerposition" name="managerposition">
+              </div>
+            </div>
+            {% else %}
+            {% endif %}
+
+            <div class="form-group-left">
+              <label class="request-label">이메일주소:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="email" id="email" name="email">
+              </div>
+            </div>
+
+            <div class="form-group-left">
+              <label class="request-label">전화번호:</label>
+              <div class="request-value">
+                <input class="request-value" style="text-align: right;" type="tel" id="telno" name="telno" placeholder="숫자만입력">
+              </div>
+            </div>
+            
+          </div>
+        </div>
+        <!-- 서비스 담당자 정보 종료 -->
+      </div>
+
+      
+      <div class="button-group">
+        <!-- 저장 버튼 -->
+        <button id="save-btn" type="button" class="icon-btn">
+          <div class="icon-wrapper">
+            <img src="{% static 'icons/save.svg' %}" class="icon-img save-icon" title="저장">
+            <span class="icon-label">저장</span>
+          </div>  
+        </button>
+      </div>
+      
+    </form>
+  </div>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="formatLoading">
+  <div class="loading-content">
+    <div class="spinner"></div>
+    <div id="loading-text" style="text-align: center;"></div>
+    <div >잠시만 기다려 주세요.</div>
+  </div>
+</div>
+
+<script>
+// 로딩 상태 관리 함수들
+function showLoading() {
+  const overlay = document.getElementById('formatLoading');
+  const text = document.getElementById('loading-text');
+  
+  // 오버레이 표시
+  overlay.style.display = 'flex';
+  text.textContent = '기업 생성 중'
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('formatLoading');
+  const text = document.getElementById('loading-text');
+  
+  // 오버레이 숨기기
+  overlay.style.display = 'none';
+  text.textContent = '';
+}
+
+// =============================
+// 기업 이미지 업로드 처리
+// =============================
+const iconFileInput = document.getElementById("iconfile");
+const iconUploadBtn = document.getElementById("icon-upload-btn");
+const currentIconFileName = document.getElementById("current-iconfile-name");
+
+if (iconUploadBtn && iconFileInput) {
+  iconUploadBtn.addEventListener("click", () => {
+    iconFileInput.click();
+  });
+
+  iconFileInput.addEventListener("change", () => {
+    if (iconFileInput.files.length > 0) {
+      currentIconFileName.textContent = iconFileInput.files[0].name;
+    } else {
+      currentIconFileName.textContent = "이미지 파일 없음";
+    }
+  });
+}
+
+// 사업자등록번호 숫자만 가능
+const bizregno = document.getElementById('bizregno')
+
+const tp = "{{type}}"
+
+// 기업일 때만 동작
+if (tp == "tenant") {
+  bizregno.addEventListener('change', function(e) {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '');
+  });
+
+  // 사업자 등록증 사본 첨부
+    // 🔹 파일 업로드 버튼 커스텀
+  const fileInput = document.getElementById('bizregfile');
+  const uploadBtn = document.getElementById('upload-btn');
+  const currentBizregfile = document.getElementById('current-bizregfile');
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+      currentBizregfile.textContent = fileInput.files[0].name;
+    } else {
+      currentBizregfile.textContent = "선택된 문서 없음";
+    }
+  });
+
+  // 전화번호 설정
+  const telnoInput = document.getElementById("telno");
+
+  telnoInput.addEventListener("input", (e) => {
+      let value = e.target.value.replace(/[^0-9]/g, ""); // 숫자만 필터
+
+      // 서울 02 지역번호
+      if (value.startsWith("02")) {
+          if (value.length <= 2) {
+              e.target.value = value;
+          } else if (value.length <= 6) {
+              e.target.value = value.replace(/(\d{2})(\d{1,3})/, "$1-$2");
+          } else if (value.length <= 10) {
+              e.target.value = value.replace(/(\d{2})(\d{3})(\d{1,4})/, "$1-$2-$3");
+          } else {
+              e.target.value = value.replace(/(\d{2})(\d{4})(\d{4})/, "$1-$2-$3");
+          }
+      } else {
+          // 일반 휴대폰 010, 011, 016~019
+          if (value.length <= 3) {
+              e.target.value = value;
+          } else if (value.length <= 6) {
+              e.target.value = value.replace(/(\d{3})(\d{1,3})/, "$1-$2");
+          } else if (value.length <= 10) {
+              e.target.value = value.replace(/(\d{3})(\d{3})(\d{1,4})/, "$1-$2-$3");
+          } else {
+              e.target.value = value.replace(/(\d{3})(\d{4})(\d{1,4})/, "$1-$2-$3");
+          }
+      }
+  });
+
+}
+
+
+// 저장 버튼 클릭 시
+const saveBtn = document.getElementById("save-btn");
+if (saveBtn) {
+  saveBtn.addEventListener("click", () => { 
+    showLoading()
+    const form = document.getElementById("request-detail-form");
+    const formData = new FormData(form);
+
+    // formData.append("docid", document.getElementById("docid").value);
+    // formData.set("useyn", document.getElementById("useyn").checked);
+
+    fetch("{% url 'master_tenant_request_save' %}", {
+      method: "POST",
+      body: formData,
+      headers: {
+        "X-CSRFToken": getCookie("csrftoken")
+      }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.result === "success") {
+        if (data.type === "tenant"){
+          alert("기업 등록 요청을 완료 하였습니다..");
+          hideLoading()
+        } else if (data.type === "teams"){
+          alert("기업 등록 하였습니다.")
+          hideLoading()
+        }
+        // location.reload();
+        window.location.href = "/";
+      } else {
+        alert("기업 등록 요청: " + (data.message || "서버 오류"));
+        hideLoading()
+      }
+    })
+    .catch(err => {
+      alert("오류 발생: " + err.message);
+      hideLoading()
+    });
+  });
+}
+
+
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+</script>
+
+{% endblock %}

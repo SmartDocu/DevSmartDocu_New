@@ -1,0 +1,162 @@
+{% extends 'pages/base.html' %}
+{% load custom_filters %}
+{% load static %}
+
+{% block title %}문서 관리 - 매개변수{% endblock %}
+
+{% block content %}
+
+<style>
+/* select box 일정한 너비 */
+.dataset-table select {
+    width: 200px;   /* 원하는 너비로 조정 */
+}
+</style>
+
+<div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>문서 관리 - 매개변수 : {{ docnm }}</div>
+  </div>
+
+  <button type="button" class="icon-btn" id="back-btn">
+    <img src="{% static 'icons/back.svg' %}" alt="뒤로가기" class="icon-img config-icon">
+  </button>
+</div>
+
+<!-- 🔹 단일 데이터-파라미터 표 -->
+<table class="dataset-table">
+    <thead>
+        <tr>
+            <th>데이터명</th>
+            {% for param in dataparams %}
+                <th>{{ param.paramnm }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for d in datas %}
+        <tr data-datauid="{{ d.datauid }}">
+            <td>{{ d.datanm }}</td>
+            {% for param in dataparams %}
+            <td>
+                <select data-paramuid="{{ param.paramuid }}">
+                    <option value="">선택</option>
+                    {% for col in datacols|get_item:d.datauid %}
+                        <option value="{{ col.querycolnm }}">{{ col.dispcolnm }}</option>
+                    {% endfor %}
+                </select>
+            </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- 🔹 버튼 영역 -->
+<div class="button-group">
+  <button id="reset-btn" type="button" class="icon-btn">
+    <div class="icon-wrapper">
+      <img src="{% static 'icons/new.svg' %}" class="icon-img new-icon" title="신규">
+      <span class="icon-label">신규</span>
+    </div>           
+  </button>
+
+  <!-- 저장 버튼 -->
+  <button id="save-btn" type="button" class="icon-btn">
+    <div class="icon-wrapper">
+      <img src="{% static 'icons/save.svg' %}" class="icon-img save-icon" title="저장">
+      <span class="icon-label">저장</span>
+    </div>  
+  </button>
+
+  <!-- 삭제 버튼 -->
+  <button id="delete-btn" type="button" class="icon-btn">
+    <div class="icon-wrapper">
+      <img src="{% static 'icons/delete.svg' %}" class="icon-img del-icon" title="삭제">
+      <span class="icon-label">삭제</span>
+    </div> 
+  </button>
+</div>
+
+<script>
+    const dataparam_map = {{ dataparam_map|safe }};
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+
+    // 🔹 기본값 자동 설정
+    document.querySelectorAll("table.dataset-table tbody tr").forEach(row => {
+        const datauid = row.dataset.datauid;
+        row.querySelectorAll("td select").forEach(select => {
+            const paramuid = select.dataset.paramuid;
+            const map = dataparam_map[datauid];
+            if (map) {
+                for (const querycolnm in map) {
+                    if (map[querycolnm] === paramuid) {
+                        select.value = querycolnm;
+                    }
+                }
+            }
+        });
+    });
+
+
+
+    // 🔹 초기화 버튼
+    document.getElementById("reset-btn").addEventListener("click", () => {
+        document.querySelectorAll("table.dataset-table select").forEach(s => s.value = "");
+    });
+
+    // 🔹 저장 버튼
+    document.getElementById("save-btn").addEventListener("click", async () => {
+        const payload = [];
+        document.querySelectorAll("table.dataset-table tbody tr").forEach(row => {
+            const datauid = row.dataset.datauid;
+            row.querySelectorAll("td select").forEach(select => {
+                const paramuid = select.dataset.paramuid;
+                const querycolnm = select.value;
+                if (querycolnm) {
+                    payload.push({ datauid, querycolnm, paramuid, docid: {{ doc.docid }} });
+                }
+            });
+        });
+
+        const response = await fetch("{% url 'master_doc_params_save' %}", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": "{{ csrf_token }}" },
+            body: JSON.stringify({ records: payload })
+        });
+
+        const result = await response.json();
+        alert(result.result === "success" ? "저장 완료" : result.message);
+    });
+
+    // 🔹 삭제 버튼
+    document.getElementById("delete-btn").addEventListener("click", async () => {
+        const datauids = Array.from(document.querySelectorAll("table.dataset-table tbody tr"))
+                               .map(row => row.dataset.datauid);
+        if (!datauids.length) return alert("삭제할 데이터를 선택하세요.");
+
+        const response = await fetch("{% url 'master_doc_params_delete' %}", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": "{{ csrf_token }}" },
+            body: JSON.stringify({ datauids })
+        });
+
+        const result = await response.json();
+        alert(result.result === "success" ? "삭제 완료" : result.message);
+    });
+
+    // 🔹 뒤로가기 버튼
+    document.getElementById("back-btn").addEventListener("click", () => {
+        window.location.href = "/master/docs/?docid={{ doc.docid }}";
+    });
+
+});
+</script>
+
+{% endblock %}

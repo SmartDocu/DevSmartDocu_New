@@ -1,0 +1,275 @@
+{% extends 'pages/base.html' %}
+{% load static %}
+{% block title %}DB 연결정보{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div style="display: flex; align-items: center;">
+    <div class="gradient-bar"></div>
+    <div>DB 연결정보</div>
+  </div>
+
+</div>
+
+
+<div style="display: flex; gap: 30px; padding-right: 10px;">
+  <div style="flex: 50%;">
+    <h3>DB 목록</h3>
+
+    <div class="table-container">
+      <table id="servers-table">
+        <thead>
+          <tr>
+            <th style="width: 20%;">서버명</th>
+            <th style="width: 13%;">DBMS</th>     
+            <th style="width: 12%;">순번</th>
+            <th style="width: 12%;">사용</th>
+            <!-- <th style="width: 13%;"></th> -->
+          </tr>
+        </thead>
+        <tbody>
+          {% for server in connectors %}
+            <tr 
+              data-connectid="{{ server.connectid }}" 
+              data-endpoint="{{ server.decendpoint }}"
+              data-db="{{ server.decdatabase }}"
+              data-userid="{{ server.decuserid }}"
+            >
+              <td>{{ server.connectnm }}</td>
+              <td>{{ server.connecttype }}</td>
+              <td style="text-align: center;">{{ server.orderno|default_if_none:"" }}</td>
+              <td style="text-align: center;" data-useryn="{{ server.useyn|yesno:'true,false' }}">
+                {% if server.useyn %}
+                  ✔
+                {% endif %}
+              </td>
+              <!-- <td style="text-align: center;">
+                <button type="button" class="btn-tbl btn-primary" data-connectid="{{ server.connectid }}">선택</button>
+              </td> -->
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 상세정보 폼 -->
+  <div style="flex:50%;">
+    <h3>DB 상세</h3>
+
+    <form id="server-detail-form" enctype="multipart/form-data">
+      <input type="hidden" name="connectid" id="connectid">
+
+      <div class="form-group"> 
+        <label for="connecttype">DBMS:</label>
+        <select id="connecttype" name="connecttype">
+          {% for dbtype in dbtypes %}
+            <option value="{{ dbtype }}">{{ dbtype }}</option>
+          {% endfor %}
+        </select>        
+      </div>
+
+      <div class="form-group"> 
+        <label>서버명:</label>
+        <input type="text" name="connectnm" id="connectnm">
+      </div>
+      
+      <div class="form-group"> 
+        <label for="orderno">순번:</label>
+        <input type="number" name="orderno" id="orderno" min="0" step="1">
+      </div>
+
+      <div class="form-group"> 
+        <label>사용:</label>
+        <input type="checkbox" name="useryn" id="useryn">
+      </div>
+
+      <div class="form-group"> 
+        <label for="encendpoint">EndPoint:</label>
+        <input type="text" name="encendpoint" id="encendpoint">
+      </div>
+
+      <div class="form-group"> 
+        <label for="encdatabase">DB:</label>
+        <input type="text" name="encdatabase" id="encdatabase">
+      </div>
+
+      <div class="form-group"> 
+        <label for="encaccessuserid">계정:</label>
+        <input type="text" name="encaccessuserid" id="encaccessuserid" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="password">비밀번호:</label>
+        <input type="password" name="password" id="password" placeholder="변경 시에만 입력" autocomplete="new-password">
+      </div>
+
+      <div class="form-group">
+        <label for="password_confirm">비밀번호 확인:</label>
+        <input type="password" name="password_confirm" id="password_confirm" placeholder="비밀번호를 다시 입력" autocomplete="new-password">
+        <small style="color: #888;">※ 기존 비밀번호는 표시되지 않습니다.</small>
+      </div>
+
+    <div class="button-group">
+      <button id="reset-btn" type="button" class="icon-btn">
+        <div class="icon-wrapper">
+          <img src="{% static 'icons/new.svg' %}" class="icon-img new-icon" title="신규">
+          <span class="icon-label">신규</span>
+        </div> 
+      </button>
+
+      <!-- 저장 버튼 -->
+      <button id="save-btn" type="button" class="icon-btn">
+        <div class="icon-wrapper">
+          <img src="{% static 'icons/save.svg' %}" class="icon-img save-icon" title="저장">
+          <span class="icon-label">저장</span>
+        </div>  
+      </button>
+
+      <!-- 삭제 버튼 -->
+      <button id="delete-btn" type="button" class="icon-btn">
+        <div class="icon-wrapper">
+          <img src="{% static 'icons/delete.svg' %}" class="icon-img del-icon" title="삭제">
+          <span class="icon-label">삭제</span>
+        </div>  
+      </button>
+    </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const table = document.getElementById('servers-table');
+  const form = document.getElementById('server-detail-form');
+  let selectedRow = null;
+
+  // ✅ 선택 시 비밀번호는 절대 표시하지 않음
+    // 🔹 행 클릭 시 선택 처리
+  table.addEventListener('click', function (e) {
+    const row = e.target.closest('tr');
+    if (!row || row.parentNode.tagName !== 'TBODY') return;
+
+    // 이전 선택된 행이 있으면 제거
+    if (selectedRow) selectedRow.classList.remove('selected-row');
+
+    // 이전 선택된 행의 스타일 제거
+    if (selectedRow) selectedRow.classList.remove('selected');
+    selectedRow = row;
+    selectedRow.classList.add('selected-row');
+
+    // 폼 채우기
+    document.getElementById('connectid').value = row.getAttribute('data-connectid');
+    document.getElementById('connectnm').value = row.children[0].textContent.trim();
+    document.getElementById('connecttype').value = row.children[1].textContent.trim();
+    document.getElementById('orderno').value = row.children[2].textContent.trim();
+    document.getElementById('useryn').checked = (row.children[3].getAttribute('data-useryn') === 'true');
+    document.getElementById('encendpoint').value = row.getAttribute('data-endpoint') || '';
+    document.getElementById('encdatabase').value = row.getAttribute('data-db') || '';
+    document.getElementById('encaccessuserid').value = row.getAttribute('data-userid') || '';
+    document.getElementById('password').value = '';
+    document.getElementById('password_confirm').value = '';
+  });
+
+  // ✅ 저장 버튼 클릭
+  document.getElementById('save-btn').addEventListener('click', function () {
+    const pw = document.getElementById('password').value.trim();
+    const pwConfirm = document.getElementById('password_confirm').value.trim();
+
+    // 두 비밀번호 모두 입력된 경우 비교
+    if (pw || pwConfirm) {
+      if (pw !== pwConfirm) {
+        alert('비밀번호가 일치하지 않습니다. 다시 입력해주세요.');
+        return;
+      }
+    }
+
+    const data = {
+      connectid: document.getElementById('connectid').value,
+      connectnm: document.getElementById('connectnm').value,
+      connecttype: document.getElementById('connecttype').value,
+      orderno: document.getElementById('orderno').value,
+      useyn: document.getElementById('useryn').checked,
+      encendpoint: document.getElementById('encendpoint').value,
+      encdatabase: document.getElementById('encdatabase').value,
+      encaccessuserid: document.getElementById('encaccessuserid').value,
+    };
+
+    // 새 비밀번호 입력 시만 추가
+    if (pw) data.password = pw;
+
+    fetch('/master/servers_save/', {
+      method: 'POST',
+      credentials: "include",   // 👈 여기
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify(data)
+    })
+    .then(response => {
+      if (!response.ok) throw new Error('저장 실패');
+      return response.json();
+    })
+    .then(result => {
+      alert(result.message || '저장되었습니다.');
+      location.reload();
+    })
+    .catch(error => {
+      alert('저장 중 오류 발생: ' + error.message);
+    });
+  });
+
+  // ✅ 삭제 버튼
+  document.getElementById('delete-btn').addEventListener('click', function () {
+    const connectid = document.getElementById('connectid').value;
+    if (!connectid) {
+      alert('삭제할 서버를 먼저 선택하세요.');
+      return;
+    }
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+
+    fetch('/master/servers_delete/', {
+      method: 'POST',
+      credentials: "include",   // 👈 여기
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({ connectid })
+    })
+    .then(response => response.json())
+    .then(() => {
+      alert('삭제되었습니다.');
+      location.reload();
+    })
+    .catch(error => alert('삭제 중 오류: ' + error.message));
+  });
+
+  // ✅ 초기화 버튼
+  document.getElementById('reset-btn').addEventListener('click', function () {
+    form.reset();
+    document.getElementById('connectid').value = '';
+    document.getElementById('connecttype').selectedIndex = 0;
+    if (selectedRow) selectedRow.classList.remove('selected');
+    selectedRow = null;
+  });
+
+  // ✅ CSRF 토큰 함수
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+});
+</script>
+{% endblock %}

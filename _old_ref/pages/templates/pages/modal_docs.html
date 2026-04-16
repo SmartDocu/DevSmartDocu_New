@@ -1,0 +1,323 @@
+{% load static %}
+<style>
+/* === 문서 선택 모달 === */
+
+.docs_base_modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 모달 박스 */
+.docs_base_modal_content {
+  position: relative;
+  background: var(--white);
+  border-radius: 10px;
+  padding: 20px;
+  width: 500px;
+  max-height: 90%;        /* 높이 확장 */
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+/* 닫기(X) */
+.docs_base_modal_close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  color: #555;
+  cursor: pointer;
+}
+.docs_base_modal_close:hover {
+  color: var(--selected-row);
+}
+
+/* === 문서 / 샘플 탭 === */
+.docs-tab-wrapper {
+  text-align: center;
+  margin: 10px 0 12px 0;
+}
+.docs-tab {
+  padding: 6px 14px;
+  margin: 0 3px;
+  border: 1px solid var(--primary-500);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.docs-tab.active {
+  background: var(--primary-500);
+  color: #fff;
+  font-weight: bold;
+}
+
+/* === 문서 리스트 스크롤 영역 === */
+.docs-list-wrapper {
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 문서 리스트 */
+#docs_list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* li 카드 */
+#docs_list li {
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background-color: #f9f9f9;
+  cursor: pointer;
+  text-align: left;
+  position: relative;   /* tooltip 기준 */
+  transition: all 0.2s ease;
+}
+#docs_list li:hover {
+  background-color: var(--tbody-hover);
+}
+
+/* 샘플 */
+/* #docs_list li.sample {
+  background-color: #d7ffe1;
+} */
+
+/* 선택 */
+#docs_list li.selected {
+  border-color: var(--selected-row);
+  background-color: var(--selected-row-bg);
+  font-weight: bold;
+}
+
+/* === Tooltip (문서 설명) === */
+/* 아래에 표시되도록 수정 */
+.doc-desc-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;         /* li 내부 왼쪽 정렬 */
+  top: 100%;       /* 문서명 아래로 표시 */
+  margin-top: 5px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  width: 400px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+  z-index: 100;
+}
+
+#docs_list li:hover .doc-desc-tooltip {
+  display: block;
+}
+
+/* === OK 버튼 하단 고정 === */
+.docs-close-btn-wrapper {
+  padding-top: 10px;
+  padding-bottom: 0;
+  height: 55px;
+  display: flex;
+  justify-content: center;
+}
+</style>
+
+<!-- ========================= -->
+<!--          모달 HTML        -->
+<!-- ========================= -->
+<div id="docs_modal" class="docs_base_modal">
+  <div class="docs_base_modal_content">
+
+    <button class="docs_base_modal_close" onclick="closeDocsModal()">&times;</button>
+
+    <h3 style="text-align:center;">문서 선택</h3>
+
+    <!-- 탭 버튼 -->
+    <div class="docs-tab-wrapper">
+      <button class="docs-tab active" data-type="doc" onclick="filterDocs('doc')">문서</button>
+      <button class="docs-tab" data-type="sample" onclick="filterDocs('sample')">샘플</button>
+    </div>
+
+    <p id="docs_loading_text">문서를 불러오는 중...</p>
+
+    <!-- 리스트 스크롤 영역 -->
+    <div class="docs-list-wrapper">
+      <ul id="docs_list"></ul>
+    </div>
+
+    <!-- OK 버튼 -->
+    <div class="docs-close-btn-wrapper">
+      <button id="btn-save" type="button" class="icon-btn" onclick="saveSelectedDoc()">
+        <img src="{% static 'icons/ok.svg' %}" class="icon-img config-icon">
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.slice(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+
+function closeDocsModal() {
+  document.getElementById("docs_modal").style.display = "none";
+}
+
+let selectedDoc = null;
+let allDocs = [];
+let currentFilter = "doc";
+
+/* 문서 선택 */
+function selectDoc(docid, docnm, li) {
+  document.querySelectorAll("#docs_list li").forEach(v => v.classList.remove("selected"));
+  li.classList.add("selected");
+  selectedDoc = { docid, docnm };
+}
+
+/* OK 저장 */
+function saveSelectedDoc() {
+  if (!selectedDoc) {
+    alert("문서를 선택해주세요.");
+    return;
+  }
+
+  const csrftoken = getCookie('csrftoken');
+
+  fetch("/docs_save/", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrftoken
+    },
+    body: JSON.stringify(selectedDoc)
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      closeDocsModal();
+
+      const currentUrl = window.location.href;
+
+      if (currentUrl.includes("req")) {
+        // ✅ req가 포함된 경우 특정 페이지로 이동
+        window.location.href = "/req/req_doc_list/";
+      } else {
+        // ✅ 그 외에는 현재 페이지 refresh
+        window.location.reload();
+      }
+
+    } else {
+      alert("문서 선택 중 오류가 발생했습니다.");
+      console.error("문서 선택 오류:", data.error);
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    alert("서버와 통신 중 오류가 발생했습니다.");
+  });
+}
+
+/* 개별 카드 만들기 */
+function createDocsItem(doc) {
+  const docsList = document.getElementById("docs_list");
+  const li = document.createElement("li");
+
+  if (doc.sampleyn) li.classList.add("sample");
+
+  /* 문서명 */
+  const divDoc = document.createElement("div");
+  divDoc.textContent = doc.docnm;
+  divDoc.style.fontSize = "15px";
+  divDoc.style.fontWeight = "600";
+  li.appendChild(divDoc);
+
+  /* 프로젝트 + 테넌트 */
+  if (doc.projectnm || doc.tenantnm) {
+    const divProject = document.createElement("div");
+    divProject.textContent =
+      `프로젝트 : ${doc.projectnm || ""}${doc.tenantnm ? " (" + doc.tenantnm + ")" : ""}`;
+    divProject.style.fontSize = "13px";
+    divProject.style.marginTop = "4px";
+    divProject.style.color = "#444";
+    li.appendChild(divProject);
+  }
+
+  /* 설명 tooltip */
+  if (doc.docdesc) {
+    const tooltip = document.createElement("div");
+    tooltip.classList.add("doc-desc-tooltip");
+    tooltip.innerHTML = doc.docdesc.replace(/\n/g, "<br>");
+    li.appendChild(tooltip);
+  }
+
+  li.onclick = () => selectDoc(doc.docid, doc.docnm, li);
+  docsList.appendChild(li);
+}
+
+/* 탭 필터 */
+function filterDocs(type) {
+  currentFilter = type;
+
+  document.querySelectorAll(".docs-tab").forEach(t => t.classList.remove("active"));
+  document.querySelector(`.docs-tab[data-type="${type}"]`).classList.add("active");
+
+  const docsList = document.getElementById("docs_list");
+  docsList.innerHTML = "";
+
+  allDocs
+    .filter(doc => type === "doc" ? !doc.sampleyn : doc.sampleyn)
+    .forEach(doc => createDocsItem(doc));
+}
+
+/* 모달 열기 */
+function showDocsModal() {
+  const modal = document.getElementById("docs_modal");
+  const loading = document.getElementById("docs_loading_text");
+  const docsList = document.getElementById("docs_list");
+
+  modal.style.display = "flex";
+  loading.style.display = "block";
+  docsList.innerHTML = "";
+
+  fetch("/docs/", { method: "GET", credentials: "include" })
+    .then(res => res.json())
+    .then(data => {
+      allDocs = data.docs;
+      loading.style.display = "none";
+      filterDocs("doc");
+    });
+}
+
+/* ESC close */
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeDocsModal();
+});
+</script>

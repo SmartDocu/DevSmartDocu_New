@@ -1,0 +1,397 @@
+{% extends 'pages/base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block title %}체험 하기{% endblock %}
+
+{% block content %}
+
+
+<style>
+.cmap-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cmap-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.cmap-box {
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+/* 20251216 추가 시작 */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.btn-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+.btn-loading .btn-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 6px;
+}
+.info{
+    text-align: center;
+}
+/* 20251216 추가 끝 */
+</style>
+
+
+<div class="page-title">
+  <div class="filter-item" >
+    <div class="gradient-bar"></div>
+    AI 체험하기
+  </div> 
+</div>
+
+<div style="overflow-y: auto">        
+    <div style="display: flex; flex-direction: column; height: calc(100vh - 240px - 20px); box-sizing: border-box; gap: 10px;">
+
+        <form method="get" action="" id="filter-form">
+            <div style="flex: 2; display: flex; flex-direction: column; gap: 15px;">
+                
+                <div style="display: flex; gap: 20px;">
+
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center;">
+                            <label for="object_type" style="width: 120px; flex-shrink: 0;"><strong>개체 유형 :</strong></label>
+                            <select id="object_type" name="object_type" style="flex: 1; margin-right: 20px;">
+                                <option value="CA" {% if object_type == 'CA' %}selected{% endif %}>차트 (Chart)</option>
+                                <option value="SA" {% if object_type == 'SA' %}selected{% endif %}>문장 (Sentence)</option>
+                                <option value="TA" {% if object_type == 'TA' %}selected{% endif %}>테이블 (Table)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="flex: 2;">
+                        <div style="display: flex; align-items: center;">
+                            <label for="promptnm" style="width: 180px; flex-shrink: 0;"><strong>샘플 프롬프트 선택 :</strong></label>
+                            <select name="promptnm" id="promptnm" style="flex: 1; margin-right: 20px;">
+                                <option value="">--- 선택 ---</option>
+                                {% for prompt in prompts %}
+                                    <option value="{{ prompt.promptnm }}"
+                                            {% if prompt.promptnm == selected_promptnm %}selected{% endif %}
+                                            data-promptuid="{{ prompt.promptuid }}"
+                                            data-prompt="{{ prompt.prompt|escape }}"
+                                            data-desc="{{ prompt.desc|escape }}"
+                                            data-displaytype="{{ prompt.displaytype|default:'' }}"
+                                            data-orderno="{{ prompt.orderno|default:'' }}">
+                                        {{ prompt.displayname_promptname }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                </div>
+
+            </div>
+        </form>
+
+        <div style="margin-top: 10px; margin-bottom: 10px; display: flex; flex-direction: column; flex-wrap: wrap;">
+            <div id="column-list-output" style="color: #333;"><strong>열이름  </strong></div>
+            <div style="margin-top: 2px; color: #333;"><strong>작성방법  </strong>&nbsp;&nbsp;<span style="color: darkblue;">프롬프트를 수정하고 "미리보기"로 실행하면 결과를 확인할 수 있습니다. 프롬프트는 설명과 열 이름을 참조하여 수정하십시요.</span></div>
+        </div>
+
+        <div style="flex: 8; display: flex; flex-direction: row; gap: 20px; min-height: 0;">
+            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <h4 style="margin-bottom: 10px; font-weight: bold; flex-shrink: 0;">프롬프트 설명</h4>
+                <form id="prompt-desc-form" method="POST" 
+                    style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                    <textarea name="prompt_desc" id="prompt_desc" readonly 
+                            style="flex: 1; min-height: 0; width: 100%; padding: 8px; font-size: 1rem; 
+                                    box-sizing: border-box; resize: none; border: 1px solid #ccc; 
+                                    background-color: transparent;
+                                    border-radius: 4px;">{{ prompt_desc }}</textarea>
+                </form>
+
+                <div id="color-button-area" style="margin-top:8px; display:flex; gap:24px; align-items:center;">
+                    <label style="width: 80px; flex-shrink: 0;">색 참조</label>
+                    <button type="button" id="toggle-css-colors" aria-expanded="false"
+                            style="width: 100px; padding:6px 10px; border-radius:6px; border:1px solid #ccc;
+                                background:#fff; cursor:pointer;">
+                        색상 보기
+                    </button>
+                    
+                    <button type="button" id="toggle-colormap" aria-expanded="false"
+                            style="width: 120px; padding:6px 10px; border-radius:6px; border:1px solid #ccc;
+                                background:#fff; cursor:pointer;">
+                        컬러맵 보기
+                    </button>
+                </div>
+
+                <div id="css-colors-wrapper"
+                    style="display:none; margin-top:10px; padding:10px; border-radius:8px;
+                            border:1px solid #ddd; background:#fff; max-height:180px; overflow:auto;">
+                    <div style="font-weight:bold; margin-bottom:10px;">색상 샘플</div>
+                    <div id="css-colors-container"
+                        style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+                                gap:8px;">
+                    </div>
+                </div>
+
+                <div id="colormap-wrapper"
+                    style="display:none; margin-top:10px; padding:10px; border-radius:8px;
+                            border:1px solid #ddd; background:#fff; max-height:180px; overflow:auto;">
+                    <div style="font-weight:bold; margin-bottom:10px;">컬러맵 샘플</div>
+                    <div id="colormap-container"
+                        style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));
+                                gap:12px;">
+                    </div>
+                </div>
+
+            </div>
+
+            <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                    <h4 style="margin-bottom: 10px; font-weight: bold; flex-shrink: 0;">프롬프트</h4>
+                    <form id="prompt-form" method="POST" 
+                        style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                        <textarea name="prompt" id="prompt" 
+                                placeholder="예: 2024년 월별 생산수량에 대해 그래프를 그려주세요(표를 만들어 주세요, 분석해주세요)." 
+                                style="flex: 1; min-height: 0; width: 100%; padding: 8px; font-size: 1rem; 
+                                        box-sizing: border-box; resize: none; border: 1px solid #ccc; 
+                                        /*background-color: #f8f9fa;*/ border-radius: 4px;">{{ prompt }}</textarea>
+                    </form>
+                </div>
+            </div>
+
+            <div style="flex: 1.5; display: flex; flex-direction: column; min-height: 0;">
+                <div style="flex: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
+                    <h4 style="margin-bottom: 10px; font-weight: bold; flex-shrink: 0;">미리보기 결과</h4>
+                    <div id="output-box" style="flex: 1; width: 100%; overflow: auto; padding: 8px; 
+                                                box-sizing: border-box; border: 1px solid #ccc; 
+                                                border-radius: 4px; background-color: #f8f9fa;
+                                                white-space: pre-wrap;  min-height: 0;;">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="button-group">
+        <button id="btn-prompt-form" type="button" class="icon-btn">
+            <div class="icon-wrapper">
+                <img src="{% static 'icons/view.svg' %}" class="icon-img config-icon" title="미리보기"/>
+                <span class="icon-label">미리보기</span>
+            </div>
+        </button>
+    </div>
+
+    <div id="preview_prompt" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.5); z-index: 9999;">
+        <div class="loading-content" style="background: var(--loadingback-color); padding: 15px 25px; border-radius: 8px; color: var(--gray-600); font-size: 16px; font-weight: bold; box-shadow: 0 2px 6px var(--black-shadow);"> 
+            <div class="spinner"></div>
+            <div id="run_prompt" style="text-align: center;"></div>
+            <div>잠시만 기다려 주세요.</div>
+        </div>
+    </div>
+</div>
+
+
+<script src="{% static 'js/ai_actions.js' %}"></script>
+<script>
+
+document.addEventListener("DOMContentLoaded", function() {
+        
+    if (typeof initColormapFeature === 'function') {
+        initColormapFeature();
+    }
+
+    const selectedDatauid = "{{ selected_datauid }}";
+    if (selectedDatauid) {
+        setTimeout(function() {
+            loadColumnListForPrompt();
+        }, 200);
+    }
+
+    const objectTypeSelect = document.getElementById("object_type");
+    const promptSelect = document.getElementById("promptnm");
+    const promptTextarea = document.getElementById("prompt");
+    const promptDescTextarea = document.getElementById("prompt_desc");
+
+    objectTypeSelect.addEventListener("change", function() {
+        document.getElementById("filter-form").submit();
+    });
+
+    promptSelect.addEventListener("change", function() {
+        const selectedOption = this.options[this.selectedIndex];
+        
+        if (selectedOption.value) {
+            promptTextarea.value = selectedOption.dataset.prompt || "";
+            promptDescTextarea.value = selectedOption.dataset.desc || "";
+            
+            let hiddenPromptUid = document.getElementById("hidden_promptuid");
+            if (!hiddenPromptUid) {
+                hiddenPromptUid = document.createElement("input");
+                hiddenPromptUid.type = "hidden";
+                hiddenPromptUid.id = "hidden_promptuid";
+                document.body.appendChild(hiddenPromptUid);
+            }
+            hiddenPromptUid.value = selectedOption.dataset.promptuid || "";
+            
+            const currentUrl = new URL(window.location);
+            currentUrl.searchParams.set('promptnm', selectedOption.value);
+            window.history.replaceState({}, '', currentUrl);
+        } 
+        else {
+            promptTextarea.value = "";
+            promptDescTextarea.value = "";
+            
+            const currentUrl = new URL(window.location);
+            currentUrl.searchParams.delete('promptnm');
+            window.history.replaceState({}, '', currentUrl);
+        }
+
+        attachPreviewBtnListener();
+    });
+
+    function attachPreviewBtnListener() {
+        const previewBtn = document.getElementById("btn-prompt-form");
+        if (previewBtn) {
+            previewBtn.addEventListener("click", function (e) {
+                e.preventDefault();
+
+                const prompt_text = document.getElementById("prompt").value.trim();
+                const outputArea = document.getElementById("output-box");
+                showPromptLoading();
+
+                fetch('{% url "ai_experience_llm_preview" %}', {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "X-CSRFToken": "{{ csrf_token }}"
+                    },
+                    body: new URLSearchParams({
+                        "datauid": "{{ selected_datauid }}",
+                        "prompt": prompt_text,
+                        "object_type": document.getElementById("object_type").value
+                    }),
+                    credentials: "include"
+                })
+                .then(res => res.json())
+                .then(data => {
+                    hidePromptLoading();
+                    outputArea.innerHTML = "";
+                    if (data.message_type === "image") {
+                        const img = document.createElement("img");
+                        img.src = "data:image/png;base64," + data.image_data.trim();
+                        img.style.maxWidth = "100%";
+                        outputArea.appendChild(img);
+                    } 
+                    else if (data.message_type === "text") {
+                        outputArea.innerText = data.message;
+                    } 
+                    else if (data.message_type === "table") {
+                        const header_json = (typeof data.table_header_json === "string")
+                            ? JSON.parse(data.table_header_json)
+                            : data.table_header_json;
+                        const data_json = (typeof data.table_data_json === "string")
+                            ? JSON.parse(data.table_data_json)
+                            : data.table_data_json;
+                        renderPreviewTable(header_json, data_json, data.data)
+                    } 
+                    else if (data.message_type === "error") {
+                        outputArea.innerHTML = `<div style="color:red;">오류: ${data.message}</div>`;
+                    } 
+                    else {
+                        outputArea.innerHTML = `<div>결과가 없습니다.</div>`;
+                    }
+                })
+                .catch(err => {
+                    hidePromptLoading();
+                    outputArea.innerHTML = `<div style="color:red;">에러: ${err.message}</div>`;
+                });
+            });
+        }
+    }
+
+    attachPreviewBtnListener();
+
+    function loadColumnListForPrompt() {
+        const datauid = "{{ selected_datauid }}";
+        
+        if (!datauid) {
+            document.getElementById("column-list-output").innerHTML = '<strong>열이름  </strong>';
+            return;
+        }
+        
+        document.getElementById("column-list-output").innerHTML = '<strong>열이름  </strong>로딩 중...';
+
+        fetch("/master/ai_get_columns/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: new URLSearchParams({ "datauid": datauid }),
+            credentials: "include"
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const outputDiv = document.getElementById("column-list-output");
+                outputDiv.innerHTML = '<strong>열이름  </strong>';
+                
+                data.columns.forEach((col, index) => {
+                    const colSpan = document.createElement("span");
+                    colSpan.textContent = col;
+                    colSpan.style.cursor = "pointer";
+                    colSpan.style.padding = "4px 4px";
+                    colSpan.style.marginRight = "4px";
+                    colSpan.style.backgroundColor = "#e9ecef";
+                    colSpan.style.borderRadius = "4px";
+                    colSpan.style.display = "inline-block";
+                    colSpan.style.marginBottom = "4px";
+                    colSpan.style.backgroundColor = "transparent";
+                    
+                    if (index === 0) {
+                        colSpan.style.marginLeft = "20px";
+                    }
+                    
+                    colSpan.addEventListener("mouseenter", function() {
+                        this.style.textDecoration = "underline";
+                        this.style.textDecorationColor = "silver";
+                        this.style.color = "black";
+                        this.style.fontWeight = "bold"
+                    });
+                    colSpan.addEventListener("mouseleave", function() {
+                        this.style.textDecoration = "none";
+                        this.style.color = "inherit";
+                        this.style.fontWeight = "normal";
+                    });
+                    
+                    colSpan.addEventListener("click", function() {
+                        insertTextAtCursor(col);
+                    });
+                    
+                    outputDiv.appendChild(colSpan);
+                });
+            }
+        })
+        .catch(err => {
+            document.getElementById("column-list-output").innerHTML = '<strong>열이름  </strong>에러';
+        });
+    }
+
+});
+
+</script>
+
+{% endblock %}
