@@ -5,7 +5,7 @@ import json
 
 from langchain_anthropic import ChatAnthropic
 
-from utilsPrj.supabase_client import get_supabase_client
+from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from llm.ai_chain import get_tables_prompt, create_python_code, get_full_chain, get_llm_model
 from utilsPrj.process_data_db import process_data_db
 from utilsPrj.process_data_excel import process_data_excel
@@ -13,7 +13,7 @@ from utilsPrj.process_data_excel import process_data_excel
 
 def process_data_ai(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
     Datas_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
         .select("*")
         .eq("datauid", datauid)
@@ -23,7 +23,7 @@ def process_data_ai(supabase, request, datauid, docid=None, gendoc_uid=None, all
     gensentence = Datas_resp.data[0]['gensentence']
 
     SourceDatas_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
         .select("*")
         .eq("datauid", sourcedatauid)
@@ -41,7 +41,7 @@ def process_data_ai(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # AI 재집계
     result_datacols = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datacols")
         .select("querycolnm, dispcolnm")
         # .eq("datauid", datauid)

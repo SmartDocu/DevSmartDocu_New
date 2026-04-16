@@ -8,7 +8,7 @@ from io import BytesIO
 from urllib.parse import quote
 import base64, json
 
-from utilsPrj.supabase_client import get_supabase
+from utilsPrj.supabase_client import get_supabase, SUPABASE_SCHEMA
 # 업로드 용
 from utilsPrj.docx_read import convert_docx_to_html_2
 
@@ -34,8 +34,8 @@ def chapter_contents_read(request, gendocuid, genchapteruid, sep, type):
     file_name = ''
 
     if sep == 'chapter':
-        texttemplate = supabase.schema('smartdoc').table('genchapters').select('chapteruid, gentexttemplate, updatefileurl').eq('genchapteruid', genchapteruid).execute().data
-        chaptername = supabase.schema('smartdoc').table('chapters').select('chapternm').eq('chapteruid', texttemplate[0]['chapteruid']).execute().data[0]['chapternm']
+        texttemplate = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('chapteruid, gentexttemplate, updatefileurl').eq('genchapteruid', genchapteruid).execute().data
+        chaptername = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('chapternm').eq('chapteruid', texttemplate[0]['chapteruid']).execute().data[0]['chapternm']
         if type == 'auto':
             if texttemplate[0]['gentexttemplate']:
                 html_contents = texttemplate[0]['gentexttemplate']
@@ -62,7 +62,7 @@ def chapter_contents_read(request, gendocuid, genchapteruid, sep, type):
             else:
                 html_contents = '업로드 된 문서가 없습니다.'
     elif sep == 'doc':
-        texttemplate = supabase.schema('smartdoc').table('gendocs').select('createfileurl, updatefileurl, gendocnm').eq('gendocuid', gendocuid).execute().data
+        texttemplate = supabase.schema(SUPABASE_SCHEMA).table('gendocs').select('createfileurl, updatefileurl, gendocnm').eq('gendocuid', gendocuid).execute().data
         if type == 'auto':
             if texttemplate[0]['createfileurl']:
                 file_path = texttemplate[0]['createfileurl']

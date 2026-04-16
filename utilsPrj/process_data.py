@@ -1,4 +1,4 @@
-from utilsPrj.supabase_client import get_supabase_client
+from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from utilsPrj.process_data_db import process_data_db
 from utilsPrj.process_data_ai import process_data_ai
 from utilsPrj.process_data_excel import process_data_excel
@@ -11,7 +11,7 @@ def process_data(request, datauid, docid=None, gendoc_uid=None, all = None):
     supabase = get_supabase_client(access_token, refresh_token)
 
     Datas_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
         .select("*")
         .eq("datauid", datauid)
@@ -45,7 +45,7 @@ def apply_column_display_mapping(datauid, columns, rows, supabase):
     """
     # DB에서 컬럼 매핑 정보 가져오기
     col_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datacols")
         .select("querycolnm, dispcolnm")
         .eq("datauid", datauid)

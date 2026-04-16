@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -29,7 +29,7 @@ def _get_user(token: str):
 
 def _active_projects(sb, user_id: str):
     proj_list = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": user_id})
         .execute().data or []
     )
@@ -37,7 +37,7 @@ def _active_projects(sb, user_id: str):
     if not ids:
         return [], {}
     active = (
-        sb.schema("smartdoc").table("projects")
+        sb.schema(SUPABASE_SCHEMA).table("projects")
         .select("projectid, projectnm")
         .in_("projectid", ids).eq("useyn", True)
         .execute().data or []
@@ -65,10 +65,10 @@ def _delete_storage(sb, url: str):
 def list_dbconnectors(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema("smartdoc").table("users").select("tenantid").eq("useruid", str(user.id)).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("users").select("tenantid").eq("useruid", str(user.id)).execute().data
     tenantid = row[0]["tenantid"] if row else None
     rows = (
-        sb.schema("smartdoc").table("dbconnectors")
+        sb.schema(SUPABASE_SCHEMA).table("dbconnectors")
         .select("connectid, connectnm")
         .eq("useyn", True).eq("tenantid", tenantid)
         .execute().data or []
@@ -94,9 +94,9 @@ def list_datas(
     pmap: dict = {}
     if chapteruid:
         try:
-            ch = sb.schema("smartdoc").table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data or []
+            ch = sb.schema(SUPABASE_SCHEMA).table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data or []
             if ch:
-                docs = sb.schema("smartdoc").table("docs").select("projectid, docnm").eq("docid", ch[0]["docid"]).execute().data or []
+                docs = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid, docnm").eq("docid", ch[0]["docid"]).execute().data or []
                 if docs:
                     single_pid = docs[0]["projectid"]
                     pmap = {single_pid: docs[0].get("docnm", "")}
@@ -111,9 +111,9 @@ def list_datas(
     try:
         if single_pid is not None:
             # chapteruid 경로: .eq() 사용 (llm/init과 동일한 방식)
-            query = sb.schema("smartdoc").table("datas").select("*").eq("projectid", single_pid)
+            query = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("projectid", single_pid)
         else:
-            query = sb.schema("smartdoc").table("datas").select("*").in_("projectid", project_ids)
+            query = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").in_("projectid", project_ids)
 
         if datasourcecd:
             query = query.eq("datasourcecd", datasourcecd)
@@ -130,7 +130,7 @@ def list_datas(
         cids = list({r["connectid"] for r in rows if r.get("connectid")})
         if cids:
             connectors = (
-                sb.schema("smartdoc").table("dbconnectors")
+                sb.schema(SUPABASE_SCHEMA).table("dbconnectors")
                 .select("connectid, connectnm").in_("connectid", cids)
                 .execute().data or []
             )
@@ -152,7 +152,7 @@ def list_source_datas(token: str = Depends(get_token)):
     if not active_ids:
         return {"datas": []}
     rows = (
-        sb.schema("smartdoc").table("datas")
+        sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd, projectid")
         .in_("projectid", active_ids)
         .neq("datasourcecd", "df")
@@ -175,11 +175,11 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
         "query": body.query,
     }
     if body.datauid:
-        sb.schema("smartdoc").table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
         return {"datauid": body.datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "db"
-    resp = sb.schema("smartdoc").table("datas").insert(record).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
@@ -199,7 +199,7 @@ async def save_ex_data(
 
     existing_url = None
     if datauid:
-        res = sb.schema("smartdoc").table("datas").select("excelurl").eq("datauid", datauid).execute()
+        res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl").eq("datauid", datauid).execute()
         if res.data:
             existing_url = res.data[0].get("excelurl")
 
@@ -215,11 +215,11 @@ async def save_ex_data(
         record["excelnm"] = excelfile.filename
 
     if datauid:
-        sb.schema("smartdoc").table("datas").update(record).eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", datauid).execute()
         return {"datauid": datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "ex"
-    resp = sb.schema("smartdoc").table("datas").insert(record).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
@@ -236,11 +236,11 @@ def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
         "gensentence": body.sentence,
     }
     if body.datauid:
-        sb.schema("smartdoc").table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
         return {"datauid": body.datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "df"
-    resp = sb.schema("smartdoc").table("datas").insert(record).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
@@ -251,11 +251,11 @@ def delete_data(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     # Delete storage file if excel
-    res = sb.schema("smartdoc").table("datas").select("excelurl").eq("datauid", datauid).execute()
+    res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl").eq("datauid", datauid).execute()
     if res.data:
         _delete_storage(sb, res.data[0].get("excelurl"))
-    sb.schema("smartdoc").table("datacols").delete().eq("datauid", datauid).execute()
-    resp = sb.schema("smartdoc").table("datas").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("datas").delete().eq("datauid", datauid).execute()
     if not resp.data:
         raise HTTPException(status_code=404, detail="삭제할 데이터가 없습니다.")
     return {"message": "삭제되었습니다."}
@@ -268,7 +268,7 @@ def get_datacols(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc").table("datacols")
+        sb.schema(SUPABASE_SCHEMA).table("datacols")
         .select("*").eq("datauid", datauid).order("orderno")
         .execute().data or []
     )
@@ -285,7 +285,7 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
     if not datauid:
         raise HTTPException(status_code=400, detail="datauid가 필요합니다.")
 
-    data_resp = sb.schema("smartdoc").table("datas").select("*").eq("datauid", datauid).execute()
+    data_resp = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute()
     if not data_resp.data:
         raise HTTPException(status_code=404, detail="해당 데이터가 없습니다.")
 
@@ -333,13 +333,13 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
             deduped.append(c)
     cols = deduped
 
-    sb.schema("smartdoc").table("datacols").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     records = [
         {"datauid": datauid, "querycolnm": c, "dispcolnm": c, "creator": str(user.id), "orderno": i}
         for i, c in enumerate(cols, 1)
     ]
     if records:
-        sb.schema("smartdoc").table("datacols").insert(records).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
 
     return {"message": "컬럼이 생성되었습니다.", "columns": cols}
 
@@ -380,7 +380,7 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
     if len(datauids) != 1:
         raise HTTPException(status_code=400, detail="모든 컬럼의 datauid가 동일해야 합니다.")
     datauid = datauids.pop()
-    sb.schema("smartdoc").table("datacols").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     records = [
         {
             "datauid": c.datauid,
@@ -393,5 +393,5 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
         }
         for i, c in enumerate(cols, 1)
     ]
-    sb.schema("smartdoc").table("datacols").insert(records).execute()
+    sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
     return {"message": "저장되었습니다."}

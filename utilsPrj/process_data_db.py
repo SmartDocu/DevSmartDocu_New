@@ -4,7 +4,7 @@ from supabase import create_client
 from decimal import Decimal
 import pandas as pd
 
-# from utilsPrj.supabase_client import get_supabase_client
+# from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from utilsPrj.supabase_client import get_supabase
 from utilsPrj.crypto_helper import decrypt_value, encrypt_value
 import re
@@ -14,7 +14,7 @@ import oracledb
 
 def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
     Datas_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
         .select("*")
         .eq("datauid", datauid)
@@ -25,7 +25,7 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
     query = Datas_resp.data[0]['query']
 
     dbconnectors_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("dbconnectors")
         .select("*")
         .eq("connectid", connectid)
@@ -101,11 +101,11 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
-        dataparamdtls_resp = supabase.schema("smartdoc").table("dataparamdtls") \
+        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(dataparamdtls_resp.data)
     
-        dataparams_resp = supabase.schema("smartdoc").table("dataparams") \
+        dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
             .select("paramuid, samplevalue, operator").eq("docid", docid).execute()
 
         df_params = pd.DataFrame(dataparams_resp.data)
@@ -117,18 +117,18 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
     # docid는 None, gendoc_uid만 있음 ==> 실제 문서 실행 화면
     elif docid is None and gendoc_uid is not None:
         # 1. gendoc_uid → docid
-        gendocs_resp = supabase.schema("smartdoc").table("gendocs") \
+        gendocs_resp = supabase.schema(SUPABASE_SCHEMA).table("gendocs") \
             .select("docid").eq("gendocuid", gendoc_uid).single().execute()
 
         docid = gendocs_resp.data["docid"]
 
         # 2. dataparamdtls
-        dataparamdtls_resp = supabase.schema("smartdoc").table("dataparamdtls") \
+        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(dataparamdtls_resp.data)
 
         # 3. gendoc_params (value)
-        gendoc_params_resp = supabase.schema("smartdoc").table("gendoc_params") \
+        gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
             .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
         df_gendoc = pd.DataFrame(gendoc_params_resp.data)
 
@@ -136,7 +136,7 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         df_dtls["value"] = df_dtls["paramvalue"]
 
         # 4. dataparams (operator)
-        dataparams_resp = supabase.schema("smartdoc").table("dataparams") \
+        dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
             .select("paramuid, operator").eq("docid", docid).execute()
         df_params = pd.DataFrame(dataparams_resp.data)
 
@@ -283,7 +283,7 @@ def process_data_db_mssql(request, query, connectid, sampleyn = None):
 def process_data_connect_mssql(request, connectid):
     supabase = get_supabase(request)
 
-    dbconnectors_resp = supabase.schema("smartdoc").table("dbconnectors").select("*").eq("connectid", connectid).execute()
+    dbconnectors_resp = supabase.schema(SUPABASE_SCHEMA).table("dbconnectors").select("*").eq("connectid", connectid).execute()
     dbconnectors = dbconnectors_resp.data if dbconnectors_resp.data else []
 
     for connector in dbconnectors:
@@ -336,7 +336,7 @@ def process_data_db_supabase(request, query, connectid, sampleyn = None):
 def process_data_connect_supabase(request, connectid):
     supabase = get_supabase(request)
 
-    dbconnectors_resp = supabase.schema("smartdoc").table("dbconnectors").select("*").eq("connectid", connectid).execute()
+    dbconnectors_resp = supabase.schema(SUPABASE_SCHEMA).table("dbconnectors").select("*").eq("connectid", connectid).execute()
     dbconnectors = dbconnectors_resp.data if dbconnectors_resp.data else []
 
     for connector in dbconnectors:
@@ -403,7 +403,7 @@ def process_data_connect_oracle(request, connectid):
     supabase = get_supabase(request)
 
     resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("dbconnectors")
         .select("*")
         .eq("connectid", connectid)

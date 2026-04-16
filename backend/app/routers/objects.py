@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -27,7 +27,7 @@ def list_object_types(token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc").table("p_objecttypes")
+        sb.schema(SUPABASE_SCHEMA).table("p_objecttypes")
         .select("*").order("orderno").execute().data or []
     )
     return {"objecttypes": rows}
@@ -38,7 +38,7 @@ def list_objects(chapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_objects__r", {"p_chapteruid": chapteruid})
         .execute().data or []
     )
@@ -66,7 +66,7 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
     user_id = str(user.id)
 
     billingmodelcd = None
-    user_row = sb.schema("smartdoc").table("users").select("billingmodelcd").eq("useruid", user_id).execute().data
+    user_row = sb.schema(SUPABASE_SCHEMA).table("users").select("billingmodelcd").eq("useruid", user_id).execute().data
     if user_row:
         billingmodelcd = user_row[0].get("billingmodelcd")
 
@@ -82,25 +82,25 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
     # If type changed, clear old content
     if body.objectuid and body.objecttypecd != body.objecttypecd_orig:
         for tbl in ("tables", "charts", "sentences"):
-            sb.schema("smartdoc").table(tbl).delete().eq("objectuid", body.objectuid).execute()
+            sb.schema(SUPABASE_SCHEMA).table(tbl).delete().eq("objectuid", body.objectuid).execute()
         transdata["objectsettingyn"] = False
 
     # freeobjectcnt check when re-enabling
     if body.objectuid and body.useyn:
         orig = (
-            sb.schema("smartdoc").table("objects")
+            sb.schema(SUPABASE_SCHEMA).table("objects")
             .select("useyn").eq("objectuid", body.objectuid).execute().data
         )
         if orig and not orig[0]["useyn"]:
-            cfg = sb.schema("smartdoc").table("configs").select("freeobjectcnt").execute().data
+            cfg = sb.schema(SUPABASE_SCHEMA).table("configs").select("freeobjectcnt").execute().data
             freeobjectcnt = cfg[0]["freeobjectcnt"] if cfg else 999
             chap = (
-                sb.schema("smartdoc").table("chapters")
+                sb.schema(SUPABASE_SCHEMA).table("chapters")
                 .select("docid").eq("chapteruid", body.chapteruid).execute().data
             )
             if chap:
                 doc_data = (
-                    sb.schema("smartdoc")
+                    sb.schema(SUPABASE_SCHEMA)
                     .rpc("fn_doc_count__r", {"p_docid": chap[0]["docid"], "p_chapteruid": None})
                     .execute().data
                 )
@@ -111,7 +111,7 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
                         detail=f"항목 설정 최대 사용량 {freeobjectcnt}을 초과하였습니다.",
                     )
 
-    sb.schema("smartdoc").table("objects").upsert(transdata).execute()
+    sb.schema(SUPABASE_SCHEMA).table("objects").upsert(transdata).execute()
     return {"message": "저장되었습니다."}
 
 
@@ -119,5 +119,5 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
 def delete_object(objectuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    sb.schema("smartdoc").table("objects").delete().eq("objectuid", objectuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("objects").delete().eq("objectuid", objectuid).execute()
     return {"message": "삭제되었습니다."}

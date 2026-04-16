@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_SCHEMA: str = ""
 
     # LLM API Keys
     CLAUDE_API_KEY: str = ""

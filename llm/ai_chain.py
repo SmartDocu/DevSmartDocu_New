@@ -25,12 +25,12 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnableBranch 
 
 from utilsPrj.crypto_helper import encrypt_value, decrypt_value
-from utilsPrj.supabase_client import get_service_client, get_supabase_client
+from utilsPrj.supabase_client import get_service_client, get_supabase_client, SUPABASE_SCHEMA
 
 
 def process_data_in_supabase(supabase, table_name: str, process_type: str, process_data: dict, conditions: dict, columns: str="*"):
 
-    query = supabase.schema("smartdoc") \
+    query = supabase.schema(SUPABASE_SCHEMA) \
             .table(table_name)
 
 

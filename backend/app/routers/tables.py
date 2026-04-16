@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -43,7 +43,7 @@ def get_table(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc").table("tables")
+        sb.schema(SUPABASE_SCHEMA).table("tables")
         .select("datauid, tablejson, coljson")
         .eq("chapteruid", chapteruid).eq("objectnm", objectnm)
         .execute().data or []
@@ -70,7 +70,7 @@ def save_table(body: TableSaveRequest, token: str = Depends(get_token)):
     now = datetime.now().isoformat()
 
     existing = (
-        sb.schema("smartdoc").table("tables")
+        sb.schema(SUPABASE_SCHEMA).table("tables")
         .select("datauid")
         .eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm)
         .execute().data
@@ -80,17 +80,17 @@ def save_table(body: TableSaveRequest, token: str = Depends(get_token)):
     coljson = json.dumps(body.coljson or {})
 
     if existing:
-        sb.schema("smartdoc").table("tables").update({
+        sb.schema(SUPABASE_SCHEMA).table("tables").update({
             "objectuid": body.objectuid,
             "datauid": body.datauid,
             "tablejson": tablejson,
             "coljson": coljson,
         }).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
-        sb.schema("smartdoc").table("objects").update({
+        sb.schema(SUPABASE_SCHEMA).table("objects").update({
             "modifier": user_id, "modifydts": now
         }).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
     else:
-        sb.schema("smartdoc").table("tables").insert({
+        sb.schema(SUPABASE_SCHEMA).table("tables").insert({
             "objectuid": body.objectuid,
             "chapteruid": body.chapteruid,
             "objectnm": body.objectnm,
@@ -100,7 +100,7 @@ def save_table(body: TableSaveRequest, token: str = Depends(get_token)):
             "creator": user_id,
             "gentypecd": "UI",
         }).execute()
-        sb.schema("smartdoc").table("objects").update({
+        sb.schema(SUPABASE_SCHEMA).table("objects").update({
             "objectsettingyn": True,
             "modifydts": now,
             "modifier": user_id,
@@ -189,10 +189,10 @@ def delete_table(chapteruid: str, objectnm: str, token: str = Depends(get_token)
     _get_user(token)
     sb = _sb(token)
     resp = (
-        sb.schema("smartdoc").table("tables")
+        sb.schema(SUPABASE_SCHEMA).table("tables")
         .delete()
         .eq("chapteruid", chapteruid).eq("objectnm", objectnm)
         .execute()
     )
-    sb.schema("smartdoc").table("objects").update({"objectsettingyn": False}).eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
+    sb.schema(SUPABASE_SCHEMA).table("objects").update({"objectsettingyn": False}).eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
     return {"message": "삭제되었습니다."}

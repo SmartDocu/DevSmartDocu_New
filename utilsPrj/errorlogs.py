@@ -1,4 +1,4 @@
-from utilsPrj.supabase_client import get_supabase_client
+from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from datetime import datetime, timezone, timedelta
 import uuid
 import traceback
@@ -30,7 +30,7 @@ def error_log(request, errormessage, errorobject, creator, remarks1 = None, rema
 
         # print(f'Data: {data}')
 
-        response = supabase.schema("smartdoc").table("logerrors").insert(data).execute()
+        response = supabase.schema(SUPABASE_SCHEMA).table("logerrors").insert(data).execute()
         if len(response.data) > 0:
             print(f"에러 로그 삽입 성공 하였습니다: {str(errormessage)}")
         else:
@@ -51,7 +51,7 @@ def error_login(request, errorobject="", errormessage="",
         user = request.session.get("user")
         userid = user["id"] if isinstance(user, dict) and "id" in user else None
 
-        supabase.schema("smartdoc").table("loginerrors").insert({
+        supabase.schema(SUPABASE_SCHEMA).table("loginerrors").insert({
             "errorobject": errorobject,
             "errormessage": errormessage,
             "remarks1": remarks1,

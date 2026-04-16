@@ -21,7 +21,7 @@ ROLE_OPTIONS = [
 
 def _sb_user(token: str):
     """일반 사용자 Supabase 클라이언트"""
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -53,7 +53,7 @@ def _require_admin(token: str):
     try:
         user = _get_user(token)
         sb = _sb_service()
-        row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user.id).execute().data
+        row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
         roleid = row[0].get("roleid") if row else None
         if roleid != 7:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="관리자 권한이 필요합니다.")
@@ -74,7 +74,7 @@ def list_user_roles(token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
 
-    rows = sb.schema("smartdoc").table("users").select("useruid,roleid,email").order("email").execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("users").select("useruid,roleid,email").order("email").execute().data or []
     for u in rows:
         u["role_name"] = ROLE_MAP.get(u.get("roleid", 1), "일반유저")
 
@@ -94,7 +94,7 @@ def save_user_role(body: UserRoleSaveRequest, token: str = Depends(get_token)):
     if body.roleid not in ROLE_MAP:
         raise HTTPException(status_code=400, detail="유효하지 않은 역할입니다.")
 
-    sb.schema("smartdoc").table("users").update({"roleid": body.roleid}).eq("useruid", body.useruid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("users").update({"roleid": body.roleid}).eq("useruid", body.useruid).execute()
     return {"result": "success", "message": "권한이 변경되었습니다."}
 
 
@@ -140,13 +140,13 @@ def list_sample_prompts(
         sb = _sb_service()
 
         # prompts 조회
-        q = sb.schema("smartdoc").table("prompts").select("*").eq("objecttypecd", object_type)
+        q = sb.schema(SUPABASE_SCHEMA).table("prompts").select("*").eq("objecttypecd", object_type)
         if displaytype:
             q = q.eq("displaytype", displaytype)
         rows = q.order("orderno").execute().data or []
 
         # datas 목록 (미리보기용 데이터 선택)
-        datas = sb.schema("smartdoc").table("datas").select("datauid,datanm").order("datanm").execute().data or []
+        datas = sb.schema(SUPABASE_SCHEMA).table("datas").select("datauid,datanm").order("datanm").execute().data or []
 
         return {
             "prompts": rows,
@@ -191,7 +191,7 @@ def save_sample_prompt(body: SamplePromptSaveRequest, token: str = Depends(get_t
                 "message": "샘플 프롬프트가 수정되었습니다. 저장할까요?",
                 "promptuid": body.promptuid,
             }
-        sb.schema("smartdoc").table("prompts").update({
+        sb.schema(SUPABASE_SCHEMA).table("prompts").update({
             "promptnm": body.promptnm.strip(),
             "prompt": body.prompt,
             "desc": body.promptdesc,
@@ -201,7 +201,7 @@ def save_sample_prompt(body: SamplePromptSaveRequest, token: str = Depends(get_t
 
     # 신규 저장
     new_uid = str(uuid.uuid4())
-    sb.schema("smartdoc").table("prompts").insert({
+    sb.schema(SUPABASE_SCHEMA).table("prompts").insert({
         "promptuid": new_uid,
         "objecttypecd": body.objecttypecd,
         "datauid": body.datauid or None,
@@ -222,7 +222,7 @@ def delete_sample_prompt(promptuid: str, token: str = Depends(get_token)):
     if not promptuid:
         raise HTTPException(status_code=400, detail="삭제할 프롬프트를 선택해주세요.")
 
-    sb.schema("smartdoc").table("prompts").delete().eq("promptuid", promptuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("prompts").delete().eq("promptuid", promptuid).execute()
     return {"success": True, "message": "삭제되었습니다."}
 
 
@@ -258,14 +258,14 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
     sb_svc = get_service_client()
 
     # ── datas 조회: projectid, tenantid, datasourcecd, sourcedatauid 확인 ──
-    data_rows = sb_svc.schema("smartdoc").table("datas").select(
+    data_rows = sb_svc.schema(SUPABASE_SCHEMA).table("datas").select(
         "projectid, datasourcecd, sourcedatauid"
     ).eq("datauid", body.datauid).execute().data or []
 
     projectid = data_rows[0].get("projectid") if data_rows else None
     tenantid = None
     if projectid:
-        proj_rows = sb_svc.schema("smartdoc").table("projects").select("tenantid").eq(
+        proj_rows = sb_svc.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq(
             "projectid", projectid
         ).execute().data or []
         if proj_rows:
@@ -285,7 +285,7 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
         raise HTTPException(status_code=400, detail=f"데이터 조회 오류: {str(e)}")
 
     try:
-        datacols = sb_svc.schema("smartdoc").table("datacols").select(
+        datacols = sb_svc.schema(SUPABASE_SCHEMA).table("datacols").select(
             "querycolnm, dispcolnm"
         ).eq("datauid", col_datauid).execute().data or []
     except Exception:
@@ -351,7 +351,7 @@ def list_llms(token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
 
-    rows = sb.schema("smartdoc").table("llmmodels").select("*").order("llmmodelnm").execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("*").order("llmmodelnm").execute().data or []
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         # API Key 는 보안상 제거 (유무만 표시)
@@ -389,7 +389,7 @@ def save_llm(body: LlmSaveRequest, token: str = Depends(get_token)):
 
     # API Key 비어 있으면 기존 키 유지
     if not apikey:
-        existing = sb.schema("smartdoc").table("llmmodels").select("encapikey").eq("llmmodelnm", body.llmmodelnm).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("encapikey").eq("llmmodelnm", body.llmmodelnm).execute().data
         if existing and existing[0].get("encapikey"):
             apikey = decrypt_value(existing[0]["encapikey"])
 
@@ -405,7 +405,7 @@ def save_llm(body: LlmSaveRequest, token: str = Depends(get_token)):
         "creator": user.id,
     }
 
-    sb.schema("smartdoc").table("llmmodels").upsert(data).execute()
+    sb.schema(SUPABASE_SCHEMA).table("llmmodels").upsert(data).execute()
     return {"result": "success", "message": "성공적으로 저장되었습니다."}
 
 
@@ -417,7 +417,7 @@ def delete_llm(llmmodelnm: str, token: str = Depends(get_token)):
     if not llmmodelnm:
         raise HTTPException(status_code=400, detail="LLM 모델명은 필수입니다.")
 
-    sb.schema("smartdoc").table("llmmodels").delete().eq("llmmodelnm", llmmodelnm).execute()
+    sb.schema(SUPABASE_SCHEMA).table("llmmodels").delete().eq("llmmodelnm", llmmodelnm).execute()
     return {"result": "success", "message": "삭제되었습니다."}
 
 
@@ -434,13 +434,13 @@ def list_llmapis(token: str = Depends(get_token)):
     sb = _sb_service()
 
     # 사용 중인 LLM 모델 목록 (드롭다운용)
-    llmmodels = sb.schema("smartdoc").table("llmmodels").select("llmmodelnm,llmvendornm").eq("useyn", True).order("llmvendornm").order("llmmodelnm").execute().data or []
+    llmmodels = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm,llmvendornm").eq("useyn", True).order("llmvendornm").order("llmmodelnm").execute().data or []
     llmmodel_ids = [m["llmmodelnm"] for m in llmmodels]
 
     # LLM API 목록
     llmapis = []
     if llmmodel_ids:
-        llmapis = sb.schema("smartdoc").table("llmapis").select("*").in_("llmmodelnm", llmmodel_ids).order("llmmodelnm").order("usetypecd").execute().data or []
+        llmapis = sb.schema(SUPABASE_SCHEMA).table("llmapis").select("*").in_("llmmodelnm", llmmodel_ids).order("llmmodelnm").order("usetypecd").execute().data or []
     for row in llmapis:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         row["usetypenm"] = USE_TYPE_MAP.get(row.get("usetypecd", ""), "")
@@ -456,7 +456,7 @@ def list_llmapis(token: str = Depends(get_token)):
             row["createuser"] = ""
 
     # 기업 목록 (비고 드롭다운용, SmartDoc 제외)
-    tenants = sb.schema("smartdoc").table("tenants").select("tenantnm").eq("useyn", True).neq("tenantnm", "SmartDoc").order("tenantid").execute().data or []
+    tenants = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("useyn", True).neq("tenantnm", "SmartDoc").order("tenantid").execute().data or []
 
     return {"llmapis": llmapis, "llmmodels": llmmodels, "tenants": tenants}
 
@@ -480,7 +480,7 @@ def save_llmapi(body: LlmApiSaveRequest, token: str = Depends(get_token)):
 
     # 기존 레코드 수정 시 API Key 비어 있으면 유지
     if body.llmapiuid and not apikey:
-        existing = sb.schema("smartdoc").table("llmapis").select("encapikey").eq("llmapiuid", body.llmapiuid).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("llmapis").select("encapikey").eq("llmapiuid", body.llmapiuid).execute().data
         if existing and existing[0].get("encapikey"):
             apikey = decrypt_value(existing[0]["encapikey"])
 
@@ -496,7 +496,7 @@ def save_llmapi(body: LlmApiSaveRequest, token: str = Depends(get_token)):
     if body.llmapiuid:
         upsert_data["llmapiuid"] = body.llmapiuid
 
-    sb.schema("smartdoc").table("llmapis").upsert(upsert_data).execute()
+    sb.schema(SUPABASE_SCHEMA).table("llmapis").upsert(upsert_data).execute()
     return {"result": "success", "message": "성공적으로 저장되었습니다."}
 
 
@@ -508,7 +508,7 @@ def delete_llmapi(llmapiuid: str, token: str = Depends(get_token)):
     if not llmapiuid:
         raise HTTPException(status_code=400, detail="LLM API 선택은 필수입니다.")
 
-    sb.schema("smartdoc").table("llmapis").delete().eq("llmapiuid", llmapiuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("llmapis").delete().eq("llmapiuid", llmapiuid).execute()
     return {"result": "success", "message": "삭제되었습니다."}
 
 
@@ -523,7 +523,7 @@ def list_tenant_requests(token: str = Depends(get_token)):
 
     from utilsPrj.crypto_helper import decrypt_value
 
-    rows = sb.schema("smartdoc").table("tenantreqs").select("*").order("createdts", desc=True).execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("tenantreqs").select("*").order("createdts", desc=True).execute().data or []
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         if row.get("encemail"):
@@ -566,7 +566,7 @@ class HelpDeleteRequest(BaseModel):
 def list_helps(token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
-    rows = sb.schema("smartdoc").table("helps").select("*").order("createdts", desc=True).execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").order("createdts", desc=True).execute().data or []
     # creator uuid → full_name
     for row in rows:
         if row.get("creator"):
@@ -591,7 +591,7 @@ def save_help(body: HelpSaveRequest, token: str = Depends(get_token)):
         "desc": body.desc or "",
         "creator": str(user.id),
     }
-    sb.schema("smartdoc").table("helps").upsert(payload).execute()
+    sb.schema(SUPABASE_SCHEMA).table("helps").upsert(payload).execute()
     return {"ok": True, "helpuid": payload["helpuid"]}
 
 
@@ -599,7 +599,7 @@ def save_help(body: HelpSaveRequest, token: str = Depends(get_token)):
 def delete_help(helpuid: str, token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
-    sb.schema("smartdoc").table("helps").delete().eq("helpuid", helpuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("helps").delete().eq("helpuid", helpuid).execute()
     return {"ok": True}
 
 
@@ -607,5 +607,5 @@ def delete_help(helpuid: str, token: str = Depends(get_token)):
 def search_help(url: str = Query(...)):
     """URL로 도움말 검색 (인증 불필요)"""
     sb = _sb_service()
-    rows = sb.schema("smartdoc").table("helps").select("*").eq("url", url).execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").eq("url", url).execute().data or []
     return {"helps": rows}

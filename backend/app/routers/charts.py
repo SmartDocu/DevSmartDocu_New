@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -68,7 +68,7 @@ def get_chart(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc").table("charts")
+        sb.schema(SUPABASE_SCHEMA).table("charts")
         .select("datauid, displaytype, chartjson, chart_width, chart_height")
         .eq("chapteruid", chapteruid).eq("objectnm", objectnm)
         .execute().data or []
@@ -92,7 +92,7 @@ def save_chart(body: ChartSaveRequest, token: str = Depends(get_token)):
     chartjson = json.dumps(body.chartjson or {})
 
     existing = (
-        sb.schema("smartdoc").table("charts")
+        sb.schema(SUPABASE_SCHEMA).table("charts")
         .select("datauid")
         .eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm)
         .execute().data
@@ -111,12 +111,12 @@ def save_chart(body: ChartSaveRequest, token: str = Depends(get_token)):
     }
 
     if existing:
-        sb.schema("smartdoc").table("charts").update(payload).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
-        sb.schema("smartdoc").table("objects").update({"modifier": user_id, "modifydts": now}).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
+        sb.schema(SUPABASE_SCHEMA).table("charts").update(payload).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
+        sb.schema(SUPABASE_SCHEMA).table("objects").update({"modifier": user_id, "modifydts": now}).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
     else:
         payload["gentypecd"] = "UI"
-        sb.schema("smartdoc").table("charts").insert(payload).execute()
-        sb.schema("smartdoc").table("objects").update({
+        sb.schema(SUPABASE_SCHEMA).table("charts").insert(payload).execute()
+        sb.schema(SUPABASE_SCHEMA).table("objects").update({
             "objectsettingyn": True, "modifydts": now, "modifier": user_id,
         }).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
 
@@ -127,8 +127,8 @@ def save_chart(body: ChartSaveRequest, token: str = Depends(get_token)):
 def delete_chart(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    sb.schema("smartdoc").table("charts").delete().eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
-    sb.schema("smartdoc").table("objects").update({"objectsettingyn": False}).eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
+    sb.schema(SUPABASE_SCHEMA).table("charts").delete().eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
+    sb.schema(SUPABASE_SCHEMA).table("objects").update({"objectsettingyn": False}).eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
     return {"message": "삭제되었습니다."}
 
 

@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 def _sb_svc():
-    from utilsPrj.supabase_client import get_service_client
+    from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
     return get_service_client()
 
 
@@ -52,7 +52,7 @@ def _fmt_dt(s):
 @router.get("/faqs")
 def list_faqs():
     sb = _sb_svc()
-    rows = sb.schema("smartdoc").table("faqs").select("*").order("orderno").execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("faqs").select("*").order("orderno").execute().data or []
     return {"faqs": rows}
 
 
@@ -69,19 +69,19 @@ def save_faq(body: FaqSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
     # roleid=7 체크
-    row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user.id).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     if not row or row[0].get("roleid") != 7:
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
     if body.faquid:
-        sb.schema("smartdoc").table("faqs").update({
+        sb.schema(SUPABASE_SCHEMA).table("faqs").update({
             "title": body.title, "question": body.question,
             "answer": body.answer, "orderno": body.orderno,
         }).eq("faquid", body.faquid).execute()
         return {"ok": True, "faquid": body.faquid}
     else:
         faquid = str(uuid.uuid4())
-        sb.schema("smartdoc").table("faqs").insert({
+        sb.schema(SUPABASE_SCHEMA).table("faqs").insert({
             "faquid": faquid, "title": body.title,
             "question": body.question, "answer": body.answer,
             "orderno": body.orderno, "creator": str(user.id),
@@ -93,10 +93,10 @@ def save_faq(body: FaqSaveRequest, token: str = Depends(get_token)):
 def delete_faq(faquid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
-    row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user.id).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     if not row or row[0].get("roleid") != 7:
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
-    sb.schema("smartdoc").table("faqs").delete().eq("faquid", faquid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("faqs").delete().eq("faquid", faquid).execute()
     return {"ok": True}
 
 
@@ -108,12 +108,12 @@ def delete_faq(faquid: str, token: str = Depends(get_token)):
 def list_qnas(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
-    roleid_row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user.id).execute().data
+    roleid_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     roleid = roleid_row[0].get("roleid", 1) if roleid_row else 1
 
-    rows = sb.schema("smartdoc").table("qnas").select("*").order("createdts", desc=True).execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("qnas").select("*").order("createdts", desc=True).execute().data or []
 
-    users_rows = sb.schema("smartdoc").table("users").select("useruid,email").execute().data or []
+    users_rows = sb.schema(SUPABASE_SCHEMA).table("users").select("useruid,email").execute().data or []
     user_map = {u["useruid"]: u.get("email", "") for u in users_rows}
 
     result = []
@@ -144,13 +144,13 @@ def save_qna(body: QnaSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
     if body.qnauid:
-        sb.schema("smartdoc").table("qnas").update({
+        sb.schema(SUPABASE_SCHEMA).table("qnas").update({
             "title": body.title, "question": body.question, "isprivate": body.isprivate,
         }).eq("qnauid", body.qnauid).execute()
         return {"ok": True, "qnauid": body.qnauid}
     else:
         qnauid = str(uuid.uuid4())
-        sb.schema("smartdoc").table("qnas").insert({
+        sb.schema(SUPABASE_SCHEMA).table("qnas").insert({
             "qnauid": qnauid, "title": body.title,
             "question": body.question, "isprivate": body.isprivate,
             "creator": str(user.id),
@@ -162,15 +162,15 @@ def save_qna(body: QnaSaveRequest, token: str = Depends(get_token)):
 def delete_qna(qnauid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
-    row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user.id).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     roleid = row[0].get("roleid", 1) if row else 1
     # 본인 or 관리자만 삭제
-    qna = sb.schema("smartdoc").table("qnas").select("creator").eq("qnauid", qnauid).execute().data
+    qna = sb.schema(SUPABASE_SCHEMA).table("qnas").select("creator").eq("qnauid", qnauid).execute().data
     if not qna:
         raise HTTPException(status_code=404, detail="QnA를 찾을 수 없습니다.")
     if roleid != 7 and qna[0].get("creator") != str(user.id):
         raise HTTPException(status_code=403, detail="삭제 권한이 없습니다.")
-    sb.schema("smartdoc").table("qnas").delete().eq("qnauid", qnauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("qnas").delete().eq("qnauid", qnauid).execute()
     return {"ok": True}
 
 
@@ -183,16 +183,16 @@ class QnaAnswerRequest(BaseModel):
 def save_qna_answer(body: QnaAnswerRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
-    row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user.id).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     if not row or row[0].get("roleid") != 7:
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     if body.answer:
-        sb.schema("smartdoc").table("qnas").update({
+        sb.schema(SUPABASE_SCHEMA).table("qnas").update({
             "answer": body.answer, "answeruseruid": str(user.id),
             "answerdts": datetime.now().isoformat(),
         }).eq("qnauid", body.qnauid).execute()
     else:
-        sb.schema("smartdoc").table("qnas").update({
+        sb.schema(SUPABASE_SCHEMA).table("qnas").update({
             "answer": None, "answeruseruid": None, "answerdts": None,
         }).eq("qnauid", body.qnauid).execute()
     return {"ok": True}
@@ -225,11 +225,11 @@ def hide_popup(body: HidePopupRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
     enddt = (datetime.utcnow() + timedelta(days=body.days)).isoformat()
-    existing = sb.schema("smartdoc").table("popupdeactivates").select("*").eq("useruid", str(user.id)).eq("popupid", body.popupid).execute().data
+    existing = sb.schema(SUPABASE_SCHEMA).table("popupdeactivates").select("*").eq("useruid", str(user.id)).eq("popupid", body.popupid).execute().data
     if existing:
-        sb.schema("smartdoc").table("popupdeactivates").update({"enddt": enddt}).eq("useruid", str(user.id)).eq("popupid", body.popupid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("popupdeactivates").update({"enddt": enddt}).eq("useruid", str(user.id)).eq("popupid", body.popupid).execute()
     else:
-        sb.schema("smartdoc").table("popupdeactivates").insert({
+        sb.schema(SUPABASE_SCHEMA).table("popupdeactivates").insert({
             "useruid": str(user.id), "popupid": body.popupid, "enddt": enddt,
         }).execute()
     return {"ok": True}
@@ -304,7 +304,7 @@ async def save_tenant_request(
     try:
         if type == "tenant":
             # 기업 등록 요청 → tenantreqs 저장
-            sb.schema("smartdoc").table("tenantreqs").insert({
+            sb.schema(SUPABASE_SCHEMA).table("tenantreqs").insert({
                 "bizregno": bizregno,
                 "tenantnm": tenantnm,
                 "billingusercnt": int(billingusercnt) if billingusercnt else None,
@@ -323,12 +323,12 @@ async def save_tenant_request(
                 raise HTTPException(status_code=401, detail="기업 등록은 로그인 후 이용하실 수 있습니다.")
 
             # 중복 기업명 확인
-            existing = sb.schema("smartdoc").table("tenants").select("tenantid").eq("tenantnm", tenantnm).execute().data
+            existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid").eq("tenantnm", tenantnm).execute().data
             if existing:
                 raise HTTPException(status_code=400, detail=f"이미 존재하는 '{tenantnm}' 명입니다.")
 
             # tenants 생성
-            tenant_row = sb.schema("smartdoc").table("tenants").insert({
+            tenant_row = sb.schema(SUPABASE_SCHEMA).table("tenants").insert({
                 "tenantnm": tenantnm,
                 "useyn": True,
                 "billingusercnt": int(billingusercnt) if billingusercnt else None,
@@ -341,26 +341,26 @@ async def save_tenant_request(
             # 아이콘 파일 업로드
             if iconfile and iconfile.filename:
                 _, icon_url = _save_iconfile(sb, iconfile, "iconfiles/tenants")
-                sb.schema("smartdoc").table("tenants").update({
+                sb.schema(SUPABASE_SCHEMA).table("tenants").update({
                     "iconfilenm": iconfile.filename,
                     "iconfileurl": icon_url,
                 }).eq("tenantid", new_tenantid).execute()
 
             # 기존 tenantusers 삭제
-            sb.schema("smartdoc").table("tenantusers").delete().eq("useruid", user_id).execute()
+            sb.schema(SUPABASE_SCHEMA).table("tenantusers").delete().eq("useruid", user_id).execute()
 
             # 기존 개인 프로젝트 삭제
-            proj_res = sb.schema("smartdoc").table("projects").select("projectid").eq("projectnm", user_email).execute()
+            proj_res = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("projectnm", user_email).execute()
             project_id = None
             if proj_res.data:
                 project_id = proj_res.data[0]["projectid"]
-                sb.schema("smartdoc").table("projects").delete().eq("projectid", project_id).execute()
+                sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", project_id).execute()
             if project_id:
-                sb.schema("smartdoc").table("projectusers").delete().eq("useruid", user_id).execute()
-                sb.schema("smartdoc").table("docs").delete().eq("projectid", project_id).execute()
+                sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("useruid", user_id).execute()
+                sb.schema(SUPABASE_SCHEMA).table("docs").delete().eq("projectid", project_id).execute()
 
             # tenantusers 등록 (매니저)
-            sb.schema("smartdoc").table("tenantusers").insert({
+            sb.schema(SUPABASE_SCHEMA).table("tenantusers").insert({
                 "tenantid": new_tenantid,
                 "useruid": user_id,
                 "rolecd": "M",
@@ -369,20 +369,20 @@ async def save_tenant_request(
             }).execute()
 
             # users billing 모델 변경
-            sb.schema("smartdoc").table("users").update({"billingmodelcd": "Te"}).eq("useruid", user_id).execute()
+            sb.schema(SUPABASE_SCHEMA).table("users").update({"billingmodelcd": "Te"}).eq("useruid", user_id).execute()
 
             # billing 처리
             now_dt = datetime.now().strftime("%Y-%m-%d")
             from dateutil.relativedelta import relativedelta
             now_1m = (datetime.now() + relativedelta(months=1) - relativedelta(days=1)).strftime("%Y-%m-%d")
 
-            configs = sb.schema("smartdoc").table("configs").select("*").execute().data
+            configs = sb.schema(SUPABASE_SCHEMA).table("configs").select("*").execute().data
             config_price = configs[0].get("priceteams", 50000) if configs else 50000
             config_capa = int(configs[0].get("inputtokencapa", 1000000)) if configs else 1000000
             user_cnt = int(billingusercnt) if billingusercnt else 1
             inputtokencapa = config_capa * user_cnt
 
-            sb.schema("smartdoc").table("billmasters").insert({
+            sb.schema(SUPABASE_SCHEMA).table("billmasters").insert({
                 "billtargetcd": "T",
                 "tenantid": new_tenantid,
                 "billingmodelcd": "Te",
@@ -393,7 +393,7 @@ async def save_tenant_request(
                 "creator": user_id,
             }).execute()
 
-            sb.schema("smartdoc").table("billdts").insert({
+            sb.schema(SUPABASE_SCHEMA).table("billdts").insert({
                 "billtargetcd": "T",
                 "tenantid": new_tenantid,
                 "billstartdt": now_dt,
@@ -407,7 +407,7 @@ async def save_tenant_request(
                 "creator": user_id,
             }).execute()
 
-            sb.schema("smartdoc").table("tokentenants").insert({
+            sb.schema(SUPABASE_SCHEMA).table("tokentenants").insert({
                 "tenantid": new_tenantid,
                 "billstartdt": now_dt,
                 "runcnt": 0,
@@ -415,7 +415,7 @@ async def save_tenant_request(
                 "inputtokencapa": inputtokencapa,
             }).execute()
 
-            sb.schema("smartdoc").table("tenantusermonths").insert({
+            sb.schema(SUPABASE_SCHEMA).table("tenantusermonths").insert({
                 "billstartdt": now_dt,
                 "tenantid": new_tenantid,
                 "useruid": user_id,

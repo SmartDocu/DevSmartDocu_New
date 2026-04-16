@@ -17,7 +17,7 @@ BILLING_MODELS = ["Fr", "Pr", "Te", "En"]
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -30,7 +30,7 @@ def _get_user(token: str):
 
 
 def _get_tenantid(sb, user_id: str) -> Optional[str]:
-    rows = sb.schema("smartdoc").table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).execute().data
+    rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).execute().data
     return rows[0]["tenantid"] if rows else None
 
 
@@ -98,7 +98,7 @@ def list_servers(token: str = Depends(get_token)):
     sb = _sb(token)
     tenantid = _get_tenantid(sb, user.id)
 
-    rows = sb.schema("smartdoc").table("dbconnectors").select("*").eq("tenantid", tenantid).order("orderno").execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("dbconnectors").select("*").eq("tenantid", tenantid).order("orderno").execute().data or []
     for row in rows:
         row["decendpoint"] = _decrypt(row.get("encendpoint", ""))
         row["decdatabase"] = _decrypt(row.get("encaccessdb", ""))
@@ -140,21 +140,21 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
         update_fields["encaccesspassword"] = _encrypt(body.password)
 
     if body.connectid:
-        existing = sb.schema("smartdoc").table("dbconnectors").select("connectid").eq("connectid", body.connectid).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("dbconnectors").select("connectid").eq("connectid", body.connectid).execute().data
         if existing:
-            sb.schema("smartdoc").table("dbconnectors").update(update_fields).eq("connectid", body.connectid).execute()
+            sb.schema(SUPABASE_SCHEMA).table("dbconnectors").update(update_fields).eq("connectid", body.connectid).execute()
             return {"status": "updated"}
 
     update_fields["tenantid"] = tenantid
     update_fields["creator"] = user.id
-    sb.schema("smartdoc").table("dbconnectors").insert(update_fields).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dbconnectors").insert(update_fields).execute()
     return {"status": "inserted"}
 
 
 @router.delete("/servers/{connectid}")
 def delete_server(connectid: int, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema("smartdoc").table("dbconnectors").delete().eq("connectid", connectid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dbconnectors").delete().eq("connectid", connectid).execute()
     return {"status": "ok"}
 
 
@@ -168,15 +168,15 @@ def list_projects(token: str = Depends(get_token)):
     sb = _sb(token)
     tenantid = _get_tenantid(sb, user.id)
 
-    rows = sb.schema("smartdoc").table("projects").select("*").eq("tenantid", tenantid).order("createdts", desc=True).execute().data or []
-    tenant_row = sb.schema("smartdoc").table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
+    rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).order("createdts", desc=True).execute().data or []
+    tenant_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
     tenantnm = tenant_row[0]["tenantnm"] if tenant_row else ""
 
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         if row.get("creator"):
             try:
-                u = sb.schema("smartdoc").table("users").select("usernm").eq("useruid", row["creator"]).execute().data
+                u = sb.schema(SUPABASE_SCHEMA).table("users").select("usernm").eq("useruid", row["creator"]).execute().data
                 row["creatornm"] = u[0]["usernm"] if u else ""
             except Exception:
                 row["creatornm"] = ""
@@ -206,19 +206,19 @@ def save_project(body: ProjectSaveRequest, token: str = Depends(get_token)):
     }
 
     if body.projectid:
-        existing = sb.schema("smartdoc").table("projects").select("projectid").eq("projectid", body.projectid).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("projectid", body.projectid).execute().data
         if existing:
-            sb.schema("smartdoc").table("projects").update(data).eq("projectid", body.projectid).execute()
+            sb.schema(SUPABASE_SCHEMA).table("projects").update(data).eq("projectid", body.projectid).execute()
             return {"status": "updated"}
 
-    sb.schema("smartdoc").table("projects").insert(data).execute()
+    sb.schema(SUPABASE_SCHEMA).table("projects").insert(data).execute()
     return {"status": "inserted"}
 
 
 @router.delete("/projects/{projectid}")
 def delete_project(projectid: str, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema("smartdoc").table("projects").delete().eq("projectid", projectid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", projectid).execute()
     return {"status": "ok"}
 
 
@@ -231,15 +231,15 @@ def list_tenants(token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
 
-    rows = sb.schema("smartdoc").table("tenants").select("*").order("createdts", desc=True).execute().data or []
-    bills = sb.schema("smartdoc").table("billmasters").select("*").execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").order("createdts", desc=True).execute().data or []
+    bills = sb.schema(SUPABASE_SCHEMA).table("billmasters").select("*").execute().data or []
     bill_map = {b["tenantid"]: b for b in bills}
 
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         if row.get("creator"):
             try:
-                u = sb.schema("smartdoc").table("users").select("usernm").eq("useruid", row["creator"]).execute().data
+                u = sb.schema(SUPABASE_SCHEMA).table("users").select("usernm").eq("useruid", row["creator"]).execute().data
                 row["creatornm"] = u[0]["usernm"] if u else ""
             except Exception:
                 row["creatornm"] = ""
@@ -282,14 +282,14 @@ async def save_tenant(
     }
 
     if tenantid:
-        existing = sb.schema("smartdoc").table("tenants").select("tenantid, iconfileurl").eq("tenantid", tenantid).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid, iconfileurl").eq("tenantid", tenantid).execute().data
         if existing:
             if iconfile and iconfile.filename:
                 existing_url = existing[0].get("iconfileurl")
                 icon_nm, icon_url = _save_iconfile(sb, iconfile, "iconfiles/tenants", existing_url)
                 tenant_data["iconfilenm"] = icon_nm
                 tenant_data["iconfileurl"] = icon_url
-            sb.schema("smartdoc").table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
+            sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
             bill_data = {
                 "billingmodelcd": billingmodelcd,
                 "billingusercnt": billingusercnt_int,
@@ -298,20 +298,20 @@ async def save_tenant(
                 bill_data["encemail"] = _encrypt(email)
             if telno is not None:
                 bill_data["enctelno"] = _encrypt(telno)
-            existing_bill = sb.schema("smartdoc").table("billmasters").select("tenantid").eq("tenantid", tenantid).execute().data
+            existing_bill = sb.schema(SUPABASE_SCHEMA).table("billmasters").select("tenantid").eq("tenantid", tenantid).execute().data
             if existing_bill:
-                sb.schema("smartdoc").table("billmasters").update(bill_data).eq("tenantid", tenantid).execute()
+                sb.schema(SUPABASE_SCHEMA).table("billmasters").update(bill_data).eq("tenantid", tenantid).execute()
             else:
                 bill_data["tenantid"] = tenantid
-                sb.schema("smartdoc").table("billmasters").insert(bill_data).execute()
+                sb.schema(SUPABASE_SCHEMA).table("billmasters").insert(bill_data).execute()
             return {"status": "updated"}
 
-    resp = sb.schema("smartdoc").table("tenants").insert(tenant_data).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert(tenant_data).execute()
     new_tenantid = resp.data[0]["tenantid"] if resp.data else None
     if new_tenantid:
         if iconfile and iconfile.filename:
             icon_nm, icon_url = _save_iconfile(sb, iconfile, "iconfiles/tenants")
-            sb.schema("smartdoc").table("tenants").update({
+            sb.schema(SUPABASE_SCHEMA).table("tenants").update({
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
@@ -322,15 +322,15 @@ async def save_tenant(
             "encemail": _encrypt(email or ""),
             "enctelno": _encrypt(telno or ""),
         }
-        sb.schema("smartdoc").table("billmasters").insert(bill_data).execute()
+        sb.schema(SUPABASE_SCHEMA).table("billmasters").insert(bill_data).execute()
     return {"status": "inserted"}
 
 
 @router.delete("/tenants/{tenantid}")
 def delete_tenant(tenantid: str, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema("smartdoc").table("billmasters").delete().eq("tenantid", tenantid).execute()
-    sb.schema("smartdoc").table("tenants").delete().eq("tenantid", tenantid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("billmasters").delete().eq("tenantid", tenantid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("tenants").delete().eq("tenantid", tenantid).execute()
     return {"status": "ok"}
 
 
@@ -345,24 +345,24 @@ def get_myinfo(token: str = Depends(get_token)):
     user_id = user.id
 
     # smartdoc users
-    user_info = sb.schema("smartdoc").table("users").select("*").eq("useruid", user_id).execute().data
+    user_info = sb.schema(SUPABASE_SCHEMA).table("users").select("*").eq("useruid", user_id).execute().data
     user_info = user_info[0] if user_info else {}
 
     # tenantusers
-    tu = sb.schema("smartdoc").table("tenantusers").select("*").eq("useruid", user_id).execute().data
+    tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("useruid", user_id).execute().data
     tenantuser = tu[0] if tu else {}
     tenantid = tenantuser.get("tenantid")
 
     # tenant
     tenant = {}
     if tenantid:
-        t = sb.schema("smartdoc").table("tenants").select("*").eq("tenantid", tenantid).execute().data
+        t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
         tenant = t[0] if t else {}
 
     # projects the user belongs to
-    pu_rows = sb.schema("smartdoc").table("projectusers").select("*").eq("useruid", user_id).execute().data or []
+    pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("useruid", user_id).execute().data or []
     if pu_rows and tenantid:
-        projects = sb.schema("smartdoc").table("projects").select("*").eq("tenantid", tenantid).execute().data or []
+        projects = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).execute().data or []
         proj_map = {p["projectid"]: p for p in projects}
         for pu in pu_rows:
             pid = pu.get("projectid")
@@ -387,5 +387,5 @@ class UpdateUsernameRequest(BaseModel):
 def update_username(body: UpdateUsernameRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    sb.schema("smartdoc").table("users").update({"usernm": body.usernm}).eq("useruid", user.id).execute()
+    sb.schema(SUPABASE_SCHEMA).table("users").update({"usernm": body.usernm}).eq("useruid", user.id).execute()
     return {"status": "ok"}

@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 from matplotlib import font_manager, rc
 import os
-from utilsPrj.supabase_client import get_supabase_client
+from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 import inspect
 from utilsPrj.errorlogs import error_log
 
@@ -852,7 +852,7 @@ def draw_chart(request, supabase, charttypecd, dict_rows, properties, datauid):
         # )    # jeff 20251124 1104 
 
         col_resp = (
-            supabase.schema("smartdoc")
+            supabase.schema(SUPABASE_SCHEMA)
             .table("datacols")
             .select("querycolnm, dispcolnm")
             .eq("datauid", datauid)

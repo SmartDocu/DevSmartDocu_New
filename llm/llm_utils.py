@@ -40,7 +40,7 @@ def ai_llm_prompt_page(request, output_page, is_experience=False):
         user = request.session.get("user")
         user_id = user.get("id")
     
-        docs = supabase.schema("smartdoc").rpc("fn_docs_filtered__r_user", {'p_useruid': user_id}).execute().data or []
+        docs = supabase.schema(SUPABASE_SCHEMA).rpc("fn_docs_filtered__r_user", {'p_useruid': user_id}).execute().data or []
         docs_table = docs
 
     selected_datauid = request.GET.get("datauid")
@@ -206,7 +206,7 @@ def ai_llm_page(request, output_page, object_typecd, table_name):
 
     user = request.session.get("user")
     user_id = user.get("id")
-    docs = supabase.schema("smartdoc").rpc("fn_docs_filtered__r_user", {'p_useruid': user_id}).execute().data or []
+    docs = supabase.schema(SUPABASE_SCHEMA).rpc("fn_docs_filtered__r_user", {'p_useruid': user_id}).execute().data or []
     
     gpt_prompt = ""
     prompt_desc = ""

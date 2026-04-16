@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token
-from utilsPrj.supabase_client import get_thread_supabase, get_service_client
+from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from utilsPrj.crypto_helper import decrypt_value
 
 router = APIRouter()
@@ -53,7 +53,7 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
     """
     user_resp = sb.auth.get_user(token)
     user_id = str(user_resp.user.id)
-    rows = sb.schema("smartdoc").table("users").select(
+    rows = sb.schema(SUPABASE_SCHEMA).table("users").select(
         "roleid, billingmodelcd, mydocid"
     ).eq("useruid", user_id).execute().data or []
     # 행이 없어도 user_id는 반환 (preview/save에서 user_id가 주로 필요)
@@ -63,7 +63,7 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
 def _get_llm_model(sb, projectid, tenantid):
     """Get LLM instance using project/tenant config."""
     def _fetch(table, cond):
-        data = sb.schema("smartdoc").table(table).select("llmmodelnm, encapikey").match(cond).execute().data or []
+        data = sb.schema(SUPABASE_SCHEMA).table(table).select("llmmodelnm, encapikey").match(cond).execute().data or []
         if data:
             return data[0].get("llmmodelnm"), data[0].get("encapikey")
         return None, None
@@ -72,13 +72,13 @@ def _get_llm_model(sb, projectid, tenantid):
     if not llm_model:
         llm_model, enc_key = _fetch("tenants", {"tenantid": tenantid})
     if not llm_model:
-        models = sb.schema("smartdoc").table("llmmodels").select("llmmodelnm").eq("useyn", True).execute().data or []
+        models = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm").eq("useyn", True).execute().data or []
         llm_model = random.choice(models)["llmmodelnm"]
-        keys = sb.schema("smartdoc").table("llmapis").select("encapikey").eq("usetypecd", "R").eq("llmmodelnm", llm_model).execute().data or []
+        keys = sb.schema(SUPABASE_SCHEMA).table("llmapis").select("encapikey").eq("usetypecd", "R").eq("llmmodelnm", llm_model).execute().data or []
         enc_key = random.choice(keys)["encapikey"]
 
     dec_key = decrypt_value(enc_key)
-    vendor_data = sb.schema("smartdoc").table("llmmodels").select("llmvendornm").eq("llmmodelnm", llm_model).execute().data or []
+    vendor_data = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmvendornm").eq("llmmodelnm", llm_model).execute().data or []
     vendor = vendor_data[0]["llmvendornm"] if vendor_data else "Anthropic"
 
     if vendor == "OpenAI":
@@ -114,7 +114,7 @@ def llm_init(
         user_id = str(user_resp.user.id)
 
         # ② chapters → docid 획득
-        chapter_rows = sb.schema("smartdoc").table("chapters").select(
+        chapter_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select(
             "chapteruid, chapternm, docid"
         ).eq("chapteruid", chapteruid).execute().data or []
         chapter = chapter_rows[0] if chapter_rows else {}
@@ -124,7 +124,7 @@ def llm_init(
         docnm = ""
         project_id = None
         if chapter.get("docid"):
-            doc_rows = sb.schema("smartdoc").table("docs").select(
+            doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select(
                 "docnm, projectid"
             ).eq("docid", chapter["docid"]).execute().data or []
             if doc_rows:
@@ -132,7 +132,7 @@ def llm_init(
                 project_id = doc_rows[0].get("projectid")
 
         # ④ objects
-        obj_rows = sb.schema("smartdoc").table("objects").select(
+        obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select(
             "objectuid, objectnm, objecttypecd"
         ).eq("chapteruid", chapteruid).eq("objecttypecd", objecttypecd).execute().data or []
         objects = sorted(obj_rows, key=lambda x: x.get("objectnm", ""))
@@ -140,7 +140,7 @@ def llm_init(
         # ⑤ datas — projectid 기준 조회
         datas_rows = []
         if project_id:
-            datas_rows = sb.schema("smartdoc").table("datas").select(
+            datas_rows = sb.schema(SUPABASE_SCHEMA).table("datas").select(
                 "projectid, datauid, datanm, query"
             ).eq("projectid", project_id).execute().data or []
         datas = sorted(datas_rows, key=lambda x: x.get("datanm", ""))
@@ -152,13 +152,13 @@ def llm_init(
             # objectuid를 직접 전달받은 경우 바로 사용, 없으면 objectnm으로 조회
             objectuid_val = objectuid
             if not objectuid_val and objectnm:
-                obj_match = sb.schema("smartdoc").table("objects").select("objectuid").eq(
+                obj_match = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectuid").eq(
                     "chapteruid", chapteruid
                 ).eq("objectnm", objectnm).execute().data or []
                 if obj_match:
                     objectuid_val = obj_match[0]["objectuid"]
             if objectuid_val:
-                ex_rows = sb.schema("smartdoc").table(table_name).select(
+                ex_rows = sb.schema(SUPABASE_SCHEMA).table(table_name).select(
                     "gptq, datauid, displaytype"
                 ).eq("objectuid", objectuid_val).execute().data or []
                 if ex_rows:
@@ -166,7 +166,7 @@ def llm_init(
 
         # ⑦ prompts — service client (공용 데이터)
         sb_svc = get_service_client()
-        prompts_rows = sb_svc.schema("smartdoc").table("prompts").select("*").eq(
+        prompts_rows = sb_svc.schema(SUPABASE_SCHEMA).table("prompts").select("*").eq(
             "objecttypecd", objecttypecd
         ).execute().data or []
         prompts = sorted(prompts_rows, key=lambda x: x.get("orderno", 999))
@@ -199,7 +199,7 @@ def llm_init(
 @router.get("/columns")
 def llm_get_columns(datauid: str, token: str = Depends(get_token)):
     sb = get_thread_supabase(access_token=token)
-    rows = sb.schema("smartdoc").table("datacols").select(
+    rows = sb.schema(SUPABASE_SCHEMA).table("datacols").select(
         "querycolnm, dispcolnm, orderno"
     ).eq("datauid", datauid).execute().data or []
 
@@ -221,7 +221,7 @@ def llm_get_prompts(
     token: str = Depends(get_token),
 ):
     sb = get_service_client()
-    query = sb.schema("smartdoc").table("prompts").select("*").eq("objecttypecd", object_type)
+    query = sb.schema(SUPABASE_SCHEMA).table("prompts").select("*").eq("objecttypecd", object_type)
     if displaytype:
         query = query.eq("displaytype", displaytype)
     rows = query.execute().data or []
@@ -262,7 +262,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     user_id, _ = _get_user_info(sb, token)
 
     # ① chapter → docid
-    chap_rows = sb.schema("smartdoc").table("chapters").select("docid").eq(
+    chap_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("docid").eq(
         "chapteruid", body.chapteruid
     ).execute().data or []
     docid = chap_rows[0]["docid"] if chap_rows else None
@@ -271,7 +271,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     projectid = None
     tenantid = None
     if docid:
-        doc_rows = sb.schema("smartdoc").table("docs").select("projectid").eq(
+        doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid").eq(
             "docid", docid
         ).execute().data or []
         if doc_rows:
@@ -279,7 +279,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
 
     # ③ project → tenantid
     if projectid:
-        proj_rows = sb.schema("smartdoc").table("projects").select("tenantid").eq(
+        proj_rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq(
             "projectid", projectid
         ).execute().data or []
         if proj_rows:
@@ -297,7 +297,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     #    Django ai_create_dataframe 의 datasourcecd == "df" 분기 처리와 동일
     col_datauid = body.datauid   # column_dict 조회에 사용할 datauid (df이면 source로 교체)
     try:
-        data_rows = sb.schema("smartdoc").table("datas").select(
+        data_rows = sb.schema(SUPABASE_SCHEMA).table("datas").select(
             "datasourcecd, sourcedatauid"
         ).eq("datauid", body.datauid).execute().data or []
         if data_rows:
@@ -319,7 +319,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
 
     # ⑦ 열이름 매핑 — df 타입은 sourcedatauid 기준 (Django ai_chain.py 참조)
     try:
-        datacols = sb.schema("smartdoc").table("datacols").select(
+        datacols = sb.schema(SUPABASE_SCHEMA).table("datacols").select(
             "querycolnm, dispcolnm"
         ).eq("datauid", col_datauid).execute().data or []
     except Exception:
@@ -401,7 +401,7 @@ def llm_save(body: SaveRequest, token: str = Depends(get_token)):
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
 
     # Get objectuid
-    obj_rows = sb.schema("smartdoc").table("objects").select("objectuid, creator").eq(
+    obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectuid, creator").eq(
         "chapteruid", body.chapteruid
     ).eq("objectnm", body.objectnm).execute().data or []
     if not obj_rows:
@@ -412,19 +412,19 @@ def llm_save(body: SaveRequest, token: str = Depends(get_token)):
     now = datetime.now().isoformat()
 
     # Check existing
-    existing = sb.schema("smartdoc").table(table_name).select("datauid").eq(
+    existing = sb.schema(SUPABASE_SCHEMA).table(table_name).select("datauid").eq(
         "chapteruid", body.chapteruid
     ).eq("objectnm", body.objectnm).execute().data or []
 
     if existing:
-        sb.schema("smartdoc").table(table_name).update({
+        sb.schema(SUPABASE_SCHEMA).table(table_name).update({
             "gentypecd": "AI",
             "displaytype": body.displaytype,
             "gptq": body.gptq,
             "datauid": body.datauid,
         }).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
     else:
-        sb.schema("smartdoc").table(table_name).insert({
+        sb.schema(SUPABASE_SCHEMA).table(table_name).insert({
             "objectuid": object_uid,
             "chapteruid": body.chapteruid,
             "objectnm": body.objectnm,
@@ -437,7 +437,7 @@ def llm_save(body: SaveRequest, token: str = Depends(get_token)):
         }).execute()
 
     # Update objects.objectsettingyn
-    sb.schema("smartdoc").table("objects").update({
+    sb.schema(SUPABASE_SCHEMA).table("objects").update({
         "objectsettingyn": True,
         "useyn": True,
         "modifier": user_id,
@@ -462,7 +462,7 @@ def llm_delete(body: DeleteRequest, token: str = Depends(get_token)):
     if not table_name:
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
 
-    sb.schema("smartdoc").table(table_name).delete().eq(
+    sb.schema(SUPABASE_SCHEMA).table(table_name).delete().eq(
         "chapteruid", body.chapteruid
     ).eq("objectnm", body.objectnm).execute()
 

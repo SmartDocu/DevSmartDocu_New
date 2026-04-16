@@ -34,7 +34,7 @@ _sms_storage: dict[str, dict] = {}
 
 def _get_service_client():
     """서비스 역할 Supabase 클라이언트 (관리 작업용)."""
-    from utilsPrj.supabase_client import get_service_client
+    from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
     return get_service_client()
 
 
@@ -50,7 +50,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     mydocid 기준으로 문서를 복원하고, 해당 문서의 project/tenant/manager 권한을 설정.
     """
     ctx = UserContext(id=user_id, email=email)
-    sd = supabase.schema("smartdoc")
+    sd = supabase.schema(SUPABASE_SCHEMA)
 
     # 1. 사용자 기본 정보 + 마지막 선택 문서 ID(mydocid)
     mydocid = None

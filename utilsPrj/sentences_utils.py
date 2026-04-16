@@ -1,6 +1,6 @@
 import inspect
 from utilsPrj.errorlogs import error_log
-from utilsPrj.supabase_client import get_supabase_client
+from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 
 def draw_sentences(request, supabase, dict_rows, template_text, datauid):
     # jeff 20251209 1045 추가
@@ -16,7 +16,7 @@ def draw_sentences(request, supabase, dict_rows, template_text, datauid):
         # )    # jeff 20251124 1104 주석 
 
         col_resp = (
-            supabase.schema("smartdoc")
+            supabase.schema(SUPABASE_SCHEMA)
             .table("datacols")
             .select("querycolnm, dispcolnm")
             .eq("datauid", datauid)

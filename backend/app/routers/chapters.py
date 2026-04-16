@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -33,7 +33,7 @@ def _get_user_id(token: str) -> str:
 def list_chapters(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
     rows = (
-        sb.schema('smartdoc')
+        sb.schema(SUPABASE_SCHEMA)
         .table("chapters")
         .select("*")
         .eq("docid", docid)
@@ -74,23 +74,23 @@ async def save_chapter(
 
     existing = None
     if chapteruid:
-        rows = sb.schema('smartdoc').table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
+        rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
         existing = rows[0] if rows else None
 
     # useyn 활성화 시 항목 수 제한 확인
     if existing and useyn and not existing.get("useyn", False):
-        configs = sb.schema('smartdoc').table("configs").select("freeobjectcnt").execute().data or []
+        configs = sb.schema(SUPABASE_SCHEMA).table("configs").select("freeobjectcnt").execute().data or []
         freeobjectcnt = configs[0]["freeobjectcnt"] if configs else 999
 
         doc_data = (
-            sb.schema('smartdoc')
+            sb.schema(SUPABASE_SCHEMA)
             .rpc("fn_doc_count__r", {"p_docid": docid, "p_chapteruid": chapteruid})
             .execute()
             .data or []
         )
         object_cnt = doc_data[0].get("object_cnt", 0) if doc_data else 0
         chapter_objs = (
-            sb.schema('smartdoc')
+            sb.schema(SUPABASE_SCHEMA)
             .table("objects")
             .select("objectuid")
             .eq("useyn", True)
@@ -124,11 +124,11 @@ async def save_chapter(
 
     try:
         if existing:
-            res = sb.schema('smartdoc').table("chapters").update(record).eq("chapteruid", chapteruid).execute()
+            res = sb.schema(SUPABASE_SCHEMA).table("chapters").update(record).eq("chapteruid", chapteruid).execute()
             return ChapterSaveResponse(result="success", chapteruid=str(res.data[0]["chapteruid"]))
         else:
             record["creator"] = user_id
-            res = sb.schema('smartdoc').table("chapters").insert(record).execute()
+            res = sb.schema(SUPABASE_SCHEMA).table("chapters").insert(record).execute()
             return ChapterSaveResponse(result="success", chapteruid=str(res.data[0]["chapteruid"]))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB 저장 실패: {str(e)}")
@@ -140,7 +140,7 @@ async def save_chapter(
 def delete_chapter(chapteruid: str, token: str = Depends(get_token)):
     sb = _sb(token)
 
-    rows = sb.schema('smartdoc').table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
+    rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     chapter = rows[0]
@@ -148,7 +148,7 @@ def delete_chapter(chapteruid: str, token: str = Depends(get_token)):
     if chapter.get("chaptertemplateurl"):
         _delete_storage_file(sb, chapter["chaptertemplateurl"])
 
-    res = sb.schema('smartdoc').table("chapters").delete().eq("chapteruid", chapteruid).execute()
+    res = sb.schema(SUPABASE_SCHEMA).table("chapters").delete().eq("chapteruid", chapteruid).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="챕터 삭제 실패.")
 
@@ -168,20 +168,20 @@ class TemplateSaveRequest(BaseModel):
 def get_chapter_template(chapteruid: str, token: str = Depends(get_token)):
     import json as _json
     sb = _sb(token)
-    ch_rows = sb.schema('smartdoc').table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
+    ch_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
     if not ch_rows:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     chapter = ch_rows[0]
     docid = chapter.get("docid")
 
-    obj_rows = sb.schema('smartdoc').table("objects").select("*").eq("chapteruid", chapteruid).order("orderno").execute().data or []
+    obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("chapteruid", chapteruid).order("orderno").execute().data or []
 
     # tbl_params / sca_params (docvariables 테이블)
     tbl_rows = []
     sca_rows = []
     if docid:
-        raw_tbl = sb.schema('smartdoc').table("docvariables").select("*").eq("docid", docid).eq("variabletypecd", "DataSet").execute().data or []
-        raw_sca = sb.schema('smartdoc').table("docvariables").select("*").eq("docid", docid).eq("variabletypecd", "Value").execute().data or []
+        raw_tbl = sb.schema(SUPABASE_SCHEMA).table("docvariables").select("*").eq("docid", docid).eq("variabletypecd", "DataSet").execute().data or []
+        raw_sca = sb.schema(SUPABASE_SCHEMA).table("docvariables").select("*").eq("docid", docid).eq("variabletypecd", "Value").execute().data or []
 
         seen = set()
         for item in raw_tbl:
@@ -225,7 +225,7 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
     sb_svc = get_service_client()
 
     # 사용자 billingmodelcd (무료 플랜 제한)
-    user_info = sb_svc.schema('smartdoc').table("users").select("billingmodelcd").eq("useruid", user_id).execute().data
+    user_info = sb_svc.schema(SUPABASE_SCHEMA).table("users").select("billingmodelcd").eq("useruid", user_id).execute().data
     billingmodelcd = user_info[0]["billingmodelcd"] if user_info else ""
 
     # page-break 정규화
@@ -238,16 +238,16 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
         )
 
     # 1. texttemplate 저장
-    sb_user.schema('smartdoc').table("chapters").update({"texttemplate": html}).eq("chapteruid", chapteruid).execute()
+    sb_user.schema(SUPABASE_SCHEMA).table("chapters").update({"texttemplate": html}).eq("chapteruid", chapteruid).execute()
 
     # 2. 무료 플랜 항목 수 제한 체크
     if billingmodelcd == "Fr":
-        cfg = sb_svc.schema('smartdoc').table("configs").select("freeobjectcnt").execute().data
+        cfg = sb_svc.schema(SUPABASE_SCHEMA).table("configs").select("freeobjectcnt").execute().data
         freeobjectcnt = cfg[0]["freeobjectcnt"] if cfg else 0
-        ch_row = sb_svc.schema('smartdoc').table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data
+        ch_row = sb_svc.schema(SUPABASE_SCHEMA).table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data
         docid = ch_row[0]["docid"] if ch_row else None
         if docid:
-            cnt_data = sb_svc.schema('smartdoc').rpc("fn_doc_count__r", {"p_docid": docid, "p_chapteruid": chapteruid}).execute().data
+            cnt_data = sb_svc.schema(SUPABASE_SCHEMA).rpc("fn_doc_count__r", {"p_docid": docid, "p_chapteruid": chapteruid}).execute().data
             object_cnt = cnt_data[0].get("object_cnt", 0) if cnt_data else 0
             if object_cnt + len(body.formats) > freeobjectcnt:
                 return {
@@ -257,11 +257,11 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
                 }
 
     # 3. objects 동기화
-    existing = sb_svc.schema('smartdoc').table("objects").select("objectuid,objectnm").eq("chapteruid", chapteruid).execute().data or []
+    existing = sb_svc.schema(SUPABASE_SCHEMA).table("objects").select("objectuid,objectnm").eq("chapteruid", chapteruid).execute().data or []
     new_nms = {f["objectNm"] for f in body.formats if f.get("objectNm")}
     to_del = [o["objectuid"] for o in existing if o["objectnm"] not in new_nms]
     if to_del:
-        sb_svc.schema('smartdoc').table("objects").delete().in_("objectuid", to_del).execute()
+        sb_svc.schema(SUPABASE_SCHEMA).table("objects").delete().in_("objectuid", to_del).execute()
 
     import json as _json
     for idx, f in enumerate(body.formats):
@@ -270,7 +270,7 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
         docvariableuid = filters_raw.get("docvariableuid") if filters_raw else None
         params = filters_raw.get("params", []) if filters_raw else []
         filters_json = _json.dumps(params, ensure_ascii=False) if params else None
-        sb_svc.schema('smartdoc').table("objects").upsert({
+        sb_svc.schema(SUPABASE_SCHEMA).table("objects").upsert({
             "chapteruid": chapteruid,
             "objectuid": objectuid,
             "objectnm": f["objectNm"],

@@ -39,7 +39,7 @@ from utilsPrj.sentences_utils import draw_sentences    # 문자 용
 from utilsPrj.docx_read import convert_docx_to_html_2    # 업로드 용
 from utilsPrj.chapter_making_ai_table import render_preview_table
 
-from utilsPrj.supabase_client import get_thread_supabase, cleanup_thread_client
+from utilsPrj.supabase_client import get_thread_supabase, cleanup_thread_client, SUPABASE_SCHEMA
 # from utilsPrj.supabase_client import supabase
 
 from collections import defaultdict
@@ -201,7 +201,7 @@ def flush_logs_to_db(supabase, log_source="AI"):
 
     try:
         if genobject_inserts:
-            supabase.schema('smartdoc').table('genobjects').insert(genobject_inserts).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('genobjects').insert(genobject_inserts).execute()
             print(f"[Batch-{log_source}] genobject inserted: {len(genobject_inserts)}개 (1회 호출)")
         
         if genobject_updates:
@@ -210,18 +210,18 @@ def flush_logs_to_db(supabase, log_source="AI"):
                 updates_by_rate[data['progressrate']].append(data['genobjectuid'])
             
             for rate, uids in updates_by_rate.items():
-                supabase.schema('smartdoc').table('genobjects').update(
+                supabase.schema(SUPABASE_SCHEMA).table('genobjects').update(
                     {'progressrate': rate}
                 ).in_('genobjectuid', uids).execute()
                 print(f"[Batch-{log_source}] genobject updated: progressrate={rate}, {len(uids)}개 (1회 호출)")
         
         if loggenobject_inserts:
-            supabase.schema('smartdoc').table('loggenobjects').insert(loggenobject_inserts).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').insert(loggenobject_inserts).execute()
             print(f"[Batch-{log_source}] loggenobject inserted: {len(loggenobject_inserts)}개 (1회 호출)")
         
         # if loggenobject_updates:
         #     for data in loggenobject_updates.values():
-        #         supabase.schema('smartdoc').table('loggenobjects').update({
+        #         supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').update({
         #             'enddts': data['enddts'],
         #             'errormessage': data['errormessage']
         #         }).eq('loggenobjectuid', data['loggenobjectuid']).execute()
@@ -238,20 +238,20 @@ def flush_logs_to_db(supabase, log_source="AI"):
                 }
                 for data in loggenobject_updates.values()
             ]
-            supabase.schema('smartdoc').table('loggenobjects').upsert(update_list).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').upsert(update_list).execute()
             print(f"[Batch-{log_source}] loggenobject updated: {len(loggenobject_updates)}개 (1회 호출)")
 
         # if genobjectrunlog_inserts:
         #     for data in genobjectrunlog_inserts:
-        #         supabase.schema('smartdoc').table('genobjectrunlog').insert(data).execute()
+        #         supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(data).execute()
 
         if genobjectrunlog_inserts:
-            supabase.schema('smartdoc').table('genobjectrunlog').insert(genobjectrunlog_inserts).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(genobjectrunlog_inserts).execute()
             print(f"[Batch-{log_source}] genobjectrunlog inserted: {len(genobjectrunlog_inserts)}개 (1회 호출)")
 
         if genobject_results:
             result_list = list(genobject_results.values())
-            supabase.schema('smartdoc').table('genobjects').upsert(result_list).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('genobjects').upsert(result_list).execute()
             print(f"[Batch-{log_source}] genobject results upserted: {len(result_list)}개 (1회 호출)")
             
     except Exception as e:
@@ -462,7 +462,7 @@ def prepare_datas_from_template(supabase, read_text_template):
     
     for template_item in read_text_template:
         if template_item["datauid"]:
-            read_datas = supabase.schema('smartdoc').table("datas").select("*").eq('datauid', template_item["datauid"]).execute().data
+            read_datas = supabase.schema(SUPABASE_SCHEMA).table("datas").select("*").eq('datauid', template_item["datauid"]).execute().data
             read_datas[0]['chapteruid'] = template_item['chapteruid']
             read_datas[0]['objectuid'] = template_item['objectuid']
             read_datas[0]['objectnm'] = template_item["objectnm"]
@@ -505,7 +505,7 @@ def get_source_query_for_df(supabase, data_item):
     source_data_uid = data_item["sourcedatauid"]
 
     if data_source_cd == "df" and source_data_uid:
-        source_resp = supabase.schema("smartdoc").table("datas").select("*").eq("datauid", source_data_uid).execute()
+        source_resp = supabase.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", source_data_uid).execute()
         source_data = source_resp.data or []
 
         if source_data:
@@ -556,7 +556,7 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
         final_html = f'<img src="data:image/png;base64,{img_base64}" alt="{data_item["objectnm"]} 차트">'
         
     elif data_item["type"] == 'UI_sentence':                             
-        seneteces = supabase.schema('smartdoc').table('sentences').select('sentencestext').eq('objectnm', data_item['objectnm']).eq('chapteruid', data_item['chapteruid']).execute().data
+        seneteces = supabase.schema(SUPABASE_SCHEMA).table('sentences').select('sentencestext').eq('objectnm', data_item['objectnm']).eq('chapteruid', data_item['chapteruid']).execute().data
         template_text = seneteces[0]["sentencestext"]
         if template_text and dict_rows:
             final_html = draw_sentences(request, supabase, dict_rows, template_text, data_uid)
@@ -991,14 +991,14 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
         doc_write = kwargs.get("doc_write", False)
 
         ## genchapter 추출
-        read_genchapter = supabase.schema('smartdoc').table('genchapters').select('*').eq('genchapteruid', gen_chapter_uid).execute().data
+        read_genchapter = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('*').eq('genchapteruid', gen_chapter_uid).execute().data
         docid = read_genchapter[0]['docid']
         gendoc_uid = read_genchapter[0]['gendocuid']
         chapter_uid = read_genchapter[0]['chapteruid']
         updatafileurl = read_genchapter[0]['updatefileurl']
         genchapters = ''
         
-        read_chapter = supabase.schema('smartdoc').table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
+        read_chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
 
         now = datetime.now().isoformat()
         
@@ -1007,7 +1007,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
             if obj == 'rewrite':
                 # sep == 'Not'이면 전체, 아니면 개별 작성용 texttemplate 가져오기
                 if sep == 'Not':
-                    objects_erase_resulttext = supabase.schema("smartdoc").table("genobjects")\
+                    objects_erase_resulttext = supabase.schema(SUPABASE_SCHEMA).table("genobjects")\
                         .select("genobjectuid, resulttext")\
                         .eq("genchapteruid", gen_chapter_uid)\
                         .execute().data
@@ -1017,14 +1017,14 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             "resulttext": ""
                         }
 
-                        supabase.schema("smartdoc").table("genobjects").update(update_data).eq("genobjectuid", row["genobjectuid"]).execute()
+                        supabase.schema(SUPABASE_SCHEMA).table("genobjects").update(update_data).eq("genobjectuid", row["genobjectuid"]).execute()
 
                     text_template = read_chapter[0]['texttemplate']
                     
                     loggenchapteruid = str(uuid.uuid4())
                     update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, gen_chapter_uid, gendoc_uid, user_id, 'str', docid, chapter_uid)
                 else:
-                    gen_text_template = supabase.schema('smartdoc').table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
+                    gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
                     # 빈 리스트 체크
                     if gen_text_template and len(gen_text_template) > 0:
                         gentexttemplate = gen_text_template[0].get('gentexttemplate')
@@ -1032,7 +1032,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     else:
                         text_template = read_chapter[0]['texttemplate']
 
-                read_text_template = supabase.schema('smartdoc').rpc("fn_genchapter_detail__r", {'p_genchapteruid': gen_chapter_uid}).execute().data
+                read_text_template = supabase.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {'p_genchapteruid': gen_chapter_uid}).execute().data
                 
                 if sep != 'Not':
                     read_text_template = [row for row in read_text_template if row['objectuid'] == sep]
@@ -1095,7 +1095,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, gen_chapter_uid, gendoc_uid, user_id, 'end', docid, chapter_uid)
                     
             elif obj == 'write':
-                gen_text_template = supabase.schema('smartdoc').table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
+                gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
                 text_template = gen_text_template[0]['gentexttemplate']
 
         elif make_type == 'update':
@@ -1104,7 +1104,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
 
         elif make_type == 'all':
             # gentexttemplate 우선 사용, 없으면 업로드된 파일 사용
-            gen_text_template = supabase.schema('smartdoc').table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
+            gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
             if gen_text_template and gen_text_template[0].get('gentexttemplate'):
                 text_template = gen_text_template[0]['gentexttemplate']
             elif updatafileurl:
@@ -1196,7 +1196,7 @@ def preprocess_html(html: str) -> str:
 
 def update_genchapters(supabase, genchapters, gen_chapter_uid):
     try:
-        supabase.schema('smartdoc').table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
+        supabase.schema(SUPABASE_SCHEMA).table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
     except Exception as e:
         print(f'ErrorMessage(update_genchapters): {e}')
         return JsonResponse({'success': False, 'message': str(e)})
@@ -1204,14 +1204,14 @@ def update_genchapters(supabase, genchapters, gen_chapter_uid):
 
 def save_gendoc_genchapters(supabase, gendoc_genchapters):
     try:
-        supabase.schema('smartdoc').table('gendoc_genchapters').insert(gendoc_genchapters).execute().data
+        supabase.schema(SUPABASE_SCHEMA).table('gendoc_genchapters').insert(gendoc_genchapters).execute().data
     except Exception as e:
         print(f'ErrorMessage: {e}')
         return JsonResponse({'success': False, 'message': str(e)})
     
 def update_genobjects(supabase, genobjects):
     try:
-        genobjects_respon = supabase.schema('smartdoc').table('genobjects').upsert(genobjects).execute().data
+        genobjects_respon = supabase.schema(SUPABASE_SCHEMA).table('genobjects').upsert(genobjects).execute().data
     except Exception as e:
         print(f'ErrorMessage: {e}')
         return JsonResponse({'success': False, 'message': str(e)})
@@ -1230,13 +1230,13 @@ def make_genobject(supabase, genobjectuid, gen_chapter_uid, chapter_uid, objectu
                 "creator": user_id,
                 "createdts": datetime.now().isoformat()
             }
-            supabase.schema('smartdoc').table('genobjects').insert(genobject).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('genobjects').insert(genobject).execute()
         else:
             genobject = {
                 "genobjectuid": genobjectuid,
                 "progressrate": progressrate,
             }
-            supabase.schema('smartdoc').table('genobjects').update(genobject).eq("genobjectuid", genobjectuid).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('genobjects').update(genobject).eq("genobjectuid", genobjectuid).execute()
 
 
 def update_loggenobject(supabase, loggenobjectuid, genObjectDirectYn, loggenchapteruid, genobjectuid, genchapteruid, user_id, str_end, errormessage):
@@ -1253,13 +1253,13 @@ def update_loggenobject(supabase, loggenobjectuid, genObjectDirectYn, loggenchap
             loggenobject['creator'] = user_id
             loggenobject['startdts'] = datetime.now().isoformat()
 
-            supabase.schema('smartdoc').table('loggenobjects').insert(loggenobject).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').insert(loggenobject).execute()
 
         elif str_end == 'end':
             loggenobject['enddts'] = datetime.now().isoformat()
             loggenobject['errormessage'] = errormessage
 
-            supabase.schema('smartdoc').table('loggenobjects').update(loggenobject).eq('loggenobjectuid', loggenobjectuid).execute()
+            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').update(loggenobject).eq('loggenobjectuid', loggenobjectuid).execute()
 
 
 def update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, genchapteruid, gendocuid, user_id, str_end, docid, chapteruid):
@@ -1279,6 +1279,6 @@ def update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggend
     elif str_end == 'end':
         loggenchapter['enddts'] = datetime.now().isoformat()
     
-    supabase.schema('smartdoc').table('loggenchapters').upsert(loggenchapter).execute()
+    supabase.schema(SUPABASE_SCHEMA).table('loggenchapters').upsert(loggenchapter).execute()
 
 

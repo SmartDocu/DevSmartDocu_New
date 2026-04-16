@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -41,7 +41,7 @@ def list_projects(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_project_filtered__r_user_manager", {"p_useruid": str(user.id)})
         .execute()
         .data or []
@@ -50,7 +50,7 @@ def list_projects(token: str = Depends(get_token)):
     active_ids = {
         p["projectid"]
         for p in (
-            sb.schema("smartdoc").table("projects").select("projectid").eq("useyn", True).execute().data or []
+            sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("useyn", True).execute().data or []
         )
     }
     return ProjectsResponse(
@@ -72,7 +72,7 @@ def list_docs(token: str = Depends(get_token)):
 
     # 1. 사용자가 열람 가능한 문서 목록 (Django: fn_docs_filtered__r_user_viewer)
     docs_data = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_docs_filtered__r_user_viewer", {"p_useruid": user_id})
         .execute()
         .data or []
@@ -85,7 +85,7 @@ def list_docs(token: str = Depends(get_token)):
 
     # 2. docs 테이블에서 상세 정보 조회
     docs_details = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .table("docs")
         .select("docid, docdesc, createdts, projectid, sampleyn, basetemplatenm, basetemplateurl, docnm")
         .in_("docid", docids)
@@ -100,7 +100,7 @@ def list_docs(token: str = Depends(get_token)):
     tenant_map = {}
     if project_ids:
         projects_data = (
-            sb.schema("smartdoc")
+            sb.schema(SUPABASE_SCHEMA)
             .table("projects")
             .select("projectid, projectnm, tenantid, useyn")
             .in_("projectid", project_ids)
@@ -114,7 +114,7 @@ def list_docs(token: str = Depends(get_token)):
         tenant_ids = list({p["tenantid"] for p in projects_data if p.get("tenantid")})
         if tenant_ids:
             tenants_data = (
-                sb.schema("smartdoc")
+                sb.schema(SUPABASE_SCHEMA)
                 .table("tenants")
                 .select("tenantid, tenantnm")
                 .in_("tenantid", tenant_ids)
@@ -195,7 +195,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
         raise HTTPException(status_code=400, detail="docid가 필요합니다.")
 
     # 1. docs 테이블 조회
-    docs_rows = sb.schema("smartdoc").table("docs").select("*").eq("docid", docid).execute().data
+    docs_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("*").eq("docid", docid).execute().data
     if not docs_rows:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
 
@@ -203,14 +203,14 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
     sampleyn = docs_rows[0].get("sampleyn", False)
 
     # 2. projects 테이블 조회
-    projects_rows = sb.schema("smartdoc").table("projects").select("*").eq("projectid", projectid).execute().data
+    projects_rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("projectid", projectid).execute().data
     if not projects_rows:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     tenantid = str(projects_rows[0]["tenantid"])
 
     # 3. projectusers — 프로젝트 매니저 여부
     user_projects = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .table("projectusers")
         .select("*")
         .eq("projectid", projectid)
@@ -222,7 +222,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
 
     # 4. tenantusers — 테넌트 매니저 여부
     user_tenant = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .table("tenantusers")
         .select("*")
         .eq("tenantid", tenantid)
@@ -233,7 +233,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
     tenantmanager = "Y" if any(t.get("rolecd") == "M" for t in user_tenant) else "N"
 
     # 5. roleid 조회
-    user_row = sb.schema("smartdoc").table("users").select("roleid").eq("useruid", user_id).maybe_single().execute()
+    user_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user_id).maybe_single().execute()
     roleid = user_row.data.get("roleid") if user_row.data else None
 
     # 6. editbuttonyn / sampledocyn 결정
@@ -248,7 +248,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
         sampledocyn = "Y"
 
     # 7. users 테이블 mydocid 업데이트
-    sb.schema("smartdoc").table("users").update({"mydocid": docid}).eq("useruid", user_id).execute()
+    sb.schema(SUPABASE_SCHEMA).table("users").update({"mydocid": docid}).eq("useruid", user_id).execute()
 
     return DocSelectResponse(
         docid=docid,
@@ -279,7 +279,7 @@ async def save_doc(
 
     # 프로젝트 편집 권한 확인
     allowed = (
-        sb.schema("smartdoc")
+        sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_project_filtered__r_user_manager", {"p_useruid": user_id})
         .execute()
         .data or []
@@ -291,11 +291,11 @@ async def save_doc(
     # 기존 문서 조회
     existing = None
     if docid:
-        rows = sb.schema("smartdoc").table("docs").select("*").eq("docid", docid).execute().data
+        rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("*").eq("docid", docid).execute().data
         existing = rows[0] if rows else None
 
     # 중복명 확인
-    dup = sb.schema("smartdoc").table("docs").select("docid").eq("docnm", docnm).execute().data or []
+    dup = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid").eq("docnm", docnm).execute().data or []
     dup = [d for d in dup if docid is None or d["docid"] != docid]
     if dup:
         raise HTTPException(status_code=400, detail=f"이미 동일한 이름({docnm})의 문서가 존재합니다.")
@@ -316,11 +316,11 @@ async def save_doc(
 
     try:
         if existing:
-            sb.schema("smartdoc").table("docs").update(record).eq("docid", docid).execute()
+            sb.schema(SUPABASE_SCHEMA).table("docs").update(record).eq("docid", docid).execute()
             return DocSaveResponse(result="success", docid=docid)
         else:
             record["creator"] = user_id
-            res = sb.schema("smartdoc").table("docs").insert(record).execute()
+            res = sb.schema(SUPABASE_SCHEMA).table("docs").insert(record).execute()
             new_id = res.data[0]["docid"] if res.data else None
             return DocSaveResponse(result="success", docid=new_id)
     except Exception as e:
@@ -333,7 +333,7 @@ async def save_doc(
 def delete_doc(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
 
-    rows = sb.schema("smartdoc").table("docs").select("*").eq("docid", docid).execute().data
+    rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("*").eq("docid", docid).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     doc = rows[0]
@@ -342,12 +342,12 @@ def delete_doc(docid: int, token: str = Depends(get_token)):
         _delete_storage_file(sb, doc["basetemplateurl"])
 
     # 연관 gendocs 삭제
-    gendocs = sb.schema("smartdoc").table("gendocs").select("gendocuid").eq("docid", docid).execute().data or []
+    gendocs = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("docid", docid).execute().data or []
     for gd in gendocs:
-        sb.schema("smartdoc").table("gendocs").delete().eq("gendocuid", gd["gendocuid"]).execute()
+        sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gd["gendocuid"]).execute()
 
-    sb.schema("smartdoc").table("dataparams").delete().eq("docid", docid).execute()
-    res = sb.schema("smartdoc").table("docs").delete().eq("docid", docid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dataparams").delete().eq("docid", docid).execute()
+    res = sb.schema(SUPABASE_SCHEMA).table("docs").delete().eq("docid", docid).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="문서 삭제 실패.")
 
@@ -374,7 +374,7 @@ class ParamSaveRequest(BaseModel):
 def list_params(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
     rows = (
-        sb.schema("smartdoc").table("dataparams")
+        sb.schema(SUPABASE_SCHEMA).table("dataparams")
         .select("*").eq("docid", docid).order("orderno")
         .execute().data or []
     )
@@ -398,11 +398,11 @@ def save_param(body: ParamSaveRequest, token: str = Depends(get_token)):
     }
     if body.paramuid:
         res = (
-            sb.schema("smartdoc").table("dataparams")
+            sb.schema(SUPABASE_SCHEMA).table("dataparams")
             .update(payload).eq("paramuid", body.paramuid).execute()
         )
     else:
-        res = sb.schema("smartdoc").table("dataparams").insert(payload).execute()
+        res = sb.schema(SUPABASE_SCHEMA).table("dataparams").insert(payload).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="저장 실패")
     return {"ok": True, "param": res.data[0]}
@@ -411,7 +411,7 @@ def save_param(body: ParamSaveRequest, token: str = Depends(get_token)):
 @router.delete("/params/{paramuid}")
 def delete_param(paramuid: str, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema("smartdoc").table("dataparams").delete().eq("paramuid", paramuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dataparams").delete().eq("paramuid", paramuid).execute()
     return {"ok": True}
 
 
@@ -425,7 +425,7 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
     sb_svc = get_service_client()
 
     # 문서 → projectid
-    doc_row = sb_svc.schema("smartdoc").table("docs").select("docid, docnm, projectid") \
+    doc_row = sb_svc.schema(SUPABASE_SCHEMA).table("docs").select("docid, docnm, projectid") \
         .eq("docid", docid).execute().data or []
     if not doc_row:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
@@ -433,11 +433,11 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
     projectid = doc["projectid"]
 
     # 프로젝트의 데이터 목록
-    datas = sb_svc.schema("smartdoc").table("datas").select("datauid, datanm") \
+    datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas").select("datauid, datanm") \
         .eq("projectid", projectid).order("datanm").execute().data or []
 
     # 모든 datacols (orderno 순)
-    all_datacols = sb_svc.schema("smartdoc").table("datacols").select(
+    all_datacols = sb_svc.schema(SUPABASE_SCHEMA).table("datacols").select(
         "datauid, querycolnm, dispcolnm, orderno"
     ).order("orderno").execute().data or []
 
@@ -447,11 +447,11 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         col_map.setdefault(col["datauid"], []).append(col)
 
     # 문서 매개변수
-    dataparams = sb_svc.schema("smartdoc").table("dataparams").select("*") \
+    dataparams = sb_svc.schema(SUPABASE_SCHEMA).table("dataparams").select("*") \
         .eq("docid", docid).order("orderno").execute().data or []
 
     # 기존 매핑 (dataparamdtls)
-    dataparamdtls = sb_svc.schema("smartdoc").table("dataparamdtls").select("*") \
+    dataparamdtls = sb_svc.schema(SUPABASE_SCHEMA).table("dataparamdtls").select("*") \
         .eq("docid", docid).execute().data or []
 
     # dataparam_map: { datauid: { querycolnm: paramuid } }
@@ -484,7 +484,7 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(
         raise HTTPException(status_code=400, detail="저장할 데이터가 없습니다.")
 
     datauids = list({r["datauid"] for r in records})
-    sb.schema("smartdoc").table("dataparamdtls").delete().in_("datauid", datauids).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dataparamdtls").delete().in_("datauid", datauids).execute()
 
     insert_data = [
         {
@@ -496,7 +496,7 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(
         }
         for r in records
     ]
-    sb.schema("smartdoc").table("dataparamdtls").insert(insert_data).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dataparamdtls").insert(insert_data).execute()
     return {"ok": True}
 
 
@@ -510,7 +510,7 @@ def delete_doc_params(docid: int, body: DocParamDeleteRequest, token: str = Depe
     sb = _sb(token)
     if not body.datauids:
         raise HTTPException(status_code=400, detail="datauids 필요")
-    sb.schema("smartdoc").table("dataparamdtls").delete().in_("datauid", body.datauids).execute()
+    sb.schema(SUPABASE_SCHEMA).table("dataparamdtls").delete().in_("datauid", body.datauids).execute()
     return {"ok": True}
 
 

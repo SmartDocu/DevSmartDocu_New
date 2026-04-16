@@ -18,6 +18,7 @@ load_dotenv()
 SUPABASE_URL = os.environ.get('SUPABASE_URL') or os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY') or os.getenv('SUPABASE_KEY')
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+SUPABASE_SCHEMA = os.environ.get('SUPABASE_SCHEMA')
 
 
 # jeff 20260106 1015 추가

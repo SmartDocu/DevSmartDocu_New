@@ -10,6 +10,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ROW_HEIGHT_RULE
 from docx.enum.section import WD_SECTION
 from docx.oxml.shared import OxmlElement, qn
+from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 # ===== 유틸 =====
 def hex_to_rgb(hex_color):
@@ -586,13 +587,13 @@ def html_to_docx(supabase, genchapteruid, html_content):
 # 머리글 바닥글 설정
 def set_headerfooter(supabase, genchapteruid, result_doc):
     # chapter 조회
-    chapteruid = supabase.schema('smartdoc').table('genchapters').select('chapteruid').eq('genchapteruid', genchapteruid).execute().data[0]['chapteruid']
+    chapteruid = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('chapteruid').eq('genchapteruid', genchapteruid).execute().data[0]['chapteruid']
     # 챕터 템플릿 구하기
-    chapter = supabase.schema('smartdoc').table('chapters').select('docid', 'chapternm', 'chaptertemplateurl').eq('chapteruid', chapteruid).execute().data
+    chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('docid', 'chapternm', 'chaptertemplateurl').eq('chapteruid', chapteruid).execute().data
     docid = chapter[0]['docid']
     chaptertemplate_url = chapter[0]['chaptertemplateurl']
     # 문서 템플릿 구하기
-    basetemplateurl = supabase.schema('smartdoc').table('docs').select('basetemplateurl').eq('docid', docid).execute().data[0]['basetemplateurl']
+    basetemplateurl = supabase.schema(SUPABASE_SCHEMA).table('docs').select('basetemplateurl').eq('docid', docid).execute().data[0]['basetemplateurl']
 
     templateyn = False
     # 챕터 템플릿이 있으면 해당 사항 / 그 외 기본 템플릿
@@ -693,16 +694,16 @@ def set_headerfooter_merge(supabase, genchapteruid, result_doc, index, previous_
     which = index - 1
 
     # chapter 조회
-    chapteruid = supabase.schema('smartdoc').table('genchapters').select('chapteruid') \
+    chapteruid = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('chapteruid') \
         .eq('genchapteruid', genchapteruid).execute().data[0]['chapteruid']
 
-    chapter = supabase.schema('smartdoc').table('chapters').select('docid', 'chapternm', 'chaptertemplateurl') \
+    chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('docid', 'chapternm', 'chaptertemplateurl') \
         .eq('chapteruid', chapteruid).execute().data
     docid = chapter[0]['docid']
     chapternm = chapter[0]['chapternm']
     chaptertemplate_url = chapter[0]['chaptertemplateurl']
 
-    basetemplateurl = supabase.schema('smartdoc').table('docs').select('basetemplateurl') \
+    basetemplateurl = supabase.schema(SUPABASE_SCHEMA).table('docs').select('basetemplateurl') \
         .eq('docid', docid).execute().data[0]['basetemplateurl']
 
     if chaptertemplate_url:
@@ -808,16 +809,16 @@ def set_headerfooter_merge_safe(supabase, genchapteruid, result_doc, index):
     which = index - 1
     
     # chapter 조회
-    chapteruid = supabase.schema('smartdoc').table('genchapters').select('chapteruid').eq('genchapteruid', genchapteruid).execute().data[0]['chapteruid']
+    chapteruid = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('chapteruid').eq('genchapteruid', genchapteruid).execute().data[0]['chapteruid']
     
     # 챕터 템플릿 구하기
-    chapter = supabase.schema('smartdoc').table('chapters').select('docid', 'chapternm', 'chaptertemplateurl').eq('chapteruid', chapteruid).execute().data
+    chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('docid', 'chapternm', 'chaptertemplateurl').eq('chapteruid', chapteruid).execute().data
     docid = chapter[0]['docid']
     chapternm = chapter[0]['chapternm']
     chaptertemplate_url = chapter[0]['chaptertemplateurl']
     
     # 문서 템플릿 구하기
-    basetemplateurl = supabase.schema('smartdoc').table('docs').select('basetemplateurl').eq('docid', docid).execute().data[0]['basetemplateurl']
+    basetemplateurl = supabase.schema(SUPABASE_SCHEMA).table('docs').select('basetemplateurl').eq('docid', docid).execute().data[0]['basetemplateurl']
 
     # 챕터 템플릿이 있으면 해당 사항 / 그 외 기본 템플릿
     if chaptertemplate_url:

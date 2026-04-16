@@ -1,11 +1,12 @@
 import pandas as pd
 import requests
 from io import BytesIO
+from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 
 def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
     Datas_resp = (
-        supabase.schema("smartdoc")
+        supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
         .select("*")
         .eq("datauid", datauid)
@@ -35,13 +36,13 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
-        dataparamdtls_resp = supabase.schema("smartdoc") \
+        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA) \
             .table("dataparamdtls") \
             .select("*") \
             .eq("docid", docid).eq("datauid", datauid) \
             .execute()
 
-        dataparams_resp = supabase.schema("smartdoc") \
+        dataparams_resp = supabase.schema(SUPABASE_SCHEMA) \
             .table("dataparams") \
             .select("*") \
             .eq("docid", docid) \
@@ -70,18 +71,18 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
     # docid는 None, gendoc_uid만 있음 ==> 실제 문서 실행 화면
     if docid is None and gendoc_uid is not None:
         # 1. gendoc_uid → docid
-        gendocs_resp = supabase.schema("smartdoc").table("gendocs") \
+        gendocs_resp = supabase.schema(SUPABASE_SCHEMA).table("gendocs") \
             .select("docid").eq("gendocuid", gendoc_uid).single().execute()
 
         docid = gendocs_resp.data["docid"]
 
         # 2. dataparamdtls
-        dataparamdtls_resp = supabase.schema("smartdoc").table("dataparamdtls") \
+        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(dataparamdtls_resp.data)
 
         # 3. gendoc_params (value)
-        gendoc_params_resp = supabase.schema("smartdoc").table("gendoc_params") \
+        gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
             .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
         df_gendoc = pd.DataFrame(gendoc_params_resp.data)
         df_gendoc = df_gendoc[["paramuid", "paramvalue"]]

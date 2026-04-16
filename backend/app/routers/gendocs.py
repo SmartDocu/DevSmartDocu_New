@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
+    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
@@ -29,7 +29,7 @@ def _get_user(token: str):
 
 
 def _get_docid(sb, user_id: str) -> Optional[int]:
-    row = sb.schema("smartdoc").table("users").select("mydocid").eq("useruid", user_id).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("users").select("mydocid").eq("useruid", user_id).execute().data
     docid = row[0].get("mydocid") if row else None
     return int(docid) if docid else None
 
@@ -78,8 +78,8 @@ def list_gendocs(
     end_plus = (datetime.strptime(ed, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     rpc_params["p_end_date"] = end_plus
 
-    rows = sb.schema("smartdoc").rpc("fn_gendocs__r_docid", rpc_params).execute().data or []
-    docnm_resp = sb.schema("smartdoc").table("docs").select("docnm").eq("docid", docid).execute().data
+    rows = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r_docid", rpc_params).execute().data or []
+    docnm_resp = sb.schema(SUPABASE_SCHEMA).table("docs").select("docnm").eq("docid", docid).execute().data
     docnm = docnm_resp[0]["docnm"] if docnm_resp else None
 
     for item in rows:
@@ -87,11 +87,11 @@ def list_gendocs(
         item["closedts"] = _fmt(item.get("closedts"))
         item["createdts"] = _fmt(item.get("createdts"))
         # params
-        params = sb.schema("smartdoc").rpc("fn_gendocs_params__r", {"p_gendocuid": item["gendocuid"]}).execute().data or []
+        params = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs_params__r", {"p_gendocuid": item["gendocuid"]}).execute().data or []
         item["params"] = params
         item["finalnm_joined"] = " / ".join(p.get("finalnm") or p.get("paramvalue") or "" for p in params if p.get("paramvalue"))
 
-    dataparams = sb.schema("smartdoc").table("dataparams").select("*").eq("docid", docid).order("orderno").execute().data or []
+    dataparams = sb.schema(SUPABASE_SCHEMA).table("dataparams").select("*").eq("docid", docid).order("orderno").execute().data or []
 
     return {"gendocs": rows, "docnm": docnm, "dataparams": dataparams, "docid": docid}
 
@@ -106,9 +106,9 @@ def get_dataparams(token: str = Depends(get_token)):
     if not docid:
         return {"dataparams": [], "params_value": []}
 
-    dataparams = sb.schema("smartdoc").table("dataparams").select("*").eq("docid", docid).order("orderno").execute().data or []
+    dataparams = sb.schema(SUPABASE_SCHEMA).table("dataparams").select("*").eq("docid", docid).order("orderno").execute().data or []
     data_ids = [d["datauid"] for d in dataparams if d.get("datauid")]
-    datas = sb.schema("smartdoc").table("datas").select("*").in_("datauid", data_ids).execute().data or [] if data_ids else []
+    datas = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").in_("datauid", data_ids).execute().data or [] if data_ids else []
 
     # Run each data source to get options
     from utilsPrj.process_data import process_data
@@ -148,8 +148,8 @@ def get_dataparams(token: str = Depends(get_token)):
 def get_gendoc_status(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    status_rows = sb.schema("smartdoc").rpc("fn_gendoc_status__r", {"p_gendocuid": gendocuid}).execute().data or []
-    gendoc = sb.schema("smartdoc").rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
+    status_rows = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendoc_status__r", {"p_gendocuid": gendocuid}).execute().data or []
+    gendoc = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
 
     for i in status_rows:
         i["createfiledts"] = _fmt(i.get("createfiledts"))
@@ -164,11 +164,11 @@ def get_gendoc_status(gendocuid: str, token: str = Depends(get_token)):
 def get_genchapters(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    chapters = sb.schema("smartdoc").rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
+    chapters = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
     for c in chapters:
         c["createfiledts"] = _fmt(c.get("createfiledts"))
         c["updatefiledts"] = _fmt(c.get("updatefiledts"))
-    gendoc = sb.schema("smartdoc").rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
+    gendoc = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
     gendoc_info = gendoc[0] if gendoc else {}
     gendoc_info["createfiledts"] = _fmt(gendoc_info.get("createfiledts"))
     gendoc_info["updatefiledts"] = _fmt(gendoc_info.get("updatefiledts"))
@@ -194,7 +194,7 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
     now = datetime.now().isoformat()
 
     # 1. Create gendocs
-    result = sb.schema("smartdoc").table("gendocs").insert({
+    result = sb.schema(SUPABASE_SCHEMA).table("gendocs").insert({
         "docid": body.docid,
         "gendocnm": body.docnm,
         "creator": user_id,
@@ -214,11 +214,11 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
             }
             for p in body.params
         ]
-        sb.schema("smartdoc").table("gendoc_params").insert(param_records).execute()
+        sb.schema(SUPABASE_SCHEMA).table("gendoc_params").insert(param_records).execute()
 
     # 3. Create genchapters (one per active chapter)
     chapters = (
-        sb.schema("smartdoc").table("chapters")
+        sb.schema(SUPABASE_SCHEMA).table("chapters")
         .select("*").eq("docid", body.docid).eq("useyn", True).execute().data or []
     )
     if chapters:
@@ -234,7 +234,7 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
             }
             for c in chapters
         ]
-        sb.schema("smartdoc").table("genchapters").insert(genchapter_records).execute()
+        sb.schema(SUPABASE_SCHEMA).table("genchapters").insert(genchapter_records).execute()
 
     return {"gendocuid": gendocuid, "message": "생성되었습니다."}
 
@@ -246,7 +246,7 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     # Remove storage file
-    row = sb.schema("smartdoc").table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
     if row and row[0].get("createfileurl"):
         url = row[0]["createfileurl"]
         parsed = urlparse(url)
@@ -256,9 +256,9 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
                 sb.storage.from_("smartdoc").remove([parsed.path.split(prefix)[-1]])
             except Exception:
                 pass
-    sb.schema("smartdoc").table("gendoc_params").delete().eq("gendocuid", gendocuid).execute()
-    sb.schema("smartdoc").table("genchapters").delete().eq("gendocuid", gendocuid).execute()
-    sb.schema("smartdoc").table("gendocs").delete().eq("gendocuid", gendocuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("gendoc_params").delete().eq("gendocuid", gendocuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("genchapters").delete().eq("gendocuid", gendocuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gendocuid).execute()
     return {"message": "삭제되었습니다."}
 
 
@@ -274,9 +274,9 @@ class GendocUpdateRequest(BaseModel):
 def update_gendoc_params(body: GendocUpdateRequest, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    sb.schema("smartdoc").table("gendocs").update({"gendocnm": body.gendocnm}).eq("gendocuid", body.gendocuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").update({"gendocnm": body.gendocnm}).eq("gendocuid", body.gendocuid).execute()
     for p in body.params:
-        sb.schema("smartdoc").table("gendoc_params").update({"paramvalue": p.get("paramvalue")}).eq("gendocuid", body.gendocuid).eq("paramuid", p.get("paramuid")).execute()
+        sb.schema(SUPABASE_SCHEMA).table("gendoc_params").update({"paramvalue": p.get("paramvalue")}).eq("gendocuid", body.gendocuid).eq("paramuid", p.get("paramuid")).execute()
     return {"message": "파라미터가 변경되었습니다."}
 
 
@@ -295,7 +295,7 @@ def check_params(body: ParamsCheckRequest, token: str = Depends(get_token)):
         return {"exists": False}
 
     paramuids = [p["paramuid"] for p in body.params if p.get("paramuid")]
-    rows = sb.schema("smartdoc").table("gendoc_params").select("*").in_("paramuid", paramuids).execute().data or []
+    rows = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("*").in_("paramuid", paramuids).execute().data or []
 
     from collections import defaultdict
     grouped = defaultdict(list)
@@ -322,10 +322,10 @@ def check_objects(body: dict, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     docid = body.get("docid")
-    chapters = sb.schema("smartdoc").table("chapters").select("*").eq("docid", docid).execute().data or []
+    chapters = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("docid", docid).execute().data or []
     unset = []
     for chap in chapters:
-        objs = sb.schema("smartdoc").rpc("fn_objects__r", {"p_chapteruid": chap["chapteruid"]}).execute().data or []
+        objs = sb.schema(SUPABASE_SCHEMA).rpc("fn_objects__r", {"p_chapteruid": chap["chapteruid"]}).execute().data or []
         for obj in objs:
             if obj.get("useyn") and not obj.get("objectsettingyn"):
                 unset.append({"text": f'챕터: {chap["chapternm"]} - 항목: {obj.get("objectnm", "")}'})
@@ -339,21 +339,21 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
 
-    genchap = sb.schema("smartdoc").table("genchapters").select("gendocuid,chapteruid,docid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid,docid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
     docid = genchap[0].get("docid")
 
-    chapter = sb.schema("smartdoc").table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
+    chapter = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
     chapternm = chapter[0]["chapternm"] if chapter else ""
 
-    gendoc = sb.schema("smartdoc").table("gendocs").select("gendocnm,closeyn").eq("gendocuid", gendocuid).execute().data
+    gendoc = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm,closeyn").eq("gendocuid", gendocuid).execute().data
     closeyn = bool(gendoc[0]["closeyn"]) if gendoc else False
     gendocnm = gendoc[0]["gendocnm"] if gendoc else ""
 
-    objects = sb.schema("smartdoc").rpc("fn_genobjects__r", {"p_genchapteruid": genchapteruid}).execute().data or []
+    objects = sb.schema(SUPABASE_SCHEMA).rpc("fn_genobjects__r", {"p_genchapteruid": genchapteruid}).execute().data or []
     for obj in objects:
         obj["objcreatedts"] = _fmt(obj.get("objcreatedts"))
         obj["genobjcreatedts"] = _fmt(obj.get("genobjcreatedts"))
@@ -383,14 +383,14 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
     user_id = str(user.id)
     docid = _get_docid(sb, user_id)
 
-    genchap = sb.schema("smartdoc").table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
 
     # Check locks
-    genlocks_c = sb.schema("smartdoc").table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute().data or []
-    genlocks_d = sb.schema("smartdoc").table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", "").execute().data or []
+    genlocks_c = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute().data or []
+    genlocks_d = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", "").execute().data or []
     is_locked = any(r.get("doclocked") or r.get("chapterlocked") for r in genlocks_c + genlocks_d)
     if is_locked:
         raise HTTPException(status_code=409, detail="이 문서의 해당 챕터가 이미 작성 중입니다.")
@@ -418,28 +418,28 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     sb = _sb(token)
     user_id = str(user.id)
 
-    genchap = sb.schema("smartdoc").table("genchapters").select("gendocuid,chapteruid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
 
     # Check locks
-    genlocks_c = sb.schema("smartdoc").table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute().data or []
-    genlocks_d = sb.schema("smartdoc").table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", "").execute().data or []
+    genlocks_c = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute().data or []
+    genlocks_d = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", "").execute().data or []
     is_locked = any(r.get("doclocked") or r.get("chapterlocked") for r in genlocks_c + genlocks_d)
     if is_locked:
         raise HTTPException(status_code=409, detail="이 문서의 해당 챕터가 이미 작성 중입니다.")
 
     # Get base text template
-    chapter_row = sb.schema("smartdoc").table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
+    chapter_row = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
     texttemplate = chapter_row[0]["texttemplate"] if chapter_row else ""
 
     # Replace placeholders with generated object results
-    read_texttemplate = sb.schema("smartdoc").rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
+    read_texttemplate = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
     for item in read_texttemplate:
         if item.get("genobjectuid"):
-            read_datas = sb.schema("smartdoc").table("genobjects").select("resulttext").eq("genobjectuid", item["genobjectuid"]).execute().data
+            read_datas = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("resulttext").eq("genobjectuid", item["genobjectuid"]).execute().data
             html = read_datas[0]["resulttext"] if read_datas else ""
             placeholder = f"{{{{{item['objectnm']}}}}}"
             texttemplate = texttemplate.replace(placeholder, html or "")
@@ -447,7 +447,7 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     now = datetime.now().isoformat()
 
     # Update genchapters
-    sb.schema("smartdoc").table("genchapters").update({
+    sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
         "gentexttemplate": texttemplate,
         "genchapteruid": genchapteruid,
         "createuserid": user_id,
@@ -456,7 +456,7 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
 
     # Insert log
     try:
-        sb.schema("smartdoc").table("gendoc_genchapters").insert({
+        sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
             "gendocuid": gendocuid,
             "genchapteruid": genchapteruid,
             "creator": user_id,
@@ -499,7 +499,7 @@ def get_doc_content(
     # 문서 정보 (작성자, 작성일시, 업로더, 업로드일시)
     doc_info = {}
     try:
-        gd = sb.schema("smartdoc").table("gendocs").select("*").eq("gendocuid", gendocuid).execute().data
+        gd = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("*").eq("gendocuid", gendocuid).execute().data
         if gd:
             d = gd[0]
             doc_info["gendocnm"] = d.get("gendocnm", "")
@@ -551,7 +551,7 @@ def get_chapter_content(
     user_id = str(user.id)
     docid = _get_docid(sb, user_id)
 
-    genchap = sb.schema("smartdoc").table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
     gendocuid = genchap[0]["gendocuid"] if genchap else None
 
     req = FakeRequest(token, user_id, docid)
@@ -571,7 +571,7 @@ def get_chapter_content(
 
     closeyn = False
     if gendocuid:
-        gd = sb.schema("smartdoc").table("gendocs").select("closeyn").eq("gendocuid", gendocuid).execute().data
+        gd = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("closeyn").eq("gendocuid", gendocuid).execute().data
         closeyn = bool(gd[0]["closeyn"]) if gd else False
 
     return {
@@ -594,7 +594,7 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
     user_id = str(user.id)
     docid = _get_docid(sb, user_id)
 
-    genchap = sb.schema("smartdoc").table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
@@ -607,7 +607,7 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         timeout = timedelta(hours=2)
 
         # Unlock stale locks
-        genlocks = sb.schema("smartdoc").table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
+        genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
         for lock in genlocks:
             upd = {}
             if lock.get("doclocked") and lock.get("docstartdts"):
@@ -621,16 +621,16 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
                     upd["chapterlocked"] = False
                     upd["chapterenddts"] = now_iso
             if upd:
-                sb.schema("smartdoc").table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
+                sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
 
         # Check remaining locks
-        remaining = sb.schema("smartdoc").table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
+        remaining = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
         if any(r.get("doclocked") or r.get("chapterlocked") for r in remaining):
             yield f"data: {json.dumps({'type':'error','message':'이 문서 혹은 해당 챕터가 이미 작성 중입니다.'}, ensure_ascii=False)}\n\n"
             return
 
         # Set chapter lock
-        sb.schema("smartdoc").table("genlocks").upsert({
+        sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
             "gendocuid": gendocuid,
             "genchapteruid": genchapteruid,
             "doclocked": False,
@@ -652,7 +652,7 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','message':str(e)}, ensure_ascii=False)}\n\n"
         finally:
-            sb.schema("smartdoc").table("genlocks").update({
+            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
                 "chapterlocked": False,
                 "chapterenddts": datetime.now().isoformat(),
             }).eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute()
@@ -672,7 +672,7 @@ async def upload_chapter_file(
     sb = _sb(token)
     user_id = str(user.id)
 
-    genchap = sb.schema("smartdoc").table("genchapters").select("gendocuid,updatefileurl").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,updatefileurl").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
@@ -694,16 +694,16 @@ async def upload_chapter_file(
     public_url = sb.storage.from_("smartdoc").get_public_url(path)
     now = datetime.now().isoformat()
 
-    sb.schema("smartdoc").table("genchapters").update({
+    sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
         "updatefileurl": public_url,
         "updatefilenm": file.filename,
         "updatefiledts": now,
         "updateuserid": user_id,
     }).eq("genchapteruid", genchapteruid).execute()
 
-    docid_row = sb.schema("smartdoc").table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
     if docid_row:
-        sb.schema("smartdoc").table("loguploads").insert({
+        sb.schema(SUPABASE_SCHEMA).table("loguploads").insert({
             "objecttypenm": "C",
             "docid": docid_row[0]["docid"],
             "gendocuid": gendocuid,
@@ -729,7 +729,7 @@ async def upload_file(
     sb = _sb(token)
     user_id = str(user.id)
 
-    old = sb.schema("smartdoc").table("gendocs").select("updatefileurl,updatefilenm").eq("gendocuid", gendocuid).execute().data
+    old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("updatefileurl,updatefilenm").eq("gendocuid", gendocuid).execute().data
     if old and old[0].get("updatefileurl"):
         parsed = urlparse(old[0]["updatefileurl"])
         prefix = "/storage/v1/object/public/smartdoc/"
@@ -746,16 +746,16 @@ async def upload_file(
     public_url = sb.storage.from_("smartdoc").get_public_url(path)
     now = datetime.now().isoformat()
 
-    sb.schema("smartdoc").table("gendocs").update({
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
         "updatefileurl": public_url,
         "updatefilenm": file.filename,
         "updatefiledts": now,
         "updateuserid": user_id,
     }).eq("gendocuid", gendocuid).execute()
 
-    docid = sb.schema("smartdoc").table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    docid = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
     if docid:
-        sb.schema("smartdoc").table("loguploads").insert({
+        sb.schema(SUPABASE_SCHEMA).table("loguploads").insert({
             "objecttypenm": "D",
             "docid": docid[0]["docid"],
             "gendocuid": gendocuid,
@@ -792,7 +792,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
         timeout = timedelta(hours=2)
 
         # Unlock stale locks
-        genlocks = sb.schema("smartdoc").table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
+        genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
         for lock in genlocks:
             upd = {}
             if lock.get("doclocked") and lock.get("docstartdts"):
@@ -806,16 +806,16 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
                     upd["chapterlocked"] = False
                     upd["chapterenddts"] = now_iso
             if upd:
-                sb.schema("smartdoc").table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
+                sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
 
         # Check remaining locks
-        genlocks = sb.schema("smartdoc").table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
+        genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
         if any(r.get("doclocked") or r.get("chapterlocked") for r in genlocks):
             yield f"data: {json.dumps({'type':'locked','message':'이 문서가 이미 작성 중입니다.'}, ensure_ascii=False)}\n\n"
             return
 
         # Set doc lock
-        sb.schema("smartdoc").table("genlocks").upsert({
+        sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
             "gendocuid": gendocuid,
             "genchapteruid": "",
             "doclocked": True,
@@ -833,8 +833,8 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
 
         def _get_chap_name(genchapteruid, fallback):
             try:
-                chapteruid = sb.schema("smartdoc").table("genchapters").select("chapteruid").eq("genchapteruid", genchapteruid).execute().data[0]["chapteruid"]
-                resp = sb.schema("smartdoc").table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
+                chapteruid = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("chapteruid").eq("genchapteruid", genchapteruid).execute().data[0]["chapteruid"]
+                resp = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
                 return resp[0]["chapternm"] if resp else fallback
             except Exception:
                 return fallback
@@ -921,7 +921,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
 
             # 기존 파일 제거
             try:
-                old = sb.schema("smartdoc").table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
+                old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
                 if old and old[0].get("createfileurl"):
                     old_url = old[0]["createfileurl"]
                     parsed = urlparse(old_url)
@@ -946,7 +946,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
 
             # gendocs DB 업데이트
             try:
-                sb.schema("smartdoc").table("gendocs").update({
+                sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
                     "createfileurl": public_url,
                     "createfiledts": datetime.now().isoformat(),
                     "createuserid": user_id,
@@ -954,7 +954,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
             except Exception as e:
                 raise Exception(f"[DB 업데이트 오류] {e}")
 
-            gendocnm_resp = sb.schema("smartdoc").table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
+            gendocnm_resp = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
             gendocnm = gendocnm_resp[0]["gendocnm"] if gendocnm_resp else ""
 
             yield f"data: {json.dumps({'step':total_steps,'total':total_steps,'message':'문서 작성 완료!','status':'completed','path':path,'docnm':gendocnm}, ensure_ascii=False)}\n\n"
@@ -963,7 +963,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
             yield f"data: {json.dumps({'step':0,'total':total_steps,'message':str(e),'status':'error'}, ensure_ascii=False)}\n\n"
 
         finally:
-            sb.schema("smartdoc").table("genlocks").update({
+            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
                 "doclocked": False,
                 "docenddts": datetime.now().isoformat(),
             }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
