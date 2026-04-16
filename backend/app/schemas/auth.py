@@ -43,12 +43,13 @@ class RefreshRequest(BaseModel):
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
+    password_confirm: Optional[str] = None
     usernm: str
-    phone: Optional[str] = None
     termsofuseyn: str = "Y"
     userinfoyn: str = "Y"
     marketingyn: str = "N"
     billingmodelcd: str = "single"
+    single: Optional[str] = None
     tenantid: Optional[str] = None
 
 

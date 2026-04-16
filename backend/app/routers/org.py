@@ -141,7 +141,7 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     useruid = target_user["useruid"]
 
     # SmartDoc 테넌트 id 조회
-    sd_tenant = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid").eq("tenantnm", "SmartDoc").execute().data
+    sd_tenant = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid").eq("issytemtenant", True).execute().data
     other_tenantid = int(sd_tenant[0]["tenantid"]) if sd_tenant else None
 
     # 기존 tenantusers 레코드 확인

@@ -327,85 +327,210 @@ def get_tenants():
 @router.post("/register", response_model=MessageResponse)
 def register(body: RegisterRequest):
     """회원가입: Supabase auth + users 테이블 + 기본 권한 할당."""
+    from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
+    from dateutil.relativedelta import relativedelta
+
+    SCHEMA = SUPABASE_SCHEMA
+
+    # 비밀번호 검증
+    if body.password_confirm and body.password != body.password_confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="비밀번호가 일치하지 않습니다.",
+        )
+    if len(body.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="비밀번호는 최소 8자 이상이어야 합니다.",
+        )
+
     service = _get_service_client()
 
     # 중복 이메일 확인
     try:
         existing = (
-            service.table("users")
-            .select("id")
+            service.schema(SCHEMA)
+            .table("users")
+            .select("useruid")
             .eq("email", body.email)
-            .maybe_single()
             .execute()
         )
-        if existing.data:
+        if existing.data and len(existing.data) > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="이미 사용 중인 이메일입니다.",
+                detail="이미 가입된 회원입니다.",
             )
     except HTTPException:
         raise
-    except Exception:
-        pass
-
-    # Supabase auth.sign_up
-    try:
-        auth_resp = service.auth.admin.create_user(
-            {
-                "email": body.email,
-                "password": body.password,
-                "email_confirm": True,
-            }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"중복 확인 중 오류: {str(e)}",
         )
-        user_id = str(auth_resp.user.id)
+
+    # Supabase auth.sign_up (이메일 인증 발송)
+    try:
+        anon_client = get_supabase_client()
+        signup_result = anon_client.auth.sign_up({
+            "email": body.email,
+            "password": body.password,
+        })
+        user_id = str(signup_result.user.id)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"회원가입 실패: {str(e)}",
         )
 
+    # billingmodelcd 값 결정
+    # tenant 있으면 테넌트 테이블에서 조회, 없으면 single 파라미터 사용
+    try:
+        if body.tenantid:
+            tenant_row = (
+                service.schema(SCHEMA)
+                .table("tenants")
+                .select("billingmodelcd")
+                .eq("tenantid", body.tenantid)
+                .execute()
+            )
+            billcd = tenant_row.data[0]["billingmodelcd"]
+        else:
+            billcd = body.single or body.billingmodelcd
+    except Exception:
+        billcd = body.billingmodelcd
+
     # users 테이블에 사용자 정보 저장
     try:
-        service.table("users").insert(
-            {
-                "id": user_id,
-                "email": body.email,
-                "usernm": body.usernm,
-                "phone": body.phone or "",
-                "roleid": 1,
-                "billingmodelcd": body.billingmodelcd,
-                "termsofuseyn": body.termsofuseyn,
-                "userinfoyn": body.userinfoyn,
-                "marketingyn": body.marketingyn,
-            }
-        ).execute()
+        service.schema(SCHEMA).table("users").insert({
+            "useruid": user_id,
+            "email": body.email,
+            "roleid": 1,
+            "billingmodelcd": billcd,
+            "termsofuseyn": body.termsofuseyn,
+            "userinfoyn": body.userinfoyn,
+            "marketingyn": body.marketingyn,
+            "usernm": body.usernm,
+        }).execute()
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"사용자 정보 저장 실패: {str(e)}",
+            detail=f"DB 저장 실패: {str(e)}",
         )
 
-    # 테넌트/프로젝트 기본 권한 할당
-    try:
-        if body.tenantid:
-            service.table("tenantusers").insert(
-                {"userid": user_id, "tenantid": body.tenantid, "tenantmanager": "N"}
-            ).execute()
-        if body.billingmodelcd == "single":
-            # 개인 프로젝트 생성
-            proj_result = service.table("projects").insert(
-                {"projectnm": f"{body.usernm}의 프로젝트", "tenantid": body.tenantid}
-            ).execute()
-            if proj_result.data:
-                project_id = str(proj_result.data[0]["id"])
-                service.table("projectusers").insert(
-                    {"userid": user_id, "projectid": project_id, "projectmanager": "Y"}
-                ).execute()
-    except Exception:
-        # 권한 할당 실패는 치명적이지 않으므로 로그만 남기고 계속
-        pass
+    # SmartDoc 기본 tenantid 조회
+    smartdoc_row = (
+        service.schema(SCHEMA)
+        .table("tenants")
+        .select("tenantid")
+        .eq("issytemtenant", True)
+        .execute()
+    )
+    if not smartdoc_row.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DB 저장 실패: SmartDoc 테넌트를 찾을 수 없습니다.",
+        )
+    smartdoc_tenantid = smartdoc_row.data[0]["tenantid"]
 
-    return MessageResponse(ok=True, message="회원가입이 완료되었습니다.")
+    # tenant 미선택 시 SmartDoc으로 설정
+    effective_tenantid = body.tenantid if body.tenantid else smartdoc_tenantid
+
+    # SmartDoc public 프로젝트 조회
+    public_proj_row = (
+        service.schema(SCHEMA)
+        .table("projects")
+        .select("projectid")
+        .eq("projectnm", "public")
+        .eq("tenantid", smartdoc_tenantid)
+        .execute()
+    )
+    if not public_proj_row.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DB 저장 실패: SmartDoc public 프로젝트를 찾을 수 없습니다.",
+        )
+    public_projectid = public_proj_row.data[0]["projectid"]
+
+    # 공통 권한 부여 + 추가 처리
+    try:
+        # 공통 tenantusers 삽입
+        service.schema(SCHEMA).table("tenantusers").insert({
+            "tenantid": smartdoc_tenantid,
+            "useruid": user_id,
+            "rolecd": "U",
+            "useyn": True,
+            "creator": user_id,
+        }).execute()
+
+        # 공통 projectusers 삽입
+        service.schema(SCHEMA).table("projectusers").insert({
+            "projectid": public_projectid,
+            "useruid": user_id,
+            "rolecd": "U",
+            "useyn": True,
+            "creator": user_id,
+        }).execute()
+
+        # billingmodelcd == 'single': 개인 프로젝트 생성
+        if body.billingmodelcd == "single":
+            proj_result = service.schema(SCHEMA).table("projects").insert({
+                "tenantid": smartdoc_tenantid,
+                "projectnm": body.email,
+                "projectdesc": "계정에 따른 자동 생성된 프로젝트 입니다.",
+                "useyn": True,
+                "creator": user_id,
+            }).execute()
+            respon_projectid = proj_result.data[0]["projectid"]
+            service.schema(SCHEMA).table("projectusers").insert({
+                "projectid": respon_projectid,
+                "useruid": user_id,
+                "rolecd": "M",
+                "useyn": True,
+                "creator": user_id,
+            }).execute()
+
+        # 별도 테넌트 선택 시 tenantnewusers 삽입
+        if body.tenantid and str(body.tenantid) != str(smartdoc_tenantid):
+            service.schema(SCHEMA).table("tenantnewusers").insert({
+                "tenantid": body.tenantid,
+                "useruid": user_id,
+                "creator": user_id,
+                "approvecd": "A",
+            }).execute()
+
+        # Pro(Pr) 결제 처리
+        if body.single == "Pr":
+            billing_start = datetime.now().date()
+            billing_end = billing_start + relativedelta(months=1) - timedelta(days=1)
+            config = service.schema(SCHEMA).table("configs").select("*").execute().data[0]
+            service.schema(SCHEMA).table("billmasters").insert({
+                "billtargetcd": "U",
+                "tenantid": effective_tenantid,
+                "useruid": user_id,
+                "billingmodelcd": "Pr",
+                "billingfirstdt": billing_start.isoformat(),
+                "useyn": True,
+                "creator": user_id,
+            }).execute()
+            service.schema(SCHEMA).table("billdts").insert({
+                "billtargetcd": "U",
+                "tenantid": effective_tenantid,
+                "useruid": user_id,
+                "billstartdt": billing_start.isoformat(),
+                "billenddt": billing_end.isoformat(),
+                "billingmodelcd": "Pr",
+                "inputtokencapa": config["inputtokencapa"],
+                "serviceamt": config["pricepro"],
+                "creator": user_id,
+            }).execute()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"DB 저장 실패: {str(e)}",
+        )
+
+    return MessageResponse(ok=True, message="회원가입이 완료되었습니다.\n이메일 인증 후 로그인 가능합니다.")
 
 
 # ─── SMS 인증 ────────────────────────────────────────────────────────────────

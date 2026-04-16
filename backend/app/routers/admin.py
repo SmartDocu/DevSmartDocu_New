@@ -456,7 +456,7 @@ def list_llmapis(token: str = Depends(get_token)):
             row["createuser"] = ""
 
     # 기업 목록 (비고 드롭다운용, SmartDoc 제외)
-    tenants = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("useyn", True).neq("tenantnm", "SmartDoc").order("tenantid").execute().data or []
+    tenants = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("useyn", True).or_("issytemtenant.is.null,issytemtenant.eq.false").order("tenantid").execute().data or []
 
     return {"llmapis": llmapis, "llmmodels": llmmodels, "tenants": tenants}
 
