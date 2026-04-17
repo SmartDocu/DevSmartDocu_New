@@ -30,7 +30,6 @@ import ReqChapterObjectsPage from '@/pages/req/ReqChapterObjectsPage'
 import ReqDocWritePage from '@/pages/req/ReqDocWritePage'
 import ReqDocReadPage from '@/pages/req/ReqDocReadPage'
 import SettingsServersPage from '@/pages/settings/SettingsServersPage'
-import SettingsProjectsPage from '@/pages/settings/SettingsProjectsPage'
 import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
 import MyInfoPage from '@/pages/MyInfoPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
@@ -105,7 +104,6 @@ export const router = createBrowserRouter([
 
       // Stage 6: 설정 / 내 정보
       { path: 'settings/servers', element: <SettingsServersPage /> },
-      { path: 'settings/projects', element: <SettingsProjectsPage /> },
       { path: 'settings/tenants', element: <SettingsTenantsPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
       { path: 'qna', element: <QnaPage /> },

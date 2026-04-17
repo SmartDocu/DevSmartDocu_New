@@ -113,7 +113,7 @@ export default function AppLayout() {
           {/* Copyright — Footer 대체 */}
           <div className="sidebar-copyright">
             {siderCollapsed
-              ? <span title="© SmartDocu 2025">©</span>
+              ? <span title="© SmartDocu 2025"></span>
               : '© SmartDocu 2025. All rights reserved.'
             }
           </div>
