@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token
+from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
 
 router = APIRouter()
 
@@ -17,7 +18,6 @@ BILLING_MODELS = ["Fr", "Pr", "Te", "En"]
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 

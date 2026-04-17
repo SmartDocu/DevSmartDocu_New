@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token
 from backend.app.schemas.auth import MessageResponse, UserContext
+from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
 from backend.app.schemas.docs import (
     DocItem,
     DocSaveResponse,
@@ -22,7 +23,6 @@ router = APIRouter()
 
 
 def _sb(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 

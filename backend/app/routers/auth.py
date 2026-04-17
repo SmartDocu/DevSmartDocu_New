@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token
+from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from backend.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -34,25 +35,18 @@ _sms_storage: dict[str, dict] = {}
 
 def _get_service_client():
     """서비스 역할 Supabase 클라이언트 (관리 작업용)."""
-    from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
     return get_service_client()
 
 
 def _get_user_client(access_token: str, refresh_token: Optional[str] = None):
     """사용자 토큰 기반 Supabase 클라이언트."""
-    from utilsPrj.supabase_client import get_thread_supabase
     return get_thread_supabase(access_token=access_token, refresh_token=refresh_token)
 
-
 def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
-    """
-    로그인 후 사용자 컨텍스트를 로드한다.
-    mydocid 기준으로 문서를 복원하고, 해당 문서의 project/tenant/manager 권한을 설정.
-    """
     ctx = UserContext(id=user_id, email=email)
     sd = supabase.schema(SUPABASE_SCHEMA)
 
-    # 1. 사용자 기본 정보 + 마지막 선택 문서 ID(mydocid)
+    # 1. 사용자 기본 정보
     mydocid = None
     try:
         user_row = (
@@ -69,7 +63,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 2. 테넌트 아이콘 로드 (문서 선택과 무관)
+    # 2. tenant icon
     try:
         tenant_rows = (
             sd.table("tenantusers")
@@ -79,107 +73,156 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         )
         if tenant_rows.data:
             first_tenant = tenant_rows.data[0]
-            try:
-                tenant_info = sd.table("tenants").select("iconfileurl").eq(
-                    "tenantid", first_tenant.get("tenantid")
-                ).maybe_single().execute()
-                if tenant_info.data:
-                    ctx.tenanticonurl = tenant_info.data.get("iconfileurl")
-            except Exception:
-                pass
+
+            tenant_info = (
+                sd.table("tenants")
+                .select("iconfileurl")
+                .eq("tenantid", first_tenant.get("tenantid"))
+                .maybe_single()
+                .execute()
+            )
+
+            if tenant_info.data:
+                ctx.tenanticonurl = tenant_info.data.get("iconfileurl")
+
     except Exception:
         pass
 
-    # 3. 열람 가능한 문서 목록 조회
+    # 3. 문서 목록
+    docid = None
     try:
         docs_row = sd.rpc("fn_docs_filtered__r_user_viewer", {"p_useruid": user_id}).execute()
-        if not docs_row.data:
-            return ctx
 
-        # mydocid가 있으면 해당 문서, 없으면 첫 번째 문서
-        target_doc = None
-        if mydocid:
-            target_doc = next(
-                (d for d in docs_row.data if str(d.get("docid")) == str(mydocid)),
-                None,
+        if docs_row.data:
+            target_doc = None
+
+            if mydocid:
+                target_doc = next(
+                    (d for d in docs_row.data if str(d.get("docid")) == str(mydocid)),
+                    None,
+                )
+
+            if not target_doc:
+                target_doc = docs_row.data[0]
+
+            docid = target_doc.get("docid")
+            ctx.docid = str(docid)
+            ctx.docnm = target_doc.get("docnm", "")
+
+    except Exception:
+        pass
+
+    # 4. doc detail
+    projectid = None
+    try:
+        if docid:
+            doc_detail = (
+                sd.table("docs")
+                .select("projectid,sampleyn")
+                .eq("docid", docid)
+                .maybe_single()
+                .execute()
             )
-        if not target_doc:
-            target_doc = docs_row.data[0]
 
-        docid = target_doc.get("docid")
-        ctx.docid = str(docid)
-        ctx.docnm = target_doc.get("docnm", "")
+            if doc_detail.data:
+                projectid = str(doc_detail.data.get("projectid", ""))
+                sampleyn = doc_detail.data.get("sampleyn", False)
+
+                ctx.sampledocyn = "Y" if sampleyn else "N"
+
+                if not sampleyn:
+                    ctx.editbuttonyn = "Y"
+                elif sampleyn and ctx.roleid == 7:
+                    ctx.editbuttonyn = "Y"
+                else:
+                    ctx.editbuttonyn = "N"
+
     except Exception:
-        return ctx
+        pass
 
-    # 4. 선택 문서의 projectid · sampleyn 조회
+    # 5. project → tenant
     try:
-        doc_detail = (
-            sd.table("docs")
-            .select("projectid,sampleyn")
-            .eq("docid", docid)
-            .maybe_single()
-            .execute()
-        )
-        if not doc_detail.data:
-            return ctx
+        if projectid:
+            proj_detail = (
+                sd.table("projects")
+                .select("tenantid")
+                .eq("projectid", projectid)
+                .maybe_single()
+                .execute()
+            )
 
-        projectid = str(doc_detail.data.get("projectid", ""))
-        sampleyn = doc_detail.data.get("sampleyn", False)
-        ctx.sampledocyn = "Y" if sampleyn else "N"
-        if not sampleyn:
-            ctx.editbuttonyn = "Y"
-        elif sampleyn and ctx.roleid == 7:
-            ctx.editbuttonyn = "Y"
-        else:
-            ctx.editbuttonyn = "N"
+            if proj_detail.data:
+                ctx.projectid = projectid
+                ctx.tenantid = str(proj_detail.data.get("tenantid", ""))
+
     except Exception:
-        return ctx
+        pass
 
-    # 5. 프로젝트 → tenantid
+    # 6. projectmanager
     try:
-        proj_detail = (
-            sd.table("projects")
-            .select("tenantid")
-            .eq("projectid", projectid)
-            .maybe_single()
-            .execute()
-        )
-        tenantid = str(proj_detail.data.get("tenantid", "")) if proj_detail.data else ""
-        ctx.projectid = projectid
-        ctx.tenantid = tenantid
+        if projectid:
+            user_proj = (
+                sd.table("projectusers")
+                .select("rolecd")
+                .eq("projectid", projectid)
+                .eq("useruid", user_id)
+                .eq("useyn", True)
+                .execute()
+            )
+
+            ctx.projectmanager = (
+                "Y"
+                if user_proj.data and any(p.get("rolecd") == "M" for p in user_proj.data)
+                else "N"
+            )
+
     except Exception:
-        return ctx
+        pass
 
-    # 6. projectmanager 여부 (선택 문서의 프로젝트 기준)
+    # 7. tenantmanager
     try:
-        user_proj = (
-            sd.table("projectusers")
-            .select("rolecd")
-            .eq("projectid", projectid)
+        user_tenant = (
+            sd.table("tenantusers")
+            .select("rolecd, useyn")
             .eq("useruid", user_id)
             .execute()
         )
-        ctx.projectmanager = "Y" if user_proj.data and any(p.get("rolecd") == "M" for p in user_proj.data) else "N"
+
+        ctx.tenantmanager = (
+            "Y"
+            if user_tenant.data
+            and any(t.get("rolecd") == "M" and t.get("useyn") is True for t in user_tenant.data)
+            else "N"
+        )
+
     except Exception:
         pass
 
-    # 7. tenantmanager 여부 (선택 문서의 테넌트 기준)
+    # 8. languagecd: TenantUsers.languagecd → Tenants.languagecd
     try:
-        if tenantid:
-            user_tenant = (
-                sd.table("tenantusers")
-                .select("rolecd")
-                .eq("tenantid", tenantid)
-                .eq("useruid", user_id)
+        lang_row = (
+            sd.table("tenantusers")
+            .select("languagecd, tenantid")
+            .eq("useruid", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if lang_row.data and lang_row.data.get("languagecd"):
+            ctx.languagecd = lang_row.data["languagecd"]
+        elif lang_row.data and lang_row.data.get("tenantid"):
+            t_lang = (
+                sd.table("tenants")
+                .select("languagecd")
+                .eq("tenantid", lang_row.data["tenantid"])
+                .maybe_single()
                 .execute()
             )
-            ctx.tenantmanager = "Y" if user_tenant.data and any(t.get("rolecd") == "M" for t in user_tenant.data) else "N"
+            if t_lang.data:
+                ctx.languagecd = t_lang.data.get("languagecd")
     except Exception:
         pass
 
     return ctx
-
 
 # ─── 엔드포인트 ─────────────────────────────────────────────────────────────
 
@@ -570,6 +613,28 @@ def send_sms(body: SendSmsRequest):
         logging.warning(f"SMS send failed: {e} | code={code}")
 
     return MessageResponse(ok=True, message="인증번호를 발송했습니다.")
+
+
+@router.patch("/language", response_model=MessageResponse)
+def update_language(body: dict, token: str = Depends(get_token)):
+    """로그인 사용자의 TenantUsers.languagecd를 업데이트한다."""
+    languagecd = body.get("languagecd")
+    if not languagecd:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="languagecd가 필요합니다.")
+    try:
+        supabase = _get_user_client(token)
+        user_resp = supabase.auth.get_user(token)
+        user = user_resp.user
+        if not user:
+            raise ValueError("user not found")
+        user_id = str(user.id)
+        sd = supabase.schema(SUPABASE_SCHEMA)
+        sd.table("tenantusers").update({"languagecd": languagecd}).eq("useruid", user_id).execute()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return MessageResponse(ok=True, message="언어가 변경되었습니다.")
 
 
 @router.post("/verify-sms", response_model=MessageResponse)

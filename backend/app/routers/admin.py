@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token
+from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
 
@@ -20,14 +21,10 @@ ROLE_OPTIONS = [
 
 
 def _sb_user(token: str):
-    """일반 사용자 Supabase 클라이언트"""
-    from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
     return get_thread_supabase(access_token=token)
 
 
 def _sb_service():
-    """서비스 클라이언트 (RLS 우회, 관리자 전용)"""
-    from utilsPrj.supabase_client import get_service_client
     return get_service_client()
 
 
@@ -245,7 +242,6 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
     if not body.datauid:
         raise HTTPException(status_code=400, detail="데이터를 선택해주세요.")
 
-    from utilsPrj.supabase_client import get_thread_supabase, get_service_client
     from utilsPrj.process_data import process_data
     from llm.ai_chain import (
         get_charts_prompt, get_sentences_prompt, get_tables_prompt,

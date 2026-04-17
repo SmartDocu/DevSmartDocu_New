@@ -126,124 +126,97 @@
   --selected-row: #245F97;
 }
 
-/* ── App Nav (Header 메뉴) ────────────────────────── */
-.app-nav-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* ── Sidebar ──────────────────────────────────────── */
+.sidebar-logo {
   display: flex;
-  gap: 10px;
   align-items: center;
-  overflow: visible;
-}
-
-.app-nav-item {
-  position: relative;
-}
-
-.app-nav-link {
-  text-decoration: none;
-  color: #ffffff;
-  padding: 5px 10px;
-  display: block;
-  font-family: 'NanumGothic', 'Noto Sans KR', sans-serif;
-  font-size: 16px;
-  font-weight: 500;
+  gap: 8px;
+  padding: 14px 16px;
   cursor: pointer;
-  background: none;
-  border: none;
-  white-space: nowrap;
-  line-height: 1.4;
+  border-bottom: 1px solid #e8e8e8;
+  min-height: 60px;
 }
 
-.app-nav-link.active {
-  border-bottom: 2px solid #E6EFF7;
+.app-sidebar {
+  padding: 8px 0;
+}
+
+.sidebar-search {
+  padding: 8px 12px 4px;
+}
+
+.sidebar-section-title {
+  padding: 8px 16px 4px;
+  font-size: 12px;
   font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.app-nav-link:hover {
-  color: #E6EFF7;
-}
-
-/* 풀다운 패널 — 기본 숨김, li:hover 시 flex */
-.app-submenu-panel {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  background-color: #163E64;
-  padding: 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.6);
-  z-index: 100;
-  min-width: 700px;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 20px;
-  align-items: flex-start;
-}
-
-.app-nav-item:hover .app-submenu-panel {
-  display: flex;
-}
-
-/* 좌측 설명 */
-.app-menu-desc {
-  flex: 1;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.8;
-  padding-right: 20px;
-  border-right: 1px solid #eeeeee;
-}
-
-/* 우측 서브메뉴 리스트 */
-.app-submenu-list {
-  flex: 2;
-  display: flex;
-  flex-direction: row;
-  gap: 20px;
-}
-
-.app-submenu-list ul {
-  display: flex;
-  flex-direction: column;
+.sidebar-fav-list {
   list-style: none;
   margin: 0;
-  padding: 0;
-  gap: 10px;
+  padding: 0 4px;
 }
 
-.app-submenu-list ul li {
-  padding: 0;
-  border-bottom: none;
-}
-
-.app-submenu-link {
-  text-decoration: none;
-  color: #ffffff;
-  font-weight: 500;
-  font-size: 16px;
-  white-space: nowrap;
+.sidebar-fav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  background: none;
-  border: none;
-  display: block;
-  padding: 0;
-  font-family: 'NanumGothic', 'Noto Sans KR', sans-serif;
-  text-align: left;
-  line-height: 1.6;
+  font-size: 13px;
+  color: #333;
 }
 
-.app-submenu-link:hover {
-  color: #E6EFF7;
+.sidebar-fav-item:hover,
+.sidebar-fav-item.active {
+  background: #e6f0fa;
+  color: #163E64;
 }
 
-.app-submenu-small {
-  color: #c0c6cc;
-  font-weight: 400;
-  font-size: 14px;
+.sidebar-fav-label {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-star {
+  cursor: pointer;
+  transition: color 0.2s;
+  font-size: 13px;
+}
+
+.sidebar-star:hover {
+  color: #faad14 !important;
+}
+
+.sidebar-copyright {
+  padding: 10px 12px;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+  border-top: 1px solid #e8e8e8;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ── Header 언어 선택기 ────────────────────────────── */
+.lang-select .ant-select-selector {
+  background: transparent !important;
+  border: none !important;
+  color: #fff !important;
+}
+.lang-select .ant-select-arrow {
+  color: #fff !important;
+}
+.lang-select .ant-select-selection-item {
+  color: #fff !important;
 }
 
 /* ── 기본 리셋 ─────────────────────────────────────── */

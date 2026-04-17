@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc
+from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc, menus, configs, i18n
 
 router = APIRouter()
 router.include_router(auth.router,      prefix="/auth",      tags=["auth"])
@@ -16,3 +16,6 @@ router.include_router(org.router,       prefix="/org",       tags=["org"])
 router.include_router(admin.router,     prefix="/admin",     tags=["admin"])
 router.include_router(llm.router,       prefix="/llm",       tags=["llm"])
 router.include_router(misc.router,      prefix="/misc",      tags=["misc"])
+router.include_router(menus.router,     prefix="/menus",     tags=["menus"])
+router.include_router(configs.router,   prefix="/configs",   tags=["configs"])
+router.include_router(i18n.router,      prefix="/i18n",      tags=["i18n"])

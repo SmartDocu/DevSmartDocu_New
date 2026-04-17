@@ -12,17 +12,16 @@ from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_optional_token, get_token
+from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
 
 
 def _sb_svc():
-    from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
     return get_service_client()
 
 
 def _sb_user(token: str):
-    from utilsPrj.supabase_client import get_thread_supabase
     return get_thread_supabase(access_token=token)
 
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDocs, useProjects, useSaveDoc, useDeleteDoc, useParams, useSaveParam, useDeleteParam } from '@/hooks/useDocs'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 const OPERATORS = ['=', '>=', '<=', '>', '<']
 
@@ -16,7 +17,7 @@ export default function MasterDocsPage() {
   const [selectedDoc, setSelectedDoc] = useState(null)
   const [docForm, setDocForm] = useState({ docid: '', projectid: '', docnm: '', docdesc: '' })
   const [templateFile, setTemplateFile] = useState(null)
-  const [templateName, setTemplateName] = useState('적용할 서식 파일 없음')
+  const [templateName, setTemplateName] = useState(null)
   const [docSaving, setDocSaving] = useState(false)
 
   // Params
@@ -31,11 +32,13 @@ export default function MasterDocsPage() {
 
   const isEditYn = user?.editbuttonyn === 'Y'
   const selectedDocEditYn = selectedDoc?.editbuttonyn === 'Y'
+  // 언어 변경 시 re-render 트리거
+  useLangStore((s) => s.translations)
 
   const selectDoc = (doc) => {
     setSelectedDoc(doc)
     setDocForm({ docid: doc.docid, projectid: doc.projectid, docnm: doc.docnm, docdesc: doc.docdesc || '' })
-    setTemplateName(doc.basetemplatenm || '적용할 서식 파일 없음')
+    setTemplateName(doc.basetemplatenm || null)
     setTemplateFile(null)
     setSelectedParam(null)
     setParamForm({ paramuid: '', paramnm: '', orderno: '', samplevalue: '', operator: '=' })
@@ -44,7 +47,7 @@ export default function MasterDocsPage() {
   const handleDocNew = () => {
     setSelectedDoc(null)
     setDocForm({ docid: '', projectid: projects[0]?.projectid || '', docnm: '', docdesc: '' })
-    setTemplateName('적용할 서식 파일 없음')
+    setTemplateName(null)
     setTemplateFile(null)
     setSelectedParam(null)
   }
@@ -113,14 +116,14 @@ export default function MasterDocsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>문서 관리</div>
+          <div>{t('mnu.master_data.docs.base')}</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* Left: doc cards */}
         <div style={{ flex: 1, paddingRight: 20 }}>
-          <h3>문서 목록</h3>
+          <h3>{t('ttl.doc.list')}</h3>
           <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
             {docs.map((doc) => (
               <div
@@ -136,9 +139,9 @@ export default function MasterDocsPage() {
 
         {/* Middle: doc detail */}
         <div style={{ flex: 1.5, padding: '0 20px' }}>
-          <h3>문서 상세</h3>
+          <h3>{t('ttl.doc.detail')}</h3>
           <div className="form-group">
-            <label htmlFor="doc-projectid">프로젝트명:</label>
+            <label htmlFor="doc-projectid">{t('lbl.projectnm')}:</label>
             {docForm.docid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>
                 {projects.find((p) => String(p.projectid) === String(docForm.projectid))?.projectnm || docForm.projectid}
@@ -149,13 +152,13 @@ export default function MasterDocsPage() {
                 value={docForm.projectid}
                 onChange={(e) => setDocForm((f) => ({ ...f, projectid: e.target.value }))}
               >
-                <option value="">프로젝트를 선택하세요</option>
+                <option value="">{t('msg.select.project')}</option>
                 {projects.map((p) => <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>)}
               </select>
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="doc-docnm">문서명:</label>
+            <label htmlFor="doc-docnm">{t('lbl.docnm')}:</label>
             <input
               id="doc-docnm"
               type="text"
@@ -164,7 +167,7 @@ export default function MasterDocsPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="doc-docdesc">문서설명:</label>
+            <label htmlFor="doc-docdesc">{t('lbl.docdesc')}:</label>
             <textarea
               id="doc-docdesc"
               rows={3}
@@ -173,7 +176,7 @@ export default function MasterDocsPage() {
             />
           </div>
           <div className="form-group">
-            <label>서식 파일 업로드(머리글, 바닥글):</label>
+            <label>{t('lbl.template.upload')}:</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
@@ -202,16 +205,16 @@ export default function MasterDocsPage() {
                       const blob = await res.blob()
                       const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
-                      a.href = url; a.download = templateName
+                      a.href = url; a.download = templateName || ''
                       document.body.appendChild(a); a.click()
                       document.body.removeChild(a); URL.revokeObjectURL(url)
                     } catch { window.open(selectedDoc.basetemplateurl, '_blank') }
                   }}
                 >
-                  {templateName}
+                  {templateName || t('lbl.template.none')}
                 </a>
               ) : (
-                <span>{templateName}</span>
+                <span>{templateName || t('lbl.template.none')}</span>
               )}
             </div>
           </div>
@@ -220,7 +223,7 @@ export default function MasterDocsPage() {
             <button className="icon-btn" type="button" onClick={handleDocNew}>
               <div className="icon-wrapper">
                 <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                <span className="icon-label">신규</span>
+                <span className="icon-label">{t('btn.new')}</span>
               </div>
             </button>
             {(isEditYn || selectedDocEditYn) && (
@@ -228,13 +231,13 @@ export default function MasterDocsPage() {
                 <button className="icon-btn" type="button" onClick={handleDocSave} disabled={docSaving || saveDoc.isPending}>
                   <div className="icon-wrapper">
                     <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                    <span className="icon-label">저장</span>
+                    <span className="icon-label">{t('btn.save')}</span>
                   </div>
                 </button>
                 <button className="icon-btn" type="button" onClick={handleDocDelete} disabled={deleteDoc.isPending}>
                   <div className="icon-wrapper">
                     <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                    <span className="icon-label">삭제</span>
+                    <span className="icon-label">{t('btn.delete')}</span>
                   </div>
                 </button>
               </>
@@ -248,7 +251,7 @@ export default function MasterDocsPage() {
               >
                 <div className="icon-wrapper">
                   <img src="/icons/config.svg" className="icon-img config-icon" alt="매개변수 설정" />
-                  <span className="icon-label">매개변수 설정</span>
+                  <span className="icon-label">{t('lbl.params.setting')}</span>
                 </div>
               </button>
             )}
@@ -257,22 +260,22 @@ export default function MasterDocsPage() {
 
         {/* Right: 매개변수 */}
         <div style={{ flex: 2, paddingLeft: 20 }}>
-          <h3>매개변수 관리</h3>
+          <h3>{t('ttl.params')}</h3>
           <div className="table-container" style={{ maxHeight: 200 }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>매개변수명</th>
-                  <th>예시값</th>
-                  <th>operator</th>
-                  <th>순번</th>
+                  <th>{t('thd.paramnm')}</th>
+                  <th>{t('thd.samplevalue')}</th>
+                  <th>{t('thd.operator')}</th>
+                  <th>{t('thd.orderno')}</th>
                 </tr>
               </thead>
               <tbody>
                 {!selectedDoc ? (
-                  <tr><td colSpan={4}>문서를 선택하세요.</td></tr>
+                  <tr><td colSpan={4}>{t('msg.select.doc')}</td></tr>
                 ) : params.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>매개변수가 없습니다.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.no.params')}</td></tr>
                 ) : params.map((p) => (
                   <tr
                     key={p.paramuid}
@@ -294,7 +297,7 @@ export default function MasterDocsPage() {
           {selectedDoc && (
             <div style={{ paddingTop: 15 }}>
               <div className="form-group-left">
-                <label htmlFor="param-paramnm">매개변수명</label>
+                <label htmlFor="param-paramnm">{t('lbl.paramnm')}</label>
                 <input
                   id="param-paramnm"
                   type="text"
@@ -303,7 +306,7 @@ export default function MasterDocsPage() {
                 />
               </div>
               <div className="form-group-left">
-                <label htmlFor="param-orderno">순번</label>
+                <label htmlFor="param-orderno">{t('lbl.orderno')}</label>
                 <input
                   id="param-orderno"
                   type="number"
@@ -312,7 +315,7 @@ export default function MasterDocsPage() {
                 />
               </div>
               <div className="form-group-left">
-                <label htmlFor="param-samplevalue">예시값</label>
+                <label htmlFor="param-samplevalue">{t('lbl.samplevalue')}</label>
                 <input
                   id="param-samplevalue"
                   type="text"
@@ -339,7 +342,7 @@ export default function MasterDocsPage() {
                 <button className="icon-btn" type="button" onClick={handleParamNew}>
                   <div className="icon-wrapper">
                     <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                    <span className="icon-label">신규</span>
+                    <span className="icon-label">{t('btn.new')}</span>
                   </div>
                 </button>
                 {(isEditYn || selectedDocEditYn) && (
@@ -347,13 +350,13 @@ export default function MasterDocsPage() {
                     <button className="icon-btn" type="button" onClick={handleParamSave} disabled={saveParam.isPending}>
                       <div className="icon-wrapper">
                         <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                        <span className="icon-label">저장</span>
+                        <span className="icon-label">{t('btn.save')}</span>
                       </div>
                     </button>
                     <button className="icon-btn" type="button" onClick={handleParamDelete} disabled={deleteParam.isPending}>
                       <div className="icon-wrapper">
                         <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                        <span className="icon-label">삭제</span>
+                        <span className="icon-label">{t('btn.delete')}</span>
                       </div>
                     </button>
                   </>

@@ -27,6 +27,7 @@ class UserContext(BaseModel):
     projectmanager: Optional[str] = "N"
     editbuttonyn: Optional[str] = "N"
     sampledocyn: Optional[str] = "N"
+    languagecd: Optional[str] = None
 
 
 class LoginResponse(BaseModel):
