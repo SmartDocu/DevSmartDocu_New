@@ -594,10 +594,11 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
     user_id = str(user.id)
     docid = _get_docid(sb, user_id)
 
-    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
+    chapteruid = genchap[0]["chapteruid"]  # ← chapteruid도 함께 조회 필요
 
     def event_stream():
         from utilsPrj.chapter_making import replace_doc
@@ -645,9 +646,39 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         req = FakeRequest(token, user_id, docid)
 
         try:
-            for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
-                                             genChapterDirectYn=True, divide="Chapter"):
-                yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
+            # ▼▼▼ 여기가 핵심 추가 부분 ▼▼▼
+            from utilsPrj.template_parser import process_template, FunctionRegistry, extract_at_variables
+            from utilsPrj.template_extracter import extract_from_processed_html
+
+            # 1. 마스터 texttemplate 조회
+            chapter_row = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
+            texttemplate = chapter_row[0]["texttemplate"] if chapter_row else ""
+
+            # 2. @변수 추출 및 context 빌드
+            result = extract_at_variables(texttemplate)
+            context = _build_context(sb, result["unique"])  # ← 아래 헬퍼 함수 필요
+
+            # 3. 템플릿 처리 → flattexttemplate
+            registry = FunctionRegistry()
+            registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
+            flattexttemplate = process_template(texttemplate, context, registry, True)
+
+            # 4. genchapters에 flattexttemplate 저장
+            sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({
+                "genchapteruid": genchapteruid,
+                "flattexttemplate": flattexttemplate,
+            }).execute()
+
+            # 5. genobjects 전체 갱신
+            extracted = extract_from_processed_html(flattexttemplate)
+            _upsert_genobjects(sb, extracted, genchapteruid, chapteruid, user_id)
+            # ▲▲▲ 추가 끝 ▲▲▲
+
+            # 기존 replace_doc 호출은 제거 또는 유지 (Django처럼 제거 권장)
+
+            # for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
+            #                                  genChapterDirectYn=True, divide="Chapter"):
+            #     yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type':'complete','success':True}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','message':str(e)}, ensure_ascii=False)}\n\n"
@@ -969,3 +1000,60 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
             }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def _build_context(sb, variables: list) -> dict:
+    """req_chapters_read.py의 _build_context와 동일"""
+    from utilsPrj.template_parser import parse_scalar_value
+    context = {}
+    for v in variables:
+        find_tbl = sb.schema(SUPABASE_SCHEMA).table("tbl_param").select("*").eq("paramnm", v).execute().data
+        if find_tbl:
+            rows = []
+            for row in find_tbl:
+                raw = row.get("json")
+                if not raw:
+                    continue
+                if isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                        rows.extend(parsed) if isinstance(parsed, list) else rows.append(parsed)
+                    except json.JSONDecodeError:
+                        pass
+                elif isinstance(raw, list):
+                    rows.extend(raw)
+                elif isinstance(raw, dict):
+                    rows.append(raw)
+            context[f"@{v}"] = rows
+            continue
+
+        find_sca = sb.schema(SUPABASE_SCHEMA).table("sca_param").select("*").eq("paramnm", v).execute().data
+        if find_sca:
+            context[f"@{v}"] = parse_scalar_value(find_sca[0]["value"])
+    return context
+
+
+def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str):
+    """req_chapters_read.py의 _upsert_genobjects와 동일"""
+    now_iso = datetime.now().isoformat()
+    sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
+
+    rows = []
+    for item in extracted:
+        object_data = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("objectnm", item["objectNm"]).execute().data
+        if not object_data:
+            continue
+        rows.append({
+            "genobjectuid": str(uuid.uuid4()),
+            "genchapteruid": genchapteruid,
+            "chapteruid": chapteruid,
+            "objectuid": object_data[0]["objectuid"],
+            "objecttypecd": object_data[0].get("objecttypecd"),
+            "filterjson": item["params"],
+            "replacestring": item["replacestring"],
+            "creator": user_id,
+            "createdts": now_iso,
+        })
+
+    if rows:
+        sb.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()

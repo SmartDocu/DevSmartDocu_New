@@ -1,4 +1,5 @@
 import re
+import json
 from typing import Any, Callable
 
 # ============================================================
@@ -281,13 +282,12 @@ class FunctionRegistry:
         """
         self._default_handler = handler
 
-    def resolve(self, name: str, context: dict, params: list[str]) -> str:
+    def resolve(self, name: str, context: dict, params: dict) -> str:
         handler = self._handlers.get(name) or self._default_handler
         if handler:
             return handler(name, context, params)
-        # 핸들러 없으면 원래 형태 그대로 반환
-        param_str = ", ".join(params)
-        return f"{{{{{name}}}}}({param_str})"
+        # 핸들러 없으면 {{이름}}[{...}] 형태로 반환
+        return f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]"
 
 
 # ============================================================
@@ -310,18 +310,25 @@ def render(nodes: list[dict], context: dict, registry: FunctionRegistry) -> str:
         elif ntype == "Func":
             params = node["params"]
 
-            # ✅ 파라미터 값 해석:
+            # ✅ 파라미터 값 해석: key-value 쌍을 dict 로 조합
             #    params 에 컬럼명이 있으면 context에서 실제 값으로 치환
-            #    ex) ["batch_id"] + context{"batch_id": "BATCH-001"}
-            #     → resolved_params = ["batch_id", "BATCH-001"]
-            resolved_params = []
-            for p in params:
+            #    ex) ["deviation_id", "severity"]
+            #        + context{"deviation_id": "DV-001", "severity": "중"}
+            #     → param_dict = {"deviation_id": "DV-001", "severity": "중"}
+            param_dict = {}
+            it = iter(params)
+            for p in it:
                 if p in context:
-                    resolved_params.append(p)               # 컬럼명 유지
-                    resolved_params.append(str(context[p])) # 실제 값 추가
+                    # 컬럼명 → context 값으로 치환
+                    param_dict[p] = context[p]
                 else:
-                    resolved_params.append(p)               # 이미 값이면 그대로
-            result.append(registry.resolve(node["name"], context, resolved_params))
+                    # 리터럴 값이면 다음 토큰이 값
+                    try:
+                        val = next(it)
+                        param_dict[p] = parse_scalar_value(val)
+                    except StopIteration:
+                        param_dict[p] = None
+            result.append(registry.resolve(node["name"], context, param_dict))
 
         elif ntype == "For":
             rows = context.get(f"@{node['array_name']}", [])
@@ -551,7 +558,7 @@ if __name__ == "__main__":
     }
 
     registry = FunctionRegistry()
-    registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}({', '.join(params)})")
+    registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
 
     result = process_template(template, context, registry)
     print(result)
