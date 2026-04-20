@@ -27,8 +27,7 @@ from threading import Lock, Semaphore, Thread
 
 _db_semaphore = Semaphore(4)
 
-from llm.ai_chain import *
-from llm.llm_utils import get_llm_model, process_data_in_supabase
+from utilsPrj.ai_chain import *
 
 # from utilsPrj.query_runner import run_query, apply_column_display_mapping
 # from utilsPrj.data_runner import run_data

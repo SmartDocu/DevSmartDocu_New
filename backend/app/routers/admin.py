@@ -243,7 +243,7 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
         raise HTTPException(status_code=400, detail="데이터를 선택해주세요.")
 
     from utilsPrj.process_data import process_data
-    from llm.ai_chain import (
+    from utilsPrj.ai_chain import (
         get_charts_prompt, get_sentences_prompt, get_tables_prompt,
         get_full_chain, get_llm_model,
     )

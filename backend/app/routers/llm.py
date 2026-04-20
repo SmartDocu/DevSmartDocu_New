@@ -253,7 +253,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     import traceback, sys
 
     from utilsPrj.process_data import process_data
-    from llm.ai_chain import (
+    from utilsPrj.ai_chain import (
         get_charts_prompt, get_sentences_prompt, get_tables_prompt,
         get_full_chain, get_llm_model,
     )

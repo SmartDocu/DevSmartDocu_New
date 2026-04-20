@@ -6,7 +6,7 @@ import json
 from langchain_anthropic import ChatAnthropic
 
 from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
-from llm.ai_chain import get_tables_prompt, create_python_code, get_full_chain, get_llm_model
+from utilsPrj.ai_chain import get_tables_prompt, create_python_code, get_full_chain, get_llm_model
 from utilsPrj.process_data_db import process_data_db
 from utilsPrj.process_data_excel import process_data_excel
 
