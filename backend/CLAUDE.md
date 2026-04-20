@@ -1,6 +1,6 @@
 # backend 가이드 (FastAPI)
 
-Django를 대체하는 FastAPI 백엔드. Strangler Fig 패턴으로 Django와 병존.
+FastAPI 백엔드. Django 마이그레이션 완료, 현재 FastAPI 단독 운영.
 
 ---
 
@@ -13,7 +13,7 @@ backend/
 │   ├── config.py         # pydantic-settings 환경변수
 │   ├── dependencies.py   # 공통 의존성 (토큰 추출)
 │   ├── routers/          # 도메인별 라우터
-│   │   ├── auth.py       # 인증 (Stage 2 ✅)
+│   │   ├── auth.py       # 인증
 │   │   └── __init__.py
 │   ├── schemas/          # Pydantic 스키마
 │   │   ├── auth.py
@@ -67,14 +67,48 @@ router.include_router(new_domain.router, prefix="/new-domain", tags=["new-domain
 
 ---
 
-## 마이그레이션 현황
+## 표준 CRUD 규칙 (신규 라우터 작성 시 기본 적용)
 
-| Stage | 상태 | 내용 |
-|-------|------|------|
-| 1 | ✅ | 프로젝트 골격 |
-| 2 | ✅ | 인증 (login/logout/register/SMS/refresh) |
-| 3 | ✅ | 마스터 데이터 API (docs, chapters) |
-| 4 | ✅ | 항목/데이터/콘텐츠 API (objects, datas, tables, charts, sentences) |
-| 5 | ✅ | 문서 생성 파이프라인 (gendocs, SSE 스트리밍, DOCX 업로드) |
-| 6 | ✅ | 설정 API (서버/프로젝트/테넌트/내정보) |
-| 7 | 예정 | Django 제거 |
+파일 업로드 없는 일반 CRUD 라우터는 `docs.py` 패턴을 표준으로 따른다.
+
+### INSERT / UPDATE / DELETE 컬럼 규칙
+- **INSERT**: 테이블의 모든 컬럼 (`createdts` 제외 — DB default)
+- **UPDATE**: 테이블의 모든 컬럼 (`createdts`, `creator` 제외)
+- **DELETE**: PK 컬럼 기준 단건 삭제
+
+### 인증 / Supabase 패턴
+```python
+def _sb(token: str):
+    return get_thread_supabase(access_token=token)
+
+def _get_user(token: str):
+    sb = _sb(token)
+    resp = sb.auth.get_user(token)
+    if not resp or not resp.user:
+        raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
+    return resp.user
+```
+- 모든 엔드포인트: `token: str = Depends(get_token)`
+- RLS는 `_sb(token)`이 자동 처리 — 라우터에서 별도 처리 불필요
+
+### 신규 라우터 등록
+`backend/app/routers/__init__.py` 에 반드시 추가:
+```python
+from backend.app.routers import [domain]
+router.include_router([domain].router, prefix="/[domain]", tags=["[domain]"])
+```
+
+---
+
+## 구현 현황
+
+| 영역 | 라우터 |
+|------|--------|
+| 인증 | auth |
+| 마스터 데이터 | docs, chapters |
+| 항목/데이터/콘텐츠 | objects, datas, tables, charts, sentences |
+| 문서 생성 | gendocs (SSE 스트리밍, DOCX 업로드) |
+| 설정 | settings, configs |
+| 조직 | org |
+| 관리 | admin, llm |
+| 공통 | menus, i18n, misc |

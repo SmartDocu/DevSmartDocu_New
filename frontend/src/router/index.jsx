@@ -42,6 +42,7 @@ import AdminLlmsPage from '@/pages/admin/AdminLlmsPage'
 import AdminLlmApisPage from '@/pages/admin/AdminLlmApisPage'
 import AdminTenantRequestsPage from '@/pages/admin/AdminTenantRequestsPage'
 import AdminHelpsPage from '@/pages/admin/AdminHelpsPage'
+import AdminMenusPage from '@/pages/admin/AdminMenusPage'
 import MasterAiChartsPage from '@/pages/master/MasterAiChartsPage'
 import MasterAiSentencesPage from '@/pages/master/MasterAiSentencesPage'
 import MasterAiTablesPage from '@/pages/master/MasterAiTablesPage'
@@ -126,6 +127,7 @@ export const router = createBrowserRouter([
       { path: 'admin/llmapis', element: <AdminLlmApisPage /> },
       { path: 'admin/tenant-requests', element: <AdminTenantRequestsPage /> },
       { path: 'admin/helps', element: <AdminHelpsPage /> },
+      { path: 'admin/menus', element: <AdminMenusPage /> },
     ],
   },
 

@@ -49,8 +49,14 @@ function buildTree(menus) {
   return roots
 }
 
+/* ── 메뉴 표시명: 현재 언어 번역 → menus.default_text 순으로 참조 (ui_terms defaults 건너뜀) ── */
+function menuLabel(menucd, defaultText) {
+  const { translations } = useLangStore.getState()
+  return translations[`mnu.${menucd}`] ?? defaultText ?? `mnu.${menucd}`
+}
+
 /* ── 트리 → Ant Design Menu items 변환 ── */
-function toAntItems(nodes, favoriteSet, onStarClick, searchKeyword) {
+function toAntItems(nodes, favoriteSet, onStarClick, searchKeyword, collapsed = false) {
   const filtered = searchKeyword
     ? filterByKeyword(nodes, searchKeyword)
     : nodes
@@ -58,23 +64,26 @@ function toAntItems(nodes, favoriteSet, onStarClick, searchKeyword) {
   return filtered.map((node) => {
     const hasChildren = node.children && node.children.length > 0
     const isFav = favoriteSet.has(node.menucd)
+    const nm = menuLabel(node.menucd, node.default_text)
 
     if (hasChildren) {
       return {
         key: node.menucd,
         icon: <DynIcon name={node.iconnm} />,
-        label: t(`mnu.${node.menucd}`, node.default_text),
-        children: toAntItems(node.children, favoriteSet, onStarClick, null),
+        label: nm,
+        title: nm,
+        children: toAntItems(node.children, favoriteSet, onStarClick, null, collapsed),
       }
     }
 
     return {
       key: node.menucd,
       icon: <DynIcon name={node.iconnm} />,
-      label: (
+      title: nm,
+      label: collapsed ? nm : (
         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', color: !node.route_path ? '#bbb' : undefined }}>
-            {t(`mnu.${node.menucd}`, node.default_text)}
+            {nm}
           </span>
           <span
             className="sidebar-star"
@@ -153,7 +162,7 @@ export default function AppSidebar({ collapsed = false }) {
   const menuTree = useMemo(() => buildTree(visibleMenus), [visibleMenus])
 
   /* ── Ant Design Menu items — useMemo 미사용: 언어 변경 시 항상 최신 번역으로 재계산 ── */
-  const menuItems = toAntItems(menuTree, favoriteSet, (cd) => toggleFavorite.mutate(cd), search || null)
+  const menuItems = toAntItems(menuTree, favoriteSet, (cd) => toggleFavorite.mutate(cd), search || null, collapsed)
 
   /* ── 선택된 키 ── */
   const selectedKey = useMemo(

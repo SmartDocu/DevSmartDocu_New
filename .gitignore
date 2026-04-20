@@ -3,3 +3,6 @@ __pycache__/
 *.py[cod]
 *.log
 .env
+.env new
+/backend/app/routers/__pycache__
+/backend/app/routers/__pycache__
