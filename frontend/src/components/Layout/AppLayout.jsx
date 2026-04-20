@@ -270,8 +270,8 @@ export default function AppLayout() {
           </div>
         )}
 
-        <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: 'calc(100vh - 60px)' }}>
-          <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px' }}>
+        <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px', flex: 1 }}>
             <Outlet />
           </div>
         </Content>

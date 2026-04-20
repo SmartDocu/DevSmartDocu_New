@@ -682,6 +682,30 @@ input, select, textarea {
   text-decoration: none;
 }
 
+/* ── 탭 바 스타일 ──────────────────────────────────── */
+/* 비활성 탭 */
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+  background: #d0dce8 !important;
+  border-color: #a8becd !important;
+  color: #4a6070 !important;
+}
+/* 활성 탭 */
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active {
+  background: #163E64 !important;
+  border-color: #163E64 !important;
+}
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #ffffff !important;
+}
+/* 닫기 버튼 — 비활성 */
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-remove {
+  color: #4a6070 !important;
+}
+/* 닫기 버튼 — 활성 */
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-remove {
+  color: #ffffff !important;
+}
+
 /* ── 문서 조회 .a4-frame ────────────────────────────── */
 .a4-frame {
   width: auto;
