@@ -1,8 +1,22 @@
+# Database
 db.sqlite3
+
+# Python
 __pycache__/
 *.py[cod]
+
+# Logs
 *.log
+
+# Env
 .env
-.env new
-/backend/app/routers/__pycache__
-/backend/app/routers/__pycache__
+.env.*
+
+# Backend
+/backend/app/__pycache__/
+/backend/app/routers/__pycache__/
+
+# Frontend
+/frontend/node_modules/
+/frontend/node_modules/.vite/
+/frontend/dist/
