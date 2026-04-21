@@ -57,3 +57,13 @@ class LanguageItem(BaseModel):
 
 class LanguagesListResponse(BaseModel):
     languages: list[LanguageItem]
+
+
+class CodeItem(BaseModel):
+    codevalue: str
+    term_key: str
+    default_name: Optional[str] = None
+
+
+class CodesListResponse(BaseModel):
+    codes: list[CodeItem]

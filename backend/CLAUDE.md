@@ -100,6 +100,26 @@ router.include_router([domain].router, prefix="/[domain]", tags=["[domain]"])
 
 ---
 
+## 공통 유틸리티 엔드포인트
+
+신규 화면 작성 시 아래 엔드포인트를 재사용할 것. 별도 라우터 추가 불필요.
+
+### `GET /api/codes?codegroupcd={codegroupcd}`
+`codes` 테이블에서 특정 코드그룹의 목록을 반환. selectbox 옵션 로딩에 사용.
+라우터: `backend/app/routers/codes.py`
+
+- **반환**: `{ codes: [{ codevalue, term_key, default_name }] }`
+- **term_key 형식**: `cod.{codegroupcd}_{codevalue}` — `t(term_key)`로 다국어 표시
+- **저장 값**: `codevalue`만 DB에 저장
+- **프론트 훅**: `useMenuCodes(codegroupcd)` in `frontend/src/hooks/useMenus.js`
+
+```jsx
+const { data: roleCodes = [] } = useMenuCodes('menu_rolecd')
+// <option value={code.codevalue}>{t(code.term_key) || code.default_name}</option>
+```
+
+---
+
 ## 구현 현황
 
 | 영역 | 라우터 |

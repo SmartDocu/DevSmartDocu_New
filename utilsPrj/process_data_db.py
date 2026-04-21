@@ -4,8 +4,7 @@ from supabase import create_client
 from decimal import Decimal
 import pandas as pd
 
-# from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
-from utilsPrj.supabase_client import get_supabase
+from utilsPrj.supabase_client import get_supabase, SUPABASE_SCHEMA
 from utilsPrj.crypto_helper import decrypt_value, encrypt_value
 import re
 from sqlalchemy import create_engine

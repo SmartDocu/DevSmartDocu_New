@@ -388,7 +388,7 @@ table tr.selected-row {
 }
 
 .form-group label {
-  width: 80px;
+  display: block;
   font-weight: 500;
   color: var(--gray-700);
 }
