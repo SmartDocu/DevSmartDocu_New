@@ -672,13 +672,42 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             # 5. genobjects 전체 갱신
             extracted = extract_from_processed_html(flattexttemplate)
             _upsert_genobjects(sb, extracted, genchapteruid, chapteruid, user_id)
-            # ▲▲▲ 추가 끝 ▲▲▲
 
-            # 기존 replace_doc 호출은 제거 또는 유지 (Django처럼 제거 권장)
+            # 6. 각 genobject 콘텐츠 생성 (resulttext 저장)
+            for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
+                                             genChapterDirectYn=True, divide="Chapter"):
+                if progress_data.get("type") == "error":
+                    raise Exception(progress_data.get("message", "오류가 발생했습니다."))
+                elif progress_data.get("type") == "progress":
+                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
 
-            # for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
-            #                                  genChapterDirectYn=True, divide="Chapter"):
-            #     yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
+            # 7. gentexttemplate 컴파일: {{objectNm}} 자리에 resulttext 삽입
+            rpc_data = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
+            compiled = texttemplate
+            for item in rpc_data:
+                if item.get("genobjectuid"):
+                    obj_result = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("resulttext").eq("genobjectuid", item["genobjectuid"]).execute().data
+                    html_result = obj_result[0]["resulttext"] if obj_result else ""
+                    placeholder = f"{{{{{item['objectnm']}}}}}"
+                    compiled = compiled.replace(placeholder, html_result or "")
+
+            now_compiled = datetime.now().isoformat()
+            sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
+                "gentexttemplate": compiled,
+                "createuserid": user_id,
+                "createfiledts": now_compiled,
+            }).eq("genchapteruid", genchapteruid).execute()
+
+            try:
+                sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
+                    "gendocuid": gendocuid,
+                    "genchapteruid": genchapteruid,
+                    "creator": user_id,
+                    "createdts": now_compiled,
+                }).execute()
+            except Exception:
+                pass
+
             yield f"data: {json.dumps({'type':'complete','success':True}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','message':str(e)}, ensure_ascii=False)}\n\n"

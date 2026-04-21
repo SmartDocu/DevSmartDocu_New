@@ -2,8 +2,6 @@
 
 import json, re, io, uuid, os, tempfile, subprocess
 from datetime import datetime
-from django.conf import settings
-from django.http import JsonResponse, HttpResponse, FileResponse
 
 from pathlib import Path
 import time
@@ -1174,7 +1172,7 @@ def call_params_chat(request, supabase, docid, gendoc_uid, params, query, data_u
         return df
     except Exception as e:
         print(f'ErrorMessage: {e}')
-        return JsonResponse({'success': False, 'message': str(e)})
+        return {'success': False, 'message': str(e)}
     
 
 def preprocess_html(html: str) -> str:
@@ -1198,7 +1196,7 @@ def update_genchapters(supabase, genchapters, gen_chapter_uid):
         supabase.schema(SUPABASE_SCHEMA).table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
     except Exception as e:
         print(f'ErrorMessage(update_genchapters): {e}')
-        return JsonResponse({'success': False, 'message': str(e)})
+        return {'success': False, 'message': str(e)}
 
 
 def save_gendoc_genchapters(supabase, gendoc_genchapters):
@@ -1206,14 +1204,14 @@ def save_gendoc_genchapters(supabase, gendoc_genchapters):
         supabase.schema(SUPABASE_SCHEMA).table('gendoc_genchapters').insert(gendoc_genchapters).execute().data
     except Exception as e:
         print(f'ErrorMessage: {e}')
-        return JsonResponse({'success': False, 'message': str(e)})
+        return {'success': False, 'message': str(e)}
     
 def update_genobjects(supabase, genobjects):
     try:
         genobjects_respon = supabase.schema(SUPABASE_SCHEMA).table('genobjects').upsert(genobjects).execute().data
     except Exception as e:
         print(f'ErrorMessage: {e}')
-        return JsonResponse({'success': False, 'message': str(e)})
+        return {'success': False, 'message': str(e)}
 
 
 def make_genobject(supabase, genobjectuid, gen_chapter_uid, chapter_uid, objectuid, objecttypecd, user_id, progressrate):
