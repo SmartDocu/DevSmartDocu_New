@@ -8,23 +8,13 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token
-from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
 DB_TYPES = ["MSSQL", "SUPABASE", "ORACLE"]
 BILLING_MODELS = ["Fr", "Pr", "Te", "En"]
-
-
-def _sb(token: str):
-    return get_thread_supabase(access_token=token)
-
-
-def _get_user(token: str):
-    from backend.app.dependencies import verify_user
-    sb = _sb(token)
-    return verify_user(sb, token)
 
 
 def _get_tenantid(sb, user_id: str) -> Optional[str]:

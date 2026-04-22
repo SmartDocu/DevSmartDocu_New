@@ -131,10 +131,10 @@ export default function AdminMenusPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('lbl.menucd')}</th>
-                  <th>{t('lbl.default_text')}</th>
-                  <th style={{ width: 50, textAlign: 'center' }}>{t('lbl.orderno')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('lbl.useyn')}</th>
+                  <th>{t('thd.menucd')}</th>
+                  <th>{t('thd.default_text')}</th>
+                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno')}</th>
+                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -271,7 +271,7 @@ export default function AdminMenusPage() {
                 <thead>
                   <tr>
                     <th style={{ width: '22%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ width: '28%', padding: '4px 8px' }}>{t('lbl.languagenm') || 'Language'}</th>
+                    <th style={{ width: '28%', padding: '4px 8px' }}>{t('thd.languagenm') || 'Language'}</th>
                     <th style={{ padding: '4px 8px' }}>{t('thd.translated_text')}</th>
                   </tr>
                 </thead>

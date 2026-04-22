@@ -30,6 +30,24 @@ def get_optional_token(
     return credentials.credentials
 
 
+def get_sb(token: str):
+    """토큰 기반 Supabase 클라이언트 반환 (라우터 공용)."""
+    from utilsPrj.supabase_client import get_thread_supabase
+    return get_thread_supabase(access_token=token)
+
+
+def get_user(token: str):
+    """토큰으로 인증된 Supabase 유저 반환 (라우터 공용)."""
+    sb = get_sb(token)
+    resp = sb.auth.get_user(token)
+    if not resp or not resp.user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 토큰입니다.",
+        )
+    return resp.user
+
+
 def get_supabase(token: str = Depends(get_token)):
     """
     요청별 Supabase 클라이언트를 반환한다.

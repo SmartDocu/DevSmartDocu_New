@@ -11,24 +11,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 
 from backend.app.config import settings
-from backend.app.dependencies import get_optional_token, get_token
-from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
+from backend.app.dependencies import get_optional_token, get_token, get_sb as _sb_user, get_user as _get_user
+from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
 
 
 def _sb_svc():
     return get_service_client()
-
-
-def _sb_user(token: str):
-    return get_thread_supabase(access_token=token)
-
-
-def _get_user(token: str):
-    from backend.app.dependencies import verify_user
-    sb = _sb_user(token)
-    return verify_user(sb, token)
 
 
 def _fmt_dt(s):

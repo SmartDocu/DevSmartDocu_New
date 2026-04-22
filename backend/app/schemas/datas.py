@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class DbConnectorItem(BaseModel):
-    connectid: str
+    connectid: int
     connectnm: str
 
 

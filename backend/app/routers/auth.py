@@ -63,7 +63,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 2. tenant icon
+    # 2. tenantid + tenanticonurl
     try:
         tenant_rows = (
             sd.table("tenantusers")
@@ -73,11 +73,13 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         )
         if tenant_rows.data:
             first_tenant = tenant_rows.data[0]
+            tenantid_val = first_tenant.get("tenantid")
+            ctx.tenantid = str(tenantid_val)
 
             tenant_info = (
                 sd.table("tenants")
                 .select("iconfileurl")
-                .eq("tenantid", first_tenant.get("tenantid"))
+                .eq("tenantid", tenantid_val)
                 .maybe_single()
                 .execute()
             )
@@ -114,6 +116,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
     # 4. doc detail
     projectid = None
+    sampleyn = False
     try:
         if docid:
             doc_detail = (
@@ -130,33 +133,37 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
                 ctx.sampledocyn = "Y" if sampleyn else "N"
 
-                if not sampleyn:
-                    ctx.editbuttonyn = "Y"
-                elif sampleyn and ctx.roleid == 7:
-                    ctx.editbuttonyn = "Y"
-                else:
-                    ctx.editbuttonyn = "N"
-
     except Exception:
         pass
 
-    # 5. project → tenant
-    try:
-        if projectid:
-            proj_detail = (
-                sd.table("projects")
-                .select("tenantid")
-                .eq("projectid", projectid)
-                .maybe_single()
+    # 5. projectid fallback (문서에 projectid 없을 경우)
+    if not projectid:
+        try:
+            proj_rows = (
+                sd.table("projectusers")
+                .select("projectid")
+                .eq("useruid", user_id)
+                .eq("useyn", True)
+                .eq("rolecd", "M")
                 .execute()
             )
+            if proj_rows.data:
+                projectid = str(proj_rows.data[0].get("projectid", ""))
+            else:
+                proj_rows2 = (
+                    sd.table("projectusers")
+                    .select("projectid")
+                    .eq("useruid", user_id)
+                    .eq("useyn", True)
+                    .execute()
+                )
+                if proj_rows2.data:
+                    projectid = str(proj_rows2.data[0].get("projectid", ""))
+        except Exception:
+            pass
 
-            if proj_detail.data:
-                ctx.projectid = projectid
-                ctx.tenantid = str(proj_detail.data.get("tenantid", ""))
-
-    except Exception:
-        pass
+    if projectid:
+        ctx.projectid = projectid
 
     # 6. projectmanager
     try:
@@ -198,7 +205,15 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 8. languagecd: TenantUsers.languagecd → Tenants.languagecd
+    # 8. editbuttonyn
+    if not sampleyn and (ctx.projectmanager == "Y" or ctx.tenantmanager == "Y"):
+        ctx.editbuttonyn = "Y"
+    elif sampleyn and ctx.roleid == 7:
+        ctx.editbuttonyn = "Y"
+    else:
+        ctx.editbuttonyn = "N"
+
+    # 9. languagecd: TenantUsers.languagecd → Tenants.languagecd
     try:
         lang_row = (
             sd.table("tenantusers")

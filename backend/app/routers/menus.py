@@ -1,24 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.app.dependencies import get_token
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.menus import (
     MenuItem, MenusListResponse, MenuSaveRequest, MenuSaveResponse,
     TranslationItem, TranslationsListResponse, TranslationSaveRequest,
     LanguageItem, LanguagesListResponse,
 )
-from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
+from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
-
-
-def _sb(token: str):
-    return get_thread_supabase(access_token=token)
-
-
-def _get_user(token: str):
-    from backend.app.dependencies import verify_user
-    sb = _sb(token)
-    return verify_user(sb, token)
 
 
 # ─── 공개 목록 (useyn=true, 사이드바용) ──────────────────────────────────────

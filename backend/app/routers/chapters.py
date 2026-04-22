@@ -7,22 +7,16 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.auth import MessageResponse
 from backend.app.schemas.docs import ChapterItem, ChapterSaveResponse, ChaptersListResponse
-from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
 
-def _sb(token: str):
-    return get_thread_supabase(access_token=token)
-
-
 def _get_user_id(token: str) -> str:
-    from backend.app.dependencies import verify_user
-    sb = _sb(token)
-    return str(verify_user(sb, token).id)
+    return str(_get_user(token).id)
 
 
 # ─── 챕터 목록 ───────────────────────────────────────────────────────────────

@@ -7,8 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token
-from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
+from backend.app.dependencies import get_token, get_sb
+from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
 
@@ -20,17 +20,13 @@ ROLE_OPTIONS = [
 ]
 
 
-def _sb_user(token: str):
-    return get_thread_supabase(access_token=token)
-
-
 def _sb_service():
     return get_service_client()
 
 
 def _get_user(token: str):
     try:
-        sb = _sb_user(token)
+        sb = get_sb(token)
         resp = sb.auth.get_user(token)
         if not resp or not resp.user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
@@ -249,7 +245,7 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
     )
     from backend.app.routers.llm import FakeLlmRequest, _get_user_info
 
-    sb_user = get_thread_supabase(access_token=token)
+    sb_user = get_sb(token)
     user_id, _ = _get_user_info(sb_user, token)
     sb_svc = get_service_client()
 

@@ -102,12 +102,6 @@ export default function DocSelectModal({ open, onClose }) {
           <span className="icon-label">확인</span>
         </div>
       </button>
-      <button type="button" className="icon-btn" onClick={onClose}>
-        <div className="icon-wrapper">
-          <img src="/icons/back.svg" className="icon-img config-icon" alt="닫기" />
-          <span className="icon-label">닫기</span>
-        </div>
-      </button>
     </div>
   )
 

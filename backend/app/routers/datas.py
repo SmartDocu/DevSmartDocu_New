@@ -5,24 +5,14 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 
-from backend.app.dependencies import get_token
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.datas import (
     AiDataSaveRequest, DataColItem, DataColsResponse,
     DbConnectorsResponse, DbDataSaveRequest, DatasListResponse,
 )
-from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
-
-
-def _sb(token: str):
-    return get_thread_supabase(access_token=token)
-
-
-def _get_user(token: str):
-    from backend.app.dependencies import verify_user
-    sb = _sb(token)
-    return verify_user(sb, token)
 
 
 def _active_projects(sb, user_id: str):
@@ -63,7 +53,7 @@ def _delete_storage(sb, url: str):
 def list_dbconnectors(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("users").select("tenantid").eq("useruid", str(user.id)).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
     tenantid = row[0]["tenantid"] if row else None
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("dbconnectors")

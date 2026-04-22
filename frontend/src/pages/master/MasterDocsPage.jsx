@@ -128,7 +128,7 @@ export default function MasterDocsPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="doc-docdesc">{t('lbl.docdesc')}:</label>
+            <label htmlFor="doc-docdesc">{t('lbl.description')}:</label>
             <textarea
               id="doc-docdesc"
               rows={3}

@@ -94,7 +94,7 @@ export default function AppLayout() {
           {/* 로고 */}
           <div className="sidebar-logo" onClick={() => navigate('/')}>
             <img
-              src={user?.tenanticonurl || '/SmartDocu.svg'}
+              src={'/SmartDocu.svg'}
               alt="로고"
               style={{ height: 28, width: 'auto', flexShrink: 0 }}
             />
@@ -143,11 +143,13 @@ export default function AppLayout() {
             onClick={() => navigate('/')}
             style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
           >
-            <img
-              src={user?.tenanticonurl || '/SmartDocu.svg'}
-              alt="로고"
-              style={{ height: 32, width: 'auto' }}
-            />
+            {user?.tenanticonurl && (
+              <img
+                src={user.tenanticonurl}
+                alt="로고"
+                style={{ height: 32, width: 'auto' }}
+              />
+            )}
             <Text strong style={{ color: '#fff', fontSize: 18 }}>SmartDocu</Text>
           </div>
 

@@ -2,42 +2,42 @@ import { useState, useEffect } from 'react'
 import { App, Input } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import {
-  useAdminMessages,
-  useMessageTranslations,
-  useSaveMessage,
-  useDeleteMessage,
-  useSaveMessageTranslation,
-  useDeleteMessageTranslation,
-} from '@/hooks/useMessages'
+  useAdminTerms,
+  useTermTranslations,
+  useSaveTerm,
+  useDeleteTerm,
+  useSaveTermTranslation,
+  useDeleteTermTranslation,
+} from '@/hooks/useTerms'
 import { useLanguages, useMenuCodes } from '@/hooks/useMenus'
 
-const EMPTY_MESSAGE = {
-  messagekey: '',
-  messagetypecd: '',
-  default_message: '',
+const EMPTY_TERM = {
+  termkey: '',
+  termgroupcd: '',
+  default_text: '',
   description: '',
   useyn: true,
 }
 
-export default function AdminMessagesPage() {
+export default function AdminTermsPage() {
   const { modal } = App.useApp()
   useLangStore((s) => s.translations)
 
-  const { data: messages = [] } = useAdminMessages()
+  const { data: terms = [] } = useAdminTerms()
   const { data: languages = [] } = useLanguages()
-  const { data: typeCodes = [] } = useMenuCodes('message_typecd')
+  const { data: groupCodes = [] } = useMenuCodes('term_groupcd')
 
-  const [selectedMessage, setSelectedMessage] = useState(null)
+  const [selectedTerm, setSelectedTerm] = useState(null)
   const [isNew, setIsNew] = useState(true)
-  const [form, setForm] = useState(EMPTY_MESSAGE)
+  const [form, setForm] = useState(EMPTY_TERM)
   const [transEdits, setTransEdits] = useState({})
   const [searchText, setSearchText] = useState('')
 
-  const { data: translations = [] } = useMessageTranslations(selectedMessage?.messagekey)
-  const saveMessage = useSaveMessage()
-  const deleteMessage = useDeleteMessage()
-  const saveTrans = useSaveMessageTranslation()
-  const deleteTrans = useDeleteMessageTranslation()
+  const { data: translations = [] } = useTermTranslations(selectedTerm?.termkey)
+  const saveTerm = useSaveTerm()
+  const deleteTerm = useDeleteTerm()
+  const saveTrans = useSaveTermTranslation()
+  const deleteTrans = useDeleteTermTranslation()
 
   const translationsKey = translations.map((tr) => `${tr.languagecd}:${tr.translated_text}`).join(',')
   const languagesKey = languages.map((l) => l.languagecd).join(',')
@@ -52,51 +52,51 @@ export default function AdminMessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationsKey, languagesKey])
 
-  const handleSelect = (msg) => {
-    setSelectedMessage(msg)
+  const handleTermSelect = (term) => {
+    setSelectedTerm(term)
     setIsNew(false)
     setForm({
-      messagekey: msg.messagekey,
-      messagetypecd: msg.messagetypecd || '',
-      default_message: msg.default_message || '',
-      description: msg.description || '',
-      useyn: msg.useyn ?? true,
+      termkey: term.termkey,
+      termgroupcd: term.termgroupcd || '',
+      default_text: term.default_text || '',
+      description: term.description || '',
+      useyn: term.useyn ?? true,
     })
   }
 
-  const handleNew = () => {
-    setSelectedMessage(null)
+  const handleTermNew = () => {
+    setSelectedTerm(null)
     setIsNew(true)
-    setForm(EMPTY_MESSAGE)
+    setForm(EMPTY_TERM)
   }
 
-  const handleSave = async () => {
-    if (!form.messagekey.trim()) { alert(t('msg.message.required')); return }
-    const messagekey = form.messagekey
-    await saveMessage.mutateAsync({ ...form, isNew })
+  const handleTermSave = async () => {
+    if (!form.termkey.trim()) { alert(t('msg.term.required')); return }
+    const termkey = form.termkey
+    await saveTerm.mutateAsync({ ...form, isNew })
     if (isNew) {
       setIsNew(false)
-      setSelectedMessage({ ...form })
+      setSelectedTerm({ ...form })
     }
     await Promise.all(
       languages.map((l) => {
         const text = transEdits[l.languagecd] ?? ''
         const hasTrans = translations.some((tr) => tr.languagecd === l.languagecd)
-        if (text) return saveTrans.mutateAsync({ messagekey, languagecd: l.languagecd, translated_text: text })
-        if (!text && hasTrans) return deleteTrans.mutateAsync({ messagekey, languagecd: l.languagecd })
+        if (text) return saveTrans.mutateAsync({ termkey, languagecd: l.languagecd, translated_text: text })
+        if (!text && hasTrans) return deleteTrans.mutateAsync({ termkey, languagecd: l.languagecd })
         return Promise.resolve()
       })
     )
   }
 
-  const handleDelete = () => {
-    if (!selectedMessage) { alert(t('msg.message.select.delete')); return }
+  const handleTermDelete = () => {
+    if (!selectedTerm) { alert(t('msg.term.select.delete')); return }
     modal.confirm({
       title: t('msg.confirm.delete'),
       okText: t('btn.delete'),
       cancelText: t('btn.cancel'),
       okButtonProps: { danger: true },
-      onOk: () => deleteMessage.mutate(selectedMessage.messagekey, { onSuccess: handleNew }),
+      onOk: () => deleteTerm.mutate(selectedTerm.termkey, { onSuccess: handleTermNew }),
     })
   }
 
@@ -105,22 +105,22 @@ export default function AdminMessagesPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.company.translation.messages')}</div>
+          <div>{t('mnu.company.translation.terms')}</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
 
-        {/* 좌측: 메시지 목록 */}
+        {/* 1열: 용어 목록 */}
         <div style={{ flex: 3 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>
+            <button className="btn btn-primary" type="button" onClick={handleTermNew}>
               {t('btn.new')}
             </button>
           </div>
           <Input
-            placeholder={`${t('thd.messagekey')} / ${t('thd.messagetypecd')}`}
+            placeholder={`${t('thd.termkey')} / ${t('thd.termgroupcd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
@@ -130,26 +130,28 @@ export default function AdminMessagesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('thd.messagekey')}</th>
-                  <th>{t('thd.messagetypecd')}</th>
+                  <th>{t('thd.termkey')}</th>
+                  <th>{t('thd.termgroupcd')}</th>
+                  <th>{t('thd.default_text')}</th>
                   <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn')}</th>
                 </tr>
               </thead>
               <tbody>
-                {messages.filter((msg) => {
+                {terms.filter((term) => {
                   const q = searchText.trim().toLowerCase()
                   if (!q) return true
-                  return msg.messagekey?.toLowerCase().includes(q) || msg.messagetypecd?.toLowerCase().includes(q)
-                }).map((msg) => (
+                  return term.termkey?.toLowerCase().includes(q) || term.termgroupcd?.toLowerCase().includes(q)
+                }).map((term) => (
                   <tr
-                    key={msg.messagekey}
-                    className={selectedMessage?.messagekey === msg.messagekey ? 'selected-row' : ''}
+                    key={term.termkey}
+                    className={selectedTerm?.termkey === term.termkey ? 'selected-row' : ''}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => handleSelect(msg)}
+                    onClick={() => handleTermSelect(term)}
                   >
-                    <td>{msg.messagekey}</td>
-                    <td>{msg.messagetypecd}</td>
-                    <td style={{ textAlign: 'center' }}>{msg.useyn ? '✔' : ''}</td>
+                    <td>{term.termkey}</td>
+                    <td>{term.termgroupcd}</td>
+                    <td>{term.default_text}</td>
+                    <td style={{ textAlign: 'center' }}>{term.useyn ? '✔' : ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -157,42 +159,42 @@ export default function AdminMessagesPage() {
           </div>
         </div>
 
-        {/* 중앙: 상세 폼 */}
+        {/* 2열: 용어 상세 폼 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMessage.isPending}>
+              <button className="btn btn-primary" type="button" onClick={handleTermSave} disabled={saveTerm.isPending}>
                 {t('btn.save')}
               </button>
-              <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteMessage.isPending || isNew}>
+              <button className="btn btn-danger" type="button" onClick={handleTermDelete} disabled={deleteTerm.isPending || isNew}>
                 {t('btn.delete')}
               </button>
             </div>
           </div>
 
           <div className="form-group">
-            <label htmlFor="msg-messagekey">{t('lbl.messagekey')}:</label>
+            <label htmlFor="term-termkey">{t('lbl.termkey')}:</label>
             {isNew ? (
               <input
-                id="msg-messagekey"
+                id="term-termkey"
                 type="text"
-                value={form.messagekey}
-                onChange={(e) => setForm((f) => ({ ...f, messagekey: e.target.value }))}
+                value={form.termkey}
+                onChange={(e) => setForm((f) => ({ ...f, termkey: e.target.value }))}
               />
             ) : (
-              <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.messagekey}</span>
+              <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.termkey}</span>
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="msg-messagetypecd">{t('lbl.messagetypecd')}:</label>
+            <label htmlFor="term-termgroupcd">{t('lbl.termgroupcd')}:</label>
             <select
-              id="msg-messagetypecd"
-              value={form.messagetypecd}
-              onChange={(e) => setForm((f) => ({ ...f, messagetypecd: e.target.value }))}
+              id="term-termgroupcd"
+              value={form.termgroupcd}
+              onChange={(e) => setForm((f) => ({ ...f, termgroupcd: e.target.value }))}
             >
               <option value="">-</option>
-              {typeCodes.map((code) => (
+              {groupCodes.map((code) => (
                 <option key={code.codevalue} value={code.codevalue}>
                   {t(code.term_key) || code.default_name}
                 </option>
@@ -200,18 +202,18 @@ export default function AdminMessagesPage() {
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="msg-default-message">{t('lbl.default_message')}:</label>
+            <label htmlFor="term-default-text">{t('lbl.default_text')}:</label>
             <input
-              id="msg-default-message"
+              id="term-default-text"
               type="text"
-              value={form.default_message}
-              onChange={(e) => setForm((f) => ({ ...f, default_message: e.target.value }))}
+              value={form.default_text}
+              onChange={(e) => setForm((f) => ({ ...f, default_text: e.target.value }))}
             />
           </div>
           <div className="form-group">
-            <label htmlFor="msg-description">{t('lbl.description')}:</label>
+            <label htmlFor="term-description">{t('lbl.description')}:</label>
             <textarea
-              id="msg-description"
+              id="term-description"
               rows={3}
               style={{ resize: 'vertical' }}
               value={form.description}
@@ -219,9 +221,9 @@ export default function AdminMessagesPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="msg-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="term-useyn">{t('lbl.useyn')}:</label>
             <input
-              id="msg-useyn"
+              id="term-useyn"
               type="checkbox"
               checked={!!form.useyn}
               onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
@@ -229,10 +231,10 @@ export default function AdminMessagesPage() {
           </div>
         </div>
 
-        {/* 우측: 번역 표 */}
+        {/* 3열: 번역 표 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
           <h3 style={{ margin: '0 0 8px' }}>{t('ttl.translations')}</h3>
-          {(selectedMessage || isNew) ? (
+          {(selectedTerm || isNew) ? (
             <div className="table-container">
               <table>
                 <thead>
@@ -261,7 +263,7 @@ export default function AdminMessagesPage() {
               </table>
             </div>
           ) : (
-            <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.message.select.trans')}</div>
+            <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.term.select.trans')}</div>
           )}
         </div>
 

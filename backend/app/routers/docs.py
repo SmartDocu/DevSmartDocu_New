@@ -6,9 +6,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token
-from backend.app.schemas.auth import MessageResponse, UserContext
-from utilsPrj.supabase_client import get_thread_supabase, SUPABASE_SCHEMA
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.schemas.auth import MessageResponse
+from utilsPrj.supabase_client import SUPABASE_SCHEMA
 from backend.app.schemas.docs import (
     DocItem,
     DocSaveResponse,
@@ -22,14 +22,6 @@ from backend.app.schemas.docs import (
 router = APIRouter()
 
 
-def _sb(token: str):
-    return get_thread_supabase(access_token=token)
-
-
-def _get_user(token: str) -> UserContext:
-    from backend.app.dependencies import verify_user
-    sb = _sb(token)
-    return verify_user(sb, token)
 
 
 # ─── 프로젝트 목록 (문서 생성 폼용) ──────────────────────────────────────────
@@ -474,8 +466,7 @@ class DocParamSaveRequest(BaseModel):
 def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(get_token)):
     """dataparamdtls 저장 (datauid 기준 upsert)"""
     sb = _sb(token)
-    from backend.app.dependencies import verify_user
-    user_id = str(verify_user(sb, token).id)
+    user_id = str(_get_user(token).id)
 
     records = body.records
     if not records:

@@ -5,8 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token
-from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
+from backend.app.dependencies import get_token, get_sb, get_user
+from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 from utilsPrj.crypto_helper import decrypt_value
 
 router = APIRouter()
@@ -51,8 +51,7 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
     users 테이블 실제 컬럼: roleid, billingmodelcd, mydocid
     projectid/tenantid는 docs/projects 테이블을 통해 별도 조회 필요.
     """
-    from backend.app.dependencies import verify_user
-    user_id = str(verify_user(sb, token).id)
+    user_id = str(get_user(token).id)
     rows = sb.schema(SUPABASE_SCHEMA).table("users").select(
         "roleid, billingmodelcd, mydocid"
     ).eq("useruid", user_id).execute().data or []
@@ -107,12 +106,10 @@ def llm_init(
 
     try:
         # user JWT 클라이언트
-        sb = get_thread_supabase(access_token=token)
+        sb = get_sb(token)
 
         # ① 사용자 인증 (user_id만 필요)
-        from backend.app.dependencies import verify_user
-        user = verify_user(sb, token)
-        user_id = str(user.id)
+        user_id = str(get_user(token).id)
 
         # ② chapters → docid 획득
         chapter_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select(
@@ -199,7 +196,7 @@ def llm_init(
 
 @router.get("/columns")
 def llm_get_columns(datauid: str, token: str = Depends(get_token)):
-    sb = get_thread_supabase(access_token=token)
+    sb = get_sb(token)
     rows = sb.schema(SUPABASE_SCHEMA).table("datacols").select(
         "querycolnm, dispcolnm, orderno"
     ).eq("datauid", datauid).execute().data or []
@@ -259,7 +256,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         get_full_chain, get_llm_model,
     )
 
-    sb = get_thread_supabase(access_token=token)
+    sb = get_sb(token)
     user_id, _ = _get_user_info(sb, token)
 
     # ① chapter → docid
@@ -394,7 +391,7 @@ class SaveRequest(BaseModel):
 @router.post("/save")
 def llm_save(body: SaveRequest, token: str = Depends(get_token)):
     from datetime import datetime
-    sb = get_thread_supabase(access_token=token)
+    sb = get_sb(token)
     user_id, _ = _get_user_info(sb, token)
 
     table_name = TABLE_NAME_MAP.get(body.objecttypecd)
@@ -458,7 +455,7 @@ class DeleteRequest(BaseModel):
 
 @router.delete("/delete")
 def llm_delete(body: DeleteRequest, token: str = Depends(get_token)):
-    sb = get_thread_supabase(access_token=token)
+    sb = get_sb(token)
     table_name = TABLE_NAME_MAP.get(body.objecttypecd)
     if not table_name:
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
