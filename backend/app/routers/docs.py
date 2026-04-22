@@ -27,11 +27,9 @@ def _sb(token: str):
 
 
 def _get_user(token: str) -> UserContext:
+    from backend.app.dependencies import verify_user
     sb = _sb(token)
-    resp = sb.auth.get_user(token)
-    if not resp or not resp.user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
-    return resp.user
+    return verify_user(sb, token)
 
 
 # ─── 프로젝트 목록 (문서 생성 폼용) ──────────────────────────────────────────
@@ -476,8 +474,8 @@ class DocParamSaveRequest(BaseModel):
 def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(get_token)):
     """dataparamdtls 저장 (datauid 기준 upsert)"""
     sb = _sb(token)
-    user_resp = sb.auth.get_user(token)
-    user_id = str(user_resp.user.id)
+    from backend.app.dependencies import verify_user
+    user_id = str(verify_user(sb, token).id)
 
     records = body.records
     if not records:

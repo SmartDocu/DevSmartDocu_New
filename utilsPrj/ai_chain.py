@@ -468,7 +468,6 @@ matplotlib 설정:
 
 
 def get_tables_prompt(df, column_dict, question):
-
     df_info = get_dataframe_information(df)
 
     prompt = f"""{df_info}
@@ -1189,7 +1188,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                     "error": f"Claude가 result 변수에 DataFrame을 반환하지 않았습니다. (type={type_name})",
                     "code": code,
                 }
-
+            
             # df_result = df_result.applymap(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else x)
             df_result = df_result.map(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else x)
 
@@ -1323,7 +1322,6 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
 
 
 def get_full_chain(llm, df, prompt, question, column_dict, output_type):
-
     tokens_container = {"input_tokens": 0, "output_tokens": 0}
     
     def apply_python_code(x, output_type):

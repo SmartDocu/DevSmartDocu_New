@@ -20,11 +20,9 @@ def _sb(token: str):
 
 
 def _get_user_id(token: str) -> str:
+    from backend.app.dependencies import verify_user
     sb = _sb(token)
-    resp = sb.auth.get_user(token)
-    if not resp or not resp.user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
-    return str(resp.user.id)
+    return str(verify_user(sb, token).id)
 
 
 # ─── 챕터 목록 ───────────────────────────────────────────────────────────────

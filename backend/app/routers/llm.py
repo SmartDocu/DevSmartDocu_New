@@ -51,8 +51,8 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
     users 테이블 실제 컬럼: roleid, billingmodelcd, mydocid
     projectid/tenantid는 docs/projects 테이블을 통해 별도 조회 필요.
     """
-    user_resp = sb.auth.get_user(token)
-    user_id = str(user_resp.user.id)
+    from backend.app.dependencies import verify_user
+    user_id = str(verify_user(sb, token).id)
     rows = sb.schema(SUPABASE_SCHEMA).table("users").select(
         "roleid, billingmodelcd, mydocid"
     ).eq("useruid", user_id).execute().data or []
@@ -110,8 +110,9 @@ def llm_init(
         sb = get_thread_supabase(access_token=token)
 
         # ① 사용자 인증 (user_id만 필요)
-        user_resp = sb.auth.get_user(token)
-        user_id = str(user_resp.user.id)
+        from backend.app.dependencies import verify_user
+        user = verify_user(sb, token)
+        user_id = str(user.id)
 
         # ② chapters → docid 획득
         chapter_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select(

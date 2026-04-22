@@ -22,17 +22,17 @@ def process_data(request, datauid, docid=None, gendoc_uid=None, all = None):
 
     # 원본이 db 데이터 화면일 경우
     if datasourcecd == "db":
-        
+        # print(f"jeff 001 process_data : docid_{docid} / datauid_{datauid}")
         return process_data_db(supabase, request, datauid, docid, gendoc_uid, all)
 
     # 원본이 excel 데이터 화면일 경우
     if datasourcecd == "ex":
-
+        # print(f"jeff 002 process_data : docid_{docid} / datauid_{datauid}")
         return process_data_excel(supabase, request, datauid, docid, gendoc_uid, all)
     
     # 원본이 ai 데이터 화면일 경우 
     if datasourcecd == "df":
-
+        # print(f"jeff 003 process_data : docid_{docid} / datauid_{datauid}")
         return process_data_ai(supabase, request, datauid, docid, gendoc_uid, all)
 
     raise ValueError(f"지원하지 않는 원본입니다: {datasourcecd}")

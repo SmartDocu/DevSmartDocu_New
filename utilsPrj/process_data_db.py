@@ -4,6 +4,7 @@ from supabase import create_client
 from decimal import Decimal
 import pandas as pd
 
+# from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from utilsPrj.supabase_client import get_supabase, SUPABASE_SCHEMA
 from utilsPrj.crypto_helper import decrypt_value, encrypt_value
 import re
@@ -12,6 +13,7 @@ import urllib
 import oracledb
 
 def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
+    # print(f"jeff 201 process_data_db : docid_{docid} / datauid_{datauid}")
     Datas_resp = (
         supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
@@ -19,6 +21,7 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         .eq("datauid", datauid)
         .execute()
     )
+    # print(f"jeff 501")
 
     connectid = Datas_resp.data[0]['connectid']
     query = Datas_resp.data[0]['query']
@@ -31,9 +34,11 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         .execute()
     )
     connecttype = dbconnectors_resp.data[0]['connecttype']
+    # print(f"jeff 502")
 
     # 마스터 팝업용, 전체 데이터 필요
     if all:
+        # print(f"jeff 510")
         if connecttype == "MSSQL":
             return process_data_db_mssql(request, query, connectid)
 
@@ -54,6 +59,7 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
     
     # docid, gendoc_uid 둘다 None ==> db 데이터(master/datas_db/)화면
     if docid is None and gendoc_uid is None:
+        # print(f"jeff 511")
         if connecttype == "MSSQL":
             pattern = re.compile(r"^\s*SELECT\s+(TOP\s+\d+)?", re.IGNORECASE)
             match = pattern.match(query)
@@ -100,9 +106,12 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
+        # print(f"jeff 512")
+        # print(f"jeff 202 process_data_db : docid_{docid} / datauid_{datauid}")
         dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(dataparamdtls_resp.data)
+        # print(f"jeff 203 df_dtls: {df_dtls}")
     
         dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
             .select("paramuid, samplevalue, operator").eq("docid", docid).execute()
@@ -115,6 +124,7 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 None, gendoc_uid만 있음 ==> 실제 문서 실행 화면
     elif docid is None and gendoc_uid is not None:
+        # print(f"jeff 513")
         # 1. gendoc_uid → docid
         gendocs_resp = supabase.schema(SUPABASE_SCHEMA).table("gendocs") \
             .select("docid").eq("gendocuid", gendoc_uid).single().execute()
@@ -122,27 +132,35 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         docid = gendocs_resp.data["docid"]
 
         # 2. dataparamdtls
+        # print(f"jeff 503 docid: {docid}\tdatauid: {datauid}")
         dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
-        df_dtls = pd.DataFrame(dataparamdtls_resp.data)
+        df_dtls = pd.DataFrame(dataparamdtls_resp.data)   # jeff
+        # print(f"jeff 504 df_dtls: {df_dtls}")
 
         # 3. gendoc_params (value)
         gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
             .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
         df_gendoc = pd.DataFrame(gendoc_params_resp.data)
 
-        df_dtls = df_dtls.merge(df_gendoc, on="paramuid", how="left")
-        df_dtls["value"] = df_dtls["paramvalue"]
+        if not df_gendoc.empty and 'paramuid' in df_gendoc.columns:
+            df_dtls = df_dtls.merge(df_gendoc, on="paramuid", how="left")
+            df_dtls["value"] = df_dtls["paramvalue"]
+        else:
+            df_dtls["value"] = None
 
         # 4. dataparams (operator)
         dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
             .select("paramuid, operator").eq("docid", docid).execute()
         df_params = pd.DataFrame(dataparams_resp.data)
 
-        df_dtls = df_dtls.merge(df_params, on="paramuid", how="left")
+        if not df_params.empty and 'paramuid' in df_params.columns and 'paramuid' in df_dtls.columns:
+            df_dtls = df_dtls.merge(df_params, on="paramuid", how="left")
+        else:
+            df_dtls["operator"] = "="
 
         # 5. 최종 컬럼
-        df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna()
+        df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna(subset=["value"])
 
     else:
         raise ValueError("잘못된 docid / gendoc_uid 조합")
@@ -163,15 +181,11 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
             where_clauses.append(f"x.{col} {op} {val}")
 
-        where_sql = " AND ".join(where_clauses)
-
-        final_query = f"""
-        SELECT *
-        FROM (
-            {query}
-        ) x
-        WHERE {where_sql}
-        """
+        if where_clauses:
+            where_sql = " AND ".join(where_clauses)
+            final_query = f"SELECT * FROM ({query}) x WHERE {where_sql}"
+        else:
+            final_query = f"SELECT * FROM ({query}) x"
 
         return process_data_db_mssql(request, final_query, connectid)
 
@@ -246,15 +260,11 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
             where_clauses.append(f"x.{col} {op} {val}")
 
-        where_sql = " AND ".join(where_clauses)
-
-        final_query = f"""
-        SELECT *
-        FROM (
-            {query}
-        ) x
-        WHERE {where_sql}
-        """
+        if where_clauses:
+            where_sql = " AND ".join(where_clauses)
+            final_query = f"SELECT * FROM ({query}) x WHERE {where_sql}"
+        else:
+            final_query = f"SELECT * FROM ({query}) x"
 
         return process_data_db_oracle(request, final_query, connectid)
 

@@ -329,6 +329,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
 
         query = data_item['query'] or ""
         params = re.findall(r'@(\w+)', query)
+        # print(f"jeff 302 docid: {docid}\tdata_item: {data_item}")
         
         result_df = call_params_chat(request, supabase, docid, gendoc_uid, params, query, data_item['datauid'])
         question = data_item['sourcebase']
@@ -456,8 +457,11 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
 def prepare_datas_from_template(supabase, read_text_template):
     """read_text_template에서 datas 리스트 생성"""
     datas = []
+    count_loop = 0
     
     for template_item in read_text_template:
+        count_loop += 1
+        # print(f"jeff {count_loop} read_text_template: {template_item}")
         if template_item["datauid"]:
             read_datas = supabase.schema(SUPABASE_SCHEMA).table("datas").select("*").eq('datauid', template_item["datauid"]).execute().data
             read_datas[0]['chapteruid'] = template_item['chapteruid']
@@ -486,6 +490,7 @@ def separate_ui_ai_objects(datas):
     
     for idx, data_list in enumerate(datas):
         data_item = data_list[0]
+        # print(f"jeff 401 data_item: {data_item}")
         
         if data_item['type'] in ['UI_table', 'UI_chart', 'UI_sentence']:
             ui_objects.append((idx, data_item))
@@ -958,8 +963,9 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                         'createuserid': user_id,
                     }, gen_chapter_uid)
 
-            update_genobjects(supabase, [result_data['result']])
-    
+            if result_data.get('result') and isinstance(result_data.get('result'), dict):
+                update_genobjects(supabase, [result_data['result']])
+
     return text_template
 
 
@@ -1030,12 +1036,14 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         text_template = read_chapter[0]['texttemplate']
 
                 read_text_template = supabase.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {'p_genchapteruid': gen_chapter_uid}).execute().data
+                # print(f"jeff 601 gen_chapter_uid: {gen_chapter_uid}")
                 
                 if sep != 'Not':
                     read_text_template = [row for row in read_text_template if row['objectuid'] == sep]
 
                 if read_text_template:
                     datas = prepare_datas_from_template(supabase, read_text_template)
+                    # print(f"jeff 402 datas: {datas}")
                     run_yn = True
 
                     ui_objects, ai_objects = separate_ui_ai_objects(datas)
@@ -1166,6 +1174,7 @@ def call_params_ui(request, supabase, docid, gendoc_uid, data_uid, params, query
     
 def call_params_chat(request, supabase, docid, gendoc_uid, params, query, data_uid):
     try:
+        # print(f"jeff 301 docid: {docid}\tdatauid: {data_uid}")
 
         df = process_data(request, data_uid, None, gendoc_uid)
 

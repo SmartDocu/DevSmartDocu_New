@@ -15,11 +15,9 @@ def _sb(token: str):
 
 
 def _get_user(token: str):
+    from backend.app.dependencies import verify_user
     sb = _sb(token)
-    resp = sb.auth.get_user(token)
-    if not resp or not resp.user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
-    return resp.user
+    return verify_user(sb, token)
 
 
 @router.get("/types", response_model=ObjectTypesResponse)
