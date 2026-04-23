@@ -12,6 +12,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { App, Modal, Spin, Table } from 'antd'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils/colorData'
 
 
 export default function AiLlmPage({ objecttypecd, pageTitle }) {
@@ -30,20 +31,23 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   const [chapternm,     setChapternm]     = useState(chapternmUrl)
   const [datas,         setDatas]         = useState([])
   const [displayTypes,  setDisplayTypes]  = useState([])
-  const [prompts,     setPrompts]     = useState([])
-  // docnm은 authStore user.docnm 사용 (대상 문서는 전역 선택 문서)
+  const [prompts,       setPrompts]       = useState([])
 
   // ── 폼 상태 ─────────────────────────────────────────────────────────────────
-  const [selectedDatauid,    setSelectedDatauid]    = useState('')
+  const [selectedDatauid,     setSelectedDatauid]     = useState('')
   const [selectedDisplayType, setSelectedDisplayType] = useState('')
   const [promptText,          setPromptText]          = useState('')
 
   // ── 열이름 ─────────────────────────────────────────────────────────────────
   const [columns, setColumns] = useState([])
 
+  // ── 색상/컬러맵 패널 ─────────────────────────────────────────────────────────
+  const [showColors,   setShowColors]   = useState(false)
+  const [showColormap, setShowColormap] = useState(false)
+
   // ── 샘플 프롬프트 모달 ───────────────────────────────────────────────────────
-  const [modalOpen,        setModalOpen]        = useState(false)
-  const [selectedPrompt,   setSelectedPrompt]   = useState(null) // { promptnm, desc, prompt }
+  const [modalOpen,      setModalOpen]      = useState(false)
+  const [selectedPrompt, setSelectedPrompt] = useState(null)
 
   // ── 미리보기 ─────────────────────────────────────────────────────────────────
   const [previewResult,  setPreviewResult]  = useState(null)
@@ -54,8 +58,8 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   const [deleteLoading, setDeleteLoading] = useState(false)
 
   // ── textarea ref (커서 위치 추적) ─────────────────────────────────────────
-  const promptRef  = useRef(null)
-  const cursorPos  = useRef(0)
+  const promptRef = useRef(null)
+  const cursorPos = useRef(0)
 
   // ─────────────────────────────────────────────────────────────────────────
   // 초기 데이터 로드
@@ -67,7 +71,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       params: { chapteruid, objectnm: objectnm || undefined, objectuid: objectuid || undefined, objecttypecd },
     }).then((r) => {
       const data = r.data
-      // chapternm: URL 파라미터 우선, 없으면 백엔드 값 사용
       if (!chapternmUrl && data.chapter?.chapternm) setChapternm(data.chapter.chapternm)
       setDatas(data.datas || [])
       setPrompts(data.prompts || [])
@@ -80,7 +83,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
     }).catch((e) => {
       const detail = e.response?.data?.detail || e.message || '알 수 없는 오류'
       message.error(`초기 데이터 로드 실패: ${detail}`)
-      console.error('[llm/init] 오류:', e.response?.data || e)
     })
       .finally(() => setInitLoading(false))
   }, [chapteruid, objecttypecd])
@@ -102,7 +104,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
     if (promptRef.current) cursorPos.current = promptRef.current.selectionStart
   }
 
-  // 커서 위치에 텍스트 삽입
   const insertAtCursor = (text) => {
     const ta = promptRef.current
     if (!ta) return
@@ -210,13 +211,13 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   // 렌더
   // ─────────────────────────────────────────────────────────────────────────
   // AppLayout 기준: header 60 + content padding 24*2 + inner div padding 24*2 + footer 44 = 200px
-  const CONTENT_HEIGHT = 'calc(100vh - 200px)'
+  const CONTENT_HEIGHT = 'calc(100vh - 100px)'
 
   return (
     <div style={{ height: CONTENT_HEIGHT, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── 헤더 ── */}
-      <div className="page-title" style={{ flexShrink: 0 }}>
+      <div className="page-title" style={{ flexShrink: 0, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
           <div>{pageTitle}</div>
@@ -233,167 +234,224 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         </div>
       )}
 
-      {/* ── 본문 (로딩 완료 후) ── Django 구조: 상단 flex:2 / 하단 flex:8 */}
+      {/* ── 본문 (로딩 완료 후) ── */}
       {!initLoading && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden', minHeight: 0 }}>
+        <>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden', minHeight: 0 }}>
 
-          {/* ── 상단 정보 폼 (3열) — flexShrink:0 ── */}
-          <div style={{ display: 'flex', gap: 20, flexShrink: 0 }}>
+            {/* ── 상단 정보 폼 (3열) ── */}
+            <div style={{ display: 'flex', gap: 20, flexShrink: 0 }}>
 
-            {/* 왼쪽: 대상 문서 + 데이터 목록 */}
-            <div style={{ flex: 1 }}>
-              <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-                <label style={{ width: 100, flexShrink: 0 }}><strong>대상 문서 :</strong></label>
-                <div style={{ flex: 1, marginRight: 20 }}>{user?.docnm || ''}</div>
-              </div>
-              <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-                <label style={{ width: 100, flexShrink: 0 }}><strong>데이터 목록 :</strong></label>
-                <select
-                  value={selectedDatauid}
-                  onChange={(e) => setSelectedDatauid(e.target.value)}
-                  style={{ flex: 1, marginRight: 20 }}
-                >
-                  <option value="">--- 선택 ---</option>
-                  {datas.map((d) => (
-                    <option key={d.datauid} value={d.datauid}>{d.datanm}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* 중앙: 챕터 이름 + 표시 유형 */}
-            <div style={{ flex: 1 }}>
-              <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-                <label style={{ width: 100, flexShrink: 0 }}><strong>챕터 이름 :</strong></label>
-                <div style={{ flex: 1, marginRight: 20 }}>{chapternm}</div>
-              </div>
-              {(objecttypecd === 'CA' || objecttypecd === 'SA') && (
-                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-                  <label style={{ width: 100, flexShrink: 0 }}>
-                    <strong>{objecttypecd === 'CA' ? '차트 유형 :' : '문장 유형 :'}</strong>
-                  </label>
+              {/* 왼쪽: 대상 문서 + 데이터 목록 */}
+              <div style={{ flex: 1 }}>
+                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ width: 100, flexShrink: 0 }}><strong>대상 문서 :</strong></label>
+                  <div style={{ flex: 1, marginRight: 20 }}>{user?.docnm || ''}</div>
+                </div>
+                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ width: 100, flexShrink: 0 }}><strong>데이터 목록 :</strong></label>
                   <select
-                    value={selectedDisplayType}
-                    onChange={(e) => setSelectedDisplayType(e.target.value)}
+                    value={selectedDatauid}
+                    onChange={(e) => setSelectedDatauid(e.target.value)}
                     style={{ flex: 1, marginRight: 20 }}
                   >
                     <option value="">--- 선택 ---</option>
-                    {displayTypes.map((t) => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
+                    {datas.map((d) => (
+                      <option key={d.datauid} value={d.datauid}>{d.datanm}</option>
                     ))}
                   </select>
                 </div>
-              )}
-            </div>
+              </div>
 
-            {/* 오른쪽: 항목 이름 */}
-            <div style={{ flex: 1 }}>
-              <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-                <label style={{ width: 100, flexShrink: 0 }}><strong>항목 이름 :</strong></label>
-                <div style={{ flex: 1, marginRight: 20 }}>{objectnm}</div>
+              {/* 중앙: 챕터 이름 + 표시 유형 */}
+              <div style={{ flex: 1 }}>
+                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ width: 100, flexShrink: 0 }}><strong>챕터 이름 :</strong></label>
+                  <div style={{ flex: 1, marginRight: 20 }}>{chapternm}</div>
+                </div>
+                {(objecttypecd === 'CA' || objecttypecd === 'SA') && (
+                  <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ width: 100, flexShrink: 0 }}>
+                      <strong>{objecttypecd === 'CA' ? '차트 유형 :' : '문장 유형 :'}</strong>
+                    </label>
+                    <select
+                      value={selectedDisplayType}
+                      onChange={(e) => setSelectedDisplayType(e.target.value)}
+                      style={{ flex: 1, marginRight: 20 }}
+                    >
+                      <option value="">--- 선택 ---</option>
+                      {displayTypes.map((t) => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* 오른쪽: 항목 이름 */}
+              <div style={{ flex: 1 }}>
+                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ width: 100, flexShrink: 0 }}><strong>항목 이름 :</strong></label>
+                  <div style={{ flex: 1, marginRight: 20 }}>{objectnm}</div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* ── 열이름 + 샘플 프롬프트 버튼 ── */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-            <div style={{ color: '#333', flexWrap: 'wrap' }}>
-              <strong>열이름&nbsp;&nbsp;</strong>
-              {columns.map((col, idx) => (
-                <span
-                  key={col}
-                  onClick={() => insertAtCursor(col)}
+            {/* ── 열이름 + 샘플 프롬프트 버튼 ── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ color: '#333', flexWrap: 'wrap' }}>
+                <strong>열이름&nbsp;&nbsp;</strong>
+                {columns.map((col, idx) => (
+                  <span
+                    key={col}
+                    onClick={() => insertAtCursor(col)}
+                    style={{
+                      display: 'inline-block',
+                      padding: '2px 4px',
+                      marginRight: 4,
+                      marginBottom: 4,
+                      marginLeft: idx === 0 ? 20 : 0,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.textDecoration = 'underline'
+                      e.target.style.textDecorationColor = 'silver'
+                      e.target.style.color = 'black'
+                      e.target.style.fontWeight = 'bold'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.textDecoration = 'none'
+                      e.target.style.color = 'inherit'
+                      e.target.style.fontWeight = 'normal'
+                    }}
+                  >
+                    {col}
+                  </span>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setModalOpen(true)}
+                disabled={prompts.length === 0}
+              >
+                <div className="icon-wrapper">
+                  <img src="/icons/template-config.svg" className="icon-img config-icon" alt="샘플 프롬프트" />
+                  <span className="icon-label">샘플 프롬프트</span>
+                </div>
+              </button>
+            </div>
+
+            {/* ── 하단: 프롬프트 입력 | 미리보기 결과 ── */}
+            <div style={{ flex: 1, display: 'flex', gap: 20, minHeight: 0, overflow: 'hidden' }}>
+
+              {/* 왼쪽: 프롬프트 입력 + 색상/컬러맵 */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+                <h4 style={{ marginBottom: 10, fontWeight: 'bold', flexShrink: 0 }}>프롬프트</h4>
+                <textarea
+                  ref={promptRef}
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                  onClick={trackCursor}
+                  onKeyUp={trackCursor}
+                  onFocus={trackCursor}
+                  placeholder="예: 2024년 월별 생산수량에 대해 그래프를 그려주세요."
                   style={{
-                    display: 'inline-block',
-                    padding: '2px 4px',
-                    marginRight: 4,
-                    marginBottom: 4,
-                    marginLeft: idx === 0 ? 20 : 0,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    backgroundColor: 'transparent',
+                    flex: 1,
+                    width: '100%',
+                    padding: 8,
+                    fontSize: '1rem',
+                    boxSizing: 'border-box',
+                    resize: 'none',
+                    border: '1px solid #ccc',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: 4,
+                    minHeight: 0,
                   }}
-                  onMouseEnter={(e) => {
-                    e.target.style.textDecoration = 'underline'
-                    e.target.style.textDecorationColor = 'silver'
-                    e.target.style.color = 'black'
-                    e.target.style.fontWeight = 'bold'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.textDecoration = 'none'
-                    e.target.style.color = 'inherit'
-                    e.target.style.fontWeight = 'normal'
+                />
+
+                {/* 색상/컬러맵 참조 영역 */}
+                {objecttypecd !== 'SA' && (
+                  <div style={{ flexShrink: 0, marginTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}>
+                      <label style={{ width: 60, fontSize: 13 }}>색 참조</label>
+                      <button type="button" className="btn" onClick={() => setShowColors((v) => !v)}>
+                        {showColors ? '색상 숨기기' : '색상 보기'}
+                      </button>
+                      {objecttypecd === 'CA' && (
+                        <button type="button" className="btn" onClick={() => setShowColormap((v) => !v)}>
+                          {showColormap ? '컬러맵 숨기기' : '컬러맵 보기'}
+                        </button>
+                      )}
+                    </div>
+                    {showColors && (
+                      <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: 8, marginBottom: 4 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
+                          {CSS_COLORS.map(({ name, hex }) => (
+                            <div
+                              key={name}
+                              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3 }}
+                              onClick={() => insertAtCursor(`${name}(${hex})`)}
+                            >
+                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
+                              <div style={{ height: 20, borderRadius: 4, border: '1px solid #ccc', background: hex }} title={hex} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {showColormap && (
+                      <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
+                          {CONTINUOUS_COLORMAPS.map(({ name, colors }) => (
+                            <div key={name} style={{ cursor: 'pointer' }} onClick={() => insertAtCursor(name)}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
+                              <div style={{ height: 20, background: `linear-gradient(to right, ${colors.join(',')})`, border: '1px solid #ccc', borderRadius: 4 }} />
+                            </div>
+                          ))}
+                          {CATEGORICAL_COLORMAPS.map(({ name, colors }) => (
+                            <div key={name} style={{ cursor: 'pointer' }} onClick={() => insertAtCursor(name)}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
+                              <div style={{ display: 'flex', gap: 2 }}>
+                                {colors.map((c, i) => (
+                                  <div key={i} style={{ flex: 1, height: 20, background: c, border: '1px solid #ccc', borderRadius: 2 }} />
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 오른쪽: 미리보기 결과 */}
+              <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+                <h4 style={{ marginBottom: 10, fontWeight: 'bold', flexShrink: 0 }}>미리보기 결과</h4>
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'auto',
+                    padding: 8,
+                    border: '1px solid #ccc',
+                    borderRadius: 4,
+                    backgroundColor: '#f8f9fa',
+                    minHeight: 0,
+                    minWidth: 0,
+                    boxSizing: 'border-box',
                   }}
                 >
-                  {col}
-                </span>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setModalOpen(true)}
-              disabled={prompts.length === 0}
-            >
-              <div className="icon-wrapper">
-                <img src="/icons/template-config.svg" className="icon-img config-icon" alt="샘플 프롬프트" />
-                <span className="icon-label">샘플 프롬프트</span>
-              </div>
-            </button>
-          </div>
-
-          {/* ── 하단: 프롬프트 입력 | 미리보기 결과 ── */}
-          <div style={{ flex: 1, display: 'flex', gap: 20, minHeight: 0, overflow: 'hidden' }}>
-
-            {/* 왼쪽: 프롬프트 입력 */}
-            <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-              <h4 style={{ marginBottom: 10, fontWeight: 'bold', flexShrink: 0 }}>프롬프트</h4>
-              <textarea
-                ref={promptRef}
-                value={promptText}
-                onChange={(e) => setPromptText(e.target.value)}
-                onClick={trackCursor}
-                onKeyUp={trackCursor}
-                onFocus={trackCursor}
-                placeholder="예: 2024년 월별 생산수량에 대해 그래프를 그려주세요."
-                style={{
-                  flex: 1,
-                  width: '100%',
-                  padding: 8,
-                  fontSize: '1rem',
-                  boxSizing: 'border-box',
-                  resize: 'none',
-                  border: '1px solid #ccc',
-                  backgroundColor: '#f8f9fa',
-                  borderRadius: 4,
-                  minHeight: 0,
-                }}
-              />
-            </div>
-
-            {/* 오른쪽: 미리보기 결과 */}
-            <div style={{ flex: '0 0 calc(60% - 20px)', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-              <h4 style={{ marginBottom: 10, fontWeight: 'bold', flexShrink: 0 }}>미리보기 결과</h4>
-              <div
-                style={{
-                  flex: 1,
-                  overflow: 'auto',
-                  padding: 8,
-                  border: '1px solid #ccc',
-                  borderRadius: 4,
-                  backgroundColor: '#f8f9fa',
-                  minHeight: 0,
-                  minWidth: 0,
-                  boxSizing: 'border-box',
-                }}
-              >
-                {previewResult ? <PreviewDisplay result={previewResult} /> : null}
+                  {previewResult ? <PreviewDisplay result={previewResult} /> : null}
+                </div>
               </div>
             </div>
+
           </div>
 
-          {/* ── 하단 버튼 ── */}
-          <div className="button-group" style={{ flexShrink: 0 }}>
+          {/* ── 하단 버튼 (overflow:hidden 영역 바깥) ── */}
+          <div className="button-group" style={{ flexShrink: 0, marginTop: 8 }}>
             <button type="button" className="icon-btn" onClick={handleReset}>
               <div className="icon-wrapper">
                 <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
@@ -419,8 +477,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
               </div>
             </button>
           </div>
-
-        </div>
+        </>
       )}
 
       {/* ── 미리보기 로딩 오버레이 ── */}
@@ -448,8 +505,8 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         open={modalOpen}
         prompts={prompts}
         onClose={() => setModalOpen(false)}
-        onApply={(promptText) => {
-          setPromptText(promptText)
+        onApply={(text) => {
+          setPromptText(text)
           setModalOpen(false)
         }}
       />
@@ -551,7 +608,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
 
         {/* 왼쪽: 샘플 목록 */}
         <div style={{ flex: '0 0 20%', borderRight: '1px solid #ccc', paddingRight: 10, overflowY: 'auto' }}>
-          <h6 style={{ fontSize: 16, marginBottom: 10 }}><strong>샘플 목록</strong></h6>
+          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>샘플 목록</strong></h6>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 14 }}>
             {prompts.map((p) => (
               <li
@@ -574,7 +631,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
 
         {/* 중앙: 프롬프트 설명 */}
         <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <h6 style={{ fontSize: 16, marginBottom: 10 }}><strong>프롬프트 설명</strong></h6>
+          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>프롬프트 설명</strong></h6>
           <textarea
             readOnly
             value={selected?.desc || ''}
@@ -586,8 +643,8 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
         </div>
 
         {/* 오른쪽: 프롬프트 내용 */}
-        <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', minHeight: 0, paddingRight: 0 }}>
-          <h6 style={{ fontSize: 16, marginBottom: 10 }}><strong>프롬프트</strong></h6>
+        <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>프롬프트</strong></h6>
           <textarea
             readOnly
             value={selected?.prompt || ''}
