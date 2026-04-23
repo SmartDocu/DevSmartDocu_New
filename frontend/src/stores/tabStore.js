@@ -9,7 +9,7 @@ export const useTabStore = create((set) => ({
   openTab: (tab) =>
     set((state) => {
       if (state.tabs.find((t) => t.key === tab.key)) {
-        return { activeKey: tab.key }
+        return { tabs: state.tabs.map((t) => t.key === tab.key ? { ...t, path: tab.path } : t), activeKey: tab.key }
       }
       return { tabs: [...state.tabs, tab], activeKey: tab.key }
     }),

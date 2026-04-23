@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useDocs, useProjects, useSaveDoc, useDeleteDoc } from '@/hooks/useDocs'
-import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
+import { useDataParams } from '@/hooks/useDataParams'
+import { useDocDatasets } from '@/hooks/useDocDatasets'
 
 export default function MasterDocsPage() {
-  const user = useAuthStore((s) => s.user)
   const { data: docs = [] } = useDocs()
   const { data: projects = [] } = useProjects()
   const saveDoc = useSaveDoc()
@@ -16,9 +16,12 @@ export default function MasterDocsPage() {
   const [templateName, setTemplateName] = useState(null)
   const [docSaving, setDocSaving] = useState(false)
 
-  const isEditYn = user?.editbuttonyn === 'Y'
   const selectedDocEditYn = selectedDoc?.editbuttonyn === 'Y'
+  const canEdit = selectedDoc ? selectedDocEditYn : projects.length > 0
   useLangStore((s) => s.translations)
+
+  const { data: docParams = [] } = useDataParams(docForm.docid ? String(docForm.docid) : null)
+  const { data: datasetData } = useDocDatasets(docForm.docid ? String(docForm.docid) : null)
 
   const selectDoc = (doc) => {
     setSelectedDoc(doc)
@@ -66,9 +69,9 @@ export default function MasterDocsPage() {
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* Left: doc cards */}
-        <div style={{ flex: 3, paddingRight: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.doc.list')}</h3>
+        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleDocNew}>
               {t('btn.new')}
             </button>
@@ -87,17 +90,19 @@ export default function MasterDocsPage() {
         </div>
 
         {/* Right: doc detail */}
-        <div style={{ flex: 7, padding: '0 20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.doc.detail')}</h3>
-            {(isEditYn || selectedDocEditYn) && (
+        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            {canEdit && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary" type="button" onClick={handleDocSave} disabled={docSaving || saveDoc.isPending}>
                   {t('btn.save')}
                 </button>
-                <button className="btn btn-danger" type="button" onClick={handleDocDelete} disabled={deleteDoc.isPending}>
-                  {t('btn.delete')}
-                </button>
+                {selectedDoc && (
+                  <button className="btn btn-danger" type="button" onClick={handleDocDelete} disabled={deleteDoc.isPending}>
+                    {t('btn.delete')}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -105,7 +110,7 @@ export default function MasterDocsPage() {
             <label htmlFor="doc-projectid">{t('lbl.projectnm')}:</label>
             {docForm.docid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>
-                {projects.find((p) => String(p.projectid) === String(docForm.projectid))?.projectnm || docForm.projectid}
+                {selectedDoc?.projectnm || docForm.projectid}
               </span>
             ) : (
               <select
@@ -172,13 +177,49 @@ export default function MasterDocsPage() {
                     } catch { window.open(selectedDoc.basetemplateurl, '_blank') }
                   }}
                 >
-                  {templateName || t('lbl.template.none')}
+                  {templateName || t('msg.template.none')}
                 </a>
               ) : (
-                <span>{templateName || t('lbl.template.none')}</span>
+                <span>{templateName || t('msg.template.none')}</span>
               )}
             </div>
           </div>
+          {docForm.docid && (
+            <div style={{ marginTop: 24 }}>
+              <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.condition')}</h4>
+              <textarea
+                readOnly
+                rows={Math.max(3, docParams.length)}
+                style={{ width: '100%', resize: 'vertical', background: '#fafafa', color: '#333', fontSize: 13 }}
+                value={
+                  docParams.length === 0
+                    ? t('msg.no.data')
+                    : docParams.map((p) =>
+                        `${p.orderno ?? '-'}. ${p.paramnm}  ${p.operator}  ${p.samplevalue ?? ''}${p.datanm ? `  ← ${p.datanm}${p.keycolnm ? `(${p.keycolnm})` : ''}` : ''}`
+                      ).join('\n')
+                }
+              />
+            </div>
+          )}
+          {docForm.docid && (() => {
+            const datas = datasetData?.datas || []
+            const dataparam_map = datasetData?.dataparam_map || {}
+            const selected_datauids = datasetData?.selected_datauids || []
+            const allChecked = [...new Set([...selected_datauids, ...Object.keys(dataparam_map)])]
+            const checkedDatas = datas.filter((d) => allChecked.includes(d.datauid))
+            const lines = checkedDatas.map((d) => `[${d.datanm}] (${d.datasourcecd})`)
+            return (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.dataset') || '데이터셋'}</h4>
+                <textarea
+                  readOnly
+                  rows={Math.max(3, lines.length)}
+                  style={{ width: '100%', resize: 'vertical', background: '#fafafa', color: '#333', fontSize: 13 }}
+                  value={lines.length === 0 ? t('msg.no.data') : lines.join('\n')}
+                />
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>

@@ -120,7 +120,7 @@ export default function AdminCodesPage() {
 
         {/* 1열: 코드 목록 */}
         <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleCodeNew}>
               {t('btn.new')}
@@ -170,16 +170,9 @@ export default function AdminCodesPage() {
 
         {/* 2열: 코드 상세 폼 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleCodeSave} disabled={saveCode.isPending}>
-                {t('btn.save')}
-              </button>
-              <button className="btn btn-danger" type="button" onClick={handleCodeDelete} disabled={deleteCode.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
-            </div>
+            <div />
           </div>
 
           <div className="form-group">
@@ -239,7 +232,17 @@ export default function AdminCodesPage() {
 
         {/* 3열: 번역 표 */}
         <div style={{ flex: 4, padding: '0 10px' }}>
-          <h3 style={{ margin: '0 0 8px' }}>{t('ttl.translations')}</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleCodeSave} disabled={saveCode.isPending}>
+                {t('btn.save')}
+              </button>
+              <button className="btn btn-danger" type="button" onClick={handleCodeDelete} disabled={deleteCode.isPending || isNew}>
+                {t('btn.delete')}
+              </button>
+            </div>
+          </div>
           {(selectedCode || isNew) ? (
             <div className="table-container">
               <table>

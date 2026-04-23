@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from supabase_auth.errors import AuthApiError
 
 from backend.app.config import settings
 
@@ -39,7 +40,13 @@ def get_sb(token: str):
 def get_user(token: str):
     """토큰으로 인증된 Supabase 유저 반환 (라우터 공용)."""
     sb = get_sb(token)
-    resp = sb.auth.get_user(token)
+    try:
+        resp = sb.auth.get_user(token)
+    except AuthApiError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="토큰이 만료되었습니다.",
+        )
     if not resp or not resp.user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useTabStore } from '@/stores/tabStore'
+import { useMenus } from '@/hooks/useMenus'
 import { useChapters, useSaveChapter, useDeleteChapter } from '@/hooks/useChapters'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function MasterChaptersPage() {
+  useLangStore((s) => s.translations)
+
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { openTab } = useTabStore()
+  const { data: allMenus = [] } = useMenus()
+
+  const openInTab = (routePath, query) => {
+    const menu = allMenus.find((m) => m.route_path === routePath)
+    if (menu) openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: `${routePath}${query}` })
+    navigate(`/${routePath}${query}`)
+  }
   const user = useAuthStore((s) => s.user)
 
   const selectedDocid = user?.docid ? Number(user.docid) : null
@@ -16,7 +29,7 @@ export default function MasterChaptersPage() {
   const [selectedChap, setSelectedChap] = useState(null)
   const [form, setForm] = useState({ chapternm: '', chapterno: '', useyn: true })
   const [templateFile, setTemplateFile] = useState(null)
-  const [templateName, setTemplateName] = useState('적용할 서식 파일 없음')
+  const [templateName, setTemplateName] = useState('')
   const [saving, setSaving] = useState(false)
 
   // URL param: chapteruid → auto-select (한 번만)
@@ -31,20 +44,20 @@ export default function MasterChaptersPage() {
   const selectChapter = (ch) => {
     setSelectedChap(ch)
     setForm({ chapternm: ch.chapternm, chapterno: ch.chapterno, useyn: ch.useyn })
-    setTemplateName(ch.chaptertemplatenm || '적용할 서식 파일 없음')
+    setTemplateName(ch.chaptertemplatenm || '')
     setTemplateFile(null)
   }
 
   const handleNew = () => {
     setSelectedChap(null)
     setForm({ chapternm: '', chapterno: '', useyn: true })
-    setTemplateName('적용할 서식 파일 없음')
+    setTemplateName('')
     setTemplateFile(null)
   }
 
   const handleSave = () => {
-    if (!form.chapterno) { alert('순번을 입력해주세요.'); return }
-    if (!selectedDocid) { alert('문서를 선택해주세요.'); return }
+    if (!form.chapterno) { alert(t('msg.chapter.required')); return }
+    if (!selectedDocid) { alert(t('msg.doc.select')); return }
     setSaving(true)
     const fd = new FormData()
     fd.append('docid', selectedDocid)
@@ -60,8 +73,8 @@ export default function MasterChaptersPage() {
   }
 
   const handleDelete = () => {
-    if (!selectedChap) { alert('삭제할 챕터를 선택하세요.'); return }
-    if (!window.confirm('정말 삭제하시겠습니까?')) return
+    if (!selectedChap) { alert(t('msg.chapter.select.delete')); return }
+    if (!window.confirm(t('msg.confirm.delete'))) return
     deleteChapter.mutate(
       { chapteruid: selectedChap.chapteruid, docid: selectedDocid },
       { onSuccess: () => { setSelectedChap(null); setForm({ chapternm: '', chapterno: '', useyn: true }) } },
@@ -75,14 +88,19 @@ export default function MasterChaptersPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>챕터 관리</div>
+          <div>{t('mnu.master_data.chapters.base')}</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* Left: chapter cards */}
-        <div style={{ flex: '30%', paddingRight: 20 }}>
-          <h3>챕터 목록</h3>
+        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              {t('btn.new')}
+            </button>
+          </div>
           <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
             {chapters.map((ch) => (
               <div
@@ -97,11 +115,26 @@ export default function MasterChaptersPage() {
           </div>
         </div>
 
-        {/* Middle: chapter detail */}
-        <div style={{ flex: '50%', padding: '0 20px' }}>
-          <h3>챕터 상세</h3>
+        {/* Right: chapter detail */}
+        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            {isEditYn && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving}>
+                  {t('btn.save')}
+                </button>
+                {selectedChap && (
+                  <button className="btn btn-danger" type="button" onClick={handleDelete}>
+                    {t('btn.delete')}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="form-group">
-            <label>챕터명:</label>
+            <label>{t('lbl.chapternm')}:</label>
             <input
               type="text"
               value={form.chapternm}
@@ -109,7 +142,7 @@ export default function MasterChaptersPage() {
             />
           </div>
           <div className="form-group">
-            <label>순번:</label>
+            <label>{t('lbl.chapterno')}:</label>
             <input
               type="number"
               value={form.chapterno}
@@ -117,7 +150,7 @@ export default function MasterChaptersPage() {
             />
           </div>
           <div className="form-group">
-            <label>사용:</label>
+            <label>{t('lbl.useyn')}:</label>
             <input
               type="checkbox"
               checked={!!form.useyn}
@@ -125,14 +158,14 @@ export default function MasterChaptersPage() {
             />
           </div>
           <div className="form-group">
-            <label>서식 파일 업로드(머리글, 바닥글):</label>
+            <label>{t('lbl.template.upload')}:</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
                 className="icon-btn"
                 onClick={() => document.getElementById('chap-template-input').click()}
               >
-                <img src="/icons/upload.svg" title="업로드" className="icon-img new-icon" alt="업로드" />
+                <img src="/icons/upload.svg" title={t('lbl.upload')} className="icon-img new-icon" alt={t('lbl.upload')} />
               </button>
               <input
                 id="chap-template-input"
@@ -154,78 +187,42 @@ export default function MasterChaptersPage() {
                       const blob = await res.blob()
                       const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
-                      a.href = url; a.download = templateName
+                      a.href = url; a.download = templateName || ''
                       document.body.appendChild(a); a.click()
                       document.body.removeChild(a); URL.revokeObjectURL(url)
                     } catch { window.open(selectedChap.chaptertemplateurl, '_blank') }
                   }}
                 >
-                  {templateName}
+                  {templateName || t('msg.template.none')}
                 </a>
               ) : (
-                <span>{templateName}</span>
+                <span>{templateName || t('msg.template.none')}</span>
               )}
             </div>
           </div>
 
-          {/* Buttons */}
-          <div className="form-group-left" style={{ justifyContent: 'center', marginBottom: 10, gap: 20 }}>
-            {isEditYn && (
-              <div className="button-group">
-                <button className="icon-btn" type="button" onClick={handleNew}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                    <span className="icon-label">신규</span>
-                  </div>
-                </button>
-                <button className="icon-btn" type="button" onClick={handleSave} disabled={saving}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                    <span className="icon-label">저장</span>
-                  </div>
-                </button>
-                <button className="icon-btn" type="button" onClick={handleDelete}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                    <span className="icon-label">삭제</span>
-                  </div>
-                </button>
-              </div>
-            )}
-
-            {/* Nav buttons - visible when chapter selected */}
-            {selectedChap && (
-              <div className="button-group">
-                <button
-                  className="icon-btn"
-                  type="button"
-                  onClick={() => {
-                    sessionStorage.setItem('chapter_object_chapteruid', selectedChap.chapteruid)
-                    navigate(`/master/object?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)
-                  }}
-                >
-                  <div className="icon-wrapper">
-                    <img src="/icons/object-config.svg" className="icon-img config-icon" alt="항목 관리" />
-                    <span className="icon-label">항목 관리</span>
-                  </div>
-                </button>
-                <button
-                  className="icon-btn"
-                  type="button"
-                  onClick={() => navigate(`/master/chapter-template?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)}
-                  title="양식 편집"
-                >
-                  <div className="icon-wrapper">
-                    <img src="/icons/edit.svg" className="icon-img config-icon" alt="양식 편집" />
-                    <span className="icon-label">양식 편집</span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
+          {selectedChap && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => {
+                  sessionStorage.setItem('chapter_object_chapteruid', selectedChap.chapteruid)
+                  openInTab('master/object', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)
+                }}
+              >
+                {t('btn.object.manage')}
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => openInTab('master/chapter-template', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)}
+              >
+                {t('btn.template.edit')}
+              </button>
+            </div>
+          )}
         </div>
-
-        <div style={{ flex: '20%', paddingLeft: 20 }} />
       </div>
     </div>
   )

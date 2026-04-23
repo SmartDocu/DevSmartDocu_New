@@ -49,8 +49,9 @@ import AdminCodesPage from '@/pages/admin/AdminCodesPage'
 import MasterAiChartsPage from '@/pages/master/MasterAiChartsPage'
 import MasterAiSentencesPage from '@/pages/master/MasterAiSentencesPage'
 import MasterAiTablesPage from '@/pages/master/MasterAiTablesPage'
-import MasterDocParamsPage from '@/pages/master/MasterDocParamsPage'
 import MasterChapterTemplatePage from '@/pages/master/MasterChapterTemplatePage'
+import MasterConditionsPage from '@/pages/master/MasterConditionsPage'
+import MasterDatasetPage from '@/pages/master/MasterDatasetPage'
 
 export const router = createBrowserRouter([
   // ── 인증 불필요 ───────────────────────────────────────────────────────────
@@ -84,7 +85,8 @@ export const router = createBrowserRouter([
 
       // Stage 3: 마스터 데이터
       { path: 'master/docs', element: <MasterDocsPage /> },
-      { path: 'master/doc-params', element: <MasterDocParamsPage /> },
+      { path: 'master/conditions', element: <MasterConditionsPage /> },
+      { path: 'master/datasets', element: <MasterDatasetPage /> },
       { path: 'master/chapter-template', element: <MasterChapterTemplatePage /> },
       { path: 'master/chapters', element: <MasterChaptersPage /> },
 

@@ -113,7 +113,7 @@ export default function AdminTermsPage() {
 
         {/* 1열: 용어 목록 */}
         <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleTermNew}>
               {t('btn.new')}
@@ -161,16 +161,9 @@ export default function AdminTermsPage() {
 
         {/* 2열: 용어 상세 폼 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleTermSave} disabled={saveTerm.isPending}>
-                {t('btn.save')}
-              </button>
-              <button className="btn btn-danger" type="button" onClick={handleTermDelete} disabled={deleteTerm.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
-            </div>
+            <div />
           </div>
 
           <div className="form-group">
@@ -233,7 +226,17 @@ export default function AdminTermsPage() {
 
         {/* 3열: 번역 표 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
-          <h3 style={{ margin: '0 0 8px' }}>{t('ttl.translations')}</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleTermSave} disabled={saveTerm.isPending}>
+                {t('btn.save')}
+              </button>
+              <button className="btn btn-danger" type="button" onClick={handleTermDelete} disabled={deleteTerm.isPending || isNew}>
+                {t('btn.delete')}
+              </button>
+            </div>
+          </div>
           {(selectedTerm || isNew) ? (
             <div className="table-container">
               <table>

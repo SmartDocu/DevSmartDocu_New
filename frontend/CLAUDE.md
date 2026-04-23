@@ -106,8 +106,45 @@ const mutation = useMutation({
 | 언어 리렌더 | 컴포넌트 최상단 `useLangStore((s) => s.translations)` 구독 |
 | 편집 권한 | 저장·삭제는 `(isEditYn \|\| selectedItemEditYn)` 조건부 렌더 |
 | 폼 레이아웃 | `form-group` 클래스 사용. 라벨은 위 줄(`display:block` — CSS에 전역 적용됨), 입력은 아래 줄 |
+| 필수 필드 표시 | 라벨 앞에 `<span style={{ color: 'red', marginRight: 2 }}>*</span>` 삽입 |
 | description 필드 | `<textarea rows={3} style={{ resize: 'vertical' }}>` (기본 3줄, 세로 리사이즈 가능) |
 | number 입력 | `<input type="number">` |
+| 소제목 행 | 버튼 유무와 무관하게 높이 통일 — 항상 아래 구조 사용. 버튼 없는 경우 `<div />` placeholder 삽입 |
+| 패널 스크롤 | 좌·우측 패널 모두 `overflowY: 'auto'`, `maxHeight: 'calc(100vh - 224px)'` 적용해 브라우저 스크롤 방지 |
+
+#### 소제목 행 표준 패턴
+
+버튼이 **있는** 경우:
+```jsx
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+  <h3 style={{ margin: 0 }}>{t('ttl.xxx')}</h3>
+  <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+</div>
+```
+
+버튼이 **없는** 경우:
+```jsx
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+  <h3 style={{ margin: 0 }}>{t('ttl.xxx')}</h3>
+  <div />
+</div>
+```
+
+#### 2열 패널 스크롤 표준 패턴
+
+```jsx
+{/* 좌측 패널 */}
+<div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+  ...
+</div>
+
+{/* 우측 패널 */}
+<div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+  ...
+</div>
+```
+
+> **224px 산출 근거**: Header(60) + Content marginTop(104) + inner padding-top(12) + page-title 높이(40) + page-title margin-bottom(20) + 하단 padding(48)
 
 ### 다국어 키 네이밍 규칙
 
@@ -121,6 +158,49 @@ const mutation = useMutation({
 | 메시지/알림 | `msg.` | `msg.doc.required`, `msg.confirm.delete` |
 | 메뉴 | `mnu.` | `mnu.master_data.docs.base` |
 | 코드값 | `cod.` | `cod.useyn.y` |
+
+### 앱 내 탭으로 페이지 이동 패턴
+
+다른 페이지로 이동할 때 브라우저 새 탭이 아닌 **앱 탭 바**에 탭을 열고 이동한다.
+쿼리 파라미터(변수)도 탭 path에 함께 저장되므로, 탭 전환 후 돌아와도 파라미터가 유지된다.
+
+#### Import
+
+```jsx
+import { useNavigate } from 'react-router-dom'
+import { useTabStore } from '@/stores/tabStore'
+import { useMenus } from '@/hooks/useMenus'
+import { t } from '@/stores/langStore'
+```
+
+#### 컴포넌트 내 설정
+
+```jsx
+const navigate = useNavigate()
+const { openTab } = useTabStore()
+const { data: allMenus = [] } = useMenus()
+
+const openInTab = (routePath, query = '') => {
+  const menu = allMenus.find((m) => m.route_path === routePath)
+  if (menu) openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: `${routePath}${query}` })
+  navigate(`/${routePath}${query}`)
+}
+```
+
+#### 버튼 예시
+
+```jsx
+<button className="btn btn-primary" type="button"
+  onClick={() => openInTab('master/object', `?chapteruid=${selectedChap.chapteruid}&docid=${docid}`)}>
+  {t('btn.object.manage')}
+</button>
+```
+
+- `routePath`: `router/index.jsx`에 등록된 경로 (앞의 `/` 제외, 예: `'master/object'`)
+- `query`: 쿼리 파라미터 문자열 (예: `'?chapteruid=1&docid=2'`), 없으면 생략
+- 같은 탭이 이미 열려 있으면 path(쿼리 포함)를 최신값으로 갱신 후 이동 (`tabStore.openTab` 동작)
+
+---
 
 ### ui_terms 등록 방법
 

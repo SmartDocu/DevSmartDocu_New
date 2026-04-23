@@ -113,7 +113,7 @@ export default function AdminMessagesPage() {
 
         {/* 좌측: 메시지 목록 */}
         <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>
               {t('btn.new')}
@@ -159,16 +159,9 @@ export default function AdminMessagesPage() {
 
         {/* 중앙: 상세 폼 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMessage.isPending}>
-                {t('btn.save')}
-              </button>
-              <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteMessage.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
-            </div>
+            <div />
           </div>
 
           <div className="form-group">
@@ -231,7 +224,17 @@ export default function AdminMessagesPage() {
 
         {/* 우측: 번역 표 */}
         <div style={{ flex: 3, padding: '0 10px' }}>
-          <h3 style={{ margin: '0 0 8px' }}>{t('ttl.translations')}</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMessage.isPending}>
+                {t('btn.save')}
+              </button>
+              <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteMessage.isPending || isNew}>
+                {t('btn.delete')}
+              </button>
+            </div>
+          </div>
           {(selectedMessage || isNew) ? (
             <div className="table-container">
               <table>
