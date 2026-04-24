@@ -119,18 +119,42 @@ export default function MasterChaptersPage() {
         <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            {isEditYn && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving}>
-                  {t('btn.save')}
-                </button>
-                {selectedChap && (
-                  <button className="btn btn-danger" type="button" onClick={handleDelete}>
-                    {t('btn.delete')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {selectedChap && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={() => {
+                      sessionStorage.setItem('chapter_object_chapteruid', selectedChap.chapteruid)
+                      openInTab('master/object', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)
+                    }}
+                  >
+                    {t('btn.object.manage')}
                   </button>
-                )}
-              </div>
-            )}
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={() => openInTab('master/chapter-template', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)}
+                  >
+                    {t('btn.template.edit')}
+                  </button>
+                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+                </>
+              )}
+              {isEditYn && (
+                <>
+                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving}>
+                    {t('btn.save')}
+                  </button>
+                  {selectedChap && (
+                    <button className="btn btn-danger" type="button" onClick={handleDelete}>
+                      {t('btn.delete')}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           <div className="form-group">
@@ -201,27 +225,6 @@ export default function MasterChaptersPage() {
             </div>
           </div>
 
-          {selectedChap && (
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <button
-                className="btn btn-primary"
-                type="button"
-                onClick={() => {
-                  sessionStorage.setItem('chapter_object_chapteruid', selectedChap.chapteruid)
-                  openInTab('master/object', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)
-                }}
-              >
-                {t('btn.object.manage')}
-              </button>
-              <button
-                className="btn btn-primary"
-                type="button"
-                onClick={() => openInTab('master/chapter-template', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)}
-              >
-                {t('btn.template.edit')}
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

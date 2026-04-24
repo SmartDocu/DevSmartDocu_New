@@ -164,6 +164,38 @@ const mutation = useMutation({
 다른 페이지로 이동할 때 브라우저 새 탭이 아닌 **앱 탭 바**에 탭을 열고 이동한다.
 쿼리 파라미터(변수)도 탭 path에 함께 저장되므로, 탭 전환 후 돌아와도 파라미터가 유지된다.
 
+#### 이동 버튼이 있는 경우 소제목 행 우측 버튼 배치 순서
+
+이동 버튼(페이지 전환)이 있을 때는 소제목 행 우측을 아래 순서로 배치한다:
+
+```
+[이동버튼1] [이동버튼2]  |  [저장] [삭제]
+```
+
+구분선 코드: `<span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>`
+
+- 이동 버튼은 `selectedItem` 존재 시에만 렌더 (구분선 포함)
+- 저장·삭제는 기존 권한 조건(`isEditYn`) 그대로 유지
+
+```jsx
+<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+  {selectedItem && (
+    <>
+      <button className="btn btn-primary" type="button" onClick={...}>{t('btn.xxx')}</button>
+      <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+    </>
+  )}
+  {isEditYn && (
+    <>
+      <button className="btn btn-primary" type="button" onClick={handleSave}>{t('btn.save')}</button>
+      {selectedItem && <button className="btn btn-danger" type="button" onClick={handleDelete}>{t('btn.delete')}</button>}
+    </>
+  )}
+</div>
+```
+
+---
+
 #### Import
 
 ```jsx

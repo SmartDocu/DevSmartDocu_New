@@ -145,6 +145,10 @@
   padding: 8px 12px 4px;
 }
 
+.sidebar-search-dark input::placeholder {
+  color: #8aa8c8 !important;
+}
+
 .sidebar-section-title {
   padding: 8px 16px 4px;
   font-size: 12px;
@@ -217,6 +221,31 @@
 }
 .lang-select .ant-select-selection-item {
   color: #fff !important;
+}
+
+/* ── 탭 글자색 (배경 흰색 유지) ───────────────────── */
+/* Light: 활성=#163E64(header), 비활성=연한 파란색 */
+.tabs-light .ant-tabs-tab .ant-tabs-tab-btn {
+  color: #669FCF !important;
+}
+.tabs-light .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: #163E64 !important;
+}
+.tabs-light .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #163E64 !important;
+  font-weight: 600 !important;
+}
+
+/* Dark: 활성=#081A2B(header), 비활성=연한 파란색 */
+.tabs-dark .ant-tabs-tab .ant-tabs-tab-btn {
+  color: #3C7FBB !important;
+}
+.tabs-dark .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: #081A2B !important;
+}
+.tabs-dark .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #081A2B !important;
+  font-weight: 600 !important;
 }
 
 /* ── 기본 리셋 ─────────────────────────────────────── */

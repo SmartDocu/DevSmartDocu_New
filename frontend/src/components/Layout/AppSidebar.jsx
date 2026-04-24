@@ -123,7 +123,7 @@ function findSelectedKey(menus, pathname) {
   return null
 }
 
-export default function AppSidebar({ collapsed = false }) {
+export default function AppSidebar({ collapsed = false, isDark = false }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, isAuthenticated } = useAuthStore()
@@ -232,6 +232,8 @@ export default function AppSidebar({ collapsed = false }) {
             onChange={(e) => setSearch(e.target.value)}
             allowClear
             size="small"
+            className={isDark ? 'sidebar-search-dark' : undefined}
+            style={isDark ? { background: '#1a3a5c', color: '#fff', borderColor: '#1a5080' } : undefined}
           />
         </div>
       )}
@@ -239,7 +241,7 @@ export default function AppSidebar({ collapsed = false }) {
       {/* 즐겨찾기 — 펼쳤을 때만 */}
       {!collapsed && isAuthenticated() && favoriteMenus.length > 0 && !search && (
         <>
-          <div className="sidebar-section-title">
+          <div className="sidebar-section-title" style={{ color: isDark ? '#aaa' : undefined }}>
             <StarFilled style={{ color: '#faad14', marginRight: 4 }} />
             {t('sidebar.favorites')}
           </div>
@@ -248,6 +250,7 @@ export default function AppSidebar({ collapsed = false }) {
               <li
                 key={m.menucd}
                 className={`sidebar-fav-item${location.pathname.includes(m.route_path || '__none__') ? ' active' : ''}`}
+                style={{ color: isDark ? '#ccc' : '#333' }}
               >
                 <span className="sidebar-fav-label" onClick={() => handleFavClick(m)}>
                   <DynIcon name={m.iconnm} />
@@ -271,6 +274,7 @@ export default function AppSidebar({ collapsed = false }) {
       <Menu
         key={translationVersion}
         mode="inline"
+        theme={isDark ? 'dark' : 'light'}
         inlineCollapsed={collapsed}
         items={menuItems}
         selectedKeys={selectedKey ? [selectedKey] : []}

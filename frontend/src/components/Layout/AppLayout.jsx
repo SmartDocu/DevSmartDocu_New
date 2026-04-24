@@ -1,9 +1,11 @@
 import { Outlet, useNavigate } from 'react-router-dom'
-import { Layout, Typography, Space, theme, Tabs, Select } from 'antd'
+import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App } from 'antd'
+import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
 import { useConfigs } from '@/hooks/useConfigs'
+import { useMenus } from '@/hooks/useMenus'
 import DocSelectModal from '@/components/DocSelectModal/DocSelectModal'
 import RegisterModal from '@/components/RegisterModal/RegisterModal'
 import LoginModal from '@/components/LoginModal/LoginModal'
@@ -18,22 +20,37 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const { token: cssToken } = theme.useToken()
   const { user, clearAuth, updateUser } = useAuthStore()
+  const { message } = App.useApp()
 
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [registerModalOpen, setRegisterModalOpen] = useState(false)
   const [loginModalOpen, setLoginModalOpen] = useState(false)
-  const { tabs, activeKey, closeTab, setActiveKey, siderCollapsed, setSiderCollapsed } = useTabStore()
+  const { tabs, activeKey, closeTab, setActiveKey, siderCollapsed, setSiderCollapsed, colorTheme, setColorTheme, openTab, clearTabs } = useTabStore()
+  const isDark = !!user && colorTheme === 'dark'
+  const headerBg = isDark ? '#081A2B' : '#163E64'
+  const siderBg = isDark ? '#0E2740' : '#fff'
 
   const { languageCd, setLanguageCd, setTranslations, resetLang } = useLangStore()
   const { data: languages = [] } = useLanguages()
   const { data: configs } = useConfigs()
   const { data: translationsData } = useTranslations(languageCd)
   const setLanguageMutation = useSetLanguage()
+  const { data: allMenus = [] } = useMenus()
 
   // re-render 트리거용 구독
   useLangStore((s) => s.translations)
 
   const isLoggedIn = !!user
+
+  const openMyInfoInTab = () => {
+    const menu = allMenus.find((m) => m.route_path === 'myinfo')
+    if (menu) {
+      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: 'myinfo' })
+    } else {
+      openTab({ key: 'myinfo', label: '내 계정', path: 'myinfo' })
+    }
+    navigate('/myinfo')
+  }
 
   // 언어 초기화
   // - 로그인 사용자: user.languagecd 항상 우선 적용 (로그인 시점에 덮어씌움)
@@ -64,6 +81,7 @@ export default function AppLayout() {
   }
 
   const handleLogout = () => {
+    clearTabs()
     resetLang()
     clearAuth()
     navigate('/')
@@ -72,7 +90,7 @@ export default function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {/* 좌측 Sidebar */}
-      <Sider
+      {isLoggedIn && <Sider
         collapsible
         collapsed={siderCollapsed}
         onCollapse={setSiderCollapsed}
@@ -84,22 +102,28 @@ export default function AppLayout() {
           left: 0,
           bottom: 0,
           zIndex: 100,
-          background: '#fff',
-          borderRight: '1px solid #e8e8e8',
+          background: siderBg,
+          borderRight: isDark ? '1px solid #1a5080' : '1px solid #e8e8e8',
           overflow: 'hidden',
         }}
-        theme="light"
+        theme={isDark ? 'dark' : 'light'}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* 로고 */}
-          <div className="sidebar-logo" onClick={() => navigate('/')}>
-            <img
-              src={'/SmartDocu.svg'}
-              alt="로고"
-              style={{ height: 28, width: 'auto', flexShrink: 0 }}
-            />
+          <div
+            className="sidebar-logo"
+            onClick={() => navigate('/')}
+            style={{ borderBottom: isDark ? '1px solid #1a5080' : '1px solid #e8e8e8' }}
+          >
+            {user?.tenanticonurl && (
+              <img
+                src={user.tenanticonurl}
+                alt="로고"
+                style={{ height: 28, width: 'auto', flexShrink: 0 }}
+              />
+            )}
             {!siderCollapsed && (
-              <Text strong style={{ color: '#163E64', fontSize: 16, whiteSpace: 'nowrap' }}>
+              <Text strong style={{ color: isDark ? '#fff' : '#163E64', fontSize: 16, whiteSpace: 'nowrap' }}>
                 SmartDocu
               </Text>
             )}
@@ -107,33 +131,36 @@ export default function AppLayout() {
 
           {/* 메뉴 영역 (스크롤 가능) */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-            <AppSidebar collapsed={siderCollapsed} />
+            <AppSidebar collapsed={siderCollapsed} isDark={isDark} />
           </div>
 
           {/* Copyright — Footer 대체 */}
-          <div className="sidebar-copyright">
+          <div
+            className="sidebar-copyright"
+            style={{ color: isDark ? '#aaa' : undefined, borderTop: isDark ? '1px solid #1a5080' : undefined }}
+          >
             {siderCollapsed
               ? <span title="© SmartDocu 2025"></span>
               : '© SmartDocu 2025. All rights reserved.'
             }
           </div>
         </div>
-      </Sider>
+      </Sider>}
 
       {/* 오른쪽 메인 영역 */}
-      <Layout style={{ marginLeft: siderCollapsed ? 50 : 300, transition: 'margin-left 0.2s' }}>
+      <Layout style={{ marginLeft: isLoggedIn ? (siderCollapsed ? 50 : 300) : 0, transition: 'margin-left 0.2s' }}>
         <Header
           style={{
             position: 'fixed',
             top: 0,
-            left: siderCollapsed ? 50 : 300,
+            left: isLoggedIn ? (siderCollapsed ? 50 : 300) : 0,
             right: 0,
             zIndex: 10,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '0 24px',
-            background: '#163E64',
+            background: headerBg,
             height: 60,
             transition: 'left 0.2s',
           }}
@@ -143,34 +170,47 @@ export default function AppLayout() {
             onClick={() => navigate('/')}
             style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
           >
-            {user?.tenanticonurl && (
-              <img
-                src={user.tenanticonurl}
-                alt="로고"
-                style={{ height: 32, width: 'auto' }}
-              />
-            )}
+            <img src="/SmartDocu.svg" alt="로고" style={{ height: 32, width: 'auto' }} />
             <Text strong style={{ color: '#fff', fontSize: 18 }}>SmartDocu</Text>
           </div>
 
-          {/* 사용자 영역 */}
-          <Space style={{ whiteSpace: 'nowrap' }} size={8}>
-            {/* 언어 선택기 — 로그인/비로그인 공통 */}
-            {languages.length > 0 && (
-              <Select
-                value={languageCd || undefined}
-                onChange={handleLanguageChange}
-                size="small"
-                variant="borderless"
-                style={{ minWidth: 80, color: '#fff' }}
-                popupMatchSelectWidth={false}
-                options={languages.map((l) => ({ value: l.languagecd, label: l.languagenm }))}
-                className="lang-select"
-              />
-            )}
+          {/* 비로그인 공개 메뉴 */}
+          {!isLoggedIn && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {[
+                { path: 'service', label: '서비스 소개', icon: <HomeOutlined /> },
+                { path: 'about',   label: '기능 소개',   icon: <InfoCircleOutlined /> },
+                { path: 'usage',   label: '서비스 이용', icon: <ReadOutlined /> },
+              ].map(({ path, label, icon }) => (
+                <button
+                  key={path}
+                  onClick={() => navigate('/' + path)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 14px',
+                    borderRadius: 4,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  {icon}{label}
+                </button>
+              ))}
+            </div>
+          )}
 
-            {isLoggedIn ? (
-              <>
+          {/* 사용자 영역 */}
+          <div style={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {/* 문서 선택 */}
+            {isLoggedIn && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <img
                   src="/doc-select.svg"
                   alt="문서 선택"
@@ -181,20 +221,90 @@ export default function AppLayout() {
                 {user?.docnm && (
                   <Text style={{ color: '#fff' }}>{user.docnm}</Text>
                 )}
-                <Text style={{ color: '#aaa' }}>|</Text>
-                <Text
-                  style={{ color: '#fff', cursor: 'pointer' }}
-                  onClick={() => navigate('/myinfo')}
+              </div>
+            )}
+
+            {/* 언어 선택기 — 지구본 + Select 붙이기 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: isLoggedIn ? 30 : 0 }}>
+              <GlobalOutlined style={{ color: '#fff', fontSize: 16 }} />
+              {languages.length > 0 && (
+                <Select
+                  value={languageCd || undefined}
+                  onChange={handleLanguageChange}
+                  size="small"
+                  variant="borderless"
+                  style={{ minWidth: 80, color: '#fff' }}
+                  popupMatchSelectWidth={false}
+                  options={languages.map((l) => ({ value: l.languagecd, label: l.languagenm }))}
+                  className="lang-select"
+                />
+              )}
+            </div>
+
+            {isLoggedIn ? (
+              <>
+                {/* 알람 */}
+                <div style={{ marginLeft: 20 }}>
+                  <Badge count={3} size="small">
+                    <BellOutlined
+                      style={{ color: '#fff', fontSize: 18, cursor: 'pointer' }}
+                      onClick={() => message.info('알림 기능은 추후 제공될 예정입니다.')}
+                    />
+                  </Badge>
+                </div>
+                {/* 사람 아이콘 */}
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: 'myinfo',
+                        label: user?.email ?? '사용자',
+                        onClick: openMyInfoInTab,
+                      },
+                      { type: 'divider' },
+                      {
+                        key: 'theme',
+                        label: (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ marginRight: 4 }}>테마</span>
+                            <span
+                              onClick={(e) => { e.stopPropagation(); setColorTheme('light') }}
+                              style={{
+                                cursor: 'pointer',
+                                padding: '2px 10px',
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: !isDark ? 600 : 400,
+                                backgroundColor: !isDark ? '#245F97' : 'transparent',
+                                color: !isDark ? '#fff' : '#888',
+                                border: !isDark ? '1px solid #245F97' : '1px solid #d9d9d9',
+                              }}
+                            >Light</span>
+                            <span
+                              onClick={(e) => { e.stopPropagation(); setColorTheme('dark') }}
+                              style={{
+                                cursor: 'pointer',
+                                padding: '2px 10px',
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: isDark ? 600 : 400,
+                                backgroundColor: isDark ? '#245F97' : 'transparent',
+                                color: isDark ? '#fff' : '#888',
+                                border: isDark ? '1px solid #245F97' : '1px solid #d9d9d9',
+                              }}
+                            >Dark</span>
+                          </div>
+                        ),
+                      },
+                      { type: 'divider' },
+                      { key: 'logout', label: t('btn.logout'), onClick: handleLogout },
+                    ],
+                  }}
+                  trigger={['click']}
+                  placement="bottomRight"
                 >
-                  {user?.email ?? '사용자'}
-                </Text>
-                <button
-                  className="btn btn-danger"
-                  onClick={handleLogout}
-                  style={{ color: 'var(--border-color)', textDecoration: 'none' }}
-                >
-                  {t('btn.logout')}
-                </button>
+                  <UserOutlined style={{ color: '#fff', fontSize: 20, cursor: 'pointer', marginLeft: 20 }} />
+                </Dropdown>
               </>
             ) : (
               <>
@@ -208,6 +318,7 @@ export default function AppLayout() {
                     border: 'none',
                     fontSize: 14,
                     cursor: 'pointer',
+                    marginLeft: 12,
                   }}
                 >
                   {t('btn.register')}
@@ -222,13 +333,14 @@ export default function AppLayout() {
                     border: 'none',
                     fontSize: 14,
                     cursor: 'pointer',
+                    marginLeft: 8,
                   }}
                 >
                   {t('btn.login')}
                 </button>
               </>
             )}
-          </Space>
+          </div>
         </Header>
 
         {/* 탭 바 */}
@@ -237,7 +349,7 @@ export default function AppLayout() {
             style={{
               position: 'fixed',
               top: 60,
-              left: siderCollapsed ? 50 : 300,
+              left: isLoggedIn ? (siderCollapsed ? 50 : 300) : 0,
               right: 0,
               zIndex: 9,
               background: '#fafafa',
@@ -268,6 +380,7 @@ export default function AppLayout() {
               }}
               items={tabs.map((t) => ({ key: t.key, label: t.label, closable: true }))}
               style={{ marginBottom: 0 }}
+              className={isDark ? 'tabs-dark' : 'tabs-light'}
             />
           </div>
         )}
