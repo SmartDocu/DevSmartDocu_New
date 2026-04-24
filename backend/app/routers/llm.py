@@ -61,34 +61,51 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
 
 def _get_llm_model(sb, projectid, tenantid):
     """Get LLM instance using project/tenant config."""
-    def _fetch(table, cond):
-        data = sb.schema(SUPABASE_SCHEMA).table(table).select("llmmodelnm, encapikey").match(cond).execute().data or []
+    import sys
+    svc = get_service_client()
+
+    def _fetch(table_name, conditions):
+        data = svc.schema(SUPABASE_SCHEMA).table(table_name).select("llmmodelnm, encapikey, tenantid").match(conditions).execute().data or []
         if data:
             return data[0].get("llmmodelnm"), data[0].get("encapikey")
         return None, None
 
     llm_model, enc_key = _fetch("projects", {"projectid": projectid})
+    print(f"[_get_llm_model] projects fetch → projectid={projectid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
+
     if not llm_model:
         llm_model, enc_key = _fetch("tenants", {"tenantid": tenantid})
-    if not llm_model:
-        models = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm").eq("useyn", True).execute().data or []
-        llm_model = random.choice(models)["llmmodelnm"]
-        keys = sb.schema(SUPABASE_SCHEMA).table("llmapis").select("encapikey").eq("usetypecd", "R").eq("llmmodelnm", llm_model).execute().data or []
-        enc_key = random.choice(keys)["encapikey"]
+        print(f"[_get_llm_model] tenants fetch → tenantid={tenantid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
 
-    dec_key = decrypt_value(enc_key)
-    vendor_data = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmvendornm").eq("llmmodelnm", llm_model).execute().data or []
-    vendor = vendor_data[0]["llmvendornm"] if vendor_data else "Anthropic"
+        if not llm_model:
+            llm_data = svc.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm, creator").eq("useyn", True).execute().data or []
+            print(f"[_get_llm_model] llmmodels fallback → count={len(llm_data)}", file=sys.stderr, flush=True)
+            choice_model = random.choice(llm_data)
+            llm_model = choice_model["llmmodelnm"]
 
-    if vendor == "OpenAI":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=llm_model, api_key=dec_key, temperature=0, max_tokens=8192)
-    elif vendor == "Google":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model=llm_model, temperature=0, google_api_key=dec_key, max_output_tokens=8192)
-    else:
+            key_data = svc.schema(SUPABASE_SCHEMA).table("llmapis").select("encapikey").eq("usetypecd", "R").eq("llmmodelnm", llm_model).execute().data or []
+            print(f"[_get_llm_model] llmapis fallback → llm_model={llm_model}, key_count={len(key_data)}", file=sys.stderr, flush=True)
+            choice_key = random.choice(key_data)
+            enc_key = choice_key["encapikey"]
+
+    dec_key = decrypt_value(enc_key).strip()
+
+    vendor_data = svc.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmvendornm").eq("llmmodelnm", llm_model).execute().data or []
+    llm_vendor_name = vendor_data[0]["llmvendornm"] if vendor_data else "Anthropic"
+
+    print(f"[_get_llm_model] final → model={llm_model}, vendor={llm_vendor_name}, key_len={len(dec_key)}, key_prefix={dec_key[:8] if dec_key else 'EMPTY'}", file=sys.stderr, flush=True)
+
+    if llm_vendor_name == "Anthropic":
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(anthropic_api_key=dec_key, model=llm_model, temperature=0, max_tokens=8192)
+
+    if llm_vendor_name == "OpenAI":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model=llm_model, api_key=dec_key, temperature=0, max_tokens=8192)
+
+    elif llm_vendor_name == "Google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model=llm_model, temperature=0, google_api_key=dec_key, max_output_tokens=8192)
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -253,7 +270,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     from utilsPrj.process_data import process_data
     from utilsPrj.ai_chain import (
         get_charts_prompt, get_sentences_prompt, get_tables_prompt,
-        get_full_chain, get_llm_model,
+        get_full_chain,
     )
 
     sb = get_sb(token)
@@ -334,9 +351,9 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     else:
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
 
-    # ⑨ LLM 모델 로드 — Django get_llm_model(request) 와 동일 함수 사용
+    # ⑨ LLM 모델 로드
     try:
-        llm = get_llm_model(req)
+        llm = _get_llm_model(sb, projectid, tenantid)
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)

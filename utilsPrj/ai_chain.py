@@ -109,8 +109,12 @@ def get_llm_model(request):
             )
             choice_key = random.choice(key_data)
             enc_api_key = choice_key["encapikey"]
+    
+    print(f"jeff 001 encode_api_key: {enc_api_key}")
 
     dec_api_key = decrypt_value(enc_api_key)
+
+    print(f"jeff 002 decode_api_key: {dec_api_key}")
 
     llm_vendor_name = process_data_in_supabase(
         supabase, "llmmodels", "select", {},

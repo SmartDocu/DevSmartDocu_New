@@ -1,45 +1,42 @@
 # ── FastAPI 핵심 ──────────────────────────────────────────────
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-python-multipart>=0.0.12
-pydantic-settings>=2.6.0
-httpx>=0.28.0
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+httpx
 
 # ── 환경변수 ──────────────────────────────────────────────────
-python-dotenv>=1.0.0
+python-dotenv
 
 # ── Supabase / 인증 ───────────────────────────────────────────
-supabase>=2.10.0
-gotrue>=2.9.0
+supabase
+supabase-auth
+gotrue
 
 # ── LLM / AI ─────────────────────────────────────────────────
-anthropic>=0.40.0
-openai>=1.57.0
-langchain>=0.3.0
-langchain-anthropic>=0.3.0
-langchain-google-genai>=2.0.0
-google-genai>=0.8.0
+anthropic
+langchain-anthropic
+langchain-core
 
 # ── 데이터 처리 ───────────────────────────────────────────────
-pandas>=2.2.0
-numpy>=2.0.0
-matplotlib>=3.9.0
-seaborn>=0.13.0
-openpyxl>=3.1.0
-python-docx>=1.1.0
-pillow>=11.0.0
-python-dateutil>=2.9.0
-scipy>=1.14.0
-mammoth>=1.8.0
-beautifulsoup4>=4.12.0
+pandas
+numpy
+matplotlib
+scipy
+pillow
+python-dateutil
+beautifulsoup4
+python-docx
+openpyxl
 
 # ── 외부 DB ───────────────────────────────────────────────────
-pyodbc>=5.1.0
-oracledb>=2.4.0
-SQLAlchemy>=2.0.0
+pyodbc
+oracledb
+SQLAlchemy
 
 # ── 보안 ─────────────────────────────────────────────────────
-cryptography>=43.0.0
+cryptography
 
 # ── 기타 ─────────────────────────────────────────────────────
-jinja2>=3.1.0
+requests
