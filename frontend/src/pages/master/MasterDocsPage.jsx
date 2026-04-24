@@ -107,7 +107,7 @@ export default function MasterDocsPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="doc-projectid">{t('lbl.projectnm')}:</label>
+            <label htmlFor="doc-projectid"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm')}:</label>
             {docForm.docid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>
                 {selectedDoc?.projectnm || docForm.projectid}
@@ -124,7 +124,7 @@ export default function MasterDocsPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="doc-docnm">{t('lbl.docnm')}:</label>
+            <label htmlFor="doc-docnm"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.docnm')}:</label>
             <input
               id="doc-docnm"
               type="text"

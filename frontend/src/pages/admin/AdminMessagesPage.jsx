@@ -105,7 +105,7 @@ export default function AdminMessagesPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.company.translation.messages')}</div>
+          <div>{t('mnu.system.translation.messages')}</div>
         </div>
       </div>
 
@@ -165,7 +165,7 @@ export default function AdminMessagesPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="msg-messagekey">{t('lbl.messagekey')}:</label>
+            <label htmlFor="msg-messagekey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.messagekey')}:</label>
             {isNew ? (
               <input
                 id="msg-messagekey"
@@ -178,7 +178,7 @@ export default function AdminMessagesPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="msg-messagetypecd">{t('lbl.messagetypecd')}:</label>
+            <label htmlFor="msg-messagetypecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.messagetypecd')}:</label>
             <select
               id="msg-messagetypecd"
               value={form.messagetypecd}
@@ -193,7 +193,7 @@ export default function AdminMessagesPage() {
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="msg-default-message">{t('lbl.default_message')}:</label>
+            <label htmlFor="msg-default-message"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_message')}:</label>
             <input
               id="msg-default-message"
               type="text"
@@ -212,7 +212,7 @@ export default function AdminMessagesPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="msg-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="msg-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
             <input
               id="msg-useyn"
               type="checkbox"

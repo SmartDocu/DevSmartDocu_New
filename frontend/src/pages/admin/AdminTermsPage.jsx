@@ -105,7 +105,7 @@ export default function AdminTermsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.company.translation.terms')}</div>
+          <div>{t('mnu.system.translation.terms')}</div>
         </div>
       </div>
 
@@ -167,7 +167,7 @@ export default function AdminTermsPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="term-termkey">{t('lbl.termkey')}:</label>
+            <label htmlFor="term-termkey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termkey')}:</label>
             {isNew ? (
               <input
                 id="term-termkey"
@@ -180,7 +180,7 @@ export default function AdminTermsPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="term-termgroupcd">{t('lbl.termgroupcd')}:</label>
+            <label htmlFor="term-termgroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termgroupcd')}:</label>
             <select
               id="term-termgroupcd"
               value={form.termgroupcd}
@@ -195,7 +195,7 @@ export default function AdminTermsPage() {
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="term-default-text">{t('lbl.default_text')}:</label>
+            <label htmlFor="term-default-text"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_text')}:</label>
             <input
               id="term-default-text"
               type="text"
@@ -214,7 +214,7 @@ export default function AdminTermsPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="term-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="term-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
             <input
               id="term-useyn"
               type="checkbox"

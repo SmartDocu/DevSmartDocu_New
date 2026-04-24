@@ -498,12 +498,12 @@ def separate_ui_ai_objects(datas):
 
 
 def get_source_query_for_df(supabase, data_item):
-    """datasourcecd가 df인 경우 원본 쿼리 조회"""
+    """datasourcecd가 df/dfv인 경우 원본 쿼리 조회"""
     query = data_item['query'] or ""
     data_source_cd = data_item["datasourcecd"] or ""
     source_data_uid = data_item["sourcedatauid"]
 
-    if data_source_cd == "df" and source_data_uid:
+    if data_source_cd in ("df", "dfv") and source_data_uid:
         source_resp = supabase.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", source_data_uid).execute()
         source_data = source_resp.data or []
 

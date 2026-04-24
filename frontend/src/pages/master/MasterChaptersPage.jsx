@@ -158,7 +158,7 @@ export default function MasterChaptersPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.chapternm')}:</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.chapternm')}:</label>
             <input
               type="text"
               value={form.chapternm}
@@ -174,7 +174,7 @@ export default function MasterChaptersPage() {
             />
           </div>
           <div className="form-group">
-            <label>{t('lbl.useyn')}:</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
             <input
               type="checkbox"
               checked={!!form.useyn}

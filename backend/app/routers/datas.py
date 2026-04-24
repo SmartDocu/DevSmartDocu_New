@@ -143,7 +143,7 @@ def list_source_datas(token: str = Depends(get_token)):
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd, projectid")
         .in_("projectid", active_ids)
-        .neq("datasourcecd", "df")
+        .not_.in_("datasourcecd", ["df", "dfv"])
         .order("datanm")
         .execute().data or []
     )

@@ -308,16 +308,16 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         docid=docid,
     )
 
-    # ⑤ datas 조회 — datasourcecd 및 df 타입의 sourcedatauid 확인
-    #    Django ai_create_dataframe 의 datasourcecd == "df" 분기 처리와 동일
-    col_datauid = body.datauid   # column_dict 조회에 사용할 datauid (df이면 source로 교체)
+    # ⑤ datas 조회 — datasourcecd 및 df/dfv 타입의 sourcedatauid 확인
+    #    Django ai_create_dataframe 의 datasourcecd in ("df", "dfv") 분기 처리와 동일
+    col_datauid = body.datauid   # column_dict 조회에 사용할 datauid (df/dfv이면 source로 교체)
     try:
         data_rows = sb.schema(SUPABASE_SCHEMA).table("datas").select(
             "datasourcecd, sourcedatauid"
         ).eq("datauid", body.datauid).execute().data or []
         if data_rows:
             datasourcecd = data_rows[0].get("datasourcecd", "")
-            if datasourcecd == "df":
+            if datasourcecd in ("df", "dfv"):
                 source_uid = data_rows[0].get("sourcedatauid")
                 if source_uid:
                     col_datauid = source_uid

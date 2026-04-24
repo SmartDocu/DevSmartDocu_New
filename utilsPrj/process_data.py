@@ -30,8 +30,8 @@ def process_data(request, datauid, docid=None, gendoc_uid=None, all = None):
         # print(f"jeff 002 process_data : docid_{docid} / datauid_{datauid}")
         return process_data_excel(supabase, request, datauid, docid, gendoc_uid, all)
     
-    # 원본이 ai 데이터 화면일 경우 
-    if datasourcecd == "df":
+    # 원본이 ai 데이터 화면일 경우
+    if datasourcecd in ("df", "dfv"):
         # print(f"jeff 003 process_data : docid_{docid} / datauid_{datauid}")
         return process_data_ai(supabase, request, datauid, docid, gendoc_uid, all)
 

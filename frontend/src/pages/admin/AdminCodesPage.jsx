@@ -112,7 +112,7 @@ export default function AdminCodesPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.company.translation.codes')}</div>
+          <div>{t('mnu.system.translation.codes')}</div>
         </div>
       </div>
 
@@ -176,7 +176,7 @@ export default function AdminCodesPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="code-codegroupcd">{t('lbl.codegroupcd')}:</label>
+            <label htmlFor="code-codegroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codegroupcd')}:</label>
             {isNew ? (
               <input
                 id="code-codegroupcd"
@@ -189,7 +189,7 @@ export default function AdminCodesPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="code-codevalue">{t('lbl.codevalue')}:</label>
+            <label htmlFor="code-codevalue"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codevalue')}:</label>
             {isNew ? (
               <input
                 id="code-codevalue"
@@ -202,7 +202,7 @@ export default function AdminCodesPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="code-default-name">{t('lbl.default_name')}:</label>
+            <label htmlFor="code-default-name"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_name')}:</label>
             <input
               id="code-default-name"
               type="text"
@@ -220,7 +220,7 @@ export default function AdminCodesPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="code-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="code-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
             <input
               id="code-useyn"
               type="checkbox"

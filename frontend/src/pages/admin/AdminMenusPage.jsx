@@ -113,7 +113,7 @@ export default function AdminMenusPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.company.translation.menus')}</div>
+          <div>{t('mnu.system.translation.menus')}</div>
         </div>
       </div>
 
@@ -164,7 +164,7 @@ export default function AdminMenusPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="menu-menucd">{t('lbl.menucd')}:</label>
+            <label htmlFor="menu-menucd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.menucd')}:</label>
             {isNew ? (
               <input
                 id="menu-menucd"
@@ -177,7 +177,7 @@ export default function AdminMenusPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="menu-default-text">{t('lbl.default_text')}:</label>
+            <label htmlFor="menu-default-text"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_text')}:</label>
             <input
               id="menu-default-text"
               type="text"
@@ -197,7 +197,7 @@ export default function AdminMenusPage() {
           </div>
           <div className="form-group">
             <label htmlFor="menu-iconnm">
-              {t('lbl.iconnm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.iconnm')}:
               {t('inf.iconnm') && (
                 <span style={{ fontSize: 12, color: '#888', fontWeight: 'normal', marginLeft: 6 }}>
                   {t('inf.iconnm')}
@@ -221,7 +221,7 @@ export default function AdminMenusPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="menu-rolecd">{t('lbl.rolecd')}:</label>
+            <label htmlFor="menu-rolecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.rolecd')}:</label>
             <select
               id="menu-rolecd"
               value={form.rolecd}
@@ -245,7 +245,7 @@ export default function AdminMenusPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="menu-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="menu-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
             <input
               id="menu-useyn"
               type="checkbox"

@@ -459,7 +459,7 @@ def list_condition_datas(docid: int, token: str = Depends(get_token)):
     datas = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd")
-        .eq("projectid", projectid).in_("datasourcecd", ["db", "ex"])
+        .eq("projectid", projectid).not_.in_("datasourcecd", ["df", "dfv"])
         .order("datanm").execute().data or []
     )
 
@@ -492,10 +492,10 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         raise HTTPException(status_code=404, detail="msg.doc.not.found")
     projectid = doc_row[0]["projectid"]
 
-    # 프로젝트의 데이터 목록 (db/ex 소스만)
+    # 프로젝트의 데이터 목록 (df/dfv 소스 제외)
     datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas") \
         .select("datauid, datanm, datasourcecd") \
-        .eq("projectid", projectid).in_("datasourcecd", ["db", "ex"]) \
+        .eq("projectid", projectid).not_.in_("datasourcecd", ["df", "dfv"]) \
         .order("datanm").execute().data or []
 
     # 해당 데이터들의 datacols (orderno 순)

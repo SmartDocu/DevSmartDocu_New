@@ -1,6 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App } from 'antd'
-import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined } from '@ant-design/icons'
+import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
@@ -92,6 +92,7 @@ export default function AppLayout() {
       {/* 좌측 Sidebar */}
       {isLoggedIn && <Sider
         collapsible
+        trigger={null}
         collapsed={siderCollapsed}
         onCollapse={setSiderCollapsed}
         width={300}
@@ -132,6 +133,24 @@ export default function AppLayout() {
           {/* 메뉴 영역 (스크롤 가능) */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
             <AppSidebar collapsed={siderCollapsed} isDark={isDark} />
+          </div>
+
+          {/* Collapse 버튼 */}
+          <div
+            onClick={() => setSiderCollapsed(!siderCollapsed)}
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: 40,
+              cursor: 'pointer',
+              borderTop: isDark ? '1px solid #1a5080' : '1px solid #e8e8e8',
+              color: isDark ? '#aaa' : '#888',
+              fontSize: 12,
+              userSelect: 'none',
+            }}
+          >
+            {siderCollapsed ? <RightOutlined /> : <LeftOutlined />}
           </div>
 
           {/* Copyright — Footer 대체 */}
