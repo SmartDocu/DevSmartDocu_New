@@ -296,7 +296,21 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
             functionnm = filters_raw.get("functionnm")
             dfvnm = "@" + sb_svc.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute().data[0]['datanm']
             objectfilterscript = "{{" + f["objectNm"] + "}}(" + params_org + ")"
-            dfvcolnms = params_org
+            # 만약 단일행 변수 값 그대로 들어올 경우 열만 추출 필요
+            if params_org.startswith("@") and "." in params_org:
+                try:
+                    params_org = "(@Deviation.deviation_nm, @Deviation.deviaion_id)"
+
+                    # . 뒤 값만 추출
+                    datas = re.findall(r'@[^.]+\.(\w+)', params_org)
+
+                    # 문자열로 합치기
+                    dfvcolnms = ", ".join(datas)
+                except ValueError:
+                    dfvcolnms = None
+            else:
+                dfvcolnms = params_org            
+            
             
             objectfilter = sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").select("*").eq("objectuid", objectuid).execute().data
             objectfilteruid = objectfilter[0]['objectfilteruid'] if objectfilter else str(uuid.uuid4())
