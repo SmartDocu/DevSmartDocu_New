@@ -1130,6 +1130,8 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
 
     code = fix_groupby_agg_pattern(code)
 
+    is_groupby_in_code = 'groupby' in code
+
     local_namespace = {
         'df': df,
         'pd': pd,
@@ -1193,8 +1195,8 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                     "code": code,
                 }
             
-            # df_result = df_result.applymap(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else x)
-            df_result = df_result.map(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else x)
+            num_cols = df_result.select_dtypes(include=["number"]).columns
+            df_result[num_cols] = df_result[num_cols].round(2)
 
             table_style_prompt = get_table_style_combined(df_result, question)
             response_style = llm.invoke(table_style_prompt)
@@ -1307,6 +1309,36 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 "result": df_result,
                 "status": "dataframe",
                 "tokens": tokens
+            }
+        else:
+            return {
+                "status": "error",
+                "error": "Claude가 result 변수에 결과를 저장하지 않았습니다.",
+                "code": code,
+                "tokens": tokens
+            }
+
+    elif output_type == "DF_PREVIEW":
+        if "result" in local_namespace and isinstance(local_namespace["result"], pd.DataFrame):
+            df_result = local_namespace["result"]
+
+            print(f"jeff 901 result_df: {df_result}")
+            meta_info = {}
+            for col in df_result.columns:
+                dtype = str(df_result[col].dtype)
+                meta_info[col] = {
+                    "데이터형": dtype,
+                    "측정값": dtype.startswith(("int", "float"))
+                }
+            cols_result["is_table_value"] = is_groupby_in_code
+            cols_result = json.dumps(meta_info, ensure_ascii=False, indent=2)
+            print(f"jeff 902 columns_info: {cols_result}")
+
+            return {
+                "result": df_result,
+                "status": "dataframe",
+                "tokens": tokens,
+                "cols_info": cols_result
             }
         else:
             return {
