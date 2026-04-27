@@ -394,6 +394,80 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
     setTimeout(() => document.addEventListener('mousedown', removeDropdown, { once: true }), 0)
   }
 
+  const showScaColumnsDropdown = (columns, paramnm) => {
+    removeDropdown()
+    const domSelection = window.getSelection()
+    if (!domSelection.rangeCount) return
+    const rect = domSelection.getRangeAt(0).getBoundingClientRect()
+
+    dropdown = document.createElement('div')
+    dropdown.style.cssText = `
+      position: fixed; top: ${rect.bottom + 6}px; left: ${rect.left}px;
+      background: white; border: 1px solid #ccc; border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999;
+      min-width: 200px; max-height: 250px; overflow-y: auto;
+    `
+    const header = document.createElement('div')
+    header.textContent = `📋 ${paramnm} 컬럼 선택`
+    header.style.cssText = `padding: 8px 12px; font-size: 12px; font-weight: bold; color: #555;
+      background: #f7f7f7; border-bottom: 1px solid #eee; position: sticky; top: 0;`
+    dropdown.appendChild(header)
+
+    columns.forEach(col => {
+      const item = document.createElement('div')
+      item.textContent = col
+      item.style.cssText = `padding: 8px 14px; cursor: pointer; font-size: 13px;
+        border-bottom: 1px solid #f0f0f0; transition: background 0.1s;`
+      item.addEventListener('mouseenter', () => (item.style.background = '#f0f7ff'))
+      item.addEventListener('mouseleave', () => (item.style.background = ''))
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        removeDropdown()
+        editor.model.change(writer => {
+          const pos = editor.model.document.selection.getFirstPosition()
+
+          // ✅ 현재 줄 전체 텍스트 추출
+          let fullLineText = ''
+          for (const node of pos.parent.getChildren()) {
+            if (node.is('$text')) fullLineText += node.data
+          }
+          const textBeforeCursor = fullLineText.slice(0, pos.offset)
+
+          // ✅ 커서 뒤 텍스트 확인
+          const textAfterCursor = fullLineText.slice(pos.offset)
+
+          // ✅ 컨텍스트에 따라 색상 결정
+          // {{#if @... → if 구문 색상
+          // {{@...     → 단일행 변수 색상
+          let bgColor
+          if (textBeforeCursor.includes('{{#if')) {
+            bgColor = 'hsl(25, 90%, 85%)'   // if 구문 색
+          } else if (textBeforeCursor.includes('{{@')) {
+            bgColor = 'hsl(120, 60%, 80%)'  // 단일행 변수 색
+          } else {
+            bgColor = 'hsl(120, 60%, 80%)'  // 기본값
+          }
+
+          // ✅ 수정 코드
+          // 괄호 안에 있으면 (unclosed '(' 존재) }} 추가 안 함
+          const openParenCount  = (textBeforeCursor.match(/\(/g) || []).length
+          const closeParenCount = (textBeforeCursor.match(/\)/g) || []).length
+          const isInsideParen   = openParenCount > closeParenCount
+
+          const insertText = (textAfterCursor.startsWith('}}') || isInsideParen)
+            ? col
+            : `${col}}}`
+          writer.insertText(insertText, { fontBackgroundColor: bgColor }, pos)
+        })
+        editor.editing.view.focus()
+      })
+      dropdown.appendChild(item)
+    })
+
+    document.body.appendChild(dropdown)
+    setTimeout(() => document.addEventListener('mousedown', removeDropdown, { once: true }), 0)
+  }
+
   const showDropdown = (options, keyword) => {
     removeDropdown()
     const domSelection = window.getSelection()
@@ -463,6 +537,18 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
     if (textBeforeCursor.endsWith('{{@')) {
       showScaDropdown()
       return
+    }
+
+    // ✅ 여기에 추가! ──────────────────────────────
+    const scaDotMatch = textBeforeCursor.match(/@([\w]+)\.$/)
+    if (scaDotMatch) {
+      const paramnm = scaDotMatch[1]
+      const sca_params = sca_params_ref.current || []
+      const found = sca_params.find(p => p.paramnm === paramnm)
+      if (found) {
+        showScaColumnsDropdown(found.columns, paramnm)
+        return
+      }
     }
 
     if (textBeforeCursor.endsWith('}}(') || textBeforeCursor.match(regex)) {
@@ -536,10 +622,11 @@ function VariableHighlightPlugin(editor) {
     }
 
     if (!fullText) return
-
-    const regex = /\{\{(?![#@])[^}]*\}\}(\([^)]*\))?/g
+    
+    // ✅ 일반 변수: {{변수명}} - 기존 색상
+    const regexNormal = /\{\{(?![#@])[^}]*\}\}(\([^)]*\))?/g
     let match
-    while ((match = regex.exec(fullText)) !== null) {
+    while ((match = regexNormal.exec(fullText)) !== null) {
       const startOffset = charToBlockOffset(textMap, match.index)
       const endOffset = charToBlockOffset(textMap, match.index + match[0].length)
       if (startOffset === null || endOffset === null) continue
@@ -547,7 +634,20 @@ function VariableHighlightPlugin(editor) {
         model.createPositionAt(block, startOffset),
         model.createPositionAt(block, endOffset),
       )
-      writer.setAttribute('fontBackgroundColor', HIGHLIGHT_COLOR, range)
+      writer.setAttribute('fontBackgroundColor', HIGHLIGHT_COLOR, range) // hsl(200, 80%, 85%)
+    }
+
+    // ✅ 단일행 변수: {{@변수명}} - 초록 색상 추가
+    const regexSca = /\{\{@[^}]*\}\}/g
+    while ((match = regexSca.exec(fullText)) !== null) {
+      const startOffset = charToBlockOffset(textMap, match.index)
+      const endOffset = charToBlockOffset(textMap, match.index + match[0].length)
+      if (startOffset === null || endOffset === null) continue
+      const range = model.createRange(
+        model.createPositionAt(block, startOffset),
+        model.createPositionAt(block, endOffset),
+      )
+      writer.setAttribute('fontBackgroundColor', 'hsl(120, 60%, 80%)', range)
     }
   }
 
@@ -649,7 +749,9 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
 
   const newFormats = []
   const seenNames = new Set()
-  const forStack = []
+
+  // ✅ forStack → blockStack 으로 통합 (FOR / IF 모두 추적)
+  const blockStack = [] // { type: 'FOR' | 'IF', paramnm: string }
 
   const cleanPatternName = (raw) =>
     raw?.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, '').trim()
@@ -657,14 +759,43 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
   for (const line of lines) {
     if (!line) continue
 
+    // ✅ FOR 시작
     const forStart = line.match(/^\{\{#FOR\s+@(\w+)\}\}$/)
-    if (forStart) { forStack.push(forStart[1]); continue }
-    if (/^\{\{#END FOR\}\}$/.test(line)) { forStack.pop(); continue }
-    if (/^\{\{#if/.test(line) || /^\{\{#ELSE/.test(line) || /^\{\{#END if/.test(line)) continue
+    if (forStart) {
+      blockStack.push({ type: 'FOR', paramnm: forStart[1] })
+      continue
+    }
 
-    const currentForArray = forStack.length > 0 ? forStack[forStack.length - 1] : null
-    const forDocVariableUid = currentForArray
-      ? (tbl_params.find(p => p.paramnm === currentForArray)?.docvariableuid ?? null)
+    // ✅ FOR 종료
+    if (/^\{\{#END FOR\}\}$/.test(line)) {
+      const idx = [...blockStack].reverse().findIndex(b => b.type === 'FOR')
+      if (idx !== -1) blockStack.splice(blockStack.length - 1 - idx, 1)
+      continue
+    }
+
+    // ✅ IF 시작
+    const ifStart = line.match(/^\{\{#if\s+@(\w+)[^}]*\}\}$/)
+    if (ifStart) {
+      blockStack.push({ type: 'IF', paramnm: ifStart[1] })
+      continue
+    }
+
+    // ✅ IF 종료
+    if (/^\{\{#END if\}\}$/.test(line)) {
+      const idx = [...blockStack].reverse().findIndex(b => b.type === 'IF')
+      if (idx !== -1) blockStack.splice(blockStack.length - 1 - idx, 1)
+      continue
+    }
+
+    // ELSE 는 스택 변경 없음
+    if (/^\{\{#ELSE\}\}$/.test(line)) continue
+
+    // ✅ 현재 가장 안쪽 블록 판단
+    const currentBlock   = blockStack.length > 0 ? blockStack[blockStack.length - 1] : null
+    const currentForArray = currentBlock?.type === 'FOR' ? currentBlock.paramnm : null
+    const functionnm      = currentBlock?.type ?? null  // 'FOR' | 'IF' | null
+    const datauid = currentForArray
+      ? (tbl_params.find(p => p.paramnm === currentForArray)?.datauid ?? null)
       : null
 
     // 함수형: {{이름}}(col1, col2)
@@ -672,15 +803,43 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
     if (funcMatch) {
       const nm = cleanPatternName(funcMatch[1])
       const params = funcMatch[2].split(',').map(p => p.trim()).filter(Boolean)
+      const params_org = funcMatch[2]
       if (nm && !nm.startsWith('#') && !nm.startsWith('@') && !seenNames.has(nm)) {
         seenNames.add(nm)
         const existing = existingFormats.find(f => f.objectNm === nm)
+
+        // ✅ FOR 블록 기준 datauid
+        let resolvedDatauid = datauid
+
+        // ✅ datauid 없으면 params 안의 @paramnm.col 에서 추출
+        if (!resolvedDatauid) {
+          for (const param of params) {
+            // @Deviation.deviation_nm 형태 파싱
+            const paramMatch = param.trim().match(/^@([\w]+)\./)
+            if (paramMatch) {
+              const paramnm = paramMatch[1]
+              // sca_params 에서 먼저 찾고
+              const foundSca = sca_params.find(p => p.paramnm === paramnm)
+              if (foundSca?.datauid) { resolvedDatauid = foundSca.datauid; break }
+              // tbl_params 에서도 찾기
+              const foundTbl = tbl_params.find(p => p.paramnm === paramnm)
+              if (foundTbl?.datauid) { resolvedDatauid = foundTbl.datauid; break }
+            }
+          }
+        }
+
         newFormats.push({
-          objectUID: existing?.objectUID ?? null,
-          objectNm: nm,
-          chapterUID: existing?.chapterUID ?? null,
+          objectUID:    existing?.objectUID ?? null,
+          objectNm:     nm,
+          chapterUID:   existing?.chapterUID ?? null,
           objectTypeCd: existing?.objectTypeCd ?? null,
-          filters: { for_array: currentForArray, params, docvariableuid: forDocVariableUid },
+          filters: {
+            for_array:  currentForArray,
+            params,
+            datauid:    resolvedDatauid,  // ✅ FOR 기준 or params 기준
+            params_org,
+            functionnm,
+          },
         })
       }
       continue
@@ -692,16 +851,17 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
       if (!nm || nm.startsWith('#') || nm.startsWith('@') || seenNames.has(nm)) continue
       seenNames.add(nm)
       const existing = existingFormats.find(f => f.objectNm === nm)
-      const scaDocVariableUid = sca_params.find(p => p.paramnm === nm)?.docvariableuid ?? null
+      const scadatauid = sca_params.find(p => p.paramnm === nm)?.datauid ?? null
       newFormats.push({
-        objectUID: existing?.objectUID ?? null,
-        objectNm: nm,
-        chapterUID: existing?.chapterUID ?? null,
+        objectUID:    existing?.objectUID ?? null,
+        objectNm:     nm,
+        chapterUID:   existing?.chapterUID ?? null,
         objectTypeCd: existing?.objectTypeCd ?? null,
         filters: {
-          for_array: currentForArray,
-          params: [],
-          docvariableuid: forDocVariableUid ?? scaDocVariableUid,
+          for_array:   currentForArray,
+          params:      [],
+          docvariableuid: datauid ?? scadatauid,
+          functionnm,  // ✅ 'FOR' | 'IF' | null
         },
       })
     }
@@ -776,11 +936,13 @@ export default function MasterChapterTemplatePage() {
     setFormats(
       objects
         .map(o => ({
-          objectUID:    o.objectuid,
-          objectNm:     o.objectnm?.trim() ?? '',
-          objectTypeCd: o.objecttypecd?.trim() ?? '',
-          chapterUID:   o.chapteruid?.trim() ?? '',
-          orderno:      o.orderno ?? 0,
+          objectUID:      o.objectuid,
+          objectNm:       o.objectnm?.trim() ?? '',
+          objectTypeCd:   o.objecttypecd?.trim() ?? '',
+          chapterUID:     o.chapteruid?.trim() ?? '',
+          orderno:        o.orderno ?? 0,
+          isFilter:       o.is_filter ?? false,        // ✅ 추가
+          isFilterMapped: o.is_filtermapped ?? false,  // ✅ 추가
         }))
         .sort((a, b) => (b.orderno ?? 0) - (a.orderno ?? 0)),
     )
@@ -1064,42 +1226,49 @@ export default function MasterChapterTemplatePage() {
         </div>
 
         {/* ─── 우측: 변수/서식 패널 ─── */}
-        <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ flex:0.4, minWidth: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-          {/* 단일값 변수 + 테이블 변수 */}
+          {/* 단일행 변수 + 테이블 변수 */}
           <div style={{ display: 'flex', gap: 12 }}>
-            {/* 단일값 변수 */}
+            {/* 단일행 변수 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: 12, margin: '9px 0' }}>🔍 단일값 변수</h2>
+              <h2 style={{ fontSize: 12, margin: '9px 0' }}>🔍 단일행 변수</h2>
               {sca_params.length > 0 ? (
                 <div style={{ height: 120, overflowY: 'auto' }}>
-                  {sca_params.map((p, i) => (
-                    <div
-                      key={p.paramnm}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6,
-                        marginTop: 5, animation: `fadeIn 0.2s ease forwards`,
-                        animationDelay: `${i * 0.02}s`, opacity: 0,
-                      }}
-                    >
-                      <label style={{ fontSize: 12, wordBreak: 'break-all' }}>{p.paramnm}</label>
-                      <button
-                        className="var-insert-btn"
-                        title="에디터에 삽입"
-                        onMouseDown={(e) => { e.preventDefault(); insertAtCursor(`{{@${p.paramnm}}}`, 'hsl(120, 60%, 80%)') }}
-                      >⚡</button>
-                    </div>
-                  ))}
+                  {sca_params.flatMap((p) =>
+                    (p.columns || []).map((col) => {
+                      const varName = `${p.paramnm}.${col}`
+                      return (
+                        <div
+                          key={varName}
+                          style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6,
+                            marginTop: 5,
+                          }}
+                        >
+                          <label style={{ fontSize: 12, wordBreak: 'break-all' }}>{varName}</label>
+                          <button
+                            className="var-insert-btn"
+                            title="에디터에 삽입"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              insertAtCursor(`{{@${varName}}}`, 'hsl(120, 60%, 80%)')
+                            }}
+                          >⚡</button>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: '#777' }}>데이터 없음</div>
               )}
             </div>
 
-            {/* 테이블 변수 */}
+            {/* 다중행 변수 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: 12, margin: '9px 0' }}>📦 테이블 변수</h2>
+              <h2 style={{ fontSize: 12, margin: '9px 0' }}>📦 다중행 변수</h2>
               {tbl_params.length > 0 ? (
                 <div style={{ height: 120, overflowY: 'auto' }}>
                   {tbl_params.map((p, i) => (
@@ -1154,15 +1323,44 @@ export default function MasterChapterTemplatePage() {
                     }}
                   >
                     <label style={{ fontSize: 12, wordBreak: 'break-all' }}>{fmt.objectNm}</label>
-                    <button
-                      className="icon-btn"
-                      title="해당 변수 수정 이동"
-                      disabled={!fmt.objectUID}
-                      style={{ cursor: fmt.objectUID ? 'pointer' : 'not-allowed' }}
-                      onClick={() => editToObjects(fmt)}
-                    >
-                      <img src="/icons/configuration.svg" className="icon-img" alt="항목 설정" />
-                    </button>
+
+                    {/* 우측: 설정아이콘 | Filter 뱃지 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      
+                      {/* 설정 아이콘 */}
+                      <button
+                        className="icon-btn"
+                        title="해당 변수 수정 이동"
+                        disabled={!fmt.objectUID}
+                        style={{ cursor: fmt.objectUID ? 'pointer' : 'not-allowed' }}
+                        onClick={() => editToObjects(fmt)}
+                      >
+                        <img src="/icons/configuration.svg" className="icon-img" alt="항목 설정" />
+                      </button>
+
+                      {/* Filter 뱃지 컬럼 */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {/* is_filter */}
+                        <span style={{
+                          fontSize: 9, fontWeight: 600, padding: '1px 5px',
+                          borderRadius: 3, lineHeight: 1.6,
+                          background: fmt.isFilter ? '#1677ff' : '#bfbfbf',
+                          color: '#fff',
+                        }}>
+                          Filter
+                        </span>
+                        {/* is_filtermapped */}
+                        <span style={{
+                          fontSize: 9, fontWeight: 600, padding: '1px 5px',
+                          borderRadius: 3, lineHeight: 1.6,
+                          background: fmt.isFilterMapped ? '#8B3A3A' : '#bfbfbf',
+                          color: '#fff',
+                        }}>
+                          Filter
+                        </span>
+                      </div>
+
+                    </div>
                   </div>
                 ))}
               </div>

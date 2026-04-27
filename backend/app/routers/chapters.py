@@ -172,28 +172,39 @@ def get_chapter_template(chapteruid: str, token: str = Depends(get_token)):
     tbl_rows = []
     sca_rows = []
     if docid:
-        raw_tbl = sb.schema(SUPABASE_SCHEMA).table("docvariables").select("*").eq("docid", docid).eq("variabletypecd", "DataSet").execute().data or []
-        raw_sca = sb.schema(SUPABASE_SCHEMA).table("docvariables").select("*").eq("docid", docid).eq("variabletypecd", "Value").execute().data or []
+        docs_row = sb.schema(SUPABASE_SCHEMA).rpc("fn_datas_dfv__r", {"p_docid": docid}).execute().data or []
+        # print(f'Docs_Row: {docs_row}')
+        raw_tbl = [item for item in docs_row if item['is_multirow']]
+        raw_sca = [item for item in docs_row if not item['is_multirow']]
 
         seen = set()
         for item in raw_tbl:
-            nm = item.get("variablenm", "")
+            nm = item.get("datanm", "")
             if nm and nm not in seen:
                 seen.add(nm)
-                cols = item.get("dispcolnmjson")
+                cols = item.get("dispcol")
                 if isinstance(cols, str):
                     try:
                         cols = _json.loads(cols)
                     except Exception:
                         cols = [c.strip() for c in cols.replace("[", "").replace("]", "").replace('"', "").split(",") if c.strip()]
-                tbl_rows.append({"docvariableuid": item.get("docvariableuid"), "paramnm": nm, "columns": cols or []})
+                tbl_rows.append({"datauid": item.get("datauid"), "paramnm": nm, "columns": cols or []})
 
         seen2 = set()
         for item in raw_sca:
-            nm = item.get("variablenm", "")
+            nm = item.get("datanm", "")
             if nm and nm not in seen2:
                 seen2.add(nm)
-                sca_rows.append({"docvariableuid": item.get("docvariableuid"), "paramnm": nm, "columns": item.get("dispcolnmjson")})
+                cols = item.get("dispcol")
+                if isinstance(cols, str):
+                    try:
+                        cols = _json.loads(cols)
+                    except Exception:
+                        cols = [c.strip() for c in cols.replace("[", "").replace("]", "").replace('"', "").split(",") if c.strip()]
+                sca_rows.append({"datauid": item.get("datauid"), "paramnm": nm, "columns": cols or []})
+
+        # print(f'Raw_Tbl: {tbl_rows}')
+        # print(f'Raw_Sca: {sca_rows}')
 
     return {
         "chapter": {
@@ -259,9 +270,15 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
     for idx, f in enumerate(body.formats):
         objectuid = f.get("objectUID") or str(uuid.uuid4())
         filters_raw = f.get("filters") or {}
-        docvariableuid = filters_raw.get("docvariableuid") if filters_raw else None
         params = filters_raw.get("params", []) if filters_raw else []
+        # print(params)
         filters_json = _json.dumps(params, ensure_ascii=False) if params else None
+        is_filter = False
+        if filters_raw.get("params") != []:
+            is_filter = True
+
+        # print(filters_raw)
+
         sb_svc.schema(SUPABASE_SCHEMA).table("objects").upsert({
             "chapteruid": chapteruid,
             "objectuid": objectuid,
@@ -270,8 +287,35 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
             "orderno": f.get("orderno", idx + 1),
             "creator": user_id,
             "filters": filters_json,
-            "docvariableuid": docvariableuid,
+            "is_filter": is_filter
         }).execute()
+
+        if is_filter == True:
+            datauid = filters_raw.get("datauid")
+            params_org = filters_raw.get("params_org")
+            functionnm = filters_raw.get("functionnm")
+            dfvnm = "@" + sb_svc.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute().data[0]['datanm']
+            objectfilterscript = "{{" + f["objectNm"] + "}}(" + params_org + ")"
+            dfvcolnms = params_org
+            
+            objectfilter = sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").select("*").eq("objectuid", objectuid).execute().data
+            objectfilteruid = objectfilter[0]['objectfilteruid'] if objectfilter else str(uuid.uuid4())
+
+            data = {
+                "objectfilteruid": objectfilteruid,
+                "chapteruid": chapteruid,
+                "functionnm": functionnm,
+                "dfvnm": dfvnm,
+                "objectfilterscript": objectfilterscript,
+                "dfvcolnms": dfvcolnms,
+                "objectuid": objectuid,
+                "dfvdatauid": datauid,
+                "creator": user_id
+            }
+
+            # print(f'Datas: {data}')
+
+            sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").upsert(data).execute()
 
     return {"ok": True}
 
