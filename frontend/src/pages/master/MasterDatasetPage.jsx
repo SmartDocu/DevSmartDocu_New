@@ -77,7 +77,7 @@ export default function MasterDatasetPage() {
         {/* 좌측: 데이터 목록 */}
         <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list') || '데이터 목록'}</h3>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <div />
           </div>
           <div className="table-container">
@@ -85,8 +85,8 @@ export default function MasterDatasetPage() {
               <thead>
                 <tr>
                   <th style={{ width: '10%', textAlign: 'center' }}></th>
-                  <th>{t('thd.datanm') || '데이터명'}</th>
-                  <th style={{ width: '20%', textAlign: 'center' }}>{t('thd.datasourcecd') || '소스'}</th>
+                  <th>{t('thd.datanm')}</th>
+                  <th style={{ width: '20%', textAlign: 'center' }}>{t('thd.datasourcecd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -119,7 +119,7 @@ export default function MasterDatasetPage() {
         {/* 우측: 파라미터 매핑 그리드 */}
         <div style={{ flex: 7, overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.dataset.mapping') || '파라미터 매핑'}</h3>
+            <h3 style={{ margin: 0 }}>{t('ttl.dataset.mapping')}</h3>
             {canEdit && (
               <button
                 className="btn btn-primary"
@@ -135,7 +135,7 @@ export default function MasterDatasetPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 140 }}>{t('thd.datanm') || '데이터명'}</th>
+                  <th style={{ minWidth: 140 }}>{t('thd.datanm')}</th>
                   {dataparams.map((p) => (
                     <th key={p.paramuid} style={{ minWidth: 140, textAlign: 'center' }}>
                       {p.paramnm}

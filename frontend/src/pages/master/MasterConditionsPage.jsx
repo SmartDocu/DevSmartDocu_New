@@ -26,9 +26,9 @@ const EMPTY_FORM = {
 
 const OPERATORS = ['=', '>=', '<=', '>', '<']
 const DATATYPE_OPTIONS = [
-  { value: 'I', label: t('cod.keycoldatatypecd_I') || '숫자' },
-  { value: 'C', label: t('cod.keycoldatatypecd_C') || '문자' },
-  { value: 'D', label: t('cod.keycoldatatypecd_D') || '일자' },
+  { value: 'I', label: t('cod.keycoldatatypecd_I') },
+  { value: 'C', label: t('cod.keycoldatatypecd_C') },
+  { value: 'D', label: t('cod.keycoldatatypecd_D') },
 ]
 
 export default function MasterConditionsPage() {

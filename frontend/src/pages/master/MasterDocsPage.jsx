@@ -210,7 +210,7 @@ export default function MasterDocsPage() {
             const lines = checkedDatas.map((d) => `[${d.datanm}] (${d.datasourcecd})`)
             return (
               <div style={{ marginTop: 16 }}>
-                <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.dataset') || '데이터셋'}</h4>
+                <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.dataset')}</h4>
                 <textarea
                   readOnly
                   rows={Math.max(3, lines.length)}

@@ -34,6 +34,7 @@ function parseCols(colsInfoJson) {
 export default function MasterDatasAiPage() {
   const { modal } = App.useApp()
   useLangStore((s) => s.translations)
+  const translationVersion = useLangStore((s) => s.translationVersion)
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -72,6 +73,14 @@ export default function MasterDatasAiPage() {
     }
   }, [existingCols])
 
+  useEffect(() => {
+    if (!isNew) return
+    const raw = t('inf.gensentence.default')
+    if (raw === 'inf.gensentence.default') return  // 번역 아직 미로드
+    const defaultVal = raw.replace(/\\n/g, '\n')
+    setForm((f) => (!f.gensentence || f.gensentence === 'inf.gensentence.default' ? { ...f, gensentence: defaultVal } : f))
+  }, [translationVersion])
+
   const handleSelect = (d) => {
     setSelected(d)
     setIsNew(false)
@@ -90,7 +99,7 @@ export default function MasterDatasAiPage() {
   const handleNew = () => {
     setSelected(null)
     setIsNew(true)
-    setForm(EMPTY_FORM)
+    setForm({ ...EMPTY_FORM, gensentence: t('inf.gensentence.default').replace(/\\n/g, '\n') })
     setPreviewRows([])
     setPreviewCols([])
     setIsTableValue(false)
@@ -286,7 +295,7 @@ export default function MasterDatasAiPage() {
             </label>
             <textarea
               id="df-gensentence"
-              rows={8}
+              rows={13}
               value={form.gensentence}
               onChange={(e) => setForm((f) => ({ ...f, gensentence: e.target.value }))}
               style={{ width: '100%', resize: 'vertical' }}

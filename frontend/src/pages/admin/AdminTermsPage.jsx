@@ -243,7 +243,7 @@ export default function AdminTermsPage() {
                 <thead>
                   <tr>
                     <th style={{ width: '22%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ width: '28%', padding: '4px 8px' }}>{t('thd.languagenm') || 'Language'}</th>
+                    <th style={{ width: '28%', padding: '4px 8px' }}>{t('thd.languagenm')}</th>
                     <th style={{ padding: '4px 8px' }}>{t('thd.translated_text')}</th>
                   </tr>
                 </thead>

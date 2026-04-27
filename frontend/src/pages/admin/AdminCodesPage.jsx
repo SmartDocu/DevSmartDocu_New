@@ -249,7 +249,7 @@ export default function AdminCodesPage() {
                 <thead>
                   <tr>
                     <th style={{ width: '15%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ width: '20%', padding: '4px 8px' }}>{t('thd.languagenm') || 'Language'}</th>
+                    <th style={{ width: '20%', padding: '4px 8px' }}>{t('thd.languagenm')}</th>
                     <th style={{ padding: '4px 8px' }}>{t('thd.translated_text')}</th>
                     <th style={{ padding: '4px 8px' }}>{t('thd.translated_desc')}</th>
                   </tr>
