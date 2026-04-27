@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.datas import (
-    AiDataSaveRequest, DataColItem, DataColsResponse,
+    AiDataSaveRequest, AiPreviewRequest, DataColItem, DataColsResponse,
     DbConnectorsResponse, DbDataSaveRequest, DatasListResponse,
+    DfDataSaveRequest, DfvDataSaveRequest,
 )
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
@@ -232,16 +233,128 @@ def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
+# ── DF/DFV List ────────────────────────────────────────────────────────────────
+
+@router.get("/df-list")
+def list_df_datas(docid: int, token: str = Depends(get_token)):
+    _get_user(token)
+    sb = _sb(token)
+    doc_datas_resp = (
+        sb.schema(SUPABASE_SCHEMA).table("doc_datas")
+        .select("datauid").eq("docid", docid).execute()
+    )
+    df_uids = [r["datauid"] for r in (doc_datas_resp.data or [])]
+    df_rows = []
+    if df_uids:
+        df_resp = (
+            sb.schema(SUPABASE_SCHEMA).table("datas")
+            .select("datauid, datanm, datasourcecd, projectid, sourcedatauid, gensentence, is_multirow")
+            .in_("datauid", df_uids).eq("datasourcecd", "df").execute()
+        )
+        df_rows = df_resp.data or []
+    dfv_resp = (
+        sb.schema(SUPABASE_SCHEMA).table("datas")
+        .select("datauid, datanm, datasourcecd, projectid, sourcedatauid, gensentence, is_multirow, dfv_docid")
+        .eq("datasourcecd", "dfv").eq("dfv_docid", docid).execute()
+    )
+    dfv_rows = dfv_resp.data or []
+    return {"datas": df_rows + dfv_rows}
+
+
+# ── AI Preview ─────────────────────────────────────────────────────────────────
+
+@router.post("/ai-preview")
+def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
+    _get_user(token)
+    sb = _sb(token)
+
+    class _FakeRequest:
+        def __init__(self, t):
+            self.session = {"access_token": t, "refresh_token": None}
+            self.method = "GET"
+
+    from utilsPrj.process_data_ai import process_data_ai_preview
+    result = process_data_ai_preview(sb, _FakeRequest(token), body.sourcedatauid, body.gensentence, docid=body.docid)
+    df = result.get("result")
+    rows = df.head(15).to_dict(orient="records") if df is not None and not df.empty else []
+    return {
+        "rows": rows,
+        "cols_info": result.get("cols_info"),
+    }
+
+
+# ── DF Save ────────────────────────────────────────────────────────────────────
+
+@router.post("/df")
+def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    record = {
+        "projectid": body.projectid,
+        "datanm": body.datanm,
+        "sourcedatauid": body.sourcedatauid,
+        "gensentence": body.gensentence,
+        "is_multirow": body.is_multirow,
+    }
+    if body.datauid:
+        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        datauid = body.datauid
+    else:
+        record.update({"creator": str(user.id), "datasourcecd": "df"})
+        resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+        datauid = resp.data[0]["datauid"]
+        sb.schema(SUPABASE_SCHEMA).table("doc_datas").upsert(
+            {"docid": body.docid, "datauid": datauid, "useyn": True, "creator": str(user.id)},
+            on_conflict="docid,datauid",
+        ).execute()
+    if body.cols:
+        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(
+            [{**c.model_dump(), "datauid": datauid, "creator": str(user.id)} for c in body.cols]
+        ).execute()
+    return {"datauid": datauid, "message": "저장되었습니다."}
+
+
+# ── DFV Save ───────────────────────────────────────────────────────────────────
+
+@router.post("/dfv")
+def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    record = {
+        "projectid": body.projectid,
+        "datanm": body.datanm,
+        "sourcedatauid": body.sourcedatauid,
+        "gensentence": body.gensentence,
+        "is_multirow": body.is_multirow,
+        "dfv_docid": body.dfv_docid,
+    }
+    if body.datauid:
+        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        datauid = body.datauid
+    else:
+        record.update({"creator": str(user.id), "datasourcecd": "dfv"})
+        resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+        datauid = resp.data[0]["datauid"]
+    if body.cols:
+        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(
+            [{**c.model_dump(), "datauid": datauid, "creator": str(user.id)} for c in body.cols]
+        ).execute()
+    return {"datauid": datauid, "message": "저장되었습니다."}
+
+
 # ── Delete ──────────────────────────────────────────────────────────────────────
 
 @router.delete("/{datauid}")
 def delete_data(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    # Delete storage file if excel
-    res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl").eq("datauid", datauid).execute()
+    res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl, datasourcecd").eq("datauid", datauid).execute()
     if res.data:
         _delete_storage(sb, res.data[0].get("excelurl"))
+        if res.data[0].get("datasourcecd") == "df":
+            sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
     sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     resp = sb.schema(SUPABASE_SCHEMA).table("datas").delete().eq("datauid", datauid).execute()
     if not resp.data:

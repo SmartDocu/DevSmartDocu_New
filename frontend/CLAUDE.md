@@ -102,9 +102,9 @@ const mutation = useMutation({
 | 신규 버튼 | 좌측 패널 제목행 우측 끝, `btn btn-primary` |
 | 저장·삭제 버튼 | 우측 패널 제목행 우측 끝, `btn btn-primary` / `btn btn-danger` |
 | 버튼 형식 | 아이콘 없이 텍스트만 (`btn` CSS 클래스, `icon-btn` 사용 금지) |
-| 다국어 | 모든 버튼·레이블·메시지·제목에 `t()` 사용 |
+| 다국어 | 모든 버튼·레이블·메시지·제목에 `t()` 사용. **`t()` 뒤에 `\|\| '한글기본값'` 절대 추가 금지** — 키 미등록 시 키 문자열이 그대로 노출되는 것이 의도된 동작 |
 | 언어 리렌더 | 컴포넌트 최상단 `useLangStore((s) => s.translations)` 구독 |
-| 편집 권한 | 저장·삭제는 `(isEditYn \|\| selectedItemEditYn)` 조건부 렌더 |
+| 편집 권한 | 저장·삭제는 `isEditYn` 조건부 렌더. **반드시 `user?.editbuttonyn === 'Y'`** 로 판단 — `editbuttonyn`은 항상 문자열 `"Y"` 또는 `"N"`이므로 `!!` truthy 체크 사용 금지 (`"N"`도 truthy) |
 | 폼 레이아웃 | `form-group` 클래스 사용. 라벨은 위 줄(`display:block` — CSS에 전역 적용됨), 입력은 아래 줄 |
 | 필수 필드 표시 | 라벨 앞에 `<span style={{ color: 'red', marginRight: 2 }}>*</span>` 삽입 |
 | description 필드 | `<textarea rows={3} style={{ resize: 'vertical' }}>` (기본 3줄, 세로 리사이즈 가능) |

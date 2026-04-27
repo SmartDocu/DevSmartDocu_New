@@ -57,3 +57,39 @@ class AiDataSaveRequest(BaseModel):
     datanm: str
     sourcedatauid: Optional[str] = None
     sentence: Optional[str] = None
+
+
+class DfColItem(BaseModel):
+    querycolnm: str
+    dispcolnm: Optional[str] = None
+    datatypecd: Optional[str] = None
+    measureyn: Optional[bool] = False
+    orderno: Optional[int] = None
+
+
+class DfDataSaveRequest(BaseModel):
+    datauid: Optional[str] = None
+    projectid: int
+    datanm: str
+    sourcedatauid: Optional[str] = None
+    gensentence: Optional[str] = None
+    docid: int
+    is_multirow: Optional[str] = None
+    cols: Optional[list[DfColItem]] = None
+
+
+class DfvDataSaveRequest(BaseModel):
+    datauid: Optional[str] = None
+    projectid: int
+    datanm: str
+    sourcedatauid: Optional[str] = None
+    gensentence: Optional[str] = None
+    dfv_docid: int
+    is_multirow: Optional[str] = None
+    cols: Optional[list[DfColItem]] = None
+
+
+class AiPreviewRequest(BaseModel):
+    sourcedatauid: str
+    gensentence: str
+    docid: Optional[int] = None

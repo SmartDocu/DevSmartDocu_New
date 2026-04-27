@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useTabStore } from '@/stores/tabStore'
 import { useMenus } from '@/hooks/useMenus'
 import { useChapters, useSaveChapter, useDeleteChapter } from '@/hooks/useChapters'
@@ -11,8 +11,11 @@ export default function MasterChaptersPage() {
 
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const { openTab } = useTabStore()
   const { data: allMenus = [] } = useMenus()
+  const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
+  const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
   const openInTab = (routePath, query) => {
     const menu = allMenus.find((m) => m.route_path === routePath)
@@ -20,6 +23,7 @@ export default function MasterChaptersPage() {
     navigate(`/${routePath}${query}`)
   }
   const user = useAuthStore((s) => s.user)
+  const docnm = useAuthStore((s) => s.user?.docnm)
 
   const selectedDocid = user?.docid ? Number(user.docid) : null
   const { data: chapters = [] } = useChapters(selectedDocid)
@@ -88,7 +92,7 @@ export default function MasterChaptersPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.master_data.chapters.base')}</div>
+          <div>{menuNm}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
       </div>
 

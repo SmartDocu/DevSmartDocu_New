@@ -57,17 +57,21 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
             "column_dict": column_dict
         })
 
-        return pd.DataFrame(response["result"])
+        return response
 
     except Exception as e:
-        return pd.DataFrame()
+        return {"status": "error", "result": pd.DataFrame(), "cols_info": None}
 
 
 def process_data_ai_preview(supabase, request, sourcedatauid, gensentence, docid=None, gendoc_uid=None, all=None):
-    return _process_data_ai_core(
+    response = _process_data_ai_core(
         supabase, request, sourcedatauid, gensentence, "DF_PREVIEW",
         docid, gendoc_uid, all
     )
+    return {
+        "result": pd.DataFrame(response["result"]) if response.get("result") is not None else pd.DataFrame(),
+        "cols_info": response.get("cols_info")
+    }
 
 
 def process_data_ai(supabase, request, datauid, docid=None, gendoc_uid=None, all=None):
@@ -81,7 +85,9 @@ def process_data_ai(supabase, request, datauid, docid=None, gendoc_uid=None, all
     sourcedatauid = Datas_resp.data[0]['sourcedatauid']
     gensentence = Datas_resp.data[0]['gensentence']
 
-    return _process_data_ai_core(
+    response = _process_data_ai_core(
         supabase, request, sourcedatauid, gensentence, "DF",
         docid, gendoc_uid, all
     )
+    result = response.get("result")
+    return pd.DataFrame(result) if result is not None else pd.DataFrame()

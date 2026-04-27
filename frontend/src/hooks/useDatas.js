@@ -137,3 +137,54 @@ export function useSaveDatacols() {
     onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
   })
 }
+
+export function useDfDatas(docid) {
+  return useQuery({
+    queryKey: ['datas', 'df-list', docid],
+    queryFn: () => apiClient.get('/datas/df-list', { params: { docid } }).then((r) => r.data.datas),
+    enabled: !!docid,
+  })
+}
+
+export function useSaveDfData() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/datas/df', body).then((r) => r.data),
+    onSuccess: (_, body) => {
+      message.success('저장되었습니다.')
+      qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.docid] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+  })
+}
+
+export function useSaveDfvData() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/datas/dfv', body).then((r) => r.data),
+    onSuccess: (_, body) => {
+      message.success('저장되었습니다.')
+      qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.dfv_docid] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+  })
+}
+
+export function useAiDataPreview() {
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/datas/ai-preview', body).then((r) => r.data),
+    onError: (err) => message.error(err.response?.data?.detail || '미리보기에 실패했습니다.'),
+  })
+}
+
+export function useDeleteDfData() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ datauid }) => apiClient.delete(`/datas/${datauid}`).then((r) => r.data),
+    onSuccess: (_, { docid }) => {
+      message.success('삭제되었습니다.')
+      qc.invalidateQueries({ queryKey: ['datas', 'df-list', docid] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+  })
+}

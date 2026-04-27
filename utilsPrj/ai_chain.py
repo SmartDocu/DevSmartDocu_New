@@ -1330,7 +1330,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                     "데이터형": dtype,
                     "측정값": dtype.startswith(("int", "float"))
                 }
-            cols_result["is_table_value"] = is_groupby_in_code
+            meta_info["is_table_value"] = is_groupby_in_code
             cols_result = json.dumps(meta_info, ensure_ascii=False, indent=2)
             print(f"jeff 902 columns_info: {cols_result}")
 
