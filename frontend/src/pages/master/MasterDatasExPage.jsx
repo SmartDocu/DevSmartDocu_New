@@ -175,7 +175,9 @@ export default function MasterDatasExPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="ex-projectid">{t('lbl.projectnm')}:</label>
+            <label htmlFor="ex-projectid">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm')}:
+            </label>
             {form.datauid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.projectnm}</span>
             ) : (
@@ -202,7 +204,9 @@ export default function MasterDatasExPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.file')}:</label>
+            <label>
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.file')}:
+            </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"

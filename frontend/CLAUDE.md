@@ -196,28 +196,22 @@ const mutation = useMutation({
 
 ---
 
-#### Import
+#### Import — `useOpenInTab` 공통 훅 사용 (필수)
+
+탭 이동 + max tab 체크 로직은 **`useOpenInTab` 훅**으로 공통화되어 있다.  
+직접 `openTab` / `navigate` 를 조합하지 말고 반드시 이 훅을 사용할 것.
 
 ```jsx
-import { useNavigate } from 'react-router-dom'
-import { useTabStore } from '@/stores/tabStore'
-import { useMenus } from '@/hooks/useMenus'
-import { t } from '@/stores/langStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 ```
 
 #### 컴포넌트 내 설정
 
 ```jsx
-const navigate = useNavigate()
-const { openTab } = useTabStore()
-const { data: allMenus = [] } = useMenus()
-
-const openInTab = (routePath, query = '') => {
-  const menu = allMenus.find((m) => m.route_path === routePath)
-  if (menu) openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: `${routePath}${query}` })
-  navigate(`/${routePath}${query}`)
-}
+const openInTab = useOpenInTab()
 ```
+
+훅 내부에서 `useNavigate`, `useTabStore`, `useMenus`, `useConfigs`, `App.useApp()` 를 모두 처리하므로 컴포넌트에서 별도 선언 불필요.
 
 #### 버튼 예시
 
@@ -230,7 +224,13 @@ const openInTab = (routePath, query = '') => {
 
 - `routePath`: `router/index.jsx`에 등록된 경로 (앞의 `/` 제외, 예: `'master/object'`)
 - `query`: 쿼리 파라미터 문자열 (예: `'?chapteruid=1&docid=2'`), 없으면 생략
+- `fallbackLabel` (선택): 메뉴 DB에 없는 경로일 때 탭 라벨 대체 문자열
 - 같은 탭이 이미 열려 있으면 path(쿼리 포함)를 최신값으로 갱신 후 이동 (`tabStore.openTab` 동작)
+- 새 탭인데 `tabs.length >= maxtabs`이면 경고 후 이동 중단 — `msg.tab.maxcount` 키 필요, 번역값에 `{n}` 플레이스홀더 포함 (예: `탭은 최대 {n}개까지 열 수 있습니다.`)
+
+#### 훅 위치
+
+`frontend/src/hooks/useOpenInTab.js`
 
 ---
 

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { App, Modal, Popconfirm } from 'antd'
+import { useLocation } from 'react-router-dom'
+import { App, Modal } from 'antd'
+import { useLangStore, t } from '@/stores/langStore'
+import { useMenus } from '@/hooks/useMenus'
 import { useServers, useSaveServer, useDeleteServer } from '@/hooks/useSettings'
-
-const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
 const EMPTY_FORM = {
   connectid: '', connectnm: '', connecttype: '', orderno: '',
@@ -11,6 +12,13 @@ const EMPTY_FORM = {
 }
 
 export default function SettingsServersPage() {
+  useLangStore((s) => s.translations)
+
+  const location = useLocation()
+  const { data: allMenus = [] } = useMenus()
+  const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
+  const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
+
   const { message } = App.useApp()
   const { data = {}, isLoading } = useServers()
   const saveServer = useSaveServer()
@@ -83,29 +91,32 @@ export default function SettingsServersPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>DB 연결정보</div>
+          <div>{menuNm}</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
-        {/* 왼쪽: DB 목록 */}
-        <div style={{ flex: '50%' }}>
-          <h3>DB 목록</h3>
+        {/* 좌측: DB 목록 */}
+        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+          </div>
           <div className="table-container">
             <table id="servers-table" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '20%' }}>서버명</th>
-                  <th style={{ width: '13%' }}>DBMS</th>
-                  <th style={{ width: '12%' }}>순번</th>
-                  <th style={{ width: '12%' }}>사용</th>
+                  <th style={{ width: '20%' }}>{t('thd.connectnm')}</th>
+                  <th style={{ width: '13%' }}>{t('thd.connecttype')}</th>
+                  <th style={{ width: '12%' }}>{t('thd.orderno')}</th>
+                  <th style={{ width: '12%' }}>{t('thd.useyn')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>로딩 중...</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : connectors.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>등록된 서버가 없습니다.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : connectors.map((s) => (
                   <tr key={s.connectid}
                     className={selectedId === s.connectid ? 'selected-row' : ''}
@@ -122,93 +133,88 @@ export default function SettingsServersPage() {
           </div>
         </div>
 
-        {/* 오른쪽: DB 상세 */}
-        <div style={{ flex: '50%' }}>
-          <h3>DB 상세</h3>
+        {/* 우측: DB 상세 */}
+        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveServer.isPending}>{t('btn.save')}</button>
+              {selectedId && (
+                <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteServer.isPending}>{t('btn.delete')}</button>
+              )}
+            </div>
+          </div>
 
           <div className="form-group">
-            <label htmlFor="connecttype">DBMS:</label>
+            <label htmlFor="connecttype">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connecttype')}:
+            </label>
             <select id="connecttype" value={form.connecttype}
               onChange={(e) => setForm(f => ({ ...f, connecttype: e.target.value }))}>
-              {dbtypes.map((t) => <option key={t} value={t}>{t}</option>)}
+              {dbtypes.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
             </select>
           </div>
 
           <div className="form-group">
-            <label>서버명:</label>
+            <label>
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connectnm')}:
+            </label>
             <input type="text" value={form.connectnm}
               onChange={(e) => setForm(f => ({ ...f, connectnm: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="orderno">순번:</label>
+            <label htmlFor="orderno">{t('lbl.orderno')}:</label>
             <input type="number" id="orderno" value={form.orderno} min={0} step={1}
               onChange={(e) => setForm(f => ({ ...f, orderno: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label>사용:</label>
+            <label>
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:
+            </label>
             <input type="checkbox" checked={form.useyn}
               onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="encendpoint">EndPoint:</label>
+            <label htmlFor="encendpoint">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.encendpoint')}:
+            </label>
             <input type="text" id="encendpoint" value={form.encendpoint}
               onChange={(e) => setForm(f => ({ ...f, encendpoint: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="encdatabase">DB:</label>
+            <label htmlFor="encdatabase">{t('lbl.encdatabase')}:</label>
             <input type="text" id="encdatabase" value={form.encdatabase}
               onChange={(e) => setForm(f => ({ ...f, encdatabase: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="encaccessuserid">계정:</label>
+            <label htmlFor="encaccessuserid">{t('lbl.encaccessuserid')}:</label>
             <input type="text" id="encaccessuserid" value={form.encaccessuserid}
               autoComplete="off"
               onChange={(e) => setForm(f => ({ ...f, encaccessuserid: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">비밀번호:</label>
+            <label htmlFor="password">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.password')}:
+              <small style={{ color: '#888', marginLeft: 8, fontWeight: 'normal' }}>{t('inf.password.hidden')}</small>
+            </label>
             <input type="password" id="password" value={form.password}
-              placeholder="변경 시에만 입력" autoComplete="new-password"
+              placeholder={t('placeholder.password.change')} autoComplete="new-password"
               onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password_confirm">비밀번호 확인:</label>
+            <label htmlFor="password_confirm">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.password_confirm')}:
+            </label>
             <input type="password" id="password_confirm" value={form.password_confirm}
-              placeholder="비밀번호를 다시 입력" autoComplete="new-password"
+              placeholder={t('placeholder.password.confirm')} autoComplete="new-password"
               onChange={(e) => setForm(f => ({ ...f, password_confirm: e.target.value }))} />
-            <small style={{ color: '#888' }}>※ 기존 비밀번호는 표시되지 않습니다.</small>
-          </div>
-
-          <div className="button-group">
-            <button type="button" className="icon-btn" onClick={handleNew}>
-              <div className="icon-wrapper">
-                <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                <span className="icon-label">신규</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleSave} disabled={saveServer.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                <span className="icon-label">저장</span>
-              </div>
-            </button>
-            <Popconfirm title="정말 삭제하시겠습니까?" onConfirm={handleDelete}
-              okText="삭제" cancelText="취소" okButtonProps={{ danger: true }}
-              disabled={!selectedId}>
-              <button type="button" className="icon-btn" disabled={deleteServer.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                  <span className="icon-label">삭제</span>
-                </div>
-              </button>
-            </Popconfirm>
           </div>
         </div>
       </div>

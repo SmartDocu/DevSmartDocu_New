@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
-import { useTabStore } from '@/stores/tabStore'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { useMenus } from '@/hooks/useMenus'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useChapters, useSaveChapter, useDeleteChapter } from '@/hooks/useChapters'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
@@ -9,19 +9,13 @@ import { useLangStore, t } from '@/stores/langStore'
 export default function MasterChaptersPage() {
   useLangStore((s) => s.translations)
 
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const location = useLocation()
-  const { openTab } = useTabStore()
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
-  const openInTab = (routePath, query) => {
-    const menu = allMenus.find((m) => m.route_path === routePath)
-    if (menu) openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: `${routePath}${query}` })
-    navigate(`/${routePath}${query}`)
-  }
+  const openInTab = useOpenInTab()
   const user = useAuthStore((s) => s.user)
   const docnm = useAuthStore((s) => s.user?.docnm)
 

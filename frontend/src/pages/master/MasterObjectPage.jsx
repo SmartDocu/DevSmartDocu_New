@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { useChapters } from '@/hooks/useChapters'
 import { useObjects, useObjectTypes, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
+import { useMenus } from '@/hooks/useMenus'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 
 const TYPE_CONFIG_ROUTE = {
   TU: 'master/tables',
@@ -14,10 +17,17 @@ const TYPE_CONFIG_ROUTE = {
 }
 
 export default function MasterObjectPage() {
-  const navigate = useNavigate()
+  useLangStore((s) => s.translations)
+  const location = useLocation()
+  const openInTab = useOpenInTab()
+
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
   const { data: objectTypes = [] } = useObjectTypes()
+
+  const { data: allMenus = [] } = useMenus()
+  const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
+  const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
   const urlChapteruid = searchParams.get('chapteruid')
   const urlDocid = searchParams.get('docid') ? Number(searchParams.get('docid')) : null
@@ -110,7 +120,7 @@ export default function MasterObjectPage() {
     if (!route) { alert('설정 가능한 항목 구분이 아닙니다.'); return }
     const selectedChapter = chapters.find(c => c.chapteruid === selectedChapteruid)
     const chapternm = selectedChapter?.chapternm || ''
-    navigate(`/${route}?chapteruid=${selectedChapteruid}&chapternm=${encodeURIComponent(chapternm)}&objectnm=${encodeURIComponent(form.objectnm)}&objectuid=${form.objectuid}`)
+    openInTab(route, `?chapteruid=${selectedChapteruid}&chapternm=${encodeURIComponent(chapternm)}&objectnm=${encodeURIComponent(form.objectnm)}&objectuid=${form.objectuid}`, form.objectnm)
   }
 
   const isEditYn = user?.editbuttonyn === 'Y'
@@ -120,29 +130,17 @@ export default function MasterObjectPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>항목 관리</div>
+          <div>{menuNm}</div>
         </div>
-        <button
-          className="icon-btn"
-          title="뒤로가기"
-          onClick={() => {
-            const saved = sessionStorage.getItem('chapter_object_chapteruid')
-            if (saved) {
-              sessionStorage.removeItem('chapter_object_chapteruid')
-              navigate(`/master/chapters?chapteruid=${saved}`)
-            } else {
-              navigate('/master/chapters')
-            }
-          }}
-        >
-          <img src="/icons/back.svg" className="icon-img config-icon" alt="뒤로가기" />
-        </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, minHeight: '80%' }}>
-        {/* Left: chapter cards */}
-        <div style={{ flex: '0.15', paddingRight: 20 }}>
-          <h3>챕터 목록</h3>
+      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+        {/* 좌측: 챕터 목록 */}
+        <div style={{ flex: 2, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.chapter.list')}</h3>
+            <div />
+          </div>
           <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
             {chapters.map((ch) => (
               <div
@@ -156,30 +154,33 @@ export default function MasterObjectPage() {
           </div>
         </div>
 
-        {/* Middle: objects table */}
-        <div style={{ flex: '0.55', padding: '0 20px' }}>
-          <h3>항목 목록</h3>
+        {/* 중간: 항목 목록 */}
+        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <div />
+          </div>
           <div className="table-container">
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '10%' }}>순번</th>
-                  <th style={{ width: '18%' }}>항목명</th>
-                  <th style={{ width: '14%' }}>항목구분</th>
-                  <th style={{ width: '35%' }}>설명</th>
-                  <th style={{ width: '13%' }}>항목설정</th>
-                  <th style={{ width: '10%' }}>사용</th>
+                  <th style={{ width: '10%' }}>{t('thd.orderno')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.objectnm')}</th>
+                  <th style={{ width: '14%' }}>{t('thd.objecttypecd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.objectdesc')}</th>
+                  <th style={{ width: '13%' }}>{t('thd.objectsettingyn')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.useyn')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center' }}>로딩 중...</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : isError ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', color: 'red' }}>항목 조회 실패. 콘솔을 확인하세요.</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: 'red' }}>{t('msg.load.error')}</td></tr>
                 ) : !selectedChapteruid ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center' }}>챕터를 선택하세요.</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.select.chapter')}</td></tr>
                 ) : objects.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center' }}>해당 챕터에 항목이 없습니다.</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
                 ) : (
                   objects.map((obj) => (
                     <tr
@@ -202,107 +203,105 @@ export default function MasterObjectPage() {
           </div>
         </div>
 
-        {/* Right: object detail form */}
-        <div style={{ flex: '0.3', paddingLeft: 20 }}>
-          <h3>항목 상세</h3>
-          <form style={{ width: '90%' }}>
-            <div className="form-group-left">
-              <span style={{ width: 100, display: 'block' }}>항목명</span>
-              <span style={{ marginLeft: 5 }}>{form.objectnm}</span>
-            </div>
-
-            <div className="form-group-left">
-              <label style={{ width: 100 }} htmlFor="obj-desc">항목설명</label>
-              <textarea
-                id="obj-desc"
-                value={form.objectdesc}
-                onChange={(e) => setForm((f) => ({ ...f, objectdesc: e.target.value }))}
-                style={{ resize: 'none', height: 80, width: 250 }}
-                spellCheck={false}
-              />
-            </div>
-
-            <div className="form-group-left" style={{ height: 'auto', marginBottom: 12 }}>
-              <label style={{ width: 100 }}>항목구분</label>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-                <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
-                  <img src="/icons/make_ui.svg" className="icon-img-tbl" title="UI" alt="UI" style={{ height: 18 }} />
-                  <img src="/icons/make_ai.svg" className="icon-img-tbl" title="AI" alt="AI" style={{ height: 18 }} />
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', maxWidth: 300 }}>
-                  {objectTypes.map((t) => (
-                    <label key={t.objecttypecd} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
-                      <input
-                        type="radio"
-                        name="objecttypecd"
-                        value={t.objecttypecd}
-                        checked={form.objecttypecd === t.objecttypecd}
-                        onChange={() => setForm((f) => ({ ...f, objecttypecd: t.objecttypecd }))}
-                      />
-                      {t.objecttypenm}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="form-group-left" style={{ display: 'block' }}>
-              <label htmlFor="obj-useyn">사용</label>
-              <input
-                id="obj-useyn"
-                type="checkbox"
-                checked={!!form.useyn}
-                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-                style={{ marginLeft: 80 }}
-              />
-            </div>
-
-            <div className="form-group-left">
-              <label style={{ width: 100 }} htmlFor="obj-orderno">순번</label>
-              <input
-                id="obj-orderno"
-                type="number"
-                value={form.orderno}
-                onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
-                style={{ height: 25, width: 80 }}
-              />
-            </div>
-
-            <div className="form-group-left">
-              <span style={{ width: 100 }}>생성자</span>
-              <span style={{ marginLeft: 5 }}>{form.creatornm}</span>
-            </div>
-            <div className="form-group-left">
-              <span style={{ width: 100 }}>생성일시</span>
-              <span style={{ marginLeft: 5 }}>{form.createdts}</span>
-            </div>
-
-            {/* Buttons */}
-            <div className="form-group-left" style={{ justifyContent: 'center', gap: 8 }}>
-              {isEditYn && (
+        {/* 우측: 항목 상세 */}
+        <div style={{ flex: 3, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {selectedObj && (
                 <>
-                  <button className="icon-btn" type="button" onClick={handleSave} disabled={saveObject.isPending}>
-                    <div className="icon-wrapper">
-                      <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                      <span className="icon-label">저장</span>
-                    </div>
+                  <button className="btn btn-primary" type="button" onClick={handleConfig}>
+                    {t('btn.objectconfig')}
                   </button>
-                  <button className="icon-btn" type="button" onClick={handleDelete} disabled={deleteObject.isPending}>
-                    <div className="icon-wrapper">
-                      <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                      <span className="icon-label">삭제</span>
-                    </div>
-                  </button>
+                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
                 </>
               )}
-              <button className="icon-btn" type="button" onClick={handleConfig}>
-                <div className="icon-wrapper">
-                  <img src="/icons/object-config.svg" className="icon-img config-icon" alt="항목 설정" />
-                  <span className="icon-label">항목 설정</span>
-                </div>
-              </button>
+              {isEditYn && (
+                <>
+                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveObject.isPending}>
+                    {t('btn.save')}
+                  </button>
+                  {selectedObj && (
+                    <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteObject.isPending}>
+                      {t('btn.delete')}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
-          </form>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.objectnm')}:</label>
+            <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="obj-desc">{t('lbl.objectdesc')}:</label>
+            <textarea
+              id="obj-desc"
+              rows={3}
+              value={form.objectdesc}
+              onChange={(e) => setForm((f) => ({ ...f, objectdesc: e.target.value }))}
+              style={{ width: '100%', resize: 'vertical' }}
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.objecttypecd')}:</label>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+              <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
+                <img src="/icons/make_ui.svg" className="icon-img-tbl" title="UI" alt="UI" style={{ height: 18 }} />
+                <img src="/icons/make_ai.svg" className="icon-img-tbl" title="AI" alt="AI" style={{ height: 18 }} />
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}>
+                {objectTypes.map((ot) => (
+                  <label key={ot.objecttypecd} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
+                    <input
+                      type="radio"
+                      name="objecttypecd"
+                      value={ot.objecttypecd}
+                      checked={form.objecttypecd === ot.objecttypecd}
+                      onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.objecttypecd }))}
+                    />
+                    {ot.objecttypenm}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="obj-useyn">{t('lbl.useyn')}:</label>
+            <input
+              id="obj-useyn"
+              type="checkbox"
+              checked={!!form.useyn}
+              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="obj-orderno">{t('lbl.orderno')}:</label>
+            <input
+              id="obj-orderno"
+              type="number"
+              value={form.orderno}
+              onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
+              style={{ width: 80 }}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.creatornm')}:</label>
+            <span style={{ padding: '6px 4px' }}>{form.creatornm}</span>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.createdts')}:</label>
+            <span style={{ padding: '6px 4px' }}>{form.createdts}</span>
+          </div>
         </div>
       </div>
     </div>

@@ -242,7 +242,9 @@ export default function MasterDatasAiPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="df-datasourcecd">{t('lbl.datasourcecd')}:</label>
+            <label htmlFor="df-datasourcecd">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datasourcecd')}:
+            </label>
             {!isNew ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>
                 {form.datasourcecd === 'dfv' ? t('cod.datasourcecd_dfv') : t('cod.datasourcecd_df')}

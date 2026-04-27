@@ -196,7 +196,7 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
     const maxTabs = configs?.maxtabs ?? 10
     const alreadyOpen = tabs.some((t) => t.key === key)
     if (!alreadyOpen && tabs.length >= maxTabs) {
-      message.warning(`탭은 최대 ${maxTabs}개까지 열 수 있습니다.`)
+      message.warning(t('msg.tab.maxcount').replace('{n}', maxTabs))
       return
     }
     openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: menu.route_path })
