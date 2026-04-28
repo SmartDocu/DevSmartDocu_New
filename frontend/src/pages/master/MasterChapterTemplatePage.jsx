@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { App, Spin, Select } from 'antd'
+import { App, Spin, Select, Modal } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 
@@ -691,10 +691,10 @@ function validateTemplateBlocks(editorInstance) {
   const stack = []
 
   const PATTERNS = {
-    FOR_OPEN:    /^\{\{#FOR\s+@\w+\}\}$/,
+    FOR_OPEN:    /^\{\{#FOR\s+@[^\s}]+\}\}$/,
     FOR_END:     /^\{\{#END FOR\}\}$/,
     FOR_END_ERR: /\{?#END FOR\}?$|^\{#END FOR(?!\}\})/,
-    IF_OPEN:     /^\{\{#if\s+@\w[^}]*\}\}$/,
+    IF_OPEN:     /^\{\{#if\s+@[^\s}][^}]*\}\}$/,
     IF_ELSE:     /^\{\{#ELSE\}\}$/,
     IF_END:      /^\{\{#END if\}\}$/,
     IF_ELSE_ERR: /^\{\{#{2,}ELSE\}\}$|^\{\{ELSE\}\}$|^\{#ELSE\}$/,
@@ -760,7 +760,7 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
     if (!line) continue
 
     // ✅ FOR 시작
-    const forStart = line.match(/^\{\{#FOR\s+@(\w+)\}\}$/)
+    const forStart = line.match(/^\{\{#FOR\s+@([^\s}]+)\}\}$/)
     if (forStart) {
       blockStack.push({ type: 'FOR', paramnm: forStart[1] })
       continue
@@ -774,7 +774,7 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
     }
 
     // ✅ IF 시작
-    const ifStart = line.match(/^\{\{#if\s+@(\w+)[^}]*\}\}$/)
+    const ifStart = line.match(/^\{\{#if\s+@([^\s}]+)[^}]*\}\}$/)
     if (ifStart) {
       blockStack.push({ type: 'IF', paramnm: ifStart[1] })
       continue
@@ -885,6 +885,11 @@ export default function MasterChapterTemplatePage() {
   const [saveLoading, setSaveLoading] = useState(false)
   const [readLoading, setReadLoading] = useState(false)
   const initialized = useRef(false)
+  const [filterModalFmt, setFilterModalFmt] = useState(null)
+  const [filterInfo, setFilterInfo] = useState(null)
+  const [filterModalLoading, setFilterModalLoading] = useState(false)
+  const [filterSelectedDatauid, setFilterSelectedDatauid] = useState(null)
+  const [filterColMappings, setFilterColMappings] = useState({})
 
   // ── 에디터 DOM refs ──
   const toolbarHostRef = useRef(null)
@@ -920,6 +925,16 @@ export default function MasterChapterTemplatePage() {
   const sca_params = data?.sca_params || []
   const editYn     = chapter.editbuttonyn === 'Y'
 
+  // ── 문서 데이터셋 (필터 모달용) ──
+  const { data: docParamsData } = useQuery({
+    queryKey: ['doc-params', docid],
+    queryFn: () => apiClient.get(`/docs/${docid}/doc-params`).then(r => r.data),
+    enabled: !!docid,
+  })
+  const docSelectedDatauids = docParamsData?.selected_datauids || []
+  const docDatas = (docParamsData?.datas || []).filter(d => docSelectedDatauids.includes(d.datauid))
+  const docColMap = docParamsData?.col_map || {}
+
   // params ref 동기화
   useEffect(() => { tbl_params_ref.current = tbl_params }, [tbl_params])
   useEffect(() => { sca_params_ref.current = sca_params }, [sca_params])
@@ -929,24 +944,33 @@ export default function MasterChapterTemplatePage() {
     setFormats([])
   }, [chapteruid])
 
-  // ── formats 초기화 (데이터 로드 후 1회) ──
+  // ── formats 초기화 (데이터 로드 후 1회) + isFilterMapped 최신값 반영 ──
   useEffect(() => {
-    if (!data || initialized.current) return
+    if (!data) return
     const objects = data.objects || []
-    setFormats(
-      objects
-        .map(o => ({
-          objectUID:      o.objectuid,
-          objectNm:       o.objectnm?.trim() ?? '',
-          objectTypeCd:   o.objecttypecd?.trim() ?? '',
-          chapterUID:     o.chapteruid?.trim() ?? '',
-          orderno:        o.orderno ?? 0,
-          isFilter:       o.is_filter ?? false,        // ✅ 추가
-          isFilterMapped: o.is_filtermapped ?? false,  // ✅ 추가
-        }))
-        .sort((a, b) => (b.orderno ?? 0) - (a.orderno ?? 0)),
-    )
-    initialized.current = true
+    if (!initialized.current) {
+      setFormats(
+        objects
+          .map(o => ({
+            objectUID:      o.objectuid,
+            objectNm:       o.objectnm?.trim() ?? '',
+            objectTypeCd:   o.objecttypecd?.trim() ?? '',
+            chapterUID:     o.chapteruid?.trim() ?? '',
+            orderno:        o.orderno ?? 0,
+            isFilter:       o.is_filter ?? false,
+            isFilterMapped: o.is_filtermapped ?? false,
+          }))
+          .sort((a, b) => (b.orderno ?? 0) - (a.orderno ?? 0)),
+      )
+      initialized.current = true
+      return
+    }
+    // 초기화 후 재fetch 시 isFilterMapped 최신값만 반영 (사용자 편집 내용 유지)
+    setFormats(prev => prev.map(fmt => {
+      const s = objects.find(o => o.objectuid === fmt.objectUID)
+      if (!s) return fmt
+      return { ...fmt, isFilter: s.is_filter ?? false, isFilterMapped: s.is_filtermapped ?? false }
+    }))
   }, [data])
 
   // ── CKEditor 초기화 ──
@@ -1149,6 +1173,59 @@ export default function MasterChapterTemplatePage() {
     }
   }, [chapteruid, navigate])
 
+  // ── 필터 매핑 모달 오픈 ──
+  const openFilterModal = useCallback(async (fmt) => {
+    setFilterModalFmt(fmt)
+    setFilterInfo(null)
+    setFilterSelectedDatauid(null)
+    setFilterColMappings({})
+    setFilterModalLoading(true)
+    try {
+      const res = await apiClient.get(`/chapters/objectfilter/${fmt.objectUID}`).then(r => r.data)
+      setFilterInfo(res)
+      // 기존 매핑 복원 (다중 rows)
+      if (res.maps && res.maps.length > 0) {
+        setFilterSelectedDatauid(res.maps[0].objectdatauid)
+        const initMappings = {}
+        res.maps.forEach(row => {
+          if (row.dfvcolnm && row.objectdatacolnm) initMappings[row.dfvcolnm] = row.objectdatacolnm
+        })
+        setFilterColMappings(initMappings)
+      }
+    } finally {
+      setFilterModalLoading(false)
+    }
+  }, [])
+
+  // ── 필터 매핑 저장 ──
+  const saveFilterMap = useCallback(async () => {
+    const dfvcolnms = filterInfo?.dfvcolnms || []
+    if (!filterInfo?.filter || !filterSelectedDatauid) {
+      message.warning('데이터셋을 선택해 주세요.')
+      return
+    }
+    const unmapped = dfvcolnms.filter(col => !filterColMappings[col])
+    if (unmapped.length > 0) {
+      message.warning(`'${unmapped.join(', ')}' 컬럼을 매핑해 주세요.`)
+      return
+    }
+    try {
+      await apiClient.post('/chapters/objectfiltermap', {
+        objectfilteruid: filterInfo.filter.objectfilteruid,
+        dfvdatauid: filterInfo.filter.dfvdatauid,
+        objectdatauid: filterSelectedDatauid,
+        mappings: dfvcolnms.map(col => ({ dfvcolnm: col, objectdatacolnm: filterColMappings[col] })),
+      })
+      setFormats(prev => prev.map(f =>
+        f.objectUID === filterModalFmt?.objectUID ? { ...f, isFilterMapped: true } : f
+      ))
+      message.success('필터 매핑이 저장되었습니다.')
+      setFilterModalFmt(null)
+    } catch {
+      message.error('저장에 실패했습니다.')
+    }
+  }, [filterInfo, filterSelectedDatauid, filterColMappings, filterModalFmt, message])
+
   if (!chapteruid) return <div style={{ padding: 24, color: '#888' }}>chapteruid가 없습니다.</div>
 
   return (
@@ -1338,26 +1415,24 @@ export default function MasterChapterTemplatePage() {
                         <img src="/icons/configuration.svg" className="icon-img" alt="항목 설정" />
                       </button>
 
-                      {/* Filter 뱃지 컬럼 */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {/* is_filter */}
-                        <span style={{
-                          fontSize: 9, fontWeight: 600, padding: '1px 5px',
-                          borderRadius: 3, lineHeight: 1.6,
-                          background: fmt.isFilter ? '#1677ff' : '#bfbfbf',
-                          color: '#fff',
-                        }}>
-                          Filter
-                        </span>
-                        {/* is_filtermapped */}
-                        <span style={{
-                          fontSize: 9, fontWeight: 600, padding: '1px 5px',
-                          borderRadius: 3, lineHeight: 1.6,
-                          background: fmt.isFilterMapped ? '#8B3A3A' : '#bfbfbf',
-                          color: '#fff',
-                        }}>
-                          Filter
-                        </span>
+                      {/* Filter 버튼 자리 (항상 고정 너비) */}
+                      <div style={{ width: 38, display: 'flex', justifyContent: 'center' }}>
+                        {fmt.isFilter && (
+                          <button
+                            onClick={() => openFilterModal(fmt)}
+                            disabled={!fmt.objectUID}
+                            style={{
+                              fontSize: 9, fontWeight: 600, padding: '2px 6px',
+                              borderRadius: 3, lineHeight: 1.6, border: 'none',
+                              background: fmt.isFilterMapped ? '#1677ff' : '#bfbfbf',
+                              color: '#fff',
+                              cursor: fmt.objectUID ? 'pointer' : 'not-allowed',
+                              width: '100%',
+                            }}
+                          >
+                            Filter
+                          </button>
+                        )}
                       </div>
 
                     </div>
@@ -1373,6 +1448,83 @@ export default function MasterChapterTemplatePage() {
           </div>
         </div>
       </div>
+
+      {/* 필터 매핑 모달 */}
+      <Modal
+        title="필터 매핑 설정"
+        open={!!filterModalFmt}
+        onCancel={() => setFilterModalFmt(null)}
+        onOk={saveFilterMap}
+        okText="저장"
+        cancelText="취소"
+        width={520}
+      >
+        {filterModalLoading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+        ) : filterInfo?.filter ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* 필터 변수 정보 */}
+            <div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>필터 변수</div>
+              <div style={{ fontSize: 13 }}>
+                {filterInfo.filter.dfvnm}
+                {filterInfo.filter.dfvcolnms && (
+                  <span style={{ color: '#888' }}> ({filterInfo.filter.dfvcolnms})</span>
+                )}
+              </div>
+            </div>
+
+            {/* 데이터셋 선택 (공통) */}
+            <div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>매핑할 데이터셋</div>
+              <Select
+                style={{ width: '100%' }}
+                placeholder="데이터셋 선택"
+                value={filterSelectedDatauid}
+                onChange={(v) => { setFilterSelectedDatauid(v); setFilterColMappings({}) }}
+                options={docDatas.map(d => ({ value: d.datauid, label: d.datanm }))}
+              />
+            </div>
+
+            {/* 필터 컬럼별 매핑 */}
+            {filterSelectedDatauid && (filterInfo.dfvcolnms || []).length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>컬럼 매핑</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#fafafa' }}>
+                      <th style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 12, textAlign: 'left' }}>필터 컬럼</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 12, textAlign: 'left' }}>데이터셋 컬럼</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(filterInfo.dfvcolnms || []).map(col => (
+                      <tr key={col}>
+                        <td style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 13 }}>{col}</td>
+                        <td style={{ padding: '4px 8px', border: '1px solid #e8e8e8' }}>
+                          <Select
+                            style={{ width: '100%' }}
+                            size="small"
+                            placeholder="컬럼 선택"
+                            value={filterColMappings[col] || null}
+                            onChange={v => setFilterColMappings(prev => ({ ...prev, [col]: v }))}
+                            options={(docColMap[filterSelectedDatauid] || []).map(c => ({
+                              value: c.querycolnm,
+                              label: c.dispcolnm ? `${c.dispcolnm} (${c.querycolnm})` : c.querycolnm,
+                            }))}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ color: '#888' }}>필터 정보를 불러올 수 없습니다.</div>
+        )}
+      </Modal>
 
       {/* fadeIn 키프레임 주입 */}
       <style>{`

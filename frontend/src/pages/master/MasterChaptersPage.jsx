@@ -65,7 +65,10 @@ export default function MasterChaptersPage() {
     if (selectedChap?.chapteruid) fd.append('chapteruid', selectedChap.chapteruid)
     if (templateFile) fd.append('templatefile', templateFile)
     saveChapter.mutate(fd, {
-      onSuccess: () => setSaving(false),
+      onSuccess: () => {
+        setSaving(false)
+        handleNew()   // 👈 여기 추가
+      },
       onError: () => setSaving(false),
     })
   }

@@ -168,6 +168,27 @@ def get_chapter_template(chapteruid: str, token: str = Depends(get_token)):
 
     obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("chapteruid", chapteruid).order("orderno").execute().data or []
 
+    # is_filtermapped 동적 계산 (dfvdatauid + dfvcolnm 기준)
+    # DB 컬럼값 무시 — 항상 새로 계산
+    for o in obj_rows:
+        o["is_filtermapped"] = False
+    filter_obj_uids = [o["objectuid"] for o in obj_rows if o.get("is_filter")]
+    if filter_obj_uids:
+        filters_data = sb.schema(SUPABASE_SCHEMA).table("objectfilters").select("objectuid, objectfilteruid, dfvdatauid, dfvcolnms").in_("objectuid", filter_obj_uids).execute().data or []
+        obj_to_finfo = {f["objectuid"]: f for f in filters_data}
+        all_dfv_uids = list({f["dfvdatauid"] for f in filters_data if f.get("dfvdatauid")})
+        mapped_keys = set()
+        filter_uid_list = [f["objectfilteruid"] for f in filters_data if f.get("objectfilteruid")]
+        mapped_filter_uids = set()
+        if filter_uid_list:
+            maps_data = sb.schema(SUPABASE_SCHEMA).table("objectfiltermaps").select("objectfilteruid, objectdatacolnm").in_("objectfilteruid", filter_uid_list).execute().data or []
+            mapped_filter_uids = {m["objectfilteruid"] for m in maps_data if m.get("objectdatacolnm")}
+        obj_filter_uid_map = {f["objectuid"]: f["objectfilteruid"] for f in filters_data}
+        for o in obj_rows:
+            fuid = obj_filter_uid_map.get(o["objectuid"])
+            if fuid:
+                o["is_filtermapped"] = fuid in mapped_filter_uids
+
     # tbl_params / sca_params (docvariables 테이블)
     tbl_rows = []
     sca_rows = []
@@ -331,6 +352,59 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
 
             sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").upsert(data).execute()
 
+    return {"ok": True}
+
+
+# ─── 항목 필터 조회 ──────────────────────────────────────────────────────────
+
+@router.get("/objectfilter/{objectuid}")
+def get_object_filter_info(objectuid: str, token: str = Depends(get_token)):
+    sb = _sb(token)
+    filters = sb.schema(SUPABASE_SCHEMA).table("objectfilters").select("*").eq("objectuid", objectuid).execute().data or []
+    if not filters:
+        return {"filter": None, "map": None, "dfvcolnms": []}
+    f = filters[0]
+    dfvcolnms = [c.strip() for c in (f.get("dfvcolnms") or "").split(",") if c.strip()]
+    map_rows = sb.schema(SUPABASE_SCHEMA).table("objectfiltermaps").select("*").eq("objectfilteruid", f["objectfilteruid"]).execute().data or []
+    return {"filter": f, "maps": map_rows, "dfvcolnms": dfvcolnms}
+
+
+# ─── 항목 필터 매핑 저장 ─────────────────────────────────────────────────────
+
+class FilterColMapping(BaseModel):
+    dfvcolnm: str
+    objectdatacolnm: str
+
+
+class ObjectFilterMapSaveRequest(BaseModel):
+    objectfilteruid: str   # objectfilters.objectfilteruid FK
+    dfvdatauid: str
+    objectdatauid: str
+    mappings: List[FilterColMapping]
+
+
+@router.post("/objectfiltermap")
+def save_objectfiltermap(body: ObjectFilterMapSaveRequest, token: str = Depends(get_token)):
+    from utilsPrj.supabase_client import get_service_client
+    sb_svc = get_service_client()
+    user_id = _get_user_id(token)
+    # 기존 rows 삭제 후 컬럼당 1줄씩 INSERT
+    sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").delete().eq("objectfilteruid", body.objectfilteruid).execute()
+    rows = [
+        {
+            "objectfilteruid": body.objectfilteruid,
+            "dfvdatauid": body.dfvdatauid,
+            "dfvcolnm": m.dfvcolnm,
+            "objectdatauid": body.objectdatauid,
+            "objectdatacolnm": m.objectdatacolnm,
+            "creator": user_id,
+        }
+        for m in body.mappings
+    ]
+    print(f"[objectfiltermaps] INSERT {len(rows)} rows for objectfilteruid={body.objectfilteruid}")
+    for r in rows:
+        print(f"  dfvcolnm={r['dfvcolnm']}  objectdatacolnm={r['objectdatacolnm']}")
+    sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").insert(rows).execute()
     return {"ok": True}
 
 
