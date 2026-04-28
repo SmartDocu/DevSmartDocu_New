@@ -401,10 +401,8 @@ def save_objectfiltermap(body: ObjectFilterMapSaveRequest, token: str = Depends(
         }
         for m in body.mappings
     ]
-    print(f"[objectfiltermaps] INSERT {len(rows)} rows for objectfilteruid={body.objectfilteruid}")
-    for r in rows:
-        print(f"  dfvcolnm={r['dfvcolnm']}  objectdatacolnm={r['objectdatacolnm']}")
     sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").insert(rows).execute()
+    sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").update({"objectdatauid": body.objectdatauid}).eq("objectfilteruid", body.objectfilteruid).execute()
     return {"ok": True}
 
 
