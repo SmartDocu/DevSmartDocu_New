@@ -78,7 +78,7 @@ export function useSaveMenu() {
         ? apiClient.post('/menus', { menucd, ...body }).then((r) => r.data)
         : apiClient.put(`/menus/${menucd}`, { menucd, ...body }).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['menus-admin'] })
       qc.invalidateQueries({ queryKey: ['menus'] })
     },
@@ -92,7 +92,7 @@ export function useDeleteMenu() {
   return useMutation({
     mutationFn: (menucd) => apiClient.delete(`/menus/${menucd}`).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['menus-admin'] })
       qc.invalidateQueries({ queryKey: ['menus'] })
     },
@@ -118,7 +118,7 @@ export function useDeleteTranslation() {
     mutationFn: ({ menucd, languagecd }) =>
       apiClient.delete(`/menus/${menucd}/translations/${languagecd}`).then((r) => r.data),
     onSuccess: (_data, { menucd }) => {
-      message.success(t('msg.trans.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['menu-translations', menucd] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),

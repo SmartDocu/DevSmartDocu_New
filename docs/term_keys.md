@@ -1,0 +1,302 @@
+# 다국어 Term Key 목록
+
+프로젝트 전체 수집 기준일: 2026-04-28  
+총 241개 유니크 키
+
+---
+
+## 1. cod. (7개)
+
+| term_key |
+|----------|
+| cod.datasourcecd_df |
+| cod.datasourcecd_dfv |
+| cod.keycoldatatypecd_C |
+| cod.keycoldatatypecd_D |
+| cod.keycoldatatypecd_I |
+| cod.useyn_n |
+| cod.useyn_y |
+
+---
+
+## 2. msg. (73개)
+
+| term_key |
+|----------|
+| msg.chapter.required |
+| msg.chapter.select.delete |
+| msg.code.groupcd.required |
+| msg.code.select.delete |
+| msg.code.select.trans |
+| msg.code.value.required |
+| msg.col.empty |
+| msg.col.save.success |
+| msg.confirm.delete |
+| msg.confirm.file.overwrite |
+| msg.datanm.required |
+| msg.db.required |
+| msg.delete.error |
+| msg.delete.success |
+| msg.doc.loading |
+| msg.doc.name.duplicate |
+| msg.doc.no.permission |
+| msg.doc.not.found |
+| msg.doc.required |
+| msg.doc.select |
+| msg.doc.select.delete |
+| msg.docselect.error |
+| msg.docselect.required |
+| msg.docselect.tabs.close |
+| msg.email.required |
+| msg.favorite.error |
+| msg.load.error |
+| msg.loading |
+| msg.login.failed |
+| msg.menu.required |
+| msg.menu.select.delete |
+| msg.menu.select.trans |
+| msg.message.required |
+| msg.message.select.delete |
+| msg.message.select.trans |
+| msg.no.change.history |
+| msg.no.data |
+| msg.password.minlength |
+| msg.password.mismatch |
+| msg.password.required |
+| msg.preparing |
+| msg.project.not.found |
+| msg.prompt.required |
+| msg.register.failed |
+| msg.register.success |
+| msg.register.tenant.required |
+| msg.register.terms.required |
+| msg.required.docid |
+| msg.reset.sent |
+| msg.sample.empty |
+| msg.save.col.created |
+| msg.save.col.warn |
+| msg.save.error |
+| msg.save.success |
+| msg.select |
+| msg.select.chapter |
+| msg.select.data |
+| msg.select.delete |
+| msg.select.placeholder |
+| msg.select.project |
+| msg.server.error |
+| msg.source.select |
+| msg.tab.maxcount |
+| msg.template.none |
+| msg.term.required |
+| msg.term.select.delete |
+| msg.term.select.trans |
+| msg.usernm.required |
+| msg.ph.email |
+| msg.ph.tenant.select |
+| msg.placeholder.password.change |
+| msg.placeholder.password.confirm |
+| msg.sidebar.favorites |
+| msg.sidebar.search |
+
+---
+
+## 3. mnu. (5개)
+
+| term_key |
+|----------|
+| mnu.master_data.docs.base |
+| mnu.system.translation.codes |
+| mnu.system.translation.menus |
+| mnu.system.translation.messages |
+| mnu.system.translation.terms |
+
+---
+
+## 4. 기타 prefix (btn / lbl / thd / ttl / inf)
+
+### btn. (17개)
+
+| term_key |
+|----------|
+| btn.cancel |
+| btn.delete |
+| btn.login |
+| btn.logout |
+| btn.new |
+| btn.object.manage |
+| btn.objectconfig |
+| btn.ok |
+| btn.preview |
+| btn.register |
+| btn.reset.password |
+| btn.reset.send |
+| btn.save |
+| btn.savecols |
+| btn.template.edit |
+| btn.upgrade |
+| btn.upload |
+
+### lbl. (74개)
+
+| term_key |
+|----------|
+| lbl.agree.all |
+| lbl.billing.model |
+| lbl.billing.multi |
+| lbl.billing.single |
+| lbl.chapternm |
+| lbl.chapterno |
+| lbl.codegroupcd |
+| lbl.codevalue |
+| lbl.connectnm |
+| lbl.connecttype |
+| lbl.datanm |
+| lbl.dataset |
+| lbl.dataset.unused |
+| lbl.dataset.used |
+| lbl.datasourcecd |
+| lbl.datauid |
+| lbl.default_message |
+| lbl.default_name |
+| lbl.default_text |
+| lbl.description |
+| lbl.dim.cols |
+| lbl.doc |
+| lbl.docnm |
+| lbl.email |
+| lbl.encaccessuserid |
+| lbl.encdatabase |
+| lbl.encendpoint |
+| lbl.file |
+| lbl.iconnm |
+| lbl.joindt |
+| lbl.keycoldatatypecd |
+| lbl.keycolnm |
+| lbl.measure.cols |
+| lbl.menucd |
+| lbl.messagekey |
+| lbl.messagetypecd |
+| lbl.myrole |
+| lbl.nmcolnm |
+| lbl.not.agreed |
+| lbl.note |
+| lbl.objectdesc |
+| lbl.objectnm |
+| lbl.objecttypecd |
+| lbl.operator |
+| lbl.optional |
+| lbl.ordercolnm |
+| lbl.orderno |
+| lbl.paramnm |
+| lbl.password |
+| lbl.password.confirm |
+| lbl.plan |
+| lbl.plan.free |
+| lbl.plan.pro |
+| lbl.project |
+| lbl.projectnm |
+| lbl.prompt |
+| lbl.query |
+| lbl.required |
+| lbl.reset.email |
+| lbl.rolecd |
+| lbl.route_path |
+| lbl.sample |
+| lbl.samplevalue |
+| lbl.source.data |
+| lbl.status |
+| lbl.template.upload |
+| lbl.tenant |
+| lbl.tenantnm |
+| lbl.termgroupcd |
+| lbl.termkey |
+| lbl.theme |
+| lbl.upload |
+| lbl.usernm |
+| lbl.useyn |
+
+### thd. (31개)
+
+| term_key |
+|----------|
+| thd.codegroupcd |
+| thd.codevalue |
+| thd.connectnm |
+| thd.connecttype |
+| thd.datanm |
+| thd.datasourcecd |
+| thd.datatypecd |
+| thd.default_name |
+| thd.default_text |
+| thd.dispcolnm |
+| thd.languagecd |
+| thd.languagenm |
+| thd.measureyn |
+| thd.menucd |
+| thd.messagekey |
+| thd.messagetypecd |
+| thd.objectdesc |
+| thd.objectnm |
+| thd.objectsettingyn |
+| thd.objecttypecd |
+| thd.operator |
+| thd.orderno |
+| thd.paramnm |
+| thd.projectnm |
+| thd.querycolnm |
+| thd.rolecd |
+| thd.termgroupcd |
+| thd.termkey |
+| thd.translated_desc |
+| thd.translated_text |
+| thd.useyn |
+
+### ttl. (20개)
+
+| term_key |
+|----------|
+| ttl.chapter.list |
+| ttl.col.info |
+| ttl.condition |
+| ttl.data.preview |
+| ttl.datacols |
+| ttl.dataset |
+| ttl.dataset.mapping |
+| ttl.detail |
+| ttl.docselect |
+| ttl.docselect.change |
+| ttl.list |
+| ttl.login |
+| ttl.myinfo.personal |
+| ttl.myinfo.projects |
+| ttl.myinfo.tenant |
+| ttl.myinfo.tenant.history |
+| ttl.myinfo.terms |
+| ttl.preview |
+| ttl.register |
+| ttl.translations |
+
+### inf. (4개)
+
+| term_key |
+|----------|
+| inf.gensentence.default |
+| inf.iconnm |
+| inf.password.hidden |
+| inf.preview.empty |
+
+---
+
+## 요약
+
+| prefix | 개수 |
+|--------|------|
+| cod.   | 7    |
+| msg.   | 73   |
+| mnu.   | 5    |
+| btn.   | 17   |
+| lbl.   | 74   |
+| thd.   | 31   |
+| ttl.   | 20   |
+| inf.   | 4    |
+| **합계** | **231** |

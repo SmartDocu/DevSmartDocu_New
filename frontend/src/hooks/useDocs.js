@@ -24,7 +24,7 @@ export function useSaveDoc() {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['docs'] })
     },
     onError: (err) => {
@@ -39,7 +39,7 @@ export function useDeleteDoc() {
   return useMutation({
     mutationFn: (docid) => apiClient.delete(`/docs/${docid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['docs'] })
     },
     onError: (err) => {

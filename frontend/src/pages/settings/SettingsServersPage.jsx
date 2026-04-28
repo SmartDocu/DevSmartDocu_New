@@ -204,16 +204,16 @@ export default function SettingsServersPage() {
               <small style={{ color: '#888', marginLeft: 8, fontWeight: 'normal' }}>{t('inf.password.hidden')}</small>
             </label>
             <input type="password" id="password" value={form.password}
-              placeholder={t('placeholder.password.change')} autoComplete="new-password"
+              placeholder={t('msg.placeholder.password.change')} autoComplete="new-password"
               onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))} />
           </div>
 
           <div className="form-group">
             <label htmlFor="password_confirm">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.password_confirm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.password.confirm')}:
             </label>
             <input type="password" id="password_confirm" value={form.password_confirm}
-              placeholder={t('placeholder.password.confirm')} autoComplete="new-password"
+              placeholder={t('msg.placeholder.password.confirm')} autoComplete="new-password"
               onChange={(e) => setForm(f => ({ ...f, password_confirm: e.target.value }))} />
           </div>
         </div>

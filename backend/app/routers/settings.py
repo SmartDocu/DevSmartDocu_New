@@ -359,11 +359,27 @@ def get_myinfo(token: str = Depends(get_token)):
     else:
         project_users = []
 
+    # tenantnewusers (기업 변경 이력 — 최신 1건)
+    tenant_change = None
+    tnu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantnewusers").select("*").eq("useruid", user_id).order("createdts", desc=True).limit(1).execute().data or []
+    if tnu_rows:
+        tnu = tnu_rows[0]
+        new_tenantid = tnu.get("tenantid")
+        if new_tenantid and str(new_tenantid) != str(tenantid):
+            new_tenant_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid,tenantnm").eq("tenantid", new_tenantid).execute().data or []
+            new_tenantnm = new_tenant_rows[0]["tenantnm"] if new_tenant_rows else ""
+            tenant_change = {
+                "tenantnm": new_tenantnm,
+                "approvecd": tnu.get("approvecd"),
+                "approvenote": tnu.get("approvenote", ""),
+            }
+
     return {
         "user_info": user_info,
         "tenantuser": tenantuser,
         "tenant": tenant,
         "project_users": project_users,
+        "tenant_change": tenant_change,
     }
 
 

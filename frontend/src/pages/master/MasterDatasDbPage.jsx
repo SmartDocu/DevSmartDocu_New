@@ -103,7 +103,7 @@ export default function MasterDatasDbPage() {
           message.success(t('msg.save.success'))
         }
       },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.fail')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
     })
   }
 
@@ -112,7 +112,7 @@ export default function MasterDatasDbPage() {
     if (!window.confirm(t('msg.confirm.delete'))) return
     deleteData.mutate(form.datauid, {
       onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.fail')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
     })
   }
 
@@ -126,8 +126,8 @@ export default function MasterDatasDbPage() {
       measureyn:  !!c.measureyn,
     }))
     saveCols.mutate(payload, {
-      onSuccess: () => message.success(t('msg.col.save.success')),
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.fail')),
+      onSuccess: () => message.success(t('msg.save.success')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
     })
   }
 

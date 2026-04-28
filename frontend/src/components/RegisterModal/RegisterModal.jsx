@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import apiClient from '@/api/client'
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function RegisterModal({ open, onClose }) {
   const [billingmodelcd, setBillingmodelcd] = useState('single')
@@ -15,6 +16,7 @@ export default function RegisterModal({ open, onClose }) {
   const [marketingyn, setMarketingyn] = useState(false)
   const [agreeAll, setAgreeAll] = useState(false)
   const [saving, setSaving] = useState(false)
+  useLangStore((s) => s.translations)
 
   const { data: tenantsData } = useQuery({
     queryKey: ['tenants'],
@@ -61,13 +63,13 @@ export default function RegisterModal({ open, onClose }) {
   const submitDisabled = !usernm.trim() || !email.trim() || !password.trim() || !passwordConfirm.trim() || !userinfoyn || !termsofuseyn
 
   const handleSubmit = async () => {
-    if (!termsofuseyn || !userinfoyn) { alert('필수 약관에 동의 하셔야 합니다.'); return }
-    if (billingmodelcd === 'multi' && !tenantid) { alert('단체는 기업 선택이 필수입니다.'); return }
-    if (!usernm) { alert('이름을 입력해주세요.'); return }
-    if (!email) { alert('이메일을 입력해주세요.'); return }
-    if (!password) { alert('비밀번호를 입력해주세요.'); return }
-    if (password !== passwordConfirm) { alert('비밀번호가 일치하지 않습니다.'); return }
-    if (password.length < 8) { alert('비밀번호는 최소 8자 이상이어야 합니다.'); return }
+    if (!termsofuseyn || !userinfoyn) { alert(t('msg.register.terms.required')); return }
+    if (billingmodelcd === 'multi' && !tenantid) { alert(t('msg.register.tenant.required')); return }
+    if (!usernm) { alert(t('msg.usernm.required')); return }
+    if (!email) { alert(t('msg.email.required')); return }
+    if (!password) { alert(t('msg.password.required')); return }
+    if (password !== passwordConfirm) { alert(t('msg.password.mismatch')); return }
+    if (password.length < 8) { alert(t('msg.password.minlength')); return }
 
     setSaving(true)
     try {
@@ -81,10 +83,10 @@ export default function RegisterModal({ open, onClose }) {
         termsofuseyn: termsofuseyn ? 'Y' : 'N',
         marketingyn: marketingyn ? 'Y' : 'N',
       })
-      alert('회원가입이 완료되었습니다.')
+      alert(t('msg.register.success'))
       onClose()
     } catch (err) {
-      const detail = err.response?.data?.detail || '회원가입에 실패했습니다.'
+      const detail = err.response?.data?.detail || t('msg.register.failed')
       alert(detail)
     } finally {
       setSaving(false)
@@ -116,21 +118,21 @@ export default function RegisterModal({ open, onClose }) {
           &times;
         </button>
 
-        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>SmartDocu 회원가입</h2>
+        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>{t('ttl.register')}</h2>
 
         {/* 사용 모델 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>사용 모델</span>
+          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.billing.model')}</span>
           <div style={{ flex: 1, display: 'flex', gap: 16 }}>
             <label style={{ fontSize: 14 }}>
               <input type="radio" name="billingmodelcd" value="single" checked={billingmodelcd === 'single'}
                 onChange={() => setBillingmodelcd('single')} style={{ marginRight: 4 }} />
-              개인
+              {t('lbl.billing.single')}
             </label>
             <label style={{ fontSize: 14 }}>
               <input type="radio" name="billingmodelcd" value="multi" checked={billingmodelcd === 'multi'}
                 onChange={() => setBillingmodelcd('multi')} style={{ marginRight: 4 }} />
-              단체
+              {t('lbl.billing.multi')}
             </label>
           </div>
         </label>
@@ -138,11 +140,11 @@ export default function RegisterModal({ open, onClose }) {
         {/* 요금제 (개인) */}
         {billingmodelcd === 'single' && (
           <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-            <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>요금제</span>
+            <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.plan')}</span>
             <select value={single} onChange={(e) => setSingle(e.target.value)}
               style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }}>
-              <option value="Fr">Free 사용자</option>
-              <option value="Pr">Pro 사용자</option>
+              <option value="Fr">{t('lbl.plan.free')}</option>
+              <option value="Pr">{t('lbl.plan.pro')}</option>
             </select>
           </label>
         )}
@@ -150,13 +152,13 @@ export default function RegisterModal({ open, onClose }) {
         {/* 기업 선택 (단체) */}
         {billingmodelcd === 'multi' && (
           <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-            <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>기업</span>
+            <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.tenant')}</span>
             <select value={tenantid} onChange={(e) => setTenantid(e.target.value)}
               style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }}>
-              <option value="">기업을 선택하세요</option>
-              {tenants.map((t) => (
-                <option key={t.id || t.tenantid} value={t.id || t.tenantid}>
-                  {t.tenantname || t.tenantnm}
+              <option value="">{t('msg.ph.tenant.select')}</option>
+              {tenants.map((tn) => (
+                <option key={tn.id || tn.tenantid} value={tn.id || tn.tenantid}>
+                  {tn.tenantname || tn.tenantnm}
                 </option>
               ))}
             </select>
@@ -165,40 +167,40 @@ export default function RegisterModal({ open, onClose }) {
 
         {/* 사용자명 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>사용자명</span>
+          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.usernm')}</span>
           <input type="text" value={usernm} onChange={(e) => setUsernm(e.target.value)}
-            placeholder="사용자명"
+            placeholder={t('lbl.usernm')}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
         {/* 이메일 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>이메일</span>
+          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.email')}</span>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-            placeholder="이메일"
+            placeholder={t('lbl.email')}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
         {/* 비밀번호 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>비밀번호</span>
+          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.password')}</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-            placeholder="비밀번호"
+            placeholder={t('lbl.password')}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
         {/* 비밀번호 확인 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 8 }}>
-          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>비밀번호<br />확인</span>
+          <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.password.confirm')}</span>
           <input type="password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)}
-            placeholder="비밀번호 확인"
+            placeholder={t('lbl.password.confirm')}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
         {/* 전체 동의 */}
         <label style={{ display: 'block', marginBottom: 8, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={agreeAll} onChange={(e) => handleAgreeAll(e.target.checked)} style={{ marginRight: 6 }} />
-          전체 동의합니다.
+          {t('lbl.agree.all')}
         </label>
 
         {/* 개인정보수집 (필수) */}
@@ -206,7 +208,7 @@ export default function RegisterModal({ open, onClose }) {
           <input type="checkbox" checked={userinfoyn}
             onChange={(e) => { setUserinfoyn(e.target.checked); syncAgreeAll(e.target.checked, termsofuseyn, marketingyn) }}
             style={{ marginRight: 6 }} />
-          <a href="/terms?terms=collection" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>개인정보수집동의여부</a> (필수)
+          <a href="/terms?terms=collection" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.privacy')}</a> ({t('lbl.required')})
         </label>
 
         {/* 이용약관 (필수) */}
@@ -214,7 +216,7 @@ export default function RegisterModal({ open, onClose }) {
           <input type="checkbox" checked={termsofuseyn}
             onChange={(e) => { setTermsofuseyn(e.target.checked); syncAgreeAll(userinfoyn, e.target.checked, marketingyn) }}
             style={{ marginRight: 6 }} />
-          <a href="/terms?terms=service" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>SmartDocu 이용약관</a>에 동의합니다. (필수)
+          <a href="/terms?terms=service" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.service')}</a>{t('lbl.terms.agree')} ({t('lbl.required')})
         </label>
 
         {/* 마케팅 (선택) */}
@@ -222,7 +224,7 @@ export default function RegisterModal({ open, onClose }) {
           <input type="checkbox" checked={marketingyn}
             onChange={(e) => { setMarketingyn(e.target.checked); syncAgreeAll(userinfoyn, termsofuseyn, e.target.checked) }}
             style={{ marginRight: 6 }} />
-          <a href="/terms?terms=marketing" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>마케팅동의여부</a> (선택)
+          <a href="/terms?terms=marketing" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.marketing')}</a> ({t('lbl.optional')})
         </label>
 
         {/* 회원가입 버튼 */}
@@ -232,7 +234,7 @@ export default function RegisterModal({ open, onClose }) {
           className="btn btn-primary"
           style={{ width: '100%', padding: '10px 0', fontSize: 15 }}
         >
-          {saving ? '가입 중...' : '회원가입'}
+          {saving ? t('btn.register.ing') : t('btn.register')}
         </button>
       </div>
     </div>

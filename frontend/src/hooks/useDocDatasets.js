@@ -17,7 +17,7 @@ export function useSaveDocDatasets(docid) {
   return useMutation({
     mutationFn: (body) => apiClient.post(`/docs/${docid}/doc-params`, body).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['doc-datasets', String(docid)] })
     },
     onError: (err) => {

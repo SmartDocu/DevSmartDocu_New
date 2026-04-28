@@ -285,7 +285,7 @@ export default function AppLayout() {
                         key: 'theme',
                         label: (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ marginRight: 4 }}>테마</span>
+                            <span style={{ marginRight: 4 }}>{t('lbl.theme')}</span>
                             <span
                               onClick={(e) => { e.stopPropagation(); setColorTheme('light') }}
                               style={{

@@ -27,7 +27,7 @@ export function useSaveCode() {
         ? apiClient.post('/codes', { codegroupcd, codevalue, ...body }).then((r) => r.data)
         : apiClient.put(`/codes/${codegroupcd}/${codevalue}`, { codegroupcd, codevalue, ...body }).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['codes-admin'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
@@ -40,7 +40,7 @@ export function useDeleteCode() {
   return useMutation({
     mutationFn: ({ codegroupcd, codevalue }) => apiClient.delete(`/codes/${codegroupcd}/${codevalue}`).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['codes-admin'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
@@ -65,7 +65,7 @@ export function useDeleteCodeTranslation() {
     mutationFn: ({ codegroupcd, codevalue, languagecd }) =>
       apiClient.delete(`/codes/${codegroupcd}/${codevalue}/translations/${languagecd}`).then((r) => r.data),
     onSuccess: (_data, { codegroupcd, codevalue }) => {
-      message.success(t('msg.trans.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['code-translations', codegroupcd, codevalue] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
