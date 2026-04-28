@@ -3,22 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.objects import (
     ObjectItem, ObjectsListResponse, ObjectSaveRequest,
-    ObjectTypesResponse,
 )
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
-
-@router.get("/types", response_model=ObjectTypesResponse)
-def list_object_types(token: str = Depends(get_token)):
-    _get_user(token)
-    sb = _sb(token)
-    rows = (
-        sb.schema(SUPABASE_SCHEMA).table("p_objecttypes")
-        .select("*").order("orderno").execute().data or []
-    )
-    return {"objecttypes": rows}
 
 
 @router.get("")

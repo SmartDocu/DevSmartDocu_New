@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { App, Modal, Tabs, Spin, Divider } from 'antd'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useTabStore } from '@/stores/tabStore'
 
 export default function DocSelectModal({ open, onClose }) {
   const navigate = useNavigate()
-  const location = useLocation()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { updateUser } = useAuthStore()
+  const { clearTabs } = useTabStore()
 
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(false)
@@ -75,10 +76,16 @@ export default function DocSelectModal({ open, onClose }) {
 
       onClose()
 
-      // req 경로에 있으면 목록 페이지로 이동 (Django와 동일)
-      if (location.pathname.startsWith('/req')) {
-        navigate('/req/list')
-      }
+      modal.confirm({
+        title: '문서 변경',
+        content: '열려 있는 탭이 모두 닫힙니다. 계속하시겠습니까?',
+        okText: '확인',
+        cancelText: '취소',
+        onOk: () => {
+          clearTabs()
+          navigate('/')
+        },
+      })
     } catch (err) {
       const status = err.response?.status
       const detail = err.response?.data?.detail || err.message

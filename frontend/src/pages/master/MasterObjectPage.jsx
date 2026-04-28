@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { useChapters } from '@/hooks/useChapters'
-import { useObjects, useObjectTypes, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
+import { useObjects, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 
 const TYPE_CONFIG_ROUTE = {
@@ -23,7 +23,7 @@ export default function MasterObjectPage() {
 
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
-  const { data: objectTypes = [] } = useObjectTypes()
+  const { data: objectTypes = [] } = useMenuCodes('objecttypecd')
 
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
@@ -36,6 +36,8 @@ export default function MasterObjectPage() {
   const selectedDocid = urlDocid || (user?.docid ? Number(user.docid) : null)
   const [selectedChapteruid, setSelectedChapteruid] = useState(null)
   const [selectedObj, setSelectedObj] = useState(null)
+
+  const typeMap = Object.fromEntries(objectTypes.map((ot) => [ot.codevalue, t(ot.term_key) || ot.default_name]))
 
   const { data: chapters = [] } = useChapters(selectedDocid)
   const { data: objects = [], isLoading, isError } = useObjects(selectedChapteruid)
@@ -191,9 +193,9 @@ export default function MasterObjectPage() {
                     >
                       <td style={{ textAlign: 'center' }}>{obj.orderno || ''}</td>
                       <td>{obj.objectnm}</td>
-                      <td style={{ textAlign: 'center' }}>{obj.objecttypenm || ''}</td>
+                      <td style={{ textAlign: 'center' }}>{typeMap[obj.objecttypecd] || obj.objecttypecd || ''}</td>
                       <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{obj.objectdesc || ''}</td>
-                      <td style={{ textAlign: 'center' }}>{obj.objectsettingyn ? '예' : '아니오'}</td>
+                      <td style={{ textAlign: 'center' }}>{obj.objectsettingyn ? t('cod.useyn_y') : t('cod.useyn_n')}</td>
                       <td style={{ textAlign: 'center' }}>{obj.useyn ? '✔' : ''}</td>
                     </tr>
                   ))
@@ -257,15 +259,15 @@ export default function MasterObjectPage() {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}>
                 {objectTypes.map((ot) => (
-                  <label key={ot.objecttypecd} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
+                  <label key={ot.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
                     <input
                       type="radio"
                       name="objecttypecd"
-                      value={ot.objecttypecd}
-                      checked={form.objecttypecd === ot.objecttypecd}
-                      onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.objecttypecd }))}
+                      value={ot.codevalue}
+                      checked={form.objecttypecd === ot.codevalue}
+                      onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.codevalue }))}
                     />
-                    {ot.objecttypenm}
+                    {t(ot.term_key) || ot.default_name}
                   </label>
                 ))}
               </div>
@@ -293,15 +295,6 @@ export default function MasterObjectPage() {
             />
           </div>
 
-          <div className="form-group">
-            <label>{t('lbl.creatornm')}:</label>
-            <span style={{ padding: '6px 4px' }}>{form.creatornm}</span>
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.createdts')}:</label>
-            <span style={{ padding: '6px 4px' }}>{form.createdts}</span>
-          </div>
         </div>
       </div>
     </div>

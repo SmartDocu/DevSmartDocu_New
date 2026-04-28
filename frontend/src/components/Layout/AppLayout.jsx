@@ -397,7 +397,7 @@ export default function AppLayout() {
                   }
                 }
               }}
-              items={tabs.map((t) => ({ key: t.key, label: t.label, closable: true }))}
+              items={tabs.map((tab) => ({ key: tab.key, label: t(`mnu.${tab.key}`, tab.label), closable: true }))}
               style={{ marginBottom: 0 }}
               className={isDark ? 'tabs-dark' : 'tabs-light'}
             />

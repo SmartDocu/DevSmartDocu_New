@@ -2,15 +2,6 @@ from typing import Optional
 from pydantic import BaseModel
 
 
-class ObjectTypeItem(BaseModel):
-    objecttypecd: str
-    objecttypenm: Optional[str] = None
-    orderno: Optional[int] = None
-
-
-class ObjectTypesResponse(BaseModel):
-    objecttypes: list[ObjectTypeItem]
-
 
 class ObjectItem(BaseModel):
     objectuid: Optional[str] = None
