@@ -1,17 +1,36 @@
 import { useState, useEffect, useRef } from 'react'
-import { App, Modal, Popconfirm } from 'antd'
+import { useLocation } from 'react-router-dom'
+import { App, Spin } from 'antd'
+import { useLangStore, t } from '@/stores/langStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useMenus } from '@/hooks/useMenus'
 import {
-  useDatasDb, useDbConnectors, useSaveDbData, useDeleteData,
+  useDatasDb, useDatasProjects, useDbConnectors, useSaveDbData, useDeleteData,
   useDatacols, useCreateDatacols, useSaveDatacols,
 } from '@/hooks/useDatas'
-import { useDocs } from '@/hooks/useDocs'
+
+const DATATYPE_OPTIONS = [
+  { value: 'D', label: t('cod.keycoldatatypecd_D') },
+  { value: 'C', label: t('cod.keycoldatatypecd_C') },
+  { value: 'I', label: t('cod.keycoldatatypecd_I') },
+]
 
 const EMPTY_FORM = { datauid: '', projectid: '', connectid: '', datanm: '', query: '' }
 
 export default function MasterDatasDbPage() {
   const { message } = App.useApp()
+  useLangStore((s) => s.translations)
+
+  const location = useLocation()
+  const user = useAuthStore((s) => s.user)
+  const isEditYn = user?.editbuttonyn === 'Y'
+
+  const { data: allMenus = [] } = useMenus()
+  const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
+  const menuNm = currentMenu ? (currentMenu.default_text || '') : 'DB 데이터'
+
   const { data: datas = [], isLoading } = useDatasDb()
-  const { data: docs = [] } = useDocs()
+  const { data: projects = [] } = useDatasProjects()
   const { data: connectors = [] } = useDbConnectors()
   const saveData     = useSaveDbData()
   const deleteData   = useDeleteData('db')
@@ -24,17 +43,12 @@ export default function MasterDatasDbPage() {
 
   const queryRef = useRef(null)
 
-  // 프로젝트 목록 (docs에서 deduplicate)
-  const projects = docs
-    .map((d) => ({ projectid: d.projectid, projectnm: d.projectnm }))
-    .filter((p, i, arr) => p.projectid && arr.findIndex((x) => x.projectid === p.projectid) === i)
-
   // 선택된 데이터의 컬럼 조회
-  const { data: datacols = [] } = useDatacols(selectedUid)
+  const { data: datacols } = useDatacols(selectedUid)
 
   // datacols가 변경되면 로컬 상태 갱신
   useEffect(() => {
-    setColsLocal(datacols.map((c) => ({ ...c })))
+    setColsLocal((datacols || []).map((c) => ({ ...c })))
   }, [datacols])
 
   const autoResize = (el) => {
@@ -52,7 +66,6 @@ export default function MasterDatasDbPage() {
       datanm:    row.datanm || '',
       query:     row.query || '',
     })
-    // textarea 높이 조정 (다음 렌더 후)
     setTimeout(() => autoResize(queryRef.current), 0)
   }
 
@@ -65,14 +78,14 @@ export default function MasterDatasDbPage() {
 
   const handleSave = () => {
     if (!form.datanm.trim() || !form.connectid || !form.projectid) {
-      message.warning('데이터명, 서버정보, 프로젝트는 필수입니다.')
+      message.warning(t('msg.db.required'))
       return
     }
     const body = {
       datauid:   form.datauid || null,
       datanm:    form.datanm,
-      connectid: form.connectid,
-      projectid: form.projectid,
+      connectid: form.connectid ? Number(form.connectid) : null,
+      projectid: Number(form.projectid),
       query:     form.query,
     }
     saveData.mutate(body, {
@@ -81,33 +94,30 @@ export default function MasterDatasDbPage() {
         if (savedUid) {
           createCols.mutate({ datauid: savedUid }, {
             onSuccess: () => {
-              message.success('저장 및 컬럼 생성 완료')
+              message.success(t('msg.save.col.created'))
               setSelectedUid(savedUid)
             },
-            onError: () => message.warning('데이터는 저장되었으나 컬럼 생성에 실패했습니다.'),
+            onError: () => message.warning(t('msg.save.col.warn')),
           })
         } else {
-          message.success('저장되었습니다.')
+          message.success(t('msg.save.success'))
         }
       },
-      onError: (err) => message.error(err.response?.data?.detail || '저장 실패'),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.fail')),
     })
   }
 
   const handleDelete = () => {
-    if (!form.datauid) { message.warning('삭제할 데이터를 선택해주세요.'); return }
-    Modal.confirm({
-      title: '삭제 확인', content: '삭제하시겠습니까?',
-      okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
-      onOk: () => deleteData.mutate(form.datauid, {
-        onSuccess: () => { message.success('삭제 완료'); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
-      }),
+    if (!form.datauid) { message.warning(t('msg.select.delete')); return }
+    if (!window.confirm(t('msg.confirm.delete'))) return
+    deleteData.mutate(form.datauid, {
+      onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.fail')),
     })
   }
 
   const handleSaveCols = () => {
-    if (colsLocal.length === 0) { message.warning('저장할 컬럼 데이터가 없습니다.'); return }
+    if (colsLocal.length === 0) { message.warning(t('msg.col.empty')); return }
     const payload = colsLocal.map((c) => ({
       datauid:    c.datauid || selectedUid,
       querycolnm: c.querycolnm,
@@ -116,8 +126,8 @@ export default function MasterDatasDbPage() {
       measureyn:  !!c.measureyn,
     }))
     saveCols.mutate(payload, {
-      onSuccess: () => message.success('모든 컬럼이 성공적으로 저장되었습니다.'),
-      onError: (err) => message.error(err.response?.data?.detail || '저장 실패'),
+      onSuccess: () => message.success(t('msg.col.save.success')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.fail')),
     })
   }
 
@@ -130,32 +140,35 @@ export default function MasterDatasDbPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>DB 데이터</div>
+          <div>{menuNm}</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
 
-        {/* 왼쪽: 데이터 목록 (30%) */}
-        <div style={{ flex: '30%' }}>
-          <h3>데이터 목록</h3>
-          <div className="table-container">
-            <table id="docs-table" style={{ cursor: 'pointer' }}>
+        {/* 왼쪽: 데이터 목록 */}
+        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+          </div>
+          <div className="table-container" style={{ height: 'auto' }}>
+            <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>프로젝트명</th>
-                  <th>서버정보</th>
-                  <th>데이터명</th>
+                  <th>{t('thd.projectnm')}</th>
+                  <th>{t('thd.connectnm')}</th>
+                  <th>{t('thd.datanm')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>로딩 중...</td></tr>
+                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : datas.length === 0 ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>등록된 데이터가 없습니다.</td></tr>
+                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : datas.map((d) => (
                   <tr key={d.datauid}
-                    className={selectedUid === d.datauid ? 'selected-row' : ''}
+                    style={{ cursor: 'pointer', background: selectedUid === d.datauid ? '#e6f4ff' : '' }}
                     onClick={() => handleRowClick(d)}
                   >
                     <td>{d.projectnm || ''}</td>
@@ -168,132 +181,122 @@ export default function MasterDatasDbPage() {
           </div>
         </div>
 
-        {/* 가운데: 데이터 상세 (30%) */}
-        <div style={{ flex: '30%' }}>
-          <h3>데이터 상세</h3>
-          <div style={{ paddingTop: 15 }}>
-
-            <div className="form-group">
-              <label htmlFor="data-projectid">프로젝트</label>
-              <select id="data-projectid" value={form.projectid}
-                onChange={(e) => setForm(f => ({ ...f, projectid: e.target.value }))}>
-                <option value="">-- 프로젝트 선택 --</option>
-                {projects.map((p) => (
-                  <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="data-connectid">서버정보</label>
-              <select id="data-connectid" value={form.connectid}
-                onChange={(e) => setForm(f => ({ ...f, connectid: e.target.value }))}>
-                <option value="">-- 서버 선택 --</option>
-                {connectors.map((c) => (
-                  <option key={c.connectid} value={c.connectid}>{c.connectnm}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>데이터명</label>
-              <input type="text" value={form.datanm}
-                onChange={(e) => setForm(f => ({ ...f, datanm: e.target.value }))} />
-            </div>
-
-            {/* 안 보이는 더미 필드 (브라우저 자동완성 방지) */}
-            <input type="text" style={{ position: 'absolute', left: -9999, top: -9999 }} autoComplete="off" readOnly />
-
-            <div className="form-group">
-              <label htmlFor="data-query">쿼리</label>
-              <textarea
-                id="data-query"
-                ref={queryRef}
-                rows={1}
-                value={form.query}
-                style={{ resize: 'none', overflow: 'hidden', minHeight: 40 }}
-                onChange={(e) => {
-                  setForm(f => ({ ...f, query: e.target.value }))
-                  autoResize(e.target)
-                }}
-              />
-            </div>
-
-            <div className="button-group">
-              <button type="button" className="icon-btn" onClick={handleNew}>
-                <div className="icon-wrapper">
-                  <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                  <span className="icon-label">신규</span>
-                </div>
-              </button>
-              <button type="button" className="icon-btn" onClick={handleSave}
-                disabled={saveData.isPending || createCols.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                  <span className="icon-label">저장</span>
-                </div>
-              </button>
-              <Popconfirm title="삭제하시겠습니까?" onConfirm={handleDelete}
-                okText="삭제" cancelText="취소" okButtonProps={{ danger: true }}
-                disabled={!form.datauid}>
-                <button type="button" className="icon-btn" disabled={deleteData.isPending}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                    <span className="icon-label">삭제</span>
-                  </div>
+        {/* 가운데: 데이터 상세 */}
+        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            {isEditYn && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleSave}
+                  disabled={saveData.isPending || createCols.isPending}>
+                  {(saveData.isPending || createCols.isPending) && <Spin size="small" style={{ marginRight: 4 }} />}
+                  {t('btn.save')}
                 </button>
-              </Popconfirm>
-            </div>
+                {form.datauid && (
+                  <button className="btn btn-danger" type="button" onClick={handleDelete}
+                    disabled={deleteData.isPending}>
+                    {t('btn.delete')}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="data-projectid">{t('lbl.projectnm')}</label>
+            <select id="data-projectid" value={form.projectid}
+              onChange={(e) => setForm(f => ({ ...f, projectid: e.target.value }))}>
+              <option value="">{t('msg.select.placeholder')}</option>
+              {projects.map((p) => (
+                <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="data-connectid">{t('lbl.connectnm')}</label>
+            <select id="data-connectid" value={form.connectid}
+              onChange={(e) => setForm(f => ({ ...f, connectid: e.target.value }))}>
+              <option value="">{t('msg.select.placeholder')}</option>
+              {connectors.map((c) => (
+                <option key={c.connectid} value={c.connectid}>{c.connectnm}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.datanm')}</label>
+            <input type="text" value={form.datanm}
+              onChange={(e) => setForm(f => ({ ...f, datanm: e.target.value }))} />
+          </div>
+
+          {/* 안 보이는 더미 필드 (브라우저 자동완성 방지) */}
+          <input type="text" style={{ position: 'absolute', left: -9999, top: -9999 }} autoComplete="off" readOnly />
+
+          <div className="form-group">
+            <label htmlFor="data-query">{t('lbl.query')}</label>
+            <textarea
+              id="data-query"
+              ref={queryRef}
+              rows={1}
+              value={form.query}
+              style={{ resize: 'none', overflow: 'hidden', minHeight: 40 }}
+              onChange={(e) => {
+                setForm(f => ({ ...f, query: e.target.value }))
+                autoResize(e.target)
+              }}
+            />
           </div>
         </div>
 
-        {/* 오른쪽: 데이터 컬럼 (35%) */}
-        <div style={{ flex: '35%' }}>
-          <h3>데이터 컬럼</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>원본컬럼</th>
-                <th>표현컬럼</th>
-                <th>타입</th>
-                <th>측정값여부</th>
-              </tr>
-            </thead>
-            <tbody>
-              {colsLocal.length === 0 ? (
-                <tr><td colSpan={4} style={{ textAlign: 'center' }}>데이터를 선택해주세요</td></tr>
-              ) : colsLocal.map((col, i) => (
-                <tr key={i}>
-                  <td>{col.querycolnm || ''}</td>
-                  <td>
-                    <input type="text" value={col.dispcolnm || ''}
-                      onChange={(e) => updateCol(i, 'dispcolnm', e.target.value)} />
-                  </td>
-                  <td>
-                    <select value={col.datatypecd || 'C'}
-                      onChange={(e) => updateCol(i, 'datatypecd', e.target.value)}>
-                      <option value="D">일자</option>
-                      <option value="C">문자</option>
-                      <option value="I">숫자</option>
-                    </select>
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" checked={!!col.measureyn}
-                      onChange={(e) => updateCol(i, 'measureyn', e.target.checked)} />
-                  </td>
+        {/* 오른쪽: 데이터 컬럼 */}
+        <div style={{ flex: 4, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.col.info')}</h3>
+            {isEditYn && (
+              <button className="btn btn-primary" type="button" onClick={handleSaveCols}
+                disabled={saveCols.isPending || colsLocal.length === 0}>
+                {saveCols.isPending && <Spin size="small" style={{ marginRight: 4 }} />}
+                {t('btn.savecols')}
+              </button>
+            )}
+          </div>
+          <div className="table-container" style={{ height: 'auto' }}>
+            <table className="table table-bordered table-sm">
+              <thead>
+                <tr>
+                  <th>{t('thd.querycolnm')}</th>
+                  <th>{t('thd.dispcolnm')}</th>
+                  <th>{t('thd.datatypecd')}</th>
+                  <th>{t('thd.measureyn')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="button-group">
-            <button type="button" className="icon-btn" onClick={handleSaveCols}
-              disabled={saveCols.isPending || colsLocal.length === 0}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" alt="컬럼 전체 저장" />
-                <span className="icon-label">컬럼 전체 저장</span>
-              </div>
-            </button>
+              </thead>
+              <tbody>
+                {colsLocal.length === 0 ? (
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.select.data')}</td></tr>
+                ) : colsLocal.map((col, i) => (
+                  <tr key={i}>
+                    <td>{col.querycolnm || ''}</td>
+                    <td>
+                      <input type="text" value={col.dispcolnm || ''}
+                        onChange={(e) => updateCol(i, 'dispcolnm', e.target.value)} />
+                    </td>
+                    <td>
+                      <select value={col.datatypecd || 'C'}
+                        onChange={(e) => updateCol(i, 'datatypecd', e.target.value)}>
+                        {DATATYPE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={!!col.measureyn}
+                        onChange={(e) => updateCol(i, 'measureyn', e.target.checked)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 

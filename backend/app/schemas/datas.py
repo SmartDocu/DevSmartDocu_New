@@ -47,7 +47,7 @@ class DbDataSaveRequest(BaseModel):
     datauid: Optional[str] = None
     projectid: int
     datanm: str
-    connectid: Optional[str] = None
+    connectid: Optional[int] = None
     query: Optional[str] = None
 
 

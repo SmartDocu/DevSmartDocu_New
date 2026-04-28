@@ -48,6 +48,21 @@ def _delete_storage(sb, url: str):
             pass
 
 
+# ── Projects ───────────────────────────────────────────────────────────────────
+
+@router.get("/projects")
+def list_datas_projects(token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    active_ids, pmap = _active_projects(sb, str(user.id))
+    return {
+        "projects": [
+            {"projectid": pid, "projectnm": pmap[pid]}
+            for pid in active_ids
+        ]
+    }
+
+
 # ── DB Connectors ──────────────────────────────────────────────────────────────
 
 @router.get("/dbconnectors", response_model=DbConnectorsResponse)

@@ -63,58 +63,39 @@ def get_llm_model(request):
 
     if hasattr(request, "projectid"):
         project_id = request.projectid
-        tenant_id = process_data_in_supabase(
-            supabase, "projects", "select", {}, 
-             {"projectid": project_id}, "tenantid"
-        )[0]["tenantid"]
+        rows = process_data_in_supabase(supabase, "projects", "select", {}, {"projectid": project_id}, "tenantid")
+        tenant_id = rows[0]["tenantid"]
     else:
         user = request.session.get("user")
         if user:
             project_id = user.get("projectid")
             tenant_id = user.get("tenantid")
         else:
-            tenant_id = process_data_in_supabase(
-                supabase, "tenants", "select", {}, 
-                {"tenantnm": "SmartDoc"}, "tenantid"
-            )[0]["tenantid"]
+            rows_t = process_data_in_supabase(supabase, "tenants", "select", {}, {"issytemtenant": True}, "tenantid")
+            tenant_id = rows_t[0]["tenantid"]
 
-            project_id = process_data_in_supabase(
-                supabase, "projects", "select", {}, 
-                {"tenantid": tenant_id, "projectnm": "public"}, "projectid"
-            )[0]["projectid"]
+            rows_p = process_data_in_supabase(supabase, "projects", "select", {}, {"tenantid": tenant_id, "projectnm": "public"}, "projectid")
+            project_id = rows_p[0]["projectid"]
 
     def fetch_llm_config(table_name, conditions):
         """테이블에서 LLM 설정 조회"""
-        data = process_data_in_supabase(
-            supabase, table_name, "select", {}, 
-            conditions, "llmmodelnm, encapikey, tenantid"
-        )
+        data = process_data_in_supabase(supabase, table_name, "select", {}, conditions, "llmmodelnm, encapikey, tenantid")
         return data[0]["llmmodelnm"], data[0]["encapikey"]
 
     llm_model, enc_api_key = fetch_llm_config("projects", {"projectid": project_id})
     if not llm_model:
         llm_model, enc_api_key = fetch_llm_config("tenants", {"tenantid": tenant_id})
-        
+
         if not llm_model:
-            llm_data = process_data_in_supabase(
-                supabase, "llmmodels", "select", {},
-                {"useyn": True}, "llmmodelnm, creator"
-            )
+            llm_data = process_data_in_supabase(supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm, creator")
             choice_model = random.choice(llm_data)
             llm_model = choice_model["llmmodelnm"]
 
-            key_data = process_data_in_supabase(
-                supabase, "llmapis", "select", {}, 
-                {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey"
-            )
+            key_data = process_data_in_supabase(supabase, "llmapis", "select", {}, {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey")
             choice_key = random.choice(key_data)
             enc_api_key = choice_key["encapikey"]
-    
-    print(f"jeff 001 encode_api_key: {enc_api_key}")
 
     dec_api_key = decrypt_value(enc_api_key)
-
-    print(f"jeff 002 decode_api_key: {dec_api_key}")
 
     llm_vendor_name = process_data_in_supabase(
         supabase, "llmmodels", "select", {},

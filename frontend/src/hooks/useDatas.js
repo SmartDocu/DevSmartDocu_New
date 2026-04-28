@@ -22,6 +22,13 @@ export function useChapterDatas(chapteruid) {
   })
 }
 
+export function useDatasProjects() {
+  return useQuery({
+    queryKey: ['datas-projects'],
+    queryFn: () => apiClient.get('/datas/projects').then((r) => r.data.projects),
+  })
+}
+
 export function useDatasDb() {
   return useQuery({
     queryKey: ['datas', 'db'],
