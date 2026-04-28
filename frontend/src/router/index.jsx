@@ -52,6 +52,7 @@ import MasterAiTablesPage from '@/pages/master/MasterAiTablesPage'
 import MasterChapterTemplatePage from '@/pages/master/MasterChapterTemplatePage'
 import MasterConditionsPage from '@/pages/master/MasterConditionsPage'
 import MasterDatasetPage from '@/pages/master/MasterDatasetPage'
+import ExperiencePage from '@/pages/public/ExperiencePage'
 
 export const router = createBrowserRouter([
   // ── 인증 불필요 ───────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ export const router = createBrowserRouter([
       { path: 'faq', element: <FaqPage /> },
       { path: 'follow', element: <FollowPage /> },
       { path: 'contact', element: <ContactPage /> },
+      { path: 'experience', element: <ExperiencePage /> },
     ],
   },
 

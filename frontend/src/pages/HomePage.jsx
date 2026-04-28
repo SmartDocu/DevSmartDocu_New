@@ -129,7 +129,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => navigate('/req/list')}
+              onClick={() => navigate('/experience')}
             >
               체험 시작
             </button>

@@ -482,3 +482,149 @@ def llm_delete(body: DeleteRequest, token: str = Depends(get_token)):
     ).eq("objectnm", body.objectnm).execute()
 
     return {"success": True}
+
+
+# ── Experience (공개 체험 — 인증 불필요) ──────────────────────────────────────
+
+@router.get("/experience/columns")
+def experience_columns(datauid: str):
+    """공개 체험 페이지용 열이름 조회 (인증 불필요)"""
+    sb_svc = get_service_client()
+    rows = sb_svc.schema(SUPABASE_SCHEMA).table("datacols").select(
+        "querycolnm, dispcolnm, orderno"
+    ).eq("datauid", datauid).execute().data or []
+    sorted_rows = sorted(
+        [r for r in rows if r.get("orderno") is not None],
+        key=lambda x: x["orderno"],
+    ) or rows
+    return {"columns": [r["dispcolnm"] for r in sorted_rows]}
+
+
+@router.get("/experience/prompts")
+def experience_prompts():
+    """로그인 없이 접근 가능한 체험 페이지용 샘플 프롬프트 목록"""
+    import sys, traceback
+    try:
+        sb_svc = get_service_client()
+        rows = sb_svc.schema(SUPABASE_SCHEMA).table("prompts").select("*").order("orderno").execute().data or []
+        datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas").select("datauid, datanm").order("datanm").execute().data or []
+        return {
+            "prompts": rows,
+            "datas": datas,
+            "chart_types": [{"value": v, "label": DISPLAY_TYPE_NAMES[v]} for v in DISPLAY_TYPES["CA"]],
+            "sentence_types": [{"value": v, "label": DISPLAY_TYPE_NAMES[v]} for v in DISPLAY_TYPES["SA"]],
+            "table_types": [{"value": v, "label": DISPLAY_TYPE_NAMES[v]} for v in DISPLAY_TYPES["TA"]],
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[llm/experience/prompts] 오류:\n{tb}", file=sys.stderr, flush=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExperiencePreviewRequest(BaseModel):
+    prompt: str
+    objecttypecd: str
+    datauid: Optional[str] = None
+    displaytype: Optional[str] = None
+
+
+@router.post("/experience/preview")
+def experience_preview(body: ExperiencePreviewRequest):
+    """로그인 없이 접근 가능한 체험 페이지용 LLM 미리보기"""
+    import traceback, sys
+
+    if not body.prompt.strip():
+        raise HTTPException(status_code=400, detail="프롬프트를 입력해주세요.")
+    if not body.datauid:
+        raise HTTPException(status_code=400, detail="데이터를 선택해주세요.")
+
+    from utilsPrj.process_data import process_data
+    from utilsPrj.ai_chain import (
+        get_charts_prompt, get_sentences_prompt, get_tables_prompt,
+        get_full_chain,
+    )
+    from utilsPrj.supabase_client import SUPABASE_SERVICE_ROLE_KEY
+
+    sb_svc = get_service_client()
+
+    data_rows = sb_svc.schema(SUPABASE_SCHEMA).table("datas").select(
+        "projectid, datasourcecd, sourcedatauid"
+    ).eq("datauid", body.datauid).execute().data or []
+
+    projectid = data_rows[0].get("projectid") if data_rows else None
+    tenantid = None
+    if projectid:
+        proj_rows = sb_svc.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq(
+            "projectid", projectid
+        ).execute().data or []
+        if proj_rows:
+            tenantid = proj_rows[0].get("tenantid")
+
+    col_datauid = body.datauid
+    if data_rows and data_rows[0].get("datasourcecd") == "df":
+        col_datauid = data_rows[0].get("sourcedatauid") or body.datauid
+
+    req = FakeLlmRequest(
+        SUPABASE_SERVICE_ROLE_KEY,
+        "00000000-0000-0000-0000-000000000000",
+        projectid=projectid,
+        tenantid=tenantid,
+        docid=None,
+    )
+
+    try:
+        result_df = process_data(req, body.datauid, None)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[experience/preview] process_data 오류:\n{tb}", file=sys.stderr, flush=True)
+        raise HTTPException(status_code=400, detail=f"데이터 조회 오류: {str(e)}")
+
+    try:
+        datacols = sb_svc.schema(SUPABASE_SCHEMA).table("datacols").select(
+            "querycolnm, dispcolnm"
+        ).eq("datauid", col_datauid).execute().data or []
+    except Exception:
+        datacols = []
+    column_dict = {r["querycolnm"]: r["dispcolnm"] for r in datacols}
+
+    ot = body.objecttypecd
+    if ot == "CA":
+        prompt = get_charts_prompt(result_df, column_dict, body.prompt)
+    elif ot == "SA":
+        prompt = get_sentences_prompt(result_df, column_dict, body.prompt)
+    elif ot == "TA":
+        prompt = get_tables_prompt(result_df, column_dict, body.prompt)
+    else:
+        raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
+
+    try:
+        llm = _get_llm_model(sb_svc, projectid, tenantid)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[experience/preview] LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)
+        raise HTTPException(status_code=500, detail=f"LLM 모델 로드 오류: {str(e)}")
+
+    full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, ot)
+    try:
+        response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[experience/preview] LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
+        raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
+
+    if not isinstance(response, dict):
+        raise HTTPException(status_code=500, detail="LLM 응답 형식 오류")
+
+    status_val = response.get("status")
+    if status_val == "chart_drawn":
+        return {"message_type": "image", "image_data": response["image_bytes"],
+                "question": response.get("question", "")}
+    elif status_val == "analysis_comment":
+        return {"message_type": "text", "message": response.get("result", "")}
+    elif status_val == "data_table":
+        return {"message_type": "table", "message": "",
+                "data": response.get("result", ""),
+                "table_header_json": response.get("table_header_json", ""),
+                "table_data_json": response.get("table_data_json", "")}
+    else:
+        return {"message_type": "error", "message": "알 수 없는 응답 형식입니다."}
