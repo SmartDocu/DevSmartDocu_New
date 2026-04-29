@@ -9,7 +9,7 @@ import { useLangStore, t } from '@/stores/langStore'
 export default function DocSelectModal({ open, onClose }) {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
-  const { updateUser } = useAuthStore()
+  const { updateUser, user } = useAuthStore()
   const { clearTabs } = useTabStore()
   useLangStore((s) => s.translations)
 
@@ -18,6 +18,7 @@ export default function DocSelectModal({ open, onClose }) {
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('doc')
   const [selectedDoc, setSelectedDoc] = useState(null)
+  const [hoveredDocId, setHoveredDocId] = useState(null)
 
   // 모달 열릴 때 문서 목록 로드
   useEffect(() => {
@@ -143,19 +144,38 @@ export default function DocSelectModal({ open, onClose }) {
         </div>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {filtered.map((doc) => (
+          {filtered.map((doc) => {
+            const isCurrent = user?.docid != null && String(user.docid) === String(doc.docid)
+            const isSelected = selectedDoc?.docid === doc.docid
+            const isHovered = hoveredDocId === doc.docid
+            const currentBorder = '#A7BFD5'
+            const hoverBg = '#C2D9EC'
+            const normalBg = '#fafafa'
+            const bg = isSelected
+              ? '#e6f4ff'
+              : isCurrent
+              ? (isHovered ? normalBg : hoverBg)
+              : (isHovered ? hoverBg : normalBg)
+            const borderColor = isSelected
+              ? '#1677ff'
+              : isCurrent
+              ? (isHovered ? '#ddd' : currentBorder)
+              : (isHovered ? currentBorder : '#ddd')
+            return (
             <li
               key={doc.docid}
               onClick={() => handleSelect(doc)}
+              onMouseEnter={() => setHoveredDocId(doc.docid)}
+              onMouseLeave={() => setHoveredDocId(null)}
               style={{
                 padding: '10px 12px',
-                border: `1px solid ${selectedDoc?.docid === doc.docid ? '#1677ff' : '#ddd'}`,
+                border: `1px solid ${borderColor}`,
                 borderRadius: 8,
                 marginBottom: 8,
                 cursor: 'pointer',
-                background: selectedDoc?.docid === doc.docid ? '#e6f4ff' : '#fafafa',
-                fontWeight: selectedDoc?.docid === doc.docid ? 700 : 400,
-                transition: 'all 0.15s',
+                background: bg,
+                fontWeight: isSelected ? 700 : 400,
+                transition: 'background 0.15s, border-color 0.15s',
               }}
             >
               <div style={{ fontSize: 15, fontWeight: 600 }}>{doc.docnm}</div>
@@ -171,7 +191,8 @@ export default function DocSelectModal({ open, onClose }) {
                 </div>
               )}
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </Modal>
