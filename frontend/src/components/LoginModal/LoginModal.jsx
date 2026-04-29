@@ -106,7 +106,7 @@ export default function LoginModal({ open, onClose }) {
           &times;
         </button>
 
-        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>{t('ttl.login')}</h2>
+        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>{t('ttl.login_ttl')}</h2>
 
         {/* 이메일 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
@@ -150,7 +150,7 @@ export default function LoginModal({ open, onClose }) {
             className="btn btn-primary"
             style={{ fontSize: 13 }}
           >
-            {loading ? t('btn.login.ing') : t('btn.login')}
+            {loading ? t('btn.login.ing') : t('btn.login_btn')}
           </button>
         </div>
 

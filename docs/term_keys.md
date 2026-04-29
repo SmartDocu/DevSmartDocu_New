@@ -1,7 +1,10 @@
 # 다국어 Term Key 목록
 
-프로젝트 전체 수집 기준일: 2026-04-28  
-총 241개 유니크 키
+프로젝트 전체 수집 기준일: 2026-04-29  
+총 238개 (category 4 기준: btn/lbl/thd/ttl/inf)
+
+> **PK 충돌 해소 규칙**: `termkey`가 PK이므로 동일 base key가 여러 group에 속하면  
+> `{basekey}_{group}` suffix 부여 (예: `orderno_lbl`, `orderno_thd`)
 
 ---
 
@@ -30,7 +33,7 @@
 | msg.code.select.trans |
 | msg.code.value.required |
 | msg.col.empty |
-| msg.col.save.success |
+| msg.col.save.created |
 | msg.confirm.delete |
 | msg.confirm.file.overwrite |
 | msg.datanm.required |
@@ -114,27 +117,30 @@
 
 ## 4. 기타 prefix (btn / lbl / thd / ttl / inf)
 
+> suffix 규칙: 동일 base key가 여러 group에 존재하면 `_{group}` 추가  
+> 예) `orderno` → `orderno_lbl` (lbl), `orderno_thd` (thd)
+
 ### btn. (17개)
 
 | term_key |
 |----------|
 | btn.cancel |
 | btn.delete |
-| btn.login |
+| btn.login_btn |
 | btn.logout |
 | btn.new |
 | btn.object.manage |
 | btn.objectconfig |
 | btn.ok |
-| btn.preview |
-| btn.register |
+| btn.preview_btn |
+| btn.register_btn |
 | btn.reset.password |
 | btn.reset.send |
 | btn.save |
 | btn.savecols |
 | btn.template.edit |
 | btn.upgrade |
-| btn.upload |
+| btn.upload_btn |
 
 ### lbl. (74개)
 
@@ -146,19 +152,19 @@
 | lbl.billing.single |
 | lbl.chapternm |
 | lbl.chapterno |
-| lbl.codegroupcd |
-| lbl.codevalue |
-| lbl.connectnm |
-| lbl.connecttype |
-| lbl.datanm |
-| lbl.dataset |
+| lbl.codegroupcd_lbl |
+| lbl.codevalue_lbl |
+| lbl.connectnm_lbl |
+| lbl.connecttype_lbl |
+| lbl.datanm_lbl |
+| lbl.dataset_lbl |
 | lbl.dataset.unused |
 | lbl.dataset.used |
-| lbl.datasourcecd |
+| lbl.datasourcecd_lbl |
 | lbl.datauid |
 | lbl.default_message |
-| lbl.default_name |
-| lbl.default_text |
+| lbl.default_name_lbl |
+| lbl.default_text_lbl |
 | lbl.description |
 | lbl.dim.cols |
 | lbl.doc |
@@ -168,38 +174,38 @@
 | lbl.encdatabase |
 | lbl.encendpoint |
 | lbl.file |
-| lbl.iconnm |
+| lbl.iconnm_lbl |
 | lbl.joindt |
 | lbl.keycoldatatypecd |
 | lbl.keycolnm |
 | lbl.measure.cols |
-| lbl.menucd |
-| lbl.messagekey |
-| lbl.messagetypecd |
+| lbl.menucd_lbl |
+| lbl.messagekey_lbl |
+| lbl.messagetypecd_lbl |
 | lbl.myrole |
 | lbl.nmcolnm |
 | lbl.not.agreed |
 | lbl.note |
-| lbl.objectdesc |
-| lbl.objectnm |
-| lbl.objecttypecd |
-| lbl.operator |
+| lbl.objectdesc_lbl |
+| lbl.objectnm_lbl |
+| lbl.objecttypecd_lbl |
+| lbl.operator_lbl |
 | lbl.optional |
 | lbl.ordercolnm |
-| lbl.orderno |
-| lbl.paramnm |
+| lbl.orderno_lbl |
+| lbl.paramnm_lbl |
 | lbl.password |
 | lbl.password.confirm |
 | lbl.plan |
 | lbl.plan.free |
 | lbl.plan.pro |
 | lbl.project |
-| lbl.projectnm |
+| lbl.projectnm_lbl |
 | lbl.prompt |
 | lbl.query |
 | lbl.required |
 | lbl.reset.email |
-| lbl.rolecd |
+| lbl.rolecd_lbl |
 | lbl.route_path |
 | lbl.sample |
 | lbl.samplevalue |
@@ -208,48 +214,48 @@
 | lbl.template.upload |
 | lbl.tenant |
 | lbl.tenantnm |
-| lbl.termgroupcd |
-| lbl.termkey |
+| lbl.termgroupcd_lbl |
+| lbl.termkey_lbl |
 | lbl.theme |
-| lbl.upload |
+| lbl.upload_lbl |
 | lbl.usernm |
-| lbl.useyn |
+| lbl.useyn_lbl |
 
 ### thd. (31개)
 
 | term_key |
 |----------|
-| thd.codegroupcd |
-| thd.codevalue |
-| thd.connectnm |
-| thd.connecttype |
-| thd.datanm |
-| thd.datasourcecd |
+| thd.codegroupcd_thd |
+| thd.codevalue_thd |
+| thd.connectnm_thd |
+| thd.connecttype_thd |
+| thd.datanm_thd |
+| thd.datasourcecd_thd |
 | thd.datatypecd |
-| thd.default_name |
-| thd.default_text |
+| thd.default_name_thd |
+| thd.default_text_thd |
 | thd.dispcolnm |
 | thd.languagecd |
 | thd.languagenm |
 | thd.measureyn |
-| thd.menucd |
-| thd.messagekey |
-| thd.messagetypecd |
-| thd.objectdesc |
-| thd.objectnm |
+| thd.menucd_thd |
+| thd.messagekey_thd |
+| thd.messagetypecd_thd |
+| thd.objectdesc_thd |
+| thd.objectnm_thd |
 | thd.objectsettingyn |
-| thd.objecttypecd |
-| thd.operator |
-| thd.orderno |
-| thd.paramnm |
-| thd.projectnm |
+| thd.objecttypecd_thd |
+| thd.operator_thd |
+| thd.orderno_thd |
+| thd.paramnm_thd |
+| thd.projectnm_thd |
 | thd.querycolnm |
-| thd.rolecd |
-| thd.termgroupcd |
-| thd.termkey |
+| thd.rolecd_thd |
+| thd.termgroupcd_thd |
+| thd.termkey_thd |
 | thd.translated_desc |
 | thd.translated_text |
-| thd.useyn |
+| thd.useyn_thd |
 
 ### ttl. (20개)
 
@@ -260,20 +266,20 @@
 | ttl.condition |
 | ttl.data.preview |
 | ttl.datacols |
-| ttl.dataset |
+| ttl.dataset_ttl |
 | ttl.dataset.mapping |
 | ttl.detail |
 | ttl.docselect |
 | ttl.docselect.change |
 | ttl.list |
-| ttl.login |
+| ttl.login_ttl |
 | ttl.myinfo.personal |
 | ttl.myinfo.projects |
 | ttl.myinfo.tenant |
 | ttl.myinfo.tenant.history |
 | ttl.myinfo.terms |
-| ttl.preview |
-| ttl.register |
+| ttl.preview_ttl |
+| ttl.register_ttl |
 | ttl.translations |
 
 ### inf. (4개)
@@ -281,7 +287,7 @@
 | term_key |
 |----------|
 | inf.gensentence.default |
-| inf.iconnm |
+| inf.iconnm_inf |
 | inf.password.hidden |
 | inf.preview.empty |
 

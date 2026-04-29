@@ -190,8 +190,8 @@ export default function MasterDatasAiPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>{t('thd.datanm')}</th>
-                  <th style={{ width: 80 }}>{t('thd.datasourcecd')}</th>
+                  <th>{t('thd.datanm_thd')}</th>
+                  <th style={{ width: 80 }}>{t('thd.datasourcecd_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -225,13 +225,13 @@ export default function MasterDatasAiPage() {
               disabled={aiPreview.isPending}
             >
               {aiPreview.isPending && <Spin size="small" style={{ marginRight: 4 }} />}
-              {t('btn.preview')}
+              {t('btn.preview_btn')}
             </button>
           </div>
 
           <div className="form-group">
             <label htmlFor="df-datanm">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}:
             </label>
             <input
               id="df-datanm"
@@ -243,7 +243,7 @@ export default function MasterDatasAiPage() {
 
           <div className="form-group">
             <label htmlFor="df-datasourcecd">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datasourcecd')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datasourcecd_lbl')}:
             </label>
             {!isNew ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>
@@ -308,7 +308,7 @@ export default function MasterDatasAiPage() {
         {/* 우측: 미리보기 결과 */}
         <div style={{ flex: 4, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.preview')}</h3>
+            <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
             {isEditYn && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button

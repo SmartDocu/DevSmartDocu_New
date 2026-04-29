@@ -127,7 +127,7 @@ export default function AdminCodesPage() {
             </button>
           </div>
           <Input
-            placeholder={`${t('thd.codegroupcd')} / ${t('thd.codevalue')}`}
+            placeholder={`${t('thd.codegroupcd_thd')} / ${t('thd.codevalue_thd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
@@ -137,11 +137,11 @@ export default function AdminCodesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('thd.codegroupcd')}</th>
-                  <th>{t('thd.codevalue')}</th>
-                  <th>{t('thd.default_name')}</th>
-                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn')}</th>
+                  <th>{t('thd.codegroupcd_thd')}</th>
+                  <th>{t('thd.codevalue_thd')}</th>
+                  <th>{t('thd.default_name_thd')}</th>
+                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -176,7 +176,7 @@ export default function AdminCodesPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="code-codegroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codegroupcd')}:</label>
+            <label htmlFor="code-codegroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codegroupcd_lbl')}:</label>
             {isNew ? (
               <input
                 id="code-codegroupcd"
@@ -189,7 +189,7 @@ export default function AdminCodesPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="code-codevalue"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codevalue')}:</label>
+            <label htmlFor="code-codevalue"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codevalue_lbl')}:</label>
             {isNew ? (
               <input
                 id="code-codevalue"
@@ -202,7 +202,7 @@ export default function AdminCodesPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="code-default-name"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_name')}:</label>
+            <label htmlFor="code-default-name"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_name_lbl')}:</label>
             <input
               id="code-default-name"
               type="text"
@@ -211,7 +211,7 @@ export default function AdminCodesPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="code-orderno">{t('lbl.orderno')}:</label>
+            <label htmlFor="code-orderno">{t('lbl.orderno_lbl')}:</label>
             <input
               id="code-orderno"
               type="number"
@@ -220,7 +220,7 @@ export default function AdminCodesPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="code-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
+            <label htmlFor="code-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
             <input
               id="code-useyn"
               type="checkbox"

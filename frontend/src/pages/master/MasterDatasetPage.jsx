@@ -85,8 +85,8 @@ export default function MasterDatasetPage() {
               <thead>
                 <tr>
                   <th style={{ width: '10%', textAlign: 'center' }}></th>
-                  <th>{t('thd.datanm')}</th>
-                  <th style={{ width: '20%', textAlign: 'center' }}>{t('thd.datasourcecd')}</th>
+                  <th>{t('thd.datanm_thd')}</th>
+                  <th style={{ width: '20%', textAlign: 'center' }}>{t('thd.datasourcecd_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -135,7 +135,7 @@ export default function MasterDatasetPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ minWidth: 140 }}>{t('thd.datanm')}</th>
+                  <th style={{ minWidth: 140 }}>{t('thd.datanm_thd')}</th>
                   {dataparams.map((p) => (
                     <th key={p.paramuid} style={{ minWidth: 140, textAlign: 'center' }}>
                       {p.paramnm}

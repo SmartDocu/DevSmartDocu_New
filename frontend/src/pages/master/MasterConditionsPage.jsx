@@ -117,8 +117,8 @@ export default function MasterConditionsPage() {
 
   const handleSave = () => {
     if (!docid) { alert(t('msg.doc.select')); return }
-    if (!form.paramnm) { alert(t('msg.required') + ': ' + t('lbl.paramnm')); return }
-    if (!form.operator) { alert(t('msg.required') + ': ' + t('lbl.operator')); return }
+    if (!form.paramnm) { alert(t('msg.required') + ': ' + t('lbl.paramnm_lbl')); return }
+    if (!form.operator) { alert(t('msg.required') + ': ' + t('lbl.operator_lbl')); return }
     if (!form.samplevalue) { alert(t('msg.required') + ': ' + t('lbl.samplevalue')); return }
     if (form.datasetyn === 'Y' && !form.datauid) {
       alert(t('msg.required') + ': ' + t('lbl.datauid'))
@@ -182,10 +182,10 @@ export default function MasterConditionsPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.orderno')}</th>
-                  <th>{t('thd.paramnm')}</th>
-                  <th style={{ width: '15%', textAlign: 'center' }}>{t('thd.operator')}</th>
-                  <th>{t('thd.datanm')}</th>
+                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
+                  <th>{t('thd.paramnm_thd')}</th>
+                  <th style={{ width: '15%', textAlign: 'center' }}>{t('thd.operator_thd')}</th>
+                  <th>{t('thd.datanm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -240,7 +240,7 @@ export default function MasterConditionsPage() {
           {/* 조건명 (필수) */}
           <div className="form-group">
             <label htmlFor="cond-paramnm">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.paramnm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.paramnm_lbl')}:
             </label>
             <input
               id="cond-paramnm"
@@ -253,7 +253,7 @@ export default function MasterConditionsPage() {
           {/* 연산자 (필수) */}
           <div className="form-group">
             <label htmlFor="cond-operator">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.operator')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.operator_lbl')}:
             </label>
             <select
               id="cond-operator"
@@ -268,7 +268,7 @@ export default function MasterConditionsPage() {
 
           {/* 순번 */}
           <div className="form-group">
-            <label htmlFor="cond-orderno">{t('lbl.orderno')}:</label>
+            <label htmlFor="cond-orderno">{t('lbl.orderno_lbl')}:</label>
             <input
               id="cond-orderno"
               type="number"
@@ -293,7 +293,7 @@ export default function MasterConditionsPage() {
           {/* 연동 데이터 radio (필수) */}
           <div className="form-group">
             <label>
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.dataset')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.dataset_lbl')}:
             </label>
             <div style={{ display: 'flex', gap: 20, paddingTop: 4 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>

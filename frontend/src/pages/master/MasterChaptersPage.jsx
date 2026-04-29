@@ -175,7 +175,7 @@ export default function MasterChaptersPage() {
             />
           </div>
           <div className="form-group">
-            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
             <input
               type="checkbox"
               checked={!!form.useyn}
@@ -190,7 +190,7 @@ export default function MasterChaptersPage() {
                 className="icon-btn"
                 onClick={() => document.getElementById('chap-template-input').click()}
               >
-                <img src="/icons/upload.svg" title={t('lbl.upload')} className="icon-img new-icon" alt={t('lbl.upload')} />
+                <img src="/icons/upload.svg" title={t('lbl.upload_lbl')} className="icon-img new-icon" alt={t('lbl.upload_lbl')} />
               </button>
               <input
                 id="chap-template-input"

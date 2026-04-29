@@ -340,7 +340,7 @@ export default function AppLayout() {
                     marginLeft: 12,
                   }}
                 >
-                  {t('btn.register')}
+                  {t('btn.register_btn')}
                 </button>
                 <button
                   onClick={() => setLoginModalOpen(true)}
@@ -355,7 +355,7 @@ export default function AppLayout() {
                     marginLeft: 8,
                   }}
                 >
-                  {t('btn.login')}
+                  {t('btn.login_btn')}
                 </button>
               </>
             )}

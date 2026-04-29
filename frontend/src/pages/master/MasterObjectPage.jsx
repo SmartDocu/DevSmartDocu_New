@@ -166,12 +166,12 @@ export default function MasterObjectPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '10%' }}>{t('thd.orderno')}</th>
-                  <th style={{ width: '18%' }}>{t('thd.objectnm')}</th>
-                  <th style={{ width: '14%' }}>{t('thd.objecttypecd')}</th>
-                  <th style={{ width: '35%' }}>{t('thd.objectdesc')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.objectnm_thd')}</th>
+                  <th style={{ width: '14%' }}>{t('thd.objecttypecd_thd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.objectdesc_thd')}</th>
                   <th style={{ width: '13%' }}>{t('thd.objectsettingyn')}</th>
-                  <th style={{ width: '10%' }}>{t('thd.useyn')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -234,12 +234,12 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.objectnm')}:</label>
+            <label>{t('lbl.objectnm_lbl')}:</label>
             <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-desc">{t('lbl.objectdesc')}:</label>
+            <label htmlFor="obj-desc">{t('lbl.objectdesc_lbl')}:</label>
             <textarea
               id="obj-desc"
               rows={3}
@@ -251,7 +251,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.objecttypecd')}:</label>
+            <label>{t('lbl.objecttypecd_lbl')}:</label>
             <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
               <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
                 <img src="/icons/make_ui.svg" className="icon-img-tbl" title="UI" alt="UI" style={{ height: 18 }} />
@@ -275,7 +275,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="obj-useyn">{t('lbl.useyn_lbl')}:</label>
             <input
               id="obj-useyn"
               type="checkbox"
@@ -285,7 +285,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-orderno">{t('lbl.orderno')}:</label>
+            <label htmlFor="obj-orderno">{t('lbl.orderno_lbl')}:</label>
             <input
               id="obj-orderno"
               type="number"

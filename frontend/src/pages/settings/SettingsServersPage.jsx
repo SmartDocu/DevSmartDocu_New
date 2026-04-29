@@ -106,10 +106,10 @@ export default function SettingsServersPage() {
             <table id="servers-table" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '20%' }}>{t('thd.connectnm')}</th>
-                  <th style={{ width: '13%' }}>{t('thd.connecttype')}</th>
-                  <th style={{ width: '12%' }}>{t('thd.orderno')}</th>
-                  <th style={{ width: '12%' }}>{t('thd.useyn')}</th>
+                  <th style={{ width: '20%' }}>{t('thd.connectnm_thd')}</th>
+                  <th style={{ width: '13%' }}>{t('thd.connecttype_thd')}</th>
+                  <th style={{ width: '12%' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: '12%' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -147,7 +147,7 @@ export default function SettingsServersPage() {
 
           <div className="form-group">
             <label htmlFor="connecttype">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connecttype')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connecttype_lbl')}:
             </label>
             <select id="connecttype" value={form.connecttype}
               onChange={(e) => setForm(f => ({ ...f, connecttype: e.target.value }))}>
@@ -157,21 +157,21 @@ export default function SettingsServersPage() {
 
           <div className="form-group">
             <label>
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connectnm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connectnm_lbl')}:
             </label>
             <input type="text" value={form.connectnm}
               onChange={(e) => setForm(f => ({ ...f, connectnm: e.target.value }))} />
           </div>
 
           <div className="form-group">
-            <label htmlFor="orderno">{t('lbl.orderno')}:</label>
+            <label htmlFor="orderno">{t('lbl.orderno_lbl')}:</label>
             <input type="number" id="orderno" value={form.orderno} min={0} step={1}
               onChange={(e) => setForm(f => ({ ...f, orderno: e.target.value }))} />
           </div>
 
           <div className="form-group">
             <label>
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:
             </label>
             <input type="checkbox" checked={form.useyn}
               onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />

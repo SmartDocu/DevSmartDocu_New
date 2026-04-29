@@ -118,7 +118,7 @@ export default function RegisterModal({ open, onClose }) {
           &times;
         </button>
 
-        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>{t('ttl.register')}</h2>
+        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>{t('ttl.register_ttl')}</h2>
 
         {/* 사용 모델 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
@@ -234,7 +234,7 @@ export default function RegisterModal({ open, onClose }) {
           className="btn btn-primary"
           style={{ width: '100%', padding: '10px 0', fontSize: 15 }}
         >
-          {saving ? t('btn.register.ing') : t('btn.register')}
+          {saving ? t('btn.register.ing') : t('btn.register_btn')}
         </button>
       </div>
     </div>

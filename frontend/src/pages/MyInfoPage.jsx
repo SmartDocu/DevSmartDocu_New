@@ -38,9 +38,9 @@ export default function MyInfoPage() {
   }
 
   const projectColumns = [
-    { title: t('thd.projectnm'), dataIndex: 'projectnm', key: 'projectnm' },
+    { title: t('thd.projectnm_thd'), dataIndex: 'projectnm', key: 'projectnm' },
     {
-      title: t('thd.rolecd'),
+      title: t('thd.rolecd_thd'),
       dataIndex: 'rolecd',
       key: 'rolecd',
       width: 100,
