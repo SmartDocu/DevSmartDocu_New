@@ -120,7 +120,7 @@ export default function AdminTermsPage() {
             </button>
           </div>
           <Input
-            placeholder={`${t('thd.termkey')} / ${t('thd.termgroupcd')}`}
+            placeholder={`${t('thd.termkey_thd')} / ${t('thd.termgroupcd_thd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
@@ -130,10 +130,10 @@ export default function AdminTermsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('thd.termkey')}</th>
-                  <th>{t('thd.termgroupcd')}</th>
-                  <th>{t('thd.default_text')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn')}</th>
+                  <th>{t('thd.termkey_thd')}</th>
+                  <th>{t('thd.termgroupcd_thd')}</th>
+                  <th>{t('thd.default_text_thd')}</th>
+                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,7 +167,7 @@ export default function AdminTermsPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="term-termkey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termkey')}:</label>
+            <label htmlFor="term-termkey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termkey_lbl')}:</label>
             {isNew ? (
               <input
                 id="term-termkey"
@@ -180,7 +180,7 @@ export default function AdminTermsPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="term-termgroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termgroupcd')}:</label>
+            <label htmlFor="term-termgroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termgroupcd_lbl')}:</label>
             <select
               id="term-termgroupcd"
               value={form.termgroupcd}
@@ -195,7 +195,7 @@ export default function AdminTermsPage() {
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="term-default-text"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_text')}:</label>
+            <label htmlFor="term-default-text"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_text_lbl')}:</label>
             <input
               id="term-default-text"
               type="text"
@@ -214,7 +214,7 @@ export default function AdminTermsPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="term-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
+            <label htmlFor="term-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
             <input
               id="term-useyn"
               type="checkbox"

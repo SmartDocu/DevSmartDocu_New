@@ -227,7 +227,7 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
         <div className="sidebar-search">
           <Input
             prefix={<SearchOutlined style={{ color: '#aaa' }} />}
-            placeholder={t('sidebar.search')}
+            placeholder={t('msg.sidebar.search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             allowClear
@@ -243,7 +243,7 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
         <>
           <div className="sidebar-section-title" style={{ color: isDark ? '#aaa' : undefined }}>
             <StarFilled style={{ color: '#faad14', marginRight: 4 }} />
-            {t('sidebar.favorites')}
+            {t('msg.sidebar.favorites')}
           </div>
           <ul className="sidebar-fav-list">
             {favoriteMenus.map((m) => (

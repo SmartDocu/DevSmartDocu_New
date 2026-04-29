@@ -27,7 +27,7 @@ export function useSaveTerm() {
         ? apiClient.post('/terms', { termkey, ...body }).then((r) => r.data)
         : apiClient.put(`/terms/${termkey}`, { termkey, ...body }).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
@@ -40,7 +40,7 @@ export function useDeleteTerm() {
   return useMutation({
     mutationFn: (termkey) => apiClient.delete(`/terms/${termkey}`).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
@@ -65,7 +65,7 @@ export function useDeleteTermTranslation() {
     mutationFn: ({ termkey, languagecd }) =>
       apiClient.delete(`/terms/${termkey}/translations/${languagecd}`).then((r) => r.data),
     onSuccess: (_data, { termkey }) => {
-      message.success(t('msg.trans.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),

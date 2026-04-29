@@ -2,13 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
 import apiClient from '@/api/client'
 
-export function useObjectTypes() {
-  return useQuery({
-    queryKey: ['objecttypes'],
-    queryFn: () => apiClient.get('/objects/types').then((r) => r.data.objecttypes),
-  })
-}
-
 export function useObjects(chapteruid) {
   return useQuery({
     queryKey: ['objects', chapteruid],

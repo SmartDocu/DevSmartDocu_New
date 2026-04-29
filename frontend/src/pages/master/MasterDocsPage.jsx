@@ -107,7 +107,7 @@ export default function MasterDocsPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="doc-projectid"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm')}:</label>
+            <label htmlFor="doc-projectid"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:</label>
             {docForm.docid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>
                 {selectedDoc?.projectnm || docForm.projectid}
@@ -149,7 +149,7 @@ export default function MasterDocsPage() {
                 className="icon-btn"
                 onClick={() => document.getElementById('doc-template-input').click()}
               >
-                <img src="/icons/upload.svg" title={t('lbl.upload')} className="icon-img new-icon" alt={t('lbl.upload')} />
+                <img src="/icons/upload.svg" title={t('lbl.upload_lbl')} className="icon-img new-icon" alt={t('lbl.upload_lbl')} />
               </button>
               <input
                 id="doc-template-input"
@@ -210,7 +210,7 @@ export default function MasterDocsPage() {
             const lines = checkedDatas.map((d) => `[${d.datanm}] (${d.datasourcecd})`)
             return (
               <div style={{ marginTop: 16 }}>
-                <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.dataset')}</h4>
+                <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.dataset_ttl')}</h4>
                 <textarea
                   readOnly
                   rows={Math.max(3, lines.length)}

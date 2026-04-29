@@ -22,7 +22,7 @@ export function useOpenInTab() {
       return
     }
     const label = menu ? t(`mnu.${menu.menucd}`, menu.default_text) : fallbackLabel
-    if (menu) openTab({ key, label, path: `${routePath}${query}` })
+    openTab({ key, label, path: `${routePath}${query}` })
     navigate(`/${routePath}${query}`)
   }
 

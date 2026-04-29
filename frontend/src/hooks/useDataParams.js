@@ -25,7 +25,7 @@ export function useSaveDataParam() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/docs/params', body).then((r) => r.data),
     onSuccess: (_, body) => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['data-params', String(body.docid)] })
     },
     onError: (err) => {
@@ -41,7 +41,7 @@ export function useDeleteDataParam(docid) {
   return useMutation({
     mutationFn: (paramuid) => apiClient.delete(`/docs/params/${paramuid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['data-params', String(docid)] })
     },
     onError: (err) => {

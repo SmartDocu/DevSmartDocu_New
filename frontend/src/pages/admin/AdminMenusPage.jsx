@@ -131,10 +131,10 @@ export default function AdminMenusPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('thd.menucd')}</th>
-                  <th>{t('thd.default_text')}</th>
-                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn')}</th>
+                  <th>{t('thd.menucd_thd')}</th>
+                  <th>{t('thd.default_text_thd')}</th>
+                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -164,7 +164,7 @@ export default function AdminMenusPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="menu-menucd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.menucd')}:</label>
+            <label htmlFor="menu-menucd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.menucd_lbl')}:</label>
             {isNew ? (
               <input
                 id="menu-menucd"
@@ -177,7 +177,7 @@ export default function AdminMenusPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="menu-default-text"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_text')}:</label>
+            <label htmlFor="menu-default-text"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.default_text_lbl')}:</label>
             <input
               id="menu-default-text"
               type="text"
@@ -197,10 +197,10 @@ export default function AdminMenusPage() {
           </div>
           <div className="form-group">
             <label htmlFor="menu-iconnm">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.iconnm')}:
-              {t('inf.iconnm') && (
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.iconnm_lbl')}:
+              {t('inf.iconnm_inf') && (
                 <span style={{ fontSize: 12, color: '#888', fontWeight: 'normal', marginLeft: 6 }}>
-                  {t('inf.iconnm')}
+                  {t('inf.iconnm_inf')}
                 </span>
               )}
             </label>
@@ -221,7 +221,7 @@ export default function AdminMenusPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="menu-rolecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.rolecd')}:</label>
+            <label htmlFor="menu-rolecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.rolecd_lbl')}:</label>
             <select
               id="menu-rolecd"
               value={form.rolecd}
@@ -236,7 +236,7 @@ export default function AdminMenusPage() {
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="menu-orderno">{t('lbl.orderno')}:</label>
+            <label htmlFor="menu-orderno">{t('lbl.orderno_lbl')}:</label>
             <input
               id="menu-orderno"
               type="number"
@@ -245,7 +245,7 @@ export default function AdminMenusPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="menu-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
+            <label htmlFor="menu-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
             <input
               id="menu-useyn"
               type="checkbox"

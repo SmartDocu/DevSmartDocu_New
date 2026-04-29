@@ -27,7 +27,7 @@ export function useSaveMessage() {
         ? apiClient.post('/messages', { messagekey, ...body }).then((r) => r.data)
         : apiClient.put(`/messages/${messagekey}`, { messagekey, ...body }).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.saved'))
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['messages-admin'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
@@ -40,7 +40,7 @@ export function useDeleteMessage() {
   return useMutation({
     mutationFn: (messagekey) => apiClient.delete(`/messages/${messagekey}`).then((r) => r.data),
     onSuccess: () => {
-      message.success(t('msg.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['messages-admin'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
@@ -65,7 +65,7 @@ export function useDeleteMessageTranslation() {
     mutationFn: ({ messagekey, languagecd }) =>
       apiClient.delete(`/messages/${messagekey}/translations/${languagecd}`).then((r) => r.data),
     onSuccess: (_data, { messagekey }) => {
-      message.success(t('msg.trans.deleted'))
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['message-translations', messagekey] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),

@@ -136,8 +136,8 @@ export default function MasterDatasExPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>{t('thd.datanm')}</th>
-                  <th style={{ width: '35%' }}>{t('thd.projectnm')}</th>
+                  <th>{t('thd.datanm_thd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.projectnm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -176,7 +176,7 @@ export default function MasterDatasExPage() {
 
           <div className="form-group">
             <label htmlFor="ex-projectid">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:
             </label>
             {form.datauid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.projectnm}</span>
@@ -193,7 +193,7 @@ export default function MasterDatasExPage() {
 
           <div className="form-group">
             <label htmlFor="ex-datanm">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm')}:
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}:
             </label>
             <input
               id="ex-datanm"
@@ -213,7 +213,7 @@ export default function MasterDatasExPage() {
                 className="btn btn-primary"
                 onClick={() => document.getElementById('ex-file-input').click()}
               >
-                {t('btn.upload')}
+                {t('btn.upload_btn')}
               </button>
               <input
                 id="ex-file-input"

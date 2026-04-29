@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function LoginModal({ open, onClose }) {
   const navigate = useNavigate()
   const location = useLocation()
   const setAuth = useAuthStore((s) => s.setAuth)
+  useLangStore((s) => s.translations)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -37,8 +39,8 @@ export default function LoginModal({ open, onClose }) {
   const submitDisabled = !email.trim() || !password.trim() || loading
 
   const handleLogin = async () => {
-    if (!email.trim()) { alert('이메일을 입력해주세요.'); return }
-    if (!password.trim()) { alert('비밀번호를 입력해주세요.'); return }
+    if (!email.trim()) { alert(t('msg.email.required')); return }
+    if (!password.trim()) { alert(t('msg.password.required')); return }
 
     setLoading(true)
     try {
@@ -56,7 +58,7 @@ export default function LoginModal({ open, onClose }) {
         if (from && from !== '/login') navigate(from, { replace: true })
       }, 100)
     } catch (err) {
-      const detail = err.response?.data?.detail || '로그인에 실패했습니다.'
+      const detail = err.response?.data?.detail || t('msg.login.failed')
       alert(detail)
     } finally {
       setLoading(false)
@@ -65,16 +67,16 @@ export default function LoginModal({ open, onClose }) {
 
   const handleResetSubmit = async (e) => {
     e.preventDefault()
-    if (!resetEmail.trim()) { setResetMsg('이메일을 입력해주세요.'); return }
+    if (!resetEmail.trim()) { setResetMsg(t('msg.email.required')); return }
     try {
       const res = await apiClient.post('/auth/send-reset-email', { email: resetEmail })
-      setResetMsg(res.data?.message || '재설정 이메일을 발송했습니다.')
+      setResetMsg(res.data?.message || t('msg.reset.sent'))
       setTimeout(() => {
         setResetMsg('')
         onClose()
       }, 2000)
     } catch (err) {
-      setResetMsg(err.response?.data?.detail || '서버 통신 중 오류가 발생했습니다.')
+      setResetMsg(err.response?.data?.detail || t('msg.server.error'))
     }
   }
 
@@ -104,16 +106,16 @@ export default function LoginModal({ open, onClose }) {
           &times;
         </button>
 
-        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>SmartDocu 로그인</h2>
+        <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>{t('ttl.login_ttl')}</h2>
 
         {/* 이메일 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-          <span style={{ width: 70, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>이메일</span>
+          <span style={{ width: 70, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.email')}</span>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="이메일"
+            placeholder={t('lbl.email')}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('login-pw-input').focus() } }}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }}
           />
@@ -121,13 +123,13 @@ export default function LoginModal({ open, onClose }) {
 
         {/* 비밀번호 */}
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 20, gap: 8 }}>
-          <span style={{ width: 70, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>비밀번호</span>
+          <span style={{ width: 70, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.password')}</span>
           <input
             id="login-pw-input"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="비밀번호"
+            placeholder={t('lbl.password')}
             onKeyDown={(e) => { if (e.key === 'Enter' && !submitDisabled) handleLogin() }}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }}
           />
@@ -140,7 +142,7 @@ export default function LoginModal({ open, onClose }) {
             className="btn btn-secondary"
             style={{ fontSize: 13 }}
           >
-            {showReset ? '비밀번호 재설정 닫기' : '비밀번호 재설정'}
+            {showReset ? t('btn.reset.close') : t('btn.reset.password')}
           </button>
           <button
             onClick={handleLogin}
@@ -148,24 +150,24 @@ export default function LoginModal({ open, onClose }) {
             className="btn btn-primary"
             style={{ fontSize: 13 }}
           >
-            {loading ? '로그인 중...' : '로그인'}
+            {loading ? t('btn.login.ing') : t('btn.login_btn')}
           </button>
         </div>
 
         {/* 비밀번호 재설정 폼 */}
         {showReset && (
           <form onSubmit={handleResetSubmit} style={{ marginTop: 16, textAlign: 'left' }}>
-            <label style={{ fontSize: 14, display: 'block', marginBottom: 6 }}>비밀번호 재설정 이메일</label>
+            <label style={{ fontSize: 14, display: 'block', marginBottom: 6 }}>{t('lbl.reset.email')}</label>
             <input
               type="email"
               value={resetEmail}
               onChange={(e) => setResetEmail(e.target.value)}
-              placeholder="이메일 입력"
+              placeholder={t('msg.ph.email')}
               required
               style={{ width: '100%', height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
             />
             <button type="submit" className="btn btn-secondary" style={{ marginTop: 8, width: '100%' }}>
-              비밀번호 재설정 이메일 전송
+              {t('btn.reset.send')}
             </button>
             {resetMsg && (
               <div style={{ marginTop: 8, fontSize: 13, color: '#245F97', textAlign: 'center' }}>{resetMsg}</div>

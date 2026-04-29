@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { App, Modal, Tabs, Spin, Divider } from 'antd'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useTabStore } from '@/stores/tabStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function DocSelectModal({ open, onClose }) {
   const navigate = useNavigate()
-  const location = useLocation()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { updateUser } = useAuthStore()
+  const { clearTabs } = useTabStore()
+  useLangStore((s) => s.translations)
 
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(false)
@@ -35,7 +38,7 @@ export default function DocSelectModal({ open, onClose }) {
         const status = err.response?.status
         const detail = err.response?.data?.detail || err.message
         console.error('[DocSelectModal] GET /docs 오류:', status, detail)
-        message.error(`문서 목록 오류 (${status ?? 'network'}): ${detail}`)
+        message.error(`${t('msg.load.error')} (${status ?? 'network'}): ${detail}`)
       })
       .finally(() => setLoading(false))
   }, [open])
@@ -49,7 +52,7 @@ export default function DocSelectModal({ open, onClose }) {
   // Django docs_save에 해당: /docs/select 호출 후 authStore 갱신
   const handleOk = async () => {
     if (!selectedDoc) {
-      message.warning('문서를 선택해주세요.')
+      message.warning(t('msg.docselect.required'))
       return
     }
 
@@ -75,31 +78,37 @@ export default function DocSelectModal({ open, onClose }) {
 
       onClose()
 
-      // req 경로에 있으면 목록 페이지로 이동 (Django와 동일)
-      if (location.pathname.startsWith('/req')) {
-        navigate('/req/list')
-      }
+      modal.confirm({
+        title: t('ttl.docselect.change'),
+        content: t('msg.docselect.tabs.close'),
+        okText: t('btn.ok'),
+        cancelText: t('btn.cancel'),
+        onOk: () => {
+          clearTabs()
+          navigate('/')
+        },
+      })
     } catch (err) {
       const status = err.response?.status
       const detail = err.response?.data?.detail || err.message
       console.error('[DocSelectModal] POST /docs/select 오류:', status, detail)
-      message.error(`문서 선택 오류 (${status ?? 'network'}): ${detail}`)
+      message.error(`${t('msg.docselect.error')} (${status ?? 'network'}): ${detail}`)
     } finally {
       setSaving(false)
     }
   }
 
   const tabItems = [
-    { key: 'doc', label: '문서' },
-    { key: 'sample', label: '샘플' },
+    { key: 'doc', label: t('lbl.doc') },
+    { key: 'sample', label: t('lbl.sample') },
   ]
 
   const modalFooter = (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 20, paddingTop: 8 }}>
       <button type="button" className="icon-btn" onClick={handleOk} disabled={saving}>
         <div className="icon-wrapper">
-          <img src="/icons/ok.svg" className="icon-img config-icon" alt="확인" />
-          <span className="icon-label">확인</span>
+          <img src="/icons/ok.svg" className="icon-img config-icon" alt={t('btn.ok')} />
+          <span className="icon-label">{t('btn.ok')}</span>
         </div>
       </button>
     </div>
@@ -107,7 +116,7 @@ export default function DocSelectModal({ open, onClose }) {
 
   return (
     <Modal
-      title="문서 선택"
+      title={t('ttl.docselect')}
       open={open}
       onCancel={onClose}
       footer={modalFooter}
@@ -126,11 +135,11 @@ export default function DocSelectModal({ open, onClose }) {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
-          <div style={{ marginTop: 8, color: '#888' }}>문서를 불러오는 중...</div>
+          <div style={{ marginTop: 8, color: '#888' }}>{t('msg.doc.loading')}</div>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 24, color: '#888' }}>
-          {activeTab === 'doc' ? '문서가 없습니다.' : '샘플 문서가 없습니다.'}
+          {activeTab === 'doc' ? t('msg.doc.empty') : t('msg.sample.empty')}
         </div>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -152,7 +161,7 @@ export default function DocSelectModal({ open, onClose }) {
               <div style={{ fontSize: 15, fontWeight: 600 }}>{doc.docnm}</div>
               {(doc.projectnm || doc.tenantnm) && (
                 <div style={{ fontSize: 13, marginTop: 4, color: '#555' }}>
-                  프로젝트 : {doc.projectnm || ''}
+                  {t('lbl.project')} : {doc.projectnm || ''}
                   {doc.tenantnm ? ` (${doc.tenantnm})` : ''}
                 </div>
               )}

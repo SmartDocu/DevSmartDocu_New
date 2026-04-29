@@ -371,7 +371,7 @@ def delete_doc(docid: int, token: str = Depends(get_token)):
     if not res.data:
         raise HTTPException(status_code=500, detail="msg.delete.error")
 
-    return MessageResponse(ok=True, message="msg.deleted")
+    return MessageResponse(ok=True, message="msg.delete.success")
 
 
 # ─── 매개변수(dataparams) CRUD ────────────────────────────────────────────────

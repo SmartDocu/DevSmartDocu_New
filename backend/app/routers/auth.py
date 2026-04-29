@@ -468,6 +468,7 @@ def register(body: RegisterRequest):
             "userinfoyn": body.userinfoyn,
             "marketingyn": body.marketingyn,
             "usernm": body.usernm,
+            "useyn": True,
         }).execute()
     except Exception as e:
         raise HTTPException(

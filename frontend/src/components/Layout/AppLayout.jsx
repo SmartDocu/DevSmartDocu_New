@@ -285,7 +285,7 @@ export default function AppLayout() {
                         key: 'theme',
                         label: (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ marginRight: 4 }}>테마</span>
+                            <span style={{ marginRight: 4 }}>{t('lbl.theme')}</span>
                             <span
                               onClick={(e) => { e.stopPropagation(); setColorTheme('light') }}
                               style={{
@@ -340,7 +340,7 @@ export default function AppLayout() {
                     marginLeft: 12,
                   }}
                 >
-                  {t('btn.register')}
+                  {t('btn.register_btn')}
                 </button>
                 <button
                   onClick={() => setLoginModalOpen(true)}
@@ -355,7 +355,7 @@ export default function AppLayout() {
                     marginLeft: 8,
                   }}
                 >
-                  {t('btn.login')}
+                  {t('btn.login_btn')}
                 </button>
               </>
             )}
@@ -397,7 +397,7 @@ export default function AppLayout() {
                   }
                 }
               }}
-              items={tabs.map((t) => ({ key: t.key, label: t.label, closable: true }))}
+              items={tabs.map((tab) => ({ key: tab.key, label: t(`mnu.${tab.key}`, tab.label), closable: true }))}
               style={{ marginBottom: 0 }}
               className={isDark ? 'tabs-dark' : 'tabs-light'}
             />

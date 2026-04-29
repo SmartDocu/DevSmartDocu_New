@@ -120,7 +120,7 @@ export default function AdminMessagesPage() {
             </button>
           </div>
           <Input
-            placeholder={`${t('thd.messagekey')} / ${t('thd.messagetypecd')}`}
+            placeholder={`${t('thd.messagekey_thd')} / ${t('thd.messagetypecd_thd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
@@ -130,9 +130,9 @@ export default function AdminMessagesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('thd.messagekey')}</th>
-                  <th>{t('thd.messagetypecd')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn')}</th>
+                  <th>{t('thd.messagekey_thd')}</th>
+                  <th>{t('thd.messagetypecd_thd')}</th>
+                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,7 +165,7 @@ export default function AdminMessagesPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="msg-messagekey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.messagekey')}:</label>
+            <label htmlFor="msg-messagekey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.messagekey_lbl')}:</label>
             {isNew ? (
               <input
                 id="msg-messagekey"
@@ -178,7 +178,7 @@ export default function AdminMessagesPage() {
             )}
           </div>
           <div className="form-group">
-            <label htmlFor="msg-messagetypecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.messagetypecd')}:</label>
+            <label htmlFor="msg-messagetypecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.messagetypecd_lbl')}:</label>
             <select
               id="msg-messagetypecd"
               value={form.messagetypecd}
@@ -212,7 +212,7 @@ export default function AdminMessagesPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="msg-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn')}:</label>
+            <label htmlFor="msg-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
             <input
               id="msg-useyn"
               type="checkbox"

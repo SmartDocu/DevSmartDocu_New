@@ -103,7 +103,7 @@ export default function MasterDatasDbPage() {
           message.success(t('msg.save.success'))
         }
       },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.fail')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
     })
   }
 
@@ -112,7 +112,7 @@ export default function MasterDatasDbPage() {
     if (!window.confirm(t('msg.confirm.delete'))) return
     deleteData.mutate(form.datauid, {
       onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.fail')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
     })
   }
 
@@ -126,8 +126,8 @@ export default function MasterDatasDbPage() {
       measureyn:  !!c.measureyn,
     }))
     saveCols.mutate(payload, {
-      onSuccess: () => message.success(t('msg.col.save.success')),
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.fail')),
+      onSuccess: () => message.success(t('msg.save.success')),
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
     })
   }
 
@@ -156,9 +156,9 @@ export default function MasterDatasDbPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>{t('thd.projectnm')}</th>
-                  <th>{t('thd.connectnm')}</th>
-                  <th>{t('thd.datanm')}</th>
+                  <th>{t('thd.projectnm_thd')}</th>
+                  <th>{t('thd.connectnm_thd')}</th>
+                  <th>{t('thd.datanm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -203,7 +203,7 @@ export default function MasterDatasDbPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="data-projectid">{t('lbl.projectnm')}</label>
+            <label htmlFor="data-projectid">{t('lbl.projectnm_lbl')}</label>
             <select id="data-projectid" value={form.projectid}
               onChange={(e) => setForm(f => ({ ...f, projectid: e.target.value }))}>
               <option value="">{t('msg.select.placeholder')}</option>
@@ -214,7 +214,7 @@ export default function MasterDatasDbPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="data-connectid">{t('lbl.connectnm')}</label>
+            <label htmlFor="data-connectid">{t('lbl.connectnm_lbl')}</label>
             <select id="data-connectid" value={form.connectid}
               onChange={(e) => setForm(f => ({ ...f, connectid: e.target.value }))}>
               <option value="">{t('msg.select.placeholder')}</option>
@@ -225,7 +225,7 @@ export default function MasterDatasDbPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.datanm')}</label>
+            <label>{t('lbl.datanm_lbl')}</label>
             <input type="text" value={form.datanm}
               onChange={(e) => setForm(f => ({ ...f, datanm: e.target.value }))} />
           </div>

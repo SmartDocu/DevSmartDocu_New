@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { useChapters } from '@/hooks/useChapters'
-import { useObjects, useObjectTypes, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
+import { useObjects, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 
 const TYPE_CONFIG_ROUTE = {
@@ -23,7 +23,7 @@ export default function MasterObjectPage() {
 
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
-  const { data: objectTypes = [] } = useObjectTypes()
+  const { data: objectTypes = [] } = useMenuCodes('objecttypecd')
 
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
@@ -36,6 +36,8 @@ export default function MasterObjectPage() {
   const selectedDocid = urlDocid || (user?.docid ? Number(user.docid) : null)
   const [selectedChapteruid, setSelectedChapteruid] = useState(null)
   const [selectedObj, setSelectedObj] = useState(null)
+
+  const typeMap = Object.fromEntries(objectTypes.map((ot) => [ot.codevalue, t(ot.term_key) || ot.default_name]))
 
   const { data: chapters = [] } = useChapters(selectedDocid)
   const { data: objects = [], isLoading, isError } = useObjects(selectedChapteruid)
@@ -164,12 +166,12 @@ export default function MasterObjectPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '10%' }}>{t('thd.orderno')}</th>
-                  <th style={{ width: '18%' }}>{t('thd.objectnm')}</th>
-                  <th style={{ width: '14%' }}>{t('thd.objecttypecd')}</th>
-                  <th style={{ width: '35%' }}>{t('thd.objectdesc')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.objectnm_thd')}</th>
+                  <th style={{ width: '14%' }}>{t('thd.objecttypecd_thd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.objectdesc_thd')}</th>
                   <th style={{ width: '13%' }}>{t('thd.objectsettingyn')}</th>
-                  <th style={{ width: '10%' }}>{t('thd.useyn')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -191,9 +193,9 @@ export default function MasterObjectPage() {
                     >
                       <td style={{ textAlign: 'center' }}>{obj.orderno || ''}</td>
                       <td>{obj.objectnm}</td>
-                      <td style={{ textAlign: 'center' }}>{obj.objecttypenm || ''}</td>
+                      <td style={{ textAlign: 'center' }}>{typeMap[obj.objecttypecd] || obj.objecttypecd || ''}</td>
                       <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{obj.objectdesc || ''}</td>
-                      <td style={{ textAlign: 'center' }}>{obj.objectsettingyn ? '예' : '아니오'}</td>
+                      <td style={{ textAlign: 'center' }}>{obj.objectsettingyn ? t('cod.useyn_y') : t('cod.useyn_n')}</td>
                       <td style={{ textAlign: 'center' }}>{obj.useyn ? '✔' : ''}</td>
                     </tr>
                   ))
@@ -232,12 +234,12 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.objectnm')}:</label>
+            <label>{t('lbl.objectnm_lbl')}:</label>
             <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-desc">{t('lbl.objectdesc')}:</label>
+            <label htmlFor="obj-desc">{t('lbl.objectdesc_lbl')}:</label>
             <textarea
               id="obj-desc"
               rows={3}
@@ -249,7 +251,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.objecttypecd')}:</label>
+            <label>{t('lbl.objecttypecd_lbl')}:</label>
             <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
               <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
                 <img src="/icons/make_ui.svg" className="icon-img-tbl" title="UI" alt="UI" style={{ height: 18 }} />
@@ -257,15 +259,15 @@ export default function MasterObjectPage() {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}>
                 {objectTypes.map((ot) => (
-                  <label key={ot.objecttypecd} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
+                  <label key={ot.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
                     <input
                       type="radio"
                       name="objecttypecd"
-                      value={ot.objecttypecd}
-                      checked={form.objecttypecd === ot.objecttypecd}
-                      onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.objecttypecd }))}
+                      value={ot.codevalue}
+                      checked={form.objecttypecd === ot.codevalue}
+                      onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.codevalue }))}
                     />
-                    {ot.objecttypenm}
+                    {t(ot.term_key) || ot.default_name}
                   </label>
                 ))}
               </div>
@@ -273,7 +275,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-useyn">{t('lbl.useyn')}:</label>
+            <label htmlFor="obj-useyn">{t('lbl.useyn_lbl')}:</label>
             <input
               id="obj-useyn"
               type="checkbox"
@@ -283,7 +285,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-orderno">{t('lbl.orderno')}:</label>
+            <label htmlFor="obj-orderno">{t('lbl.orderno_lbl')}:</label>
             <input
               id="obj-orderno"
               type="number"
@@ -293,15 +295,6 @@ export default function MasterObjectPage() {
             />
           </div>
 
-          <div className="form-group">
-            <label>{t('lbl.creatornm')}:</label>
-            <span style={{ padding: '6px 4px' }}>{form.creatornm}</span>
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.createdts')}:</label>
-            <span style={{ padding: '6px 4px' }}>{form.createdts}</span>
-          </div>
         </div>
       </div>
     </div>
