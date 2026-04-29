@@ -77,7 +77,7 @@ export default function ContactPage() {
             </div>
           </div>
 
-          {/* 우측: 입력 필드만 — 버튼 제외 */}
+          {/* 우측: 입력 필드만 — 버튼은 행 바깥 */}
           <div style={{ flex: 1 }}>
             <div style={{ marginBottom: 20 }}>
               <input
@@ -119,11 +119,14 @@ export default function ContactPage() {
 
         </div>
 
-        {/* 버튼: flex 행 바깥, 좌우 폼 하단에 위치 */}
-        <div style={{ maxWidth: 1000, margin: '20px auto 0', textAlign: 'center' }}>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            메세지 보내기
-          </button>
+        {/* 버튼: 우측 컬럼 아래 — 좌측 절반 spacer + 우측 절반 중앙 */}
+        <div style={{ display: 'flex', gap: 40, maxWidth: 1000, margin: '20px auto 0' }}>
+          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              메세지 보내기
+            </button>
+          </div>
         </div>
       </form>
     </div>

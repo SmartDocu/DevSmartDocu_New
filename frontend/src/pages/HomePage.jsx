@@ -142,7 +142,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => navigate('/req/list')}
+              onClick={() => navigate('/follow')}
             >
               따라하기
             </button>
@@ -157,7 +157,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => window.open('mailto:smartdocu@example.com')}
+              onClick={() => navigate('/contact')}
             >
               문의
             </button>
@@ -184,8 +184,18 @@ export default function HomePage() {
               { label: '서비스 소개', path: '/service' },
               { label: '기능 소개', path: '/about' },
               { label: '서비스 이용', path: '/usage' },
+              { label: '체험하기', path: '/experience' },
+              { label: '따라하기', path: '/follow' },
+              { label: '문의', path: '/contact' },
+              { label: 'Chat', path: 'https://dev-rag-medicine.azurewebsites.net/?projectid=6', external: true },
             ].map(m => (
-              <a key={m.path} href={m.path} style={{ color: '#fff', textDecoration: 'none', display: 'block', margin: '4px 0', paddingLeft: 15 }}>{m.label}</a>
+              <a
+                key={m.path}
+                href={m.path}
+                target={m.external ? '_blank' : undefined}
+                rel={m.external ? 'noreferrer' : undefined}
+                style={{ color: '#fff', textDecoration: 'none', display: 'block', margin: '4px 0', paddingLeft: 15 }}
+              >{m.label}</a>
             ))}
           </div>
 
