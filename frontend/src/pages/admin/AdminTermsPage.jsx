@@ -87,6 +87,7 @@ export default function AdminTermsPage() {
         return Promise.resolve()
       })
     )
+    handleTermNew()
   }
 
   const handleTermDelete = () => {

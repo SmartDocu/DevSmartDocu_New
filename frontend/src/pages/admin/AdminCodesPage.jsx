@@ -91,6 +91,7 @@ export default function AdminCodesPage() {
         return Promise.resolve()
       })
     )
+    handleCodeNew()
   }
 
   const handleCodeDelete = () => {

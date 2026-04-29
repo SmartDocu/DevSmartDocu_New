@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import apiClient from '@/api/client'
 
 export function useTable(chapteruid, objectnm) {
@@ -11,16 +10,23 @@ export function useTable(chapteruid, objectnm) {
   })
 }
 
+export function useObjectFilterDatauid(objectuid, enabled) {
+  return useQuery({
+    queryKey: ['objectfilter-datauid', objectuid],
+    queryFn: () =>
+      apiClient.get(`/chapters/objectfilter/${objectuid}`).then((r) => r.data.filter?.objectdatauid || null),
+    enabled: !!(objectuid && enabled),
+  })
+}
+
 export function useSaveTable() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body) => apiClient.post('/tables', body).then((r) => r.data),
     onSuccess: (_data, body) => {
-      message.success('저장되었습니다.')
       qc.invalidateQueries({ queryKey: ['table', body.chapteruid, body.objectnm] })
       qc.invalidateQueries({ queryKey: ['objects', body.chapteruid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
   })
 }
 
@@ -30,10 +36,8 @@ export function useDeleteTable() {
     mutationFn: ({ chapteruid, objectnm }) =>
       apiClient.delete('/tables', { params: { chapteruid, objectnm } }).then((r) => r.data),
     onSuccess: (_data, { chapteruid, objectnm }) => {
-      message.success('삭제되었습니다.')
       qc.invalidateQueries({ queryKey: ['table', chapteruid, objectnm] })
       qc.invalidateQueries({ queryKey: ['objects', chapteruid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
   })
 }

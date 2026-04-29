@@ -1,18 +1,23 @@
 # 다국어 Term Key 목록
 
 프로젝트 전체 수집 기준일: 2026-04-29  
-총 238개 (category 4 기준: btn/lbl/thd/ttl/inf)
+총 239개 (category 4 기준: btn/lbl/thd/ttl/inf)
 
 > **PK 충돌 해소 규칙**: `termkey`가 PK이므로 동일 base key가 여러 group에 속하면  
 > `{basekey}_{group}` suffix 부여 (예: `orderno_lbl`, `orderno_thd`)
 
 ---
 
-## 1. cod. (7개)
+## 1. cod. (10개)
 
 | term_key |
 |----------|
+| cod.align_center |
+| cod.align_left |
+| cod.align_right |
 | cod.datasourcecd_df |
+| cod.is_multirow_n |
+| cod.is_multirow_y |
 | cod.datasourcecd_dfv |
 | cod.keycoldatatypecd_C |
 | cod.keycoldatatypecd_D |
@@ -49,6 +54,7 @@
 | msg.doc.select.delete |
 | msg.docselect.error |
 | msg.docselect.required |
+| msg.dataset.filter.readonly |
 | msg.docselect.tabs.close |
 | msg.email.required |
 | msg.favorite.error |
@@ -67,6 +73,7 @@
 | msg.password.mismatch |
 | msg.password.required |
 | msg.preparing |
+| msg.preview.error |
 | msg.project.not.found |
 | msg.prompt.required |
 | msg.register.failed |
@@ -120,10 +127,11 @@
 > suffix 규칙: 동일 base key가 여러 group에 존재하면 `_{group}` 추가  
 > 예) `orderno` → `orderno_lbl` (lbl), `orderno_thd` (thd)
 
-### btn. (17개)
+### btn. (18개)
 
 | term_key |
 |----------|
+| btn.apply |
 | btn.cancel |
 | btn.delete |
 | btn.login_btn |
@@ -142,12 +150,16 @@
 | btn.upgrade |
 | btn.upload_btn |
 
-### lbl. (74개)
+### lbl. (81개)
 
 | term_key |
 |----------|
 | lbl.agree.all |
+| lbl.align |
+| lbl.bgcolor |
 | lbl.billing.model |
+| lbl.bold |
+| lbl.bordercolor |
 | lbl.billing.multi |
 | lbl.billing.single |
 | lbl.chapternm |
@@ -174,6 +186,8 @@
 | lbl.encdatabase |
 | lbl.encendpoint |
 | lbl.file |
+| lbl.fontcolor |
+| lbl.fontsize |
 | lbl.iconnm_lbl |
 | lbl.joindt |
 | lbl.keycoldatatypecd |
@@ -209,6 +223,7 @@
 | lbl.route_path |
 | lbl.sample |
 | lbl.samplevalue |
+| lbl.sort |
 | lbl.source.data |
 | lbl.status |
 | lbl.template.upload |
@@ -221,21 +236,30 @@
 | lbl.usernm |
 | lbl.useyn_lbl |
 
-### thd. (31개)
+### thd. (42개)
 
 | term_key |
 |----------|
+| thd.align_thd |
+| thd.bgcolor_thd |
+| thd.bold_thd |
 | thd.codegroupcd_thd |
 | thd.codevalue_thd |
+| thd.colnm |
+| thd.comma |
 | thd.connectnm_thd |
 | thd.connecttype_thd |
 | thd.datanm_thd |
 | thd.datasourcecd_thd |
 | thd.datatypecd |
+| thd.decimal |
 | thd.default_name_thd |
 | thd.default_text_thd |
 | thd.dispcolnm |
+| thd.fontcolor_thd |
+| thd.fontsize_thd |
 | thd.languagecd |
+| thd.move |
 | thd.languagenm |
 | thd.measureyn |
 | thd.menucd_thd |
@@ -256,19 +280,27 @@
 | thd.translated_desc |
 | thd.translated_text |
 | thd.useyn_thd |
+| thd.width_px |
 
-### ttl. (20개)
+### ttl. (29개)
 
 | term_key |
 |----------|
+| ttl.ai.chart.manage |
+| ttl.ai.sentence.manage |
+| ttl.ai.table.manage |
 | ttl.chapter.list |
+| ttl.chart.manage |
 | ttl.col.info |
 | ttl.condition |
+| ttl.data.list |
 | ttl.data.preview |
 | ttl.datacols |
 | ttl.dataset_ttl |
 | ttl.dataset.mapping |
 | ttl.detail |
+| ttl.header.settings |
+| ttl.sentence.manage |
 | ttl.docselect |
 | ttl.docselect.change |
 | ttl.list |
@@ -280,9 +312,11 @@
 | ttl.myinfo.terms |
 | ttl.preview_ttl |
 | ttl.register_ttl |
+| ttl.table.manage |
 | ttl.translations |
+| ttl.value.settings |
 
-### inf. (4개)
+### inf. (5개)
 
 | term_key |
 |----------|
@@ -290,6 +324,7 @@
 | inf.iconnm_inf |
 | inf.password.hidden |
 | inf.preview.empty |
+| inf.preview.rows |
 
 ---
 
@@ -297,12 +332,12 @@
 
 | prefix | 개수 |
 |--------|------|
-| cod.   | 7    |
-| msg.   | 73   |
+| cod.   | 12   |
+| msg.   | 75   |
 | mnu.   | 5    |
-| btn.   | 17   |
-| lbl.   | 74   |
-| thd.   | 31   |
-| ttl.   | 20   |
-| inf.   | 4    |
-| **합계** | **231** |
+| btn.   | 18   |
+| lbl.   | 81   |
+| thd.   | 42   |
+| ttl.   | 24   |
+| inf.   | 5    |
+| **합계** | **267** |

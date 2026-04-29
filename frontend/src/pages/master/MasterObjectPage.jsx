@@ -16,6 +16,15 @@ const TYPE_CONFIG_ROUTE = {
   SA: 'master/ai-sentences',
 }
 
+const TYPE_TAB_LABEL_KEY = {
+  TU: 'ttl.table.manage',
+  CU: 'ttl.chart.manage',
+  SU: 'ttl.sentence.manage',
+  TA: 'ttl.ai.table.manage',
+  CA: 'ttl.ai.chart.manage',
+  SA: 'ttl.ai.sentence.manage',
+}
+
 export default function MasterObjectPage() {
   useLangStore((s) => s.translations)
   const location = useLocation()
@@ -122,7 +131,8 @@ export default function MasterObjectPage() {
     if (!route) { alert('설정 가능한 항목 구분이 아닙니다.'); return }
     const selectedChapter = chapters.find(c => c.chapteruid === selectedChapteruid)
     const chapternm = selectedChapter?.chapternm || ''
-    openInTab(route, `?chapteruid=${selectedChapteruid}&chapternm=${encodeURIComponent(chapternm)}&objectnm=${encodeURIComponent(form.objectnm)}&objectuid=${form.objectuid}`, form.objectnm)
+    const tabLabel = TYPE_TAB_LABEL_KEY[form.objecttypecd] ? t(TYPE_TAB_LABEL_KEY[form.objecttypecd]) : form.objectnm
+    openInTab(route, `?chapteruid=${selectedChapteruid}&chapternm=${encodeURIComponent(chapternm)}&objectnm=${encodeURIComponent(form.objectnm)}&objectuid=${form.objectuid}`, tabLabel)
   }
 
   const isEditYn = user?.editbuttonyn === 'Y'

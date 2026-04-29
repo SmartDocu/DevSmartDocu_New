@@ -117,10 +117,13 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
             .select("paramuid, samplevalue, operator").eq("docid", docid).execute()
 
         df_params = pd.DataFrame(dataparams_resp.data)
-        df_dtls = df_dtls.merge(df_params, on="paramuid", how="left")
 
-        df_dtls["value"] = df_dtls["samplevalue"]
-        df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna()
+        if not df_dtls.empty and 'paramuid' in df_dtls.columns and not df_params.empty:
+            df_dtls = df_dtls.merge(df_params, on="paramuid", how="left")
+            df_dtls["value"] = df_dtls["samplevalue"]
+            df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna()
+        else:
+            df_dtls = pd.DataFrame(columns=["querycolnm", "value", "operator"])
 
     # docid는 None, gendoc_uid만 있음 ==> 실제 문서 실행 화면
     elif docid is None and gendoc_uid is not None:

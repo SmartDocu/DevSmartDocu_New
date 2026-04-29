@@ -77,8 +77,7 @@ export default function MasterDatasAiPage() {
     if (!isNew) return
     const raw = t('inf.gensentence.default')
     if (raw === 'inf.gensentence.default') return  // 번역 아직 미로드
-    const defaultVal = raw.replace(/\\n/g, '\n')
-    setForm((f) => (!f.gensentence || f.gensentence === 'inf.gensentence.default' ? { ...f, gensentence: defaultVal } : f))
+    setForm((f) => ({ ...f, gensentence: raw.replace(/\\n/g, '\n') }))
   }, [translationVersion])
 
   const handleSelect = (d) => {
@@ -86,7 +85,7 @@ export default function MasterDatasAiPage() {
     setIsNew(false)
     setPreviewRows([])
     setPreviewCols([])
-    setIsTableValue(false)
+    setIsTableValue(d.is_multirow === true || d.is_multirow === 'Y')
     setForm({
       datauid: d.datauid,
       datanm: d.datanm,
@@ -333,6 +332,12 @@ export default function MasterDatasAiPage() {
               </div>
             )}
           </div>
+
+          {form.datasourcecd === 'dfv' && (previewRows.length > 0 || previewCols.length > 0) && (
+            <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 600 }}>
+              {isTableValue ? t('cod.is_multirow_y') : t('cod.is_multirow_n')}
+            </div>
+          )}
 
           {previewRows.length > 0 && (
             <>

@@ -95,6 +95,7 @@ export default function AdminMenusPage() {
         return Promise.resolve()
       })
     )
+    handleMenuNew()
   }
 
   const handleMenuDelete = () => {

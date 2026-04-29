@@ -53,7 +53,7 @@ export default function AdminMessagesPage() {
   }, [translationsKey, languagesKey])
 
   const handleSelect = (msg) => {
-    setSelectedMessage(msg)
+setSelectedMessage(msg)
     setIsNew(false)
     setForm({
       messagekey: msg.messagekey,
@@ -87,6 +87,7 @@ export default function AdminMessagesPage() {
         return Promise.resolve()
       })
     )
+    handleNew()
   }
 
   const handleDelete = () => {

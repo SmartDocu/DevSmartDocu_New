@@ -1,3 +1,4 @@
+import math
 import os
 import uuid
 from typing import Optional
@@ -291,7 +292,8 @@ def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
     from utilsPrj.process_data_ai import process_data_ai_preview
     result = process_data_ai_preview(sb, _FakeRequest(token), body.sourcedatauid, body.gensentence, docid=body.docid)
     df = result.get("result")
-    rows = df.head(15).to_dict(orient="records") if df is not None and not df.empty else []
+    raw = df.head(15).to_dict(orient="records") if df is not None and not df.empty else []
+    rows = [{k: (None if isinstance(v, float) and not math.isfinite(v) else v) for k, v in r.items()} for r in raw]
     return {
         "rows": rows,
         "cols_info": result.get("cols_info"),

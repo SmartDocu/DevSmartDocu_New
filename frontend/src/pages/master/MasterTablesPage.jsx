@@ -4,29 +4,37 @@
  * 3열: 데이터 목록 | 머리글 설정+정렬 | 값 설정(컬럼별)  + 미리보기 모달
  */
 import { useEffect, useState } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { App } from 'antd'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 import { useChapterDatas, useDatacols } from '@/hooks/useDatas'
-import { useTable, useSaveTable, useDeleteTable } from '@/hooks/useTables'
+import { useTable, useSaveTable, useDeleteTable, useObjectFilterDatauid } from '@/hooks/useTables'
 
 const ALIGN_OPTIONS = ['left', 'center', 'right']
 
 export default function MasterTablesPage() {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const chapteruid = searchParams.get('chapteruid') || ''
   const objectnm   = searchParams.get('objectnm')   || ''
   const objectuid  = searchParams.get('objectuid')  || ''
   const chapternm  = searchParams.get('chapternm')  || ''
+  const user  = useAuthStore((s) => s.user)
+  const docnm = user?.docnm
+  const isEditYn = user?.editbuttonyn === 'Y'
 
   const { data: allDatas = [], isLoading: datasLoading } = useChapterDatas(chapteruid)
-  const { data: tableData }     = useTable(chapteruid, objectnm)
+  const { data: tableData, isSuccess: tableSuccess } = useTable(chapteruid, objectnm)
   const saveTable   = useSaveTable()
   const deleteTable = useDeleteTable()
 
+  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, tableSuccess && tableData === null)
+
   const [selectedDatauid, setSelectedDatauid] = useState('')
+  const [isFilterDefault, setIsFilterDefault] = useState(false)
   const { data: rawDatacols = [] } = useDatacols(selectedDatauid)
 
   // 컬럼 순서 (drag 대신 up/down)
@@ -67,6 +75,13 @@ export default function MasterTablesPage() {
     if (tableData.coljson && Object.keys(tableData.coljson).length)
       setColjson(tableData.coljson)
   }, [tableData])
+
+  // tables 저장 없을 때 objectfilters.objectdatauid 로 기본 데이터 선택
+  useEffect(() => {
+    if (!filterDatauid) return
+    setSelectedDatauid(filterDatauid)
+    setIsFilterDefault(true)
+  }, [filterDatauid])
 
   // datacols → colOrder + coljson 초기화
   useEffect(() => {
@@ -144,23 +159,37 @@ export default function MasterTablesPage() {
 
   const handleSave = () => {
     if (!selectedDatauid || !chapteruid || !objectnm || !objectuid) {
-      message.warning('데이터를 선택해주세요.')
+      message.warning(t('msg.select.data'))
       return
     }
-    saveTable.mutate({
-      objectuid, chapteruid, objectnm,
-      datauid:   selectedDatauid,
-      tablejson: buildFinalTablejson(),
-      coljson:   buildFinalColjson(),
-    })
+    saveTable.mutate(
+      {
+        objectuid, chapteruid, objectnm,
+        datauid:   selectedDatauid,
+        tablejson: buildFinalTablejson(),
+        coljson:   buildFinalColjson(),
+      },
+      {
+        onSuccess: () => message.success(t('msg.save.success')),
+        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+      }
+    )
   }
 
   const handleDelete = () => {
-    if (!window.confirm('정말 삭제하시겠습니까?')) return
-    deleteTable.mutate({ chapteruid, objectnm })
-    setSelectedDatauid('')
-    setColjson({})
-    setColOrder([])
+    if (!window.confirm(t('msg.confirm.delete'))) return
+    deleteTable.mutate(
+      { chapteruid, objectnm },
+      {
+        onSuccess: () => {
+          message.success(t('msg.delete.success'))
+          setSelectedDatauid('')
+          setColjson({})
+          setColOrder([])
+        },
+        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+      }
+    )
   }
 
   const handleReset = () => {
@@ -170,7 +199,7 @@ export default function MasterTablesPage() {
   }
 
   const handlePreview = async () => {
-    if (!selectedDatauid) { message.warning('데이터를 선택해주세요.'); return }
+    if (!selectedDatauid) { message.warning(t('msg.select.data')); return }
     setPreviewLoading(true)
     try {
       const resp = await apiClient.post('/tables/preview', {
@@ -181,55 +210,55 @@ export default function MasterTablesPage() {
       setPreviewHtml(resp.data.preview_html || '')
       setPreviewOpen(true)
     } catch (e) {
-      message.error('미리보기 실패: ' + (e.response?.data?.detail || e.message))
+      message.error(t('msg.preview.error') + ': ' + (e.response?.data?.detail || e.message))
     } finally {
       setPreviewLoading(false)
     }
   }
 
-  const handleBack = () => {
-    const ct = sessionStorage.getItem('chapter_template_chapteruid')
-    const co = sessionStorage.getItem('chapter_objects_read_genchapteruid')
-    if (ct) navigate(`/master/chapters?chapteruid=${ct}`)
-    else if (co) navigate(`/req/chapter-objects?genchapteruid=${co}`)
-    else if (chapteruid && objectuid) navigate(`/master/object?chapteruid=${chapteruid}&objectuid=${objectuid}`)
-    else if (chapteruid) navigate(`/master/object?chapteruid=${chapteruid}`)
-    else navigate('/master/object')
-  }
-
-  const tdStyle = { border: '1px solid #ddd', padding: '4px 6px', textAlign: 'center', verticalAlign: 'middle' }
-  const thStyle = { ...tdStyle, backgroundColor: '#f5f5f5', fontWeight: 'bold', whiteSpace: 'nowrap' }
+  const tdCenter = { textAlign: 'center' }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)', overflow: 'hidden' }}>
+    <div>
 
       {/* 헤더 */}
-      <div className="page-title" style={{ flexShrink: 0 }}>
+      <div className="page-title" style={{ marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>테이블 관리 - {objectnm}{chapternm ? `(${chapternm})` : ''}</div>
+          <div>{t('ttl.table.manage')}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
-        <button type="button" className="icon-btn" onClick={handleBack}>
-          <img src="/icons/back.svg" alt="뒤로가기" className="icon-img config-icon" />
-        </button>
       </div>
+      <div style={{ marginBottom: 16, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)' }}>
+        {chapternm && <span>{t('lbl.chapternm')}: {chapternm}</span>}
+        {chapternm && objectnm && <span style={{ margin: '0 14px', color: '#d9d9d9' }}>|</span>}
+        {objectnm && <span>{t('lbl.objectnm_lbl')}: {objectnm}</span>}
+      </div>
+      {isFilterDefault && (
+        <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, color: '#d46b08', fontSize: 13 }}>
+          {t('msg.dataset.filter.readonly')}
+        </div>
+      )}
 
       {/* 3열 */}
-      <div style={{ flex: 1, display: 'flex', gap: 16, overflow: 'hidden', minHeight: 0, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
 
         {/* 영역1: 데이터 목록 */}
-        <div style={{ flex: '0 0 13%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <h4 style={{ flexShrink: 0, marginBottom: 8 }}>데이터 목록</h4>
-          <div className="chapter-card-container" style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.data.list')}</h3>
+            <div />
+          </div>
+          <div className="chapter-card-container" style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
             {datasLoading ? (
-              <div style={{ fontSize: 12, color: '#aaa', padding: 8 }}>로딩 중...</div>
+              <div style={{ fontSize: 12, color: '#aaa', padding: 8 }}>{t('msg.loading')}</div>
             ) : allDatas.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#aaa', padding: 8 }}>데이터가 없습니다.</div>
+              <div style={{ fontSize: 12, color: '#aaa', padding: 8 }}>{t('msg.no.data')}</div>
             ) : allDatas.map((d) => (
               <div
                 key={d.datauid}
                 className={`chapter-card${selectedDatauid === d.datauid ? ' selected' : ''}`}
-                onClick={() => setSelectedDatauid(d.datauid)}
+                onClick={() => { if (!isFilterDefault) setSelectedDatauid(d.datauid) }}
+                style={isFilterDefault ? { cursor: 'not-allowed', opacity: 0.6 } : {}}
               >
                 <div className="card-title">{d.datanm}</div>
               </div>
@@ -238,114 +267,130 @@ export default function MasterTablesPage() {
         </div>
 
         {/* 영역2: 머리글 설정 + 정렬 */}
-        <div style={{ flex: '0 0 18%', display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingLeft: 8 }}>
-          <h4 style={{ flexShrink: 0, marginBottom: 8 }}>머리글 설정</h4>
+        <div style={{ flex: 3, paddingLeft: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.header.settings')}</h3>
+            <div />
+          </div>
+          <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.useyn_lbl')}:</label>
+              <input type="checkbox" style={{ flex: '0 0 auto' }}
+                checked={tablejson.row_visible !== false && tablejson.row_visible !== 'n'}
+                onChange={(e) => updateTablejson('row_visible', e.target.checked)} />
+            </div>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.bgcolor')}:</label>
+              <input type="color" value={tablejson.row_bgcolor}
+                onChange={(e) => updateTablejson('row_bgcolor', e.target.value)} />
+            </div>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.fontcolor')}:</label>
+              <input type="color" value={tablejson.row_color}
+                onChange={(e) => updateTablejson('row_color', e.target.value)} />
+            </div>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.align')}:</label>
+              <select value={tablejson.row_align} onChange={(e) => updateTablejson('row_align', e.target.value)} style={{ flex: 1 }}>
+                <option value="left">{t('cod.align_left')}</option>
+                <option value="center">{t('cod.align_center')}</option>
+                <option value="right">{t('cod.align_right')}</option>
+              </select>
+            </div>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.bold')}:</label>
+              <input type="checkbox" style={{ flex: '0 0 auto' }}
+                checked={tablejson.row_fontweight === 'bold'}
+                onChange={(e) => updateTablejson('row_fontweight', e.target.checked ? 'bold' : 'normal')} />
+            </div>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.fontsize')}:</label>
+              <input type="number" min={8} max={72} value={tablejson.row_fontsize} style={{ width: 60 }}
+                onChange={(e) => updateTablejson('row_fontsize', Number(e.target.value))} />
+            </div>
+            <div className="form-group-left">
+              <label style={{ minWidth: 70 }}>{t('lbl.bordercolor')}:</label>
+              <input type="color" value={tablejson.row_bordercolor}
+                onChange={(e) => updateTablejson('row_bordercolor', e.target.value)} />
+            </div>
 
-          <div className="form-group-left" style={{ display: 'block' }}>
-            <label>사용:</label>
-            <input type="checkbox" style={{ marginLeft: 30 }}
-              checked={tablejson.row_visible !== false && tablejson.row_visible !== 'n'}
-              onChange={(e) => updateTablejson('row_visible', e.target.checked)} />
-          </div>
-          <div className="form-group-left">
-            <label style={{ minWidth: 70 }}>채우기 색:</label>
-            <input type="color" value={tablejson.row_bgcolor}
-              onChange={(e) => updateTablejson('row_bgcolor', e.target.value)} />
-          </div>
-          <div className="form-group-left">
-            <label style={{ minWidth: 70 }}>글꼴 색:</label>
-            <input type="color" value={tablejson.row_color}
-              onChange={(e) => updateTablejson('row_color', e.target.value)} />
-          </div>
-          <div className="form-group-left">
-            <label style={{ minWidth: 70 }}>맞춤:</label>
-            <select value={tablejson.row_align} onChange={(e) => updateTablejson('row_align', e.target.value)} style={{ flex: 1 }}>
-              <option value="left">좌측</option>
-              <option value="center">중앙</option>
-              <option value="right">우측</option>
-            </select>
-          </div>
-          <div className="form-group-left" style={{ display: 'block' }}>
-            <label>굵게:</label>
-            <input type="checkbox" style={{ marginLeft: 30 }}
-              checked={tablejson.row_fontweight === 'bold'}
-              onChange={(e) => updateTablejson('row_fontweight', e.target.checked ? 'bold' : 'normal')} />
-          </div>
-          <div className="form-group-left">
-            <label style={{ minWidth: 70 }}>글꼴크기:</label>
-            <input type="number" min={8} max={72} value={tablejson.row_fontsize} style={{ width: 60 }}
-              onChange={(e) => updateTablejson('row_fontsize', Number(e.target.value))} />
-          </div>
-          <div className="form-group-left">
-            <label style={{ minWidth: 70 }}>테두리색:</label>
-            <input type="color" value={tablejson.row_bordercolor}
-              onChange={(e) => updateTablejson('row_bordercolor', e.target.value)} />
-          </div>
-
-          {/* 정렬 옵션 */}
-          <div style={{ marginTop: 20 }}>
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="form-group-left" style={{ marginBottom: 6 }}>
-                <label style={{ minWidth: 50 }}>정렬 {i}:</label>
-                <select
-                  value={tablejson[`sort_col_${i}`] || ''}
-                  onChange={(e) => updateTablejson(`sort_col_${i}`, e.target.value)}
-                  style={{ flex: 0.7 }}
-                >
-                  <option value="">-- 선택 --</option>
-                  {colOrder.map((col) => <option key={col} value={col}>{col}</option>)}
-                </select>
-                <select
-                  value={tablejson[`sort_dir_${i}`] || 'asc'}
-                  onChange={(e) => updateTablejson(`sort_dir_${i}`, e.target.value)}
-                  style={{ flex: 0.3, marginLeft: 4 }}
-                >
-                  <option value="asc">ASC</option>
-                  <option value="desc">DESC</option>
-                </select>
-              </div>
-            ))}
+            {/* 정렬 옵션 */}
+            <div style={{ marginTop: 20 }}>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="form-group-left" style={{ marginBottom: 6 }}>
+                  <label style={{ minWidth: 50 }}>{t('lbl.sort')} {i}:</label>
+                  <select
+                    value={tablejson[`sort_col_${i}`] || ''}
+                    onChange={(e) => updateTablejson(`sort_col_${i}`, e.target.value)}
+                    style={{ flex: 0.7 }}
+                  >
+                    <option value="">{t('msg.select.placeholder')}</option>
+                    {colOrder.map((col) => <option key={col} value={col}>{col}</option>)}
+                  </select>
+                  <select
+                    value={tablejson[`sort_dir_${i}`] || 'asc'}
+                    onChange={(e) => updateTablejson(`sort_dir_${i}`, e.target.value)}
+                    style={{ flex: 0.3, marginLeft: 4 }}
+                  >
+                    <option value="asc">ASC</option>
+                    <option value="desc">DESC</option>
+                  </select>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* 영역3: 값 설정 */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingLeft: 8 }}>
-          <h4 style={{ flexShrink: 0, marginBottom: 8 }}>값 설정</h4>
+        <div style={{ flex: 10, paddingLeft: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.value.settings')}</h3>
+            {selectedDatauid && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
+                {isEditYn && (
+                  <>
+                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveTable.isPending}>{t('btn.save')}</button>
+                    <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteTable.isPending}>{t('btn.delete')}</button>
+                  </>
+                )}
+                <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
+              </div>
+            )}
+          </div>
 
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
             {/* 기본값 행 */}
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12, tableLayout: 'fixed', marginBottom: 12 }}>
+            <table style={{ fontSize: 12, tableLayout: 'fixed', marginBottom: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle, width: '14%' }}>컬럼명</th>
-                  <th style={{ ...thStyle, width: '5%' }}>사용</th>
-                  <th style={{ ...thStyle, width: '8%' }}>채우기</th>
-                  <th style={{ ...thStyle, width: '8%' }}>글꼴 색</th>
-                  <th style={{ ...thStyle, width: '8%' }}>맞춤</th>
-                  <th style={{ ...thStyle, width: '5%' }}>굵게</th>
-                  <th style={{ ...thStyle, width: '7%' }}>크기</th>
-                  <th style={{ ...thStyle, width: '9%' }}>너비(px)</th>
-                  <th style={{ ...thStyle, width: '6%' }}>쉼표</th>
-                  <th style={{ ...thStyle, width: '9%' }}>소수점</th>
-                  <th style={{ ...thStyle, width: '11%' }}>적용</th>
+                  <th style={{ width: '14%' }}>{t('thd.colnm')}</th>
+                  <th style={{ width: '5%' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '8%' }}>{t('thd.bgcolor_thd')}</th>
+                  <th style={{ width: '8%' }}>{t('thd.fontcolor_thd')}</th>
+                  <th style={{ width: '8%' }}>{t('thd.align_thd')}</th>
+                  <th style={{ width: '5%' }}>{t('thd.bold_thd')}</th>
+                  <th style={{ width: '7%' }}>{t('thd.fontsize_thd')}</th>
+                  <th style={{ width: '9%' }}>{t('thd.width_px')}</th>
+                  <th style={{ width: '6%' }}>{t('thd.comma')}</th>
+                  <th style={{ width: '9%' }}>{t('thd.decimal')}</th>
+                  <th style={{ width: '11%' }}>{t('btn.apply')}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td style={tdStyle}>기본값</td>
-                  <td style={tdStyle} />
-                  <td style={tdStyle}><input type="color" value={defBg} onChange={(e) => setDefBg(e.target.value)} style={{ width: '100%' }} /></td>
-                  <td style={tdStyle}><input type="color" value={defColor} onChange={(e) => setDefColor(e.target.value)} style={{ width: '100%' }} /></td>
-                  <td style={tdStyle} />
-                  <td style={tdStyle} />
-                  <td style={tdStyle}><input type="number" min={8} max={72} value={defFontsize} style={{ width: '100%' }} onChange={(e) => setDefFontsize(Number(e.target.value))} /></td>
-                  <td style={tdStyle}><input type="number" min={1} max={2000} value={defWidth} style={{ width: '100%' }} onChange={(e) => setDefWidth(Number(e.target.value))} /></td>
-                  <td style={tdStyle} />
-                  <td style={tdStyle} />
-                  <td style={tdStyle}>
-                    <button type="button" className="icon-btn" onClick={handleApplyAll}>
-                      <img src="/icons/apply.svg" className="icon-img config-icon" alt="적용" />
-                    </button>
+                  <td>{t('lbl.default_name_lbl')}</td>
+                  <td />
+                  <td style={tdCenter}><input type="color" value={defBg} onChange={(e) => setDefBg(e.target.value)} style={{ width: '100%' }} /></td>
+                  <td style={tdCenter}><input type="color" value={defColor} onChange={(e) => setDefColor(e.target.value)} style={{ width: '100%' }} /></td>
+                  <td />
+                  <td />
+                  <td style={tdCenter}><input type="number" min={8} max={72} value={defFontsize} style={{ width: '100%' }} onChange={(e) => setDefFontsize(Number(e.target.value))} /></td>
+                  <td style={tdCenter}><input type="number" min={1} max={2000} value={defWidth} style={{ width: '100%' }} onChange={(e) => setDefWidth(Number(e.target.value))} /></td>
+                  <td />
+                  <td />
+                  <td style={tdCenter}>
+                    <button type="button" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: 11 }} onClick={handleApplyAll}>{t('btn.apply')}</button>
                   </td>
                 </tr>
               </tbody>
@@ -353,20 +398,20 @@ export default function MasterTablesPage() {
 
             {/* 컬럼별 설정 */}
             {colOrder.length > 0 && (
-              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12, tableLayout: 'fixed' }}>
+              <table style={{ fontSize: 12, tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
-                    <th style={{ ...thStyle, width: '14%' }}>컬럼명</th>
-                    <th style={{ ...thStyle, width: '5%' }}>사용</th>
-                    <th style={{ ...thStyle, width: '8%' }}>채우기</th>
-                    <th style={{ ...thStyle, width: '8%' }}>글꼴 색</th>
-                    <th style={{ ...thStyle, width: '8%' }}>맞춤</th>
-                    <th style={{ ...thStyle, width: '5%' }}>굵게</th>
-                    <th style={{ ...thStyle, width: '7%' }}>크기</th>
-                    <th style={{ ...thStyle, width: '9%' }}>너비(px)</th>
-                    <th style={{ ...thStyle, width: '6%' }}>쉼표</th>
-                    <th style={{ ...thStyle, width: '9%' }}>소수점</th>
-                    <th style={{ ...thStyle, width: '11%' }}>이동</th>
+                    <th style={{ width: '14%' }}>{t('thd.colnm')}</th>
+                    <th style={{ width: '5%' }}>{t('thd.useyn_thd')}</th>
+                    <th style={{ width: '8%' }}>{t('thd.bgcolor_thd')}</th>
+                    <th style={{ width: '8%' }}>{t('thd.fontcolor_thd')}</th>
+                    <th style={{ width: '8%' }}>{t('thd.align_thd')}</th>
+                    <th style={{ width: '5%' }}>{t('thd.bold_thd')}</th>
+                    <th style={{ width: '7%' }}>{t('thd.fontsize_thd')}</th>
+                    <th style={{ width: '9%' }}>{t('thd.width_px')}</th>
+                    <th style={{ width: '6%' }}>{t('thd.comma')}</th>
+                    <th style={{ width: '9%' }}>{t('thd.decimal')}</th>
+                    <th style={{ width: '11%' }}>{t('thd.move')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -375,56 +420,52 @@ export default function MasterTablesPage() {
                     const hasMeasure = cf.measureyn === 'y'
                     return (
                       <tr key={colKey}>
-                        <td style={{ ...tdStyle, textAlign: 'left' }}>{colKey}</td>
-                        <td style={tdStyle}>
+                        <td>{colKey}</td>
+                        <td style={tdCenter}>
                           <input type="checkbox" checked={cf.enabled !== 'n'}
                             onChange={(e) => updateColjson(colKey, 'enabled', e.target.checked ? 'y' : 'n')} />
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           <input type="color" value={cf.bgcolor || '#ffffff'} style={{ width: '100%' }}
                             onChange={(e) => updateColjson(colKey, 'bgcolor', e.target.value)} />
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           <input type="color" value={cf.color || '#000000'} style={{ width: '100%' }}
                             onChange={(e) => updateColjson(colKey, 'color', e.target.value)} />
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           <select value={cf.align || 'left'} style={{ width: '100%' }}
                             onChange={(e) => updateColjson(colKey, 'align', e.target.value)}>
-                            {ALIGN_OPTIONS.map((a) => <option key={a} value={a}>{a === 'left' ? '좌측' : a === 'center' ? '중앙' : '우측'}</option>)}
+                            {ALIGN_OPTIONS.map((a) => <option key={a} value={a}>{a === 'left' ? t('cod.align_left') : a === 'center' ? t('cod.align_center') : t('cod.align_right')}</option>)}
                           </select>
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           <input type="checkbox" checked={cf.fontweight === 'bold'}
                             onChange={(e) => updateColjson(colKey, 'fontweight', e.target.checked ? 'bold' : 'normal')} />
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           <input type="number" min={8} max={72} value={cf.fontsize || 14} style={{ width: '100%' }}
                             onChange={(e) => updateColjson(colKey, 'fontsize', Number(e.target.value))} />
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           <input type="number" min={50} max={2000} value={cf.width || 100} style={{ width: '100%' }}
                             onChange={(e) => updateColjson(colKey, 'width', Number(e.target.value))} />
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           {hasMeasure
                             ? <input type="checkbox" checked={cf.unityn === 'y'}
                                 onChange={(e) => updateColjson(colKey, 'unityn', e.target.checked ? 'y' : 'n')} />
                             : <span>-</span>}
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdCenter}>
                           {hasMeasure
                             ? <input type="number" min={0} max={10} value={cf.decimal || 0} style={{ width: '100%' }}
                                 onChange={(e) => updateColjson(colKey, 'decimal', Number(e.target.value))} />
                             : <span>-</span>}
                         </td>
-                        <td style={tdStyle}>
-                          <button type="button" className="icon-btn" onClick={() => moveRow(idx, -1)} disabled={idx === 0}>
-                            <img src="/icons/up.svg" className="icon-img-tbl config-icon" alt="위로" />
-                          </button>
-                          <button type="button" className="icon-btn" onClick={() => moveRow(idx, 1)} disabled={idx === colOrder.length - 1}>
-                            <img src="/icons/down.svg" className="icon-img-tbl config-icon" alt="아래로" />
-                          </button>
+                        <td style={tdCenter}>
+                          <button type="button" className="btn btn-primary" style={{ padding: '2px 6px', fontSize: 11, marginRight: 2 }} onClick={() => moveRow(idx, -1)} disabled={idx === 0}>↑</button>
+                          <button type="button" className="btn btn-primary" style={{ padding: '2px 6px', fontSize: 11 }} onClick={() => moveRow(idx, 1)} disabled={idx === colOrder.length - 1}>↓</button>
                         </td>
                       </tr>
                     )
@@ -433,36 +474,6 @@ export default function MasterTablesPage() {
               </table>
             )}
           </div>
-
-          {/* 버튼 */}
-          {selectedDatauid && (
-            <div className="button-group" style={{ flexShrink: 0, marginTop: 8 }}>
-              <button type="button" className="icon-btn" onClick={handleReset}>
-                <div className="icon-wrapper">
-                  <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                  <span className="icon-label">신규</span>
-                </div>
-              </button>
-              <button type="button" className="icon-btn" onClick={handleSave} disabled={saveTable.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                  <span className="icon-label">저장</span>
-                </div>
-              </button>
-              <button type="button" className="icon-btn" onClick={handleDelete} disabled={deleteTable.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                  <span className="icon-label">삭제</span>
-                </div>
-              </button>
-              <button type="button" className="icon-btn" onClick={handlePreview} disabled={previewLoading}>
-                <div className="icon-wrapper">
-                  <img src="/icons/view.svg" className="icon-img config-icon" alt="미리보기" />
-                  <span className="icon-label">미리보기</span>
-                </div>
-              </button>
-            </div>
-          )}
         </div>
 
       </div>
@@ -471,22 +482,26 @@ export default function MasterTablesPage() {
       {previewOpen && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(0,0,0,0.5)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 9999,
-        }}>
+          background: 'rgba(0,0,0,0.6)', display: 'flex',
+          justifyContent: 'center', alignItems: 'flex-start',
+          overflowY: 'auto', zIndex: 9999, padding: '40px 0',
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) setPreviewOpen(false) }}
+        >
           <div style={{
-            background: '#fff', borderRadius: 8, padding: 24,
-            width: '80%', maxHeight: '80vh',
-            display: 'flex', flexDirection: 'column',
+            background: '#fff',
+            width: 794,
+            minHeight: 1123,
+            padding: '40px 60px',
+            boxShadow: '0 4px 32px rgba(0,0,0,0.35)',
+            flexShrink: 0,
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>미리보기 결과</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
               <button type="button" onClick={() => setPreviewOpen(false)} style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
             </div>
-            <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>* 미리보기 결과는 15개의 행만 보입니다.</p>
-            <div style={{ flex: 1, overflowY: 'auto' }}
-              dangerouslySetInnerHTML={{ __html: previewHtml }}
-            />
+            <p style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>* {t('inf.preview.rows')}</p>
+            <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
           </div>
         </div>
       )}
