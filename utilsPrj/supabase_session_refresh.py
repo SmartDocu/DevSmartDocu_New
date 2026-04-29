@@ -4,7 +4,6 @@ from django.shortcuts import redirect
 from django.http import JsonResponse
 from gotrue.errors import AuthApiError
 from utilsPrj.supabase_client import get_supabase_client
-from utilsPrj.errorlogs import error_login
 
 
 class SupabaseSessionRefreshMiddleware:
@@ -112,88 +111,32 @@ class SupabaseSessionRefreshMiddleware:
     # ---------- 상세 로깅 헬퍼 ----------
 
     def _log_missing_token(self, request, access_token, refresh_token, user_info):
-        error_login(
-            request,
-            errorobject="missing_token",
-            errormessage="access_token 또는 refresh_token 없음",
-            remarks1=request.path,
-            remarks2=f"UA={request.headers.get('User-Agent')}, method={request.method}, query={request.META.get('QUERY_STRING')}, ip={self._get_client_ip(request)}",
-            remarks3=f"세션 쿠키 만료 or 손실, session_keys={list(request.session.keys())}, user={user_info}, access_token={access_token}, refresh_token={refresh_token}"
-        )
+        print(f"[session_refresh] missing_token: path={request.path}")
 
     def _log_access_token_expired(self, request, access_token, exception):
-        error_login(
-            request,
-            errorobject="access_token_expired",
-            errormessage=str(exception),
-            remarks1=request.path,
-            remarks2=f"access_token={access_token}",
-            remarks3="Access token 만료됨"
-        )
+        print(f"[session_refresh] access_token_expired: path={request.path}, error={exception}")
 
     def _log_refresh_failed(self, request, refresh_token, msg):
-        error_login(
-            request,
-            errorobject="refresh_failed",
-            errormessage=msg,
-            remarks1=request.path,
-            remarks2=f"refresh_token={refresh_token}",
-            remarks3="refresh 실패"
-        )
+        print(f"[session_refresh] refresh_failed: path={request.path}, error={msg}")
 
     def _handle_refresh_auth_api_error(self, request, refresh_token, exception):
         msg = str(exception)
         if "Invalid Refresh Token" in msg or "already used" in msg.lower():
-            error_login(
-                request,
-                errorobject="invalid_refresh_token",
-                errormessage=msg,
-                remarks1=request.path,
-                remarks2=f"refresh_token={refresh_token}",
-                remarks3="Refresh token 무효 or 이미 사용됨"
-            )
+            print(f"[session_refresh] invalid_refresh_token: path={request.path}, error={msg}")
             self._clear_session(request)
             return self._handle_expired(request)
 
         elif "429" in msg:
-            error_login(
-                request,
-                errorobject="refresh_429",
-                errormessage=msg,
-                remarks1=request.path,
-                remarks2=f"refresh_token={refresh_token}",
-                remarks3="Too Many Requests"
-            )
+            print(f"[session_refresh] refresh_429: path={request.path}, error={msg}")
             return self.get_response(request)
 
         else:
-            error_login(
-                request,
-                errorobject="refresh_exception",
-                errormessage=msg,
-                remarks1=request.path,
-                remarks2=f"refresh_token={refresh_token}",
-                remarks3="refresh 중 기타 오류"
-            )
+            print(f"[session_refresh] refresh_exception: path={request.path}, error={msg}")
             self._clear_session(request)
             return self._handle_expired(request)
 
     def _log_refresh_unknown_exception(self, request, refresh_token, exception):
-        error_login(
-            request,
-            errorobject="refresh_unknown_exception",
-            errormessage=str(exception),
-            remarks1=request.path,
-            remarks2=f"refresh_token={refresh_token}",
-            remarks3="refresh 중 알 수 없는 오류"
-        )
+        print(f"[session_refresh] refresh_unknown_exception: path={request.path}, error={exception}")
 
     def _log_general_exception(self, request, exception):
-        error_login(
-            request,
-            errorobject="general_exception",
-            errormessage=str(exception),
-            remarks1=request.path,
-            remarks2=f"UA={request.headers.get('User-Agent')}, method={request.method}, query={request.META.get('QUERY_STRING')}, ip={self._get_client_ip(request)}",
-            remarks3="예상치 못한 예외"
-        )
+        print(f"[session_refresh] general_exception: path={request.path}, error={exception}")

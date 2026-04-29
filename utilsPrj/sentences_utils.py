@@ -1,5 +1,4 @@
 import inspect
-from utilsPrj.errorlogs import error_log
 from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 
 def draw_sentences(request, supabase, dict_rows, template_text, datauid):
@@ -56,16 +55,5 @@ def draw_sentences(request, supabase, dict_rows, template_text, datauid):
         return "\n".join(result)
 
     except Exception as e:
-        try:
-            error_log(
-                request,
-                e,
-                inspect.currentframe().f_code.co_name,
-                request.session.get("user", {}).get("id", None) if request else None,
-                template_text,
-                None,
-                "TABLE 생성 중 오류"
-            )
-        except Exception as log_err:
-            raise log_err  
+        print(f"[sentences_utils] 문장 생성 중 오류: {e}")
         raise e

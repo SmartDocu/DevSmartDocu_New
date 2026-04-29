@@ -7,7 +7,6 @@ from matplotlib import font_manager, rc
 import os
 from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 import inspect
-from utilsPrj.errorlogs import error_log
 
 def get_colors_from_palette(palette_name, count):
     if palette_name in plt.colormaps():
@@ -909,20 +908,5 @@ def draw_chart(request, supabase, charttypecd, dict_rows, properties, datauid):
         # --------------------------
         #  오류 로그 저장
         # --------------------------
-        try:
-            # (request, errormessage, errorobject, creator, remark1, remark2, remark3)
-            error_log(request,
-                      e, 
-                      inspect.currentframe().f_code.co_name, 
-                      request.session.get("user", {}).get("id", None),
-                      charttypecd,                      #remarks1
-                      properties,                       #remarks2
-                      "CHART 생성 중 오류",              #remarks3
-                    )
-
-        except Exception as log_err:
-            # 로그 저장 자체가 실패하면 서버에서 반드시 확인하도록 raise
-            raise log_err
-
-        # 원래 오류를 상위로 전달
+        print(f"[chart_utils] CHART 생성 중 오류: {e}")
         raise e

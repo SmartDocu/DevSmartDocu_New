@@ -1,7 +1,7 @@
 # 다국어 Term Key 목록
 
 프로젝트 전체 수집 기준일: 2026-04-29  
-총 239개 (category 4 기준: btn/lbl/thd/ttl/inf)
+총 239개 (category 4 기준: btn/lbl/thd/ttl/inf) + 차트 속성 37개 추가
 
 > **PK 충돌 해소 규칙**: `termkey`가 PK이므로 동일 base key가 여러 group에 속하면  
 > `{basekey}_{group}` suffix 부여 (예: `orderno_lbl`, `orderno_thd`)
@@ -235,6 +235,77 @@
 | lbl.upload_lbl |
 | lbl.usernm |
 | lbl.useyn_lbl |
+
+### lbl.chart.prop.* — 차트 속성 필드 레이블 (37개)
+
+> `chart_definitions.py`의 각 property `term_key` 값. `MasterChartsPage` 설정 패널에 표시됨.
+
+| term_key | 한국어 기본값 |
+|----------|--------------|
+| lbl.chart.prop.title | 그래프 제목 |
+| lbl.chart.prop.xField | X축 필드 |
+| lbl.chart.prop.xLabel | X축 제목 |
+| lbl.chart.prop.yField | Y축 필드 |
+| lbl.chart.prop.yLabel | Y축 제목 |
+| lbl.chart.prop.categoryField | 범주 |
+| lbl.chart.prop.colorPalette | 색상 테마 |
+| lbl.chart.prop.showDataLabels | 값 라벨 표시 |
+| lbl.chart.prop.barWidth | 막대 너비 |
+| lbl.chart.prop.barGap | 막대 간 간격 |
+| lbl.chart.prop.legendPosition | 범례 위치 |
+| lbl.chart.prop.showMarkers | 마커 노출 |
+| lbl.chart.prop.lineStyle | 선 스타일 |
+| lbl.chart.prop.lineWidth | 선 두께 |
+| lbl.chart.prop.marker | 마커 모양 |
+| lbl.chart.prop.markerSize | 마커 크기 |
+| lbl.chart.prop.labelField | 범주 필드 |
+| lbl.chart.prop.valueField | 값 필드 |
+| lbl.chart.prop.valueFormat | 값 포맷 |
+| lbl.chart.prop.cutout | 구멍 크기 (%) |
+| lbl.chart.prop.sizeField | 원 크기 필드 |
+| lbl.chart.prop.showGroupLabels | 그룹 라벨 표시 |
+| lbl.chart.prop.bins | 빈 개수 |
+| lbl.chart.prop.rwidth | 막대 폭 비율 |
+| lbl.chart.prop.notch | 노치 노출 |
+| lbl.chart.prop.showMeans | 평균값 노출 |
+| lbl.chart.prop.showFliers | 이상치 노출 |
+| lbl.chart.prop.widths | 박스 너비 |
+| lbl.chart.prop.whis | 수염 범위 |
+| lbl.chart.prop.hbar.xField | y축 필드 (horizontalBar 전용) |
+| lbl.chart.prop.hbar.xLabel | y축 제목 (horizontalBar 전용) |
+| lbl.chart.prop.hbar.yField | x축 필드 (horizontalBar 전용) |
+| lbl.chart.prop.hbar.yLabel | x축 제목 (horizontalBar 전용) |
+| lbl.chart.prop.box.categoryField | X축 필드 (box plot 전용) |
+| lbl.chart.prop.box.valueField | Y축 필드 (box plot 전용) |
+| lbl.chart.prop.pareto.labelField | X축 데이터 (pareto 전용) |
+| lbl.chart.prop.pareto.yField | Y축 데이터 (pareto 전용) |
+
+### cod.chart.* — 차트 select 옵션 레이블 (29개)
+
+| term_key | 한국어 기본값 |
+|----------|--------------|
+| cod.chart.legendpos.best | 자동 |
+| cod.chart.legendpos.upper_right | 오른쪽 위 |
+| cod.chart.legendpos.upper_left | 왼쪽 위 |
+| cod.chart.legendpos.lower_left | 왼쪽 아래 |
+| cod.chart.legendpos.lower_right | 오른쪽 아래 |
+| cod.chart.legendpos.right | 오른쪽 |
+| cod.chart.legendpos.center_left | 중앙 왼쪽 |
+| cod.chart.legendpos.center_right | 중앙 오른쪽 |
+| cod.chart.legendpos.lower_center | 하단 중앙 |
+| cod.chart.legendpos.upper_center | 상단 중앙 |
+| cod.chart.legendpos.center | 중앙 |
+| cod.chart.linestyle.solid | 실선 |
+| cod.chart.linestyle.dotted | 점선 |
+| cod.chart.linestyle.dashed | 대시선 |
+| cod.chart.linestyle.dash_dot | 대시-점선 |
+| cod.chart.marker.circle | 원 |
+| cod.chart.marker.square | 사각형 |
+| cod.chart.marker.triangle | 삼각형 |
+| cod.chart.marker.diamond | 다이아몬드 |
+| cod.chart.valueformat.value | 값 |
+| cod.chart.valueformat.percent | 백분율 |
+| cod.chart.valueformat.value_percent | 값 + 백분율 |
 
 ### thd. (42개)
 

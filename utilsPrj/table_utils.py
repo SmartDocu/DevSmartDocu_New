@@ -2,7 +2,6 @@ import json
 import locale
 from functools import cmp_to_key
 import inspect
-from utilsPrj.errorlogs import error_log
 
 locale.setlocale(locale.LC_ALL, '')
 
@@ -118,17 +117,5 @@ def draw_table(request, columns, dict_rows, tablejson, coljson):
         # --------------------------------------------
         # 오류 로그 저장
         # --------------------------------------------
-        try:
-            error_log(
-                request,
-                e,
-                inspect.currentframe().f_code.co_name,
-                request.session.get("user", {}).get("id", None) if request else None,
-                tablejson,              # remark1
-                coljson,               # remark2
-                "TABLE 생성 중 오류"       # remark3
-            )
-        except Exception as log_err:
-            raise log_err  # 로그 저장 실패 시 서버에서 반드시 알도록
-
-        raise e  # 원래 오류 전달
+        print(f"[table_utils] TABLE 생성 중 오류: {e}")
+        raise e

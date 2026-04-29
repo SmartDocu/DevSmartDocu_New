@@ -12,13 +12,11 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useChapterDatas } from '@/hooks/useDatas'
 import { useChart, useSaveChart, useDeleteChart } from '@/hooks/useCharts'
 import { useObjectFilterDatauid } from '@/hooks/useTables'
+import { CATEGORICAL_COLORMAPS, CONTINUOUS_COLORMAPS } from '@/utils/colorData'
 
 const COLOR_PALETTE_OPTIONS = [
-  { value: 'pastel', label: 'Pastel' },
-  { value: 'bold',   label: 'Bold' },
-  { value: 'earth',  label: 'Earth' },
-  { value: 'ocean',  label: 'Ocean' },
-  { value: 'sunset', label: 'Sunset' },
+  ...CATEGORICAL_COLORMAPS.map((c) => ({ value: c.name, label: c.name })),
+  ...CONTINUOUS_COLORMAPS.map((c) => ({ value: c.name, label: c.name })),
 ]
 
 export default function MasterChartsPage() {
@@ -68,6 +66,7 @@ export default function MasterChartsPage() {
 
   // ── 미리보기 ────────────────────────────────────────────────────────────────
   const [previewUrl,     setPreviewUrl]     = useState(null)
+  const [previewOpen,    setPreviewOpen]    = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
 
   // ── 기존 설정 로드 ──────────────────────────────────────────────────────────
@@ -112,8 +111,24 @@ export default function MasterChartsPage() {
 
   const handleChartTypeSelect = (code) => {
     setSelectedChartType(code)
-    setChartConfig({})
     setPreviewUrl(null)
+
+    const typeDetail = chartTypesDetail.find((ct) => ct.code === code)
+    const fields = typeDetail?.properties || []
+    const defaults = {}
+    fields.forEach((field) => {
+      if (field.default !== undefined) {
+        defaults[field.key] = field.default
+      }
+      if (field.type === 'select' && field.required) {
+        const opts = getFieldOptions(field)
+        if (opts.length > 0) {
+          const first = opts[0]
+          defaults[field.key] = typeof first === 'object' ? first.value : first
+        }
+      }
+    })
+    setChartConfig(defaults)
   }
 
   const handleReset = () => {
@@ -123,6 +138,7 @@ export default function MasterChartsPage() {
     setChartWidth(500)
     setChartHeight(250)
     setPreviewUrl(null)
+    setPreviewOpen(false)
   }
 
   const handleSave = () => {
@@ -181,6 +197,7 @@ export default function MasterChartsPage() {
       )
       const url = URL.createObjectURL(new Blob([resp.data], { type: 'image/png' }))
       setPreviewUrl(url)
+      setPreviewOpen(true)
     } catch (e) {
       message.error(t('msg.preview.error') + ': ' + (e.response?.data?.detail || e.message))
     } finally {
@@ -275,7 +292,6 @@ export default function MasterChartsPage() {
               </div>
             </div>
             <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-              <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>* {t('inf.chart.required.hint')}</p>
 
               {/* 차트 크기 */}
               <div className="form-group-left">
@@ -299,13 +315,16 @@ export default function MasterChartsPage() {
               {/* 동적 필드 */}
               {properties.map((field) => {
                 const opts = getFieldOptions(field)
-                const labelStyle = field.required
-                  ? { color: 'red', width: 130, display: 'inline-block' }
-                  : { width: 130, display: 'inline-block' }
+                const labelEl = (
+                  <label style={{ width: 130, display: 'inline-block' }}>
+                    {field.required && <span style={{ color: 'red', marginRight: 2 }}>*</span>}
+                    {t(field.term_key)}
+                  </label>
+                )
 
                 if (field.type === 'text') return (
                   <div key={field.key} className="form-group-left">
-                    <label style={labelStyle}>{field.label}</label>
+                    {labelEl}
                     <input
                       type="text"
                       value={chartConfig[field.key] || ''}
@@ -317,7 +336,7 @@ export default function MasterChartsPage() {
 
                 if (field.type === 'number') return (
                   <div key={field.key} className="form-group-left">
-                    <label style={labelStyle}>{field.label}</label>
+                    {labelEl}
                     <input
                       type="number"
                       value={chartConfig[field.key] ?? field.default ?? ''}
@@ -329,7 +348,7 @@ export default function MasterChartsPage() {
 
                 if (field.type === 'boolean') return (
                   <div key={field.key} className="form-group-left" style={{ display: 'block' }}>
-                    <label style={labelStyle}>{field.label}</label>
+                    {labelEl}
                     <input
                       type="checkbox"
                       style={{ marginLeft: 8 }}
@@ -348,7 +367,7 @@ export default function MasterChartsPage() {
                   )
                   return (
                     <div key={field.key} className="form-group-left">
-                      <label style={labelStyle}>{field.label}</label>
+                      {labelEl}
                       <select
                         value={chartConfig[field.key] || ''}
                         onChange={(e) => setCfg(field.key, e.target.value)}
@@ -356,7 +375,7 @@ export default function MasterChartsPage() {
                       >
                         {!field.required && <option value="">{t('msg.select.placeholder')}</option>}
                         {optList.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
+                          <option key={o.value} value={o.value}>{o.term_key ? t(o.term_key) : o.label}</option>
                         ))}
                       </select>
                     </div>
@@ -368,23 +387,35 @@ export default function MasterChartsPage() {
           </div>
         )}
 
-        {/* 영역4: 미리보기 */}
-        <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
-            <div />
-          </div>
-          <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)', border: '1px solid #ddd', borderRadius: 4, padding: 8, backgroundColor: '#fafafa' }}>
-            {previewLoading
-              ? <div style={{ textAlign: 'center', padding: 20 }}>{t('msg.loading')}</div>
-              : previewUrl
-                ? <img src={previewUrl} alt="chart" style={{ maxWidth: '100%' }} />
-                : <div style={{ color: '#aaa', fontSize: 13, paddingTop: 20, textAlign: 'center' }}>{t('inf.preview.empty')}</div>
-            }
+      </div>
+
+      {/* A4 미리보기 모달 */}
+      {previewOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.6)', display: 'flex',
+          justifyContent: 'center', alignItems: 'flex-start',
+          overflowY: 'auto', zIndex: 9999, padding: '40px 0',
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) setPreviewOpen(false) }}
+        >
+          <div style={{
+            background: '#fff',
+            width: 794,
+            minHeight: 1123,
+            padding: '40px 60px',
+            boxShadow: '0 4px 32px rgba(0,0,0,0.35)',
+            flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
+              <button type="button" onClick={() => setPreviewOpen(false)} style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
+            </div>
+            {previewUrl && <img src={previewUrl} alt="chart" style={{ maxWidth: '100%' }} />}
           </div>
         </div>
+      )}
 
-      </div>
     </div>
   )
 }
