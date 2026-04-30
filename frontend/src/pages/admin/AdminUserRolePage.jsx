@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { App } from 'antd'
+import { useLangStore, t } from '@/stores/langStore'
 import { useAdminUserRoles, useSaveUserRole } from '@/hooks/useAdmin'
 
 const ROLE_OPTIONS = [
@@ -10,7 +11,7 @@ const ROLE_OPTIONS = [
 
 export default function AdminUserRolePage() {
   const { message } = App.useApp()
-  const { data = {}, isLoading } = useAdminUserRoles()
+  const { data = {}, isLoading, refetch } = useAdminUserRoles()
   const saveMutation = useSaveUserRole()
 
   const [pendingRoles, setPendingRoles] = useState({})
@@ -27,19 +28,35 @@ export default function AdminUserRolePage() {
     const originalUser = users.find((u) => u.useruid === useruid)
     const roleid = pendingRoles[useruid] ?? originalUser?.roleid
     if (!roleid) return
+
     setSavingUid(useruid)
+
     saveMutation.mutate(
       { useruid, roleid },
       {
-        onSettled: () => {
-          setSavingUid(null)
+        onSuccess: async () => {
+          // ✅ 1. 메시지 먼저 (샘플 방식)
+          message.success(t('msg.save.success'))
+
+          // ✅ 2. 데이터 갱신
+          await refetch()
+
+          // ✅ 3. pending 정리
           setPendingRoles((prev) => {
             const next = { ...prev }
             delete next[useruid]
             return next
           })
         },
-      },
+        onError: (err) => {
+          message.error(
+            err?.response?.data?.detail || t('msg.save.error')
+          )
+        },
+        onSettled: () => {
+          setSavingUid(null)
+        }
+      }
     )
   }
 
@@ -48,9 +65,10 @@ export default function AdminUserRolePage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>사용자 권한 관리</div>
+          <div>{t('mnu.system.users')}</div>
         </div>
       </div>
+
 
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 48 }}>
@@ -61,8 +79,8 @@ export default function AdminUserRolePage() {
           <table style={{ width: '50%' }}>
             <thead>
               <tr>
-                <th style={{ width: '50%' }}>이메일</th>
-                <th style={{ width: '30%' }}>역할</th>
+                <th style={{ width: '50%' }}>{t('thd.email_thd')}</th>
+                <th style={{ width: '30%' }}>{t('thd.rolecd_thd')}</th>
                 <th style={{ width: '20%' }} />
               </tr>
             </thead>
@@ -84,16 +102,11 @@ export default function AdminUserRolePage() {
                   <td style={{ textAlign: 'center' }}>
                     <button
                       type="button"
-                      className="icon-btn"
+                      className="btn btn-primary"
                       disabled={savingUid === user.useruid}
                       onClick={() => handleSave(user.useruid)}
                     >
-                      <img
-                        src="/icons/save.svg"
-                        title="저장"
-                        className="icon-img-tbl save-icon"
-                        alt="저장"
-                      />
+                      {t('btn.save')}
                     </button>
                   </td>
                 </tr>

@@ -15,9 +15,26 @@ import { useObjectFilterDatauid } from '@/hooks/useTables'
 import { CATEGORICAL_COLORMAPS, CONTINUOUS_COLORMAPS } from '@/utils/colorData'
 
 const COLOR_PALETTE_OPTIONS = [
-  ...CATEGORICAL_COLORMAPS.map((c) => ({ value: c.name, label: c.name })),
-  ...CONTINUOUS_COLORMAPS.map((c) => ({ value: c.name, label: c.name })),
+  ...CATEGORICAL_COLORMAPS.map((c) => ({ value: c.name, label: c.name, colors: c.colors, type: 'categorical' })),
+  ...CONTINUOUS_COLORMAPS.map((c) => ({ value: c.name, label: c.name, colors: c.colors, type: 'continuous' })),
 ]
+
+function PaletteSwatch({ option }) {
+  if (!option) return null
+  if (option.type === 'categorical') {
+    return (
+      <div style={{ display: 'flex', height: 10, borderRadius: 2, overflow: 'hidden' }}>
+        {option.colors.map((c, i) => (
+          <div key={i} style={{ flex: 1, background: c }} />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div style={{ height: 10, borderRadius: 2, background: `linear-gradient(to right, ${option.colors.join(',')})` }} />
+  )
+}
+
 
 export default function MasterChartsPage() {
   useLangStore((s) => s.translations)
@@ -360,11 +377,31 @@ export default function MasterChartsPage() {
 
                 if (field.type === 'select') {
                   const isColorPalette = field.key === 'colorPalette'
-                  const optList = isColorPalette ? COLOR_PALETTE_OPTIONS : (
-                    Array.isArray(opts)
-                      ? (typeof opts[0] === 'string' ? opts.map((v) => ({ value: v, label: v })) : opts)
-                      : []
-                  )
+
+                  if (isColorPalette) {
+                    const currentOpt = COLOR_PALETTE_OPTIONS.find((o) => o.value === (chartConfig[field.key] || ''))
+                    return (
+                      <div key={field.key} className="form-group-left" style={{ alignItems: 'flex-start' }}>
+                        {labelEl}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <select
+                            value={chartConfig[field.key] || ''}
+                            onChange={(e) => setCfg(field.key, e.target.value)}
+                          >
+                            {!field.required && <option value="">{t('msg.select.placeholder')}</option>}
+                            {COLOR_PALETTE_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                          {currentOpt && <PaletteSwatch option={currentOpt} />}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  const optList = Array.isArray(opts)
+                    ? (typeof opts[0] === 'string' ? opts.map((v) => ({ value: v, label: v })) : opts)
+                    : []
                   return (
                     <div key={field.key} className="form-group-left">
                       {labelEl}

@@ -8,16 +8,18 @@
  *   <AiLlmPage objecttypecd="TA" pageTitle="AI 테이블 설정" />
  */
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { App, Modal, Spin, Table } from 'antd'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
+import { useObjectFilterDatauid } from '@/hooks/useTables'
 import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils/colorData'
 
 
 export default function AiLlmPage({ objecttypecd, pageTitle }) {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
 
@@ -57,6 +59,11 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   const [saveLoading,   setSaveLoading]   = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
+  // ── ObjectFilters 기본값 ──────────────────────────────────────────────────
+  const [isFilterDefault, setIsFilterDefault] = useState(false)
+  const [noExistingData,  setNoExistingData]  = useState(false)
+  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, !initLoading && noExistingData)
+
   // ── textarea ref (커서 위치 추적) ─────────────────────────────────────────
   const promptRef = useRef(null)
   const cursorPos = useRef(0)
@@ -77,7 +84,11 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       setDisplayTypes(data.display_types || [])
 
       const ex = data.existing || {}
-      if (ex.datauid !== undefined)     setSelectedDatauid(ex.datauid || '')
+      if (ex.datauid) {
+        setSelectedDatauid(ex.datauid)
+      } else {
+        setNoExistingData(true)
+      }
       if (ex.displaytype !== undefined) setSelectedDisplayType(ex.displaytype || '')
       if (ex.gptq !== undefined)        setPromptText(ex.gptq || '')
     }).catch((e) => {
@@ -96,6 +107,13 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       .then((r) => setColumns(r.data.columns || []))
       .catch(() => setColumns([]))
   }, [selectedDatauid])
+
+  // filterDatauid → 기본 데이터 자동 선택
+  useEffect(() => {
+    if (!filterDatauid) return
+    setSelectedDatauid(filterDatauid)
+    setIsFilterDefault(true)
+  }, [filterDatauid])
 
   // ─────────────────────────────────────────────────────────────────────────
   // textarea 커서 추적
@@ -191,22 +209,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
     }
   }
 
-  const handleBack = () => {
-    const fromChapterTemplate = sessionStorage.getItem('chapter_template_chapteruid')
-    const fromChapterObjects  = sessionStorage.getItem('chapter_objects_read_genchapteruid')
-    if (fromChapterTemplate) {
-      navigate(`/master/chapters?chapteruid=${fromChapterTemplate}`)
-    } else if (fromChapterObjects) {
-      navigate(`/req/chapter-objects?genchapteruid=${fromChapterObjects}`)
-    } else if (chapteruid && objectuid) {
-      navigate(`/master/object?chapteruid=${chapteruid}&objectuid=${objectuid}`)
-    } else if (chapteruid) {
-      navigate(`/master/object?chapteruid=${chapteruid}`)
-    } else {
-      navigate('/master/object')
-    }
-  }
-
   // ─────────────────────────────────────────────────────────────────────────
   // 렌더
   // ─────────────────────────────────────────────────────────────────────────
@@ -217,15 +219,26 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
     <div style={{ height: CONTENT_HEIGHT, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── 헤더 ── */}
-      <div className="page-title" style={{ flexShrink: 0, marginBottom: 8 }}>
+      <div className="page-title" style={{ flexShrink: 0, marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{pageTitle}</div>
+          <div>{pageTitle}{user?.docnm ? ` - ${user.docnm}` : ''}</div>
         </div>
-        <button type="button" className="icon-btn" onClick={handleBack}>
-          <img src="/icons/back.svg" alt="뒤로가기" className="icon-img config-icon" />
-        </button>
       </div>
+
+      {/* ── 서브타이틀: 챕터명 | 항목명 ── */}
+      <div style={{ marginBottom: 12, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)', flexShrink: 0 }}>
+        {chapternm && <span>{t('lbl.chapternm')}: {chapternm}</span>}
+        {chapternm && objectnm && <span style={{ margin: '0 14px', color: '#d9d9d9' }}>|</span>}
+        {objectnm && <span>{t('lbl.objectnm_lbl')}: {objectnm}</span>}
+      </div>
+
+      {/* ── 필터 기본값 경고 배너 ── */}
+      {isFilterDefault && (
+        <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, color: '#d46b08', fontSize: 13, flexShrink: 0 }}>
+          {t('msg.dataset.filter.readonly')}
+        </div>
+      )}
 
       {/* ── 로딩 중 ── */}
       {initLoading && (
@@ -239,108 +252,72 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         <>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden', minHeight: 0 }}>
 
-            {/* ── 상단 정보 폼 (3열) ── */}
-            <div style={{ display: 'flex', gap: 20, flexShrink: 0 }}>
-
-              {/* 왼쪽: 대상 문서 + 데이터 목록 */}
-              <div style={{ flex: 1 }}>
-                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ width: 100, flexShrink: 0 }}><strong>대상 문서 :</strong></label>
-                  <div style={{ flex: 1, marginRight: 20 }}>{user?.docnm || ''}</div>
-                </div>
-                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ width: 100, flexShrink: 0 }}><strong>데이터 목록 :</strong></label>
+            {/* ── 데이터 선택 행 ── */}
+            <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 4, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>데이터 목록:</label>
+                <select
+                  value={selectedDatauid}
+                  onChange={(e) => { if (!isFilterDefault) setSelectedDatauid(e.target.value) }}
+                  disabled={isFilterDefault}
+                  style={{ minWidth: 200 }}
+                >
+                  <option value="">--- 선택 ---</option>
+                  {datas.map((d) => (
+                    <option key={d.datauid} value={d.datauid}>{d.datanm}</option>
+                  ))}
+                </select>
+              </div>
+              {(objecttypecd === 'CA' || objecttypecd === 'SA') && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>
+                    {objecttypecd === 'CA' ? '차트 유형:' : '문장 유형:'}
+                  </label>
                   <select
-                    value={selectedDatauid}
-                    onChange={(e) => setSelectedDatauid(e.target.value)}
-                    style={{ flex: 1, marginRight: 20 }}
+                    value={selectedDisplayType}
+                    onChange={(e) => setSelectedDisplayType(e.target.value)}
+                    style={{ minWidth: 150 }}
                   >
                     <option value="">--- 선택 ---</option>
-                    {datas.map((d) => (
-                      <option key={d.datauid} value={d.datauid}>{d.datanm}</option>
+                    {displayTypes.map((dt) => (
+                      <option key={dt.value} value={dt.value}>{dt.label}</option>
                     ))}
                   </select>
                 </div>
-              </div>
-
-              {/* 중앙: 챕터 이름 + 표시 유형 */}
-              <div style={{ flex: 1 }}>
-                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ width: 100, flexShrink: 0 }}><strong>챕터 이름 :</strong></label>
-                  <div style={{ flex: 1, marginRight: 20 }}>{chapternm}</div>
-                </div>
-                {(objecttypecd === 'CA' || objecttypecd === 'SA') && (
-                  <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-                    <label style={{ width: 100, flexShrink: 0 }}>
-                      <strong>{objecttypecd === 'CA' ? '차트 유형 :' : '문장 유형 :'}</strong>
-                    </label>
-                    <select
-                      value={selectedDisplayType}
-                      onChange={(e) => setSelectedDisplayType(e.target.value)}
-                      style={{ flex: 1, marginRight: 20 }}
-                    >
-                      <option value="">--- 선택 ---</option>
-                      {displayTypes.map((t) => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* 오른쪽: 항목 이름 */}
-              <div style={{ flex: 1 }}>
-                <div className="form-row" style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ width: 100, flexShrink: 0 }}><strong>항목 이름 :</strong></label>
-                  <div style={{ flex: 1, marginRight: 20 }}>{objectnm}</div>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* ── 열이름 + 샘플 프롬프트 버튼 ── */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <div style={{ color: '#333', flexWrap: 'wrap' }}>
-                <strong>열이름&nbsp;&nbsp;</strong>
-                {columns.map((col, idx) => (
-                  <span
-                    key={col}
-                    onClick={() => insertAtCursor(col)}
-                    style={{
-                      display: 'inline-block',
-                      padding: '2px 4px',
-                      marginRight: 4,
-                      marginBottom: 4,
-                      marginLeft: idx === 0 ? 20 : 0,
-                      cursor: 'pointer',
-                      fontSize: 13,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.textDecoration = 'underline'
-                      e.target.style.textDecorationColor = 'silver'
-                      e.target.style.color = 'black'
-                      e.target.style.fontWeight = 'bold'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.textDecoration = 'none'
-                      e.target.style.color = 'inherit'
-                      e.target.style.fontWeight = 'normal'
-                    }}
-                  >
-                    {col}
-                  </span>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setModalOpen(true)}
-                disabled={prompts.length === 0}
-              >
-                <div className="icon-wrapper">
-                  <img src="/icons/template-config.svg" className="icon-img config-icon" alt="샘플 프롬프트" />
-                  <span className="icon-label">샘플 프롬프트</span>
-                </div>
-              </button>
+            {/* ── 열이름 ── */}
+            <div style={{ color: '#333', flexWrap: 'wrap', flexShrink: 0 }}>
+              <strong>열이름&nbsp;&nbsp;</strong>
+              {columns.map((col, idx) => (
+                <span
+                  key={col}
+                  onClick={() => insertAtCursor(col)}
+                  style={{
+                    display: 'inline-block',
+                    padding: '2px 4px',
+                    marginRight: 4,
+                    marginBottom: 4,
+                    marginLeft: idx === 0 ? 20 : 0,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.textDecoration = 'underline'
+                    e.target.style.textDecorationColor = 'silver'
+                    e.target.style.color = 'black'
+                    e.target.style.fontWeight = 'bold'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.textDecoration = 'none'
+                    e.target.style.color = 'inherit'
+                    e.target.style.fontWeight = 'normal'
+                  }}
+                >
+                  {col}
+                </span>
+              ))}
             </div>
 
             {/* ── 하단: 프롬프트 입력 | 미리보기 결과 ── */}
@@ -348,7 +325,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
               {/* 왼쪽: 프롬프트 입력 + 색상/컬러맵 */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                <h4 style={{ marginBottom: 10, fontWeight: 'bold', flexShrink: 0 }}>프롬프트</h4>
+                <h3 style={{ margin: 0, marginBottom: 8, flexShrink: 0 }}>프롬프트</h3>
                 <textarea
                   ref={promptRef}
                   value={promptText}
@@ -429,7 +406,17 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
               {/* 오른쪽: 미리보기 결과 */}
               <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                <h4 style={{ marginBottom: 10, fontWeight: 'bold', flexShrink: 0 }}>미리보기 결과</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
+                  <h3 style={{ margin: 0 }}>미리보기 결과</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)} disabled={prompts.length === 0}>샘플 프롬프트</button>
+                    <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
+                    <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+                    <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
+                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveLoading}>{t('btn.save')}</button>
+                    <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteLoading}>{t('btn.delete')}</button>
+                  </div>
+                </div>
                 <div
                   style={{
                     flex: 1,
@@ -450,33 +437,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
           </div>
 
-          {/* ── 하단 버튼 (overflow:hidden 영역 바깥) ── */}
-          <div className="button-group" style={{ flexShrink: 0, marginTop: 8 }}>
-            <button type="button" className="icon-btn" onClick={handleReset}>
-              <div className="icon-wrapper">
-                <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                <span className="icon-label">신규</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleSave} disabled={saveLoading}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                <span className="icon-label">저장</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleDelete} disabled={deleteLoading}>
-              <div className="icon-wrapper">
-                <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                <span className="icon-label">삭제</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handlePreview} disabled={previewLoading}>
-              <div className="icon-wrapper">
-                <img src="/icons/view.svg" className="icon-img config-icon" alt="미리보기" />
-                <span className="icon-label">미리보기</span>
-              </div>
-            </button>
-          </div>
         </>
       )}
 
@@ -589,15 +549,12 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
           <span>샘플 프롬프트 관리</span>
           <button
             type="button"
-            className="icon-btn"
+            className="btn btn-primary"
             onClick={handleApply}
             disabled={!selected}
             style={{ marginRight: 30 }}
           >
-            <div className="icon-wrapper">
-              <img src="/icons/chapter-write.svg" className="icon-img config-icon" alt="프롬프트 교체" />
-              <span className="icon-label">프롬프트 교체</span>
-            </div>
+            프롬프트 교체
           </button>
         </div>
       }
