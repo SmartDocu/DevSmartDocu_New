@@ -320,7 +320,7 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
             # 만약 단일행 변수 값 그대로 들어올 경우 열만 추출 필요
             if params_org.startswith("@") and "." in params_org:
                 try:
-                    params_org = "(@Deviation.deviation_nm, @Deviation.deviaion_id)"
+                    # params_org = "(@Deviation.deviation_nm, @Deviation.deviaion_id)"
 
                     # . 뒤 값만 추출
                     datas = re.findall(r'@[^.]+\.(\w+)', params_org)
