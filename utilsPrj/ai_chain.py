@@ -1111,7 +1111,14 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
 
     code = fix_groupby_agg_pattern(code)
 
-    is_groupby_in_code = 'groupby' in code
+    aggregation_function = [
+        ".sum", ".mean", ".median", ".min", ".max",
+        ".count", ".size", ".std", ".var", ".prod", ".agg"
+    ]
+
+    is_single_in_code = ('groupby' not in code) and any(func in code for func in aggregation_function) 
+
+    is_groupby_in_code = not is_single_in_code
 
     local_namespace = {
         'df': df,
@@ -1303,7 +1310,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
         if "result" in local_namespace and isinstance(local_namespace["result"], pd.DataFrame):
             df_result = local_namespace["result"]
 
-            print(f"jeff 901 result_df: {df_result}")
+            # print(f"jeff 901 result_df: {df_result}")
             meta_info = {}
             for col in df_result.columns:
                 dtype = str(df_result[col].dtype)
@@ -1313,7 +1320,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 }
             meta_info["is_table_value"] = is_groupby_in_code
             cols_result = json.dumps(meta_info, ensure_ascii=False, indent=2)
-            print(f"jeff 902 columns_info: {cols_result}")
+            # print(f"jeff 902 columns_info: {cols_result}")
 
             return {
                 "result": df_result,
