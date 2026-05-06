@@ -277,7 +277,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                   >
                     <option value="">{t('msg.select.placeholder')}</option>
                     {displayTypes.map((dt) => (
-                      <option key={dt.value} value={dt.value}>{dt.label}</option>
+                      <option key={dt.value} value={dt.value}>{t(dt.term_key)}</option>
                     ))}
                   </select>
                 </div>
@@ -345,7 +345,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
               {/* 내용 행 */}
               <div style={{ flex: 1, display: 'flex', gap: 20, minHeight: 0, overflow: 'hidden' }}>
 
-              {/* 왼쪽: 프롬프트 입력 + 색상/컬러맵 */}
+              {/* 왼쪽: 프롬프트 입력 */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
                 <textarea
                   ref={promptRef}
@@ -368,61 +368,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                     minHeight: 0,
                   }}
                 />
-
-                {/* 색상/컬러맵 참조 영역 */}
-                {objecttypecd !== 'SA' && (
-                  <div style={{ flexShrink: 0, marginTop: 8 }}>
-                    <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}>
-                      <label style={{ width: 60, fontSize: 13 }}>{t('lbl.color.ref')}</label>
-                      <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: '2px 8px' }} onClick={() => setShowColors((v) => !v)}>
-                        {showColors ? t('btn.color.hide') : t('btn.color.show')}
-                      </button>
-                      {objecttypecd === 'CA' && (
-                        <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: '2px 8px' }} onClick={() => setShowColormap((v) => !v)}>
-                          {showColormap ? t('btn.colormap.hide') : t('btn.colormap.show')}
-                        </button>
-                      )}
-                    </div>
-                    {showColors && (
-                      <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: 8, marginBottom: 4 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
-                          {CSS_COLORS.map(({ name, hex }) => (
-                            <div
-                              key={name}
-                              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3 }}
-                              onClick={() => insertAtCursor(`${name}(${hex})`)}
-                            >
-                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
-                              <div style={{ height: 20, borderRadius: 4, border: '1px solid #ccc', background: hex }} title={hex} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {showColormap && (
-                      <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: 8 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
-                          {CONTINUOUS_COLORMAPS.map(({ name, colors }) => (
-                            <div key={name} style={{ cursor: 'pointer' }} onClick={() => insertAtCursor(name)}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
-                              <div style={{ height: 20, background: `linear-gradient(to right, ${colors.join(',')})`, border: '1px solid #ccc', borderRadius: 4 }} />
-                            </div>
-                          ))}
-                          {CATEGORICAL_COLORMAPS.map(({ name, colors }) => (
-                            <div key={name} style={{ cursor: 'pointer' }} onClick={() => insertAtCursor(name)}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
-                              <div style={{ display: 'flex', gap: 2 }}>
-                                {colors.map((c, i) => (
-                                  <div key={i} style={{ flex: 1, height: 20, background: c, border: '1px solid #ccc', borderRadius: 2 }} />
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* 오른쪽: 미리보기 결과 */}
@@ -445,6 +390,61 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
               </div>
 
               </div>{/* 내용 행 end */}
+
+              {/* 색상/컬러맵 참조 영역 */}
+              {objecttypecd !== 'SA' && (
+                <div style={{ flexShrink: 0, marginTop: 8 }}>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}>
+                    <label style={{ width: 60, fontSize: 13 }}>{t('lbl.color.ref')}</label>
+                    <button type="button" className="btn btn-primary" onClick={() => setShowColors((v) => !v)}>
+                      {showColors ? t('btn.color.hide') : t('btn.color.show')}
+                    </button>
+                    {objecttypecd === 'CA' && (
+                      <button type="button" className="btn btn-primary" onClick={() => setShowColormap((v) => !v)}>
+                        {showColormap ? t('btn.colormap.hide') : t('btn.colormap.show')}
+                      </button>
+                    )}
+                  </div>
+                  {showColors && (
+                    <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: 8, marginBottom: 4 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
+                        {CSS_COLORS.map(({ name, hex }) => (
+                          <div
+                            key={name}
+                            style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3 }}
+                            onClick={() => insertAtCursor(`${name}(${hex})`)}
+                          >
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
+                            <div style={{ height: 20, borderRadius: 4, border: '1px solid #ccc', background: hex }} title={hex} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {showColormap && (
+                    <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
+                        {CONTINUOUS_COLORMAPS.map(({ name, colors }) => (
+                          <div key={name} style={{ cursor: 'pointer' }} onClick={() => insertAtCursor(name)}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
+                            <div style={{ height: 20, background: `linear-gradient(to right, ${colors.join(',')})`, border: '1px solid #ccc', borderRadius: 4 }} />
+                          </div>
+                        ))}
+                        {CATEGORICAL_COLORMAPS.map(({ name, colors }) => (
+                          <div key={name} style={{ cursor: 'pointer' }} onClick={() => insertAtCursor(name)}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{name}</div>
+                            <div style={{ display: 'flex', gap: 2 }}>
+                              {colors.map((c, i) => (
+                                <div key={i} style={{ flex: 1, height: 20, background: c, border: '1px solid #ccc', borderRadius: 2 }} />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
           </div>
@@ -521,7 +521,7 @@ function PreviewDisplay({ result }) {
           rowKey="_key"
           size="small"
           pagination={false}
-          scroll={{ x: true, y: 300 }}
+          scroll={{ x: true }}
           style={{ width: '100%' }}
         />
       </div>

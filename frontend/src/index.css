@@ -656,6 +656,11 @@ table tr.selected-row {
   border-color: var(--primary-btn-hover);
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn-secondary {
   color: var(--btn-text);
   background-color: var(--secondary-btn);

@@ -60,7 +60,7 @@ export default function MasterSentencesPage() {
   useEffect(() => {
     if (!selectedDatauid) { setDataRows([]); return }
     setDataLoading(true)
-    apiClient.get('/datas/rows', { params: { datauid: selectedDatauid } })
+    apiClient.get('/datas/rows', { params: { datauid: selectedDatauid, docid: user?.docid || undefined } })
       .then((r) => setDataRows(r.data.data || []))
       .catch(() => setDataRows([]))
       .finally(() => setDataLoading(false))
@@ -81,6 +81,7 @@ export default function MasterSentencesPage() {
       const resp = await apiClient.post('/sentences/preview', {
         chapteruid, objectnm,
         selected_datauid: selectedDatauid,
+        docid: user?.docid || null,
         template_text: templateText,
       })
       setPreviewResult(resp.data.result || '')
@@ -217,6 +218,7 @@ export default function MasterSentencesPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
               <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
               {isEditYn && (
                 <>
@@ -224,7 +226,6 @@ export default function MasterSentencesPage() {
                   <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteSentence.isPending}>{t('btn.delete')}</button>
                 </>
               )}
-              <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
             </div>
           </div>
           <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>

@@ -31,6 +31,7 @@ def get_chart_types_detail():
         {
             "code": "bar",
             "name": "Bar Chart",
+            "term_key": "cod.ui_chart.bar",
             "properties": add_legend_option([
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "xField",          "label": "X축 필드",     "term_key": "lbl.chart.prop.xField",         "type": "select",  "required": True,  "fieldFilter": "category"},
@@ -47,6 +48,7 @@ def get_chart_types_detail():
         {
             "code": "horizontalBar",
             "name": "Horizontal Bar Chart",
+            "term_key": "cod.ui_chart.horizontalBar",
             "properties": add_legend_option([
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "yField",          "label": "x축 필드",     "term_key": "lbl.chart.prop.hbar.yField",    "type": "select",  "required": True,  "fieldFilter": "numeric"},
@@ -63,6 +65,7 @@ def get_chart_types_detail():
         {
             "code": "line",
             "name": "Line Chart",
+            "term_key": "cod.ui_chart.line",
             "properties": add_legend_option([
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "xLabel",          "label": "X축 제목",     "term_key": "lbl.chart.prop.xLabel",         "type": "text",    "required": False},
@@ -99,6 +102,7 @@ def get_chart_types_detail():
         {
             "code": "pie",
             "name": "Pie Chart",
+            "term_key": "cod.ui_chart.pie",
             "properties": [
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "labelField",      "label": "범주 필드",    "term_key": "lbl.chart.prop.labelField",     "type": "select",  "required": True,  "fieldFilter": "category"},
@@ -119,6 +123,7 @@ def get_chart_types_detail():
         {
             "code": "doughnut",
             "name": "Doughnut Chart",
+            "term_key": "cod.ui_chart.doughnut",
             "properties": [
                 {"key": "title",           "label": "그래프 제목",    "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "labelField",      "label": "범주 필드",      "term_key": "lbl.chart.prop.labelField",     "type": "select",  "required": True,  "fieldFilter": "category"},
@@ -140,6 +145,7 @@ def get_chart_types_detail():
         {
             "code": "bubble",
             "name": "Bubble Chart",
+            "term_key": "cod.ui_chart.bubble",
             "properties": add_legend_option([
                 {"key": "title",           "label": "그래프 제목",   "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "xLabel",          "label": "X축 제목",      "term_key": "lbl.chart.prop.xLabel",         "type": "text",    "required": False},
@@ -156,6 +162,7 @@ def get_chart_types_detail():
         {
             "code": "hist",
             "name": "Histogram",
+            "term_key": "cod.ui_chart.hist",
             "properties": [
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",          "type": "text",    "required": False},
                 {"key": "valueField",      "label": "값 필드",      "term_key": "lbl.chart.prop.valueField",     "type": "select",  "required": True,  "fieldFilter": "numeric"},
@@ -170,6 +177,7 @@ def get_chart_types_detail():
         {
             "code": "box",
             "name": "Box Plot",
+            "term_key": "cod.ui_chart.box",
             "properties": [
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",               "type": "text",    "required": False},
                 {"key": "xLabel",          "label": "X축 제목",     "term_key": "lbl.chart.prop.xLabel",              "type": "text",    "required": False},
@@ -187,6 +195,7 @@ def get_chart_types_detail():
         {
             "code": "pareto",
             "name": "Pareto Chart",
+            "term_key": "cod.ui_chart.pareto",
             "properties": [
                 {"key": "title",           "label": "그래프 제목",  "term_key": "lbl.chart.prop.title",              "type": "text",    "required": False},
                 {"key": "xLabel",          "label": "X축 제목",     "term_key": "lbl.chart.prop.xLabel",             "type": "text",    "required": False},

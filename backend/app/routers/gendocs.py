@@ -347,7 +347,7 @@ def check_objects(body: dict, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     docid = body.get("docid")
-    chapters = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("docid", docid).execute().data or []
+    chapters = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("docid", docid).eq("useyn", True).execute().data or []
     unset = []
     for chap in chapters:
         objs = sb.schema(SUPABASE_SCHEMA).rpc("fn_objects__r", {"p_chapteruid": chap["chapteruid"]}).execute().data or []

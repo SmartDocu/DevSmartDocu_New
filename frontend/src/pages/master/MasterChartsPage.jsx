@@ -206,6 +206,7 @@ export default function MasterChartsPage() {
           chapteruid, objectnm,
           selected_datauid: selectedDatauid,
           selected_chart_type: selectedChartType,
+          docid: user?.docid || null,
           properties: { ...chartConfig, chart_width: chartWidth, chart_height: chartHeight },
           chart_width: chartWidth,
           chart_height: chartHeight,
@@ -286,7 +287,7 @@ export default function MasterChartsPage() {
                 className={`chapter-card${selectedChartType === ct.code ? ' selected' : ''}`}
                 onClick={() => handleChartTypeSelect(ct.code)}
               >
-                <div className="card-title">{ct.name}</div>
+                <div className="card-title">{t(ct.term_key)}</div>
               </div>
             ))}
           </div>
@@ -298,6 +299,7 @@ export default function MasterChartsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
               <h3 style={{ margin: 0 }}>{t('ttl.chart.settings')}</h3>
               <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
                 <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
                 {isEditYn && (
                   <>
@@ -305,7 +307,6 @@ export default function MasterChartsPage() {
                     <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteChart.isPending}>{t('btn.delete')}</button>
                   </>
                 )}
-                <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
               </div>
             </div>
             <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>

@@ -22,6 +22,7 @@ class TableSaveRequest(BaseModel):
 
 class TablePreviewRequest(BaseModel):
     selected_datauid: str
+    docid: Optional[str] = None
     tablejson: Optional[dict] = None
     coljson: Optional[dict] = None
 
@@ -111,7 +112,7 @@ def preview_table(body: TablePreviewRequest, token: str = Depends(get_token)):
 
     try:
         req = _FakeRequest(token)
-        df = process_data(req, datauid=body.selected_datauid)
+        df = process_data(req, datauid=body.selected_datauid, docid=body.docid)
         raw_columns = df.columns.tolist()
         raw_rows = df.head(15).values.tolist()
         _, dict_rows = apply_column_display_mapping(body.selected_datauid, raw_columns, raw_rows, sb)

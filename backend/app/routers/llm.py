@@ -19,12 +19,22 @@ DISPLAY_TYPES = {
     "TA": ["table"],
 }
 
-DISPLAY_TYPE_NAMES = {
-    "bar": "막대그래프", "line": "선그래프", "pie": "원형그래프",
-    "scatter": "산점도", "boxplot": "박스플롯", "histogram": "히스토그램",
-    "dual_axis": "이중축", "heatmap": "히트맵", "subplot": "서브플롯",
-    "simple_question": "단순 질의", "summary": "요약", "report": "보고서",
-    "predict": "예측", "table": "테이블",
+
+DISPLAY_TYPE_KEYS = {
+    "bar":             "cod.ai_chart.bar",
+    "line":            "cod.ai_chart.line",
+    "pie":             "cod.ai_chart.pie",
+    "scatter":         "cod.ai_chart.scatter",
+    "boxplot":         "cod.ai_chart.boxplot",
+    "histogram":       "cod.ai_chart.histogram",
+    "dual_axis":       "cod.ai_chart.dual_axis",
+    "heatmap":         "cod.ai_chart.heatmap",
+    "subplot":         "cod.ai_chart.subplot",
+    "simple_question": "cod.ai_sentence.simple_question",
+    "summary":         "cod.ai_sentence.summary",
+    "report":          "cod.ai_sentence.report",
+    "predict":         "cod.ai_sentence.predict",
+    "table":           "cod.ai_table.table",
 }
 
 
@@ -194,7 +204,7 @@ def llm_init(
         raise HTTPException(status_code=500, detail=f"llm/init 오류: {str(e)}")
 
     display_types = [
-        {"value": dt, "label": DISPLAY_TYPE_NAMES.get(dt, dt)}
+        {"value": dt, "term_key": DISPLAY_TYPE_KEYS.get(dt, "")}
         for dt in DISPLAY_TYPES.get(objecttypecd, [])
     ]
 
@@ -511,9 +521,9 @@ def experience_prompts():
         return {
             "prompts": rows,
             "datas": datas,
-            "chart_types": [{"value": v, "label": DISPLAY_TYPE_NAMES[v]} for v in DISPLAY_TYPES["CA"]],
-            "sentence_types": [{"value": v, "label": DISPLAY_TYPE_NAMES[v]} for v in DISPLAY_TYPES["SA"]],
-            "table_types": [{"value": v, "label": DISPLAY_TYPE_NAMES[v]} for v in DISPLAY_TYPES["TA"]],
+            "chart_types": [{"value": v, "term_key": DISPLAY_TYPE_KEYS[v]} for v in DISPLAY_TYPES["CA"]],
+            "sentence_types": [{"value": v, "term_key": DISPLAY_TYPE_KEYS[v]} for v in DISPLAY_TYPES["SA"]],
+            "table_types": [{"value": v, "term_key": DISPLAY_TYPE_KEYS[v]} for v in DISPLAY_TYPES["TA"]],
         }
     except Exception as e:
         tb = traceback.format_exc()

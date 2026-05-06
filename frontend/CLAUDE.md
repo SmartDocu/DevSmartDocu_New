@@ -234,6 +234,68 @@ const openInTab = useOpenInTab()
 
 ---
 
+### 로딩 오버레이 — 표준 패턴
+
+시간이 걸리는 작업(미리보기, AI 생성 등) 실행 중 화면 전체를 덮는 로딩 표시. **반드시 이 디자인을 사용할 것.**
+
+#### 필수 import
+
+```jsx
+import { App, Spin } from 'antd'
+```
+
+#### 상태
+
+```jsx
+const [previewLoading, setPreviewLoading] = useState(false)
+```
+
+#### JSX (컴포넌트 최하단, return 블록 내부 마지막)
+
+```jsx
+{/* 로딩 오버레이 */}
+{previewLoading && (
+  <div style={{
+    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex', justifyContent: 'center', alignItems: 'center',
+    zIndex: 9999,
+  }}>
+    <div style={{
+      background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+      fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+      display: 'flex', alignItems: 'center', gap: 12,
+    }}>
+      <Spin />
+      <span>{t('msg.loading.wait')}</span>
+    </div>
+  </div>
+)}
+```
+
+#### 사용 패턴
+
+```jsx
+const handlePreview = async () => {
+  setPreviewLoading(true)
+  try {
+    const resp = await apiClient.post('/xxx/preview', { ... })
+    // 결과 처리
+  } catch (e) {
+    message.error(t('msg.preview.error') + ': ' + (e.response?.data?.detail || e.message))
+  } finally {
+    setPreviewLoading(false)
+  }
+}
+```
+
+- `msg.loading.wait` 키가 다국어 테이블에 등록되어 있어야 함 (기본값: "Please wait a moment...")
+- `zIndex: 9999` — 모달 위에도 표시되도록 고정
+- 배경색 `#fafae5` (연한 노란빛 흰색) 고정
+
+---
+
 ### ui_terms 등록 방법
 
 화면 작성 완료 후 사용된 `t('키')` 목록을 추출해 Supabase에 등록한다.

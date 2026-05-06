@@ -204,6 +204,7 @@ export default function MasterTablesPage() {
     try {
       const resp = await apiClient.post('/tables/preview', {
         selected_datauid: selectedDatauid,
+        docid:     user?.docid || null,
         tablejson: buildFinalTablejson(),
         coljson:   buildFinalColjson(),
       })
@@ -347,6 +348,7 @@ export default function MasterTablesPage() {
             <h3 style={{ margin: 0 }}>{t('ttl.value.settings')}</h3>
             {selectedDatauid && (
               <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
                 <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
                 {isEditYn && (
                   <>
@@ -354,7 +356,6 @@ export default function MasterTablesPage() {
                     <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteTable.isPending}>{t('btn.delete')}</button>
                   </>
                 )}
-                <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
               </div>
             )}
           </div>

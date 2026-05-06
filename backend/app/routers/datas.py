@@ -463,7 +463,7 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
 
 
 @router.get("/rows")
-def get_data_rows(datauid: str, token: str = Depends(get_token)):
+def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional[str] = None):
     """데이터 미리보기 — 최대 15행 반환"""
     _get_user(token)
     sb = _sb(token)
@@ -477,7 +477,7 @@ def get_data_rows(datauid: str, token: str = Depends(get_token)):
 
     try:
         req = _FakeRequest(token)
-        df = process_data(req, datauid=datauid)
+        df = process_data(req, datauid=datauid, docid=docid)
         raw_columns = df.columns.tolist()
         raw_rows = df.head(15).values.tolist()
         _, dict_rows = apply_column_display_mapping(datauid, raw_columns, raw_rows, sb)
