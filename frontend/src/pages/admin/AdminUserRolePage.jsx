@@ -14,6 +14,8 @@ export default function AdminUserRolePage() {
   const { data = {}, isLoading, refetch } = useAdminUserRoles()
   const saveMutation = useSaveUserRole()
 
+  useLangStore((s) => s.translations)
+
   const [pendingRoles, setPendingRoles] = useState({})
   const [savingUid, setSavingUid] = useState(null)
 

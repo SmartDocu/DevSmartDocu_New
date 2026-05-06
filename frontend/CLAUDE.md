@@ -242,3 +242,6 @@ const openInTab = useOpenInTab()
 |--------|-----------|
 | `ui_terms` | `term_key`, `default_text` (영문 기본값) |
 | `ui_term_translations` | `term_key`, `language_cd`, `translated_text` |
+
+다국어 적용 시 기존 키 목록 및 SQL 예시는 **[docs/term_keys.md](../docs/term_keys.md)** 를 참고할 것.
+

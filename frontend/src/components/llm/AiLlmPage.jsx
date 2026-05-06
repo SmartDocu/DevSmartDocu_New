@@ -3,9 +3,9 @@
  * Django ai_common.html + ai_actions.js 구조를 그대로 반영.
  *
  * 사용:
- *   <AiLlmPage objecttypecd="CA" pageTitle="AI 차트 설정" />
- *   <AiLlmPage objecttypecd="SA" pageTitle="AI 문장 설정" />
- *   <AiLlmPage objecttypecd="TA" pageTitle="AI 테이블 설정" />
+ *   <AiLlmPage objecttypecd="CA" pageTitle="ttl.ai.chart.manage" />
+ *   <AiLlmPage objecttypecd="SA" pageTitle="ttl.ai.sentence.manage" />
+ *   <AiLlmPage objecttypecd="TA" pageTitle="ttl.ai.table.manage" />
  */
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -14,6 +14,7 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useObjectFilterDatauid } from '@/hooks/useTables'
+import { useChapterDatas } from '@/hooks/useDatas'
 import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils/colorData'
 
 
@@ -22,6 +23,8 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   const { message } = App.useApp()
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
+  const docnm = user?.docnm
+  const isEditYn = user?.editbuttonyn === 'Y'
 
   const chapteruid   = searchParams.get('chapteruid')  || ''
   const objectuid    = searchParams.get('objectuid')   || ''
@@ -31,9 +34,10 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   // ── 초기 데이터 ─────────────────────────────────────────────────────────────
   const [initLoading,   setInitLoading]   = useState(true)
   const [chapternm,     setChapternm]     = useState(chapternmUrl)
-  const [datas,         setDatas]         = useState([])
   const [displayTypes,  setDisplayTypes]  = useState([])
   const [prompts,       setPrompts]       = useState([])
+
+  const { data: allDatas = [] } = useChapterDatas(chapteruid)
 
   // ── 폼 상태 ─────────────────────────────────────────────────────────────────
   const [selectedDatauid,     setSelectedDatauid]     = useState('')
@@ -61,8 +65,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
   // ── ObjectFilters 기본값 ──────────────────────────────────────────────────
   const [isFilterDefault, setIsFilterDefault] = useState(false)
-  const [noExistingData,  setNoExistingData]  = useState(false)
-  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, !initLoading && noExistingData)
+  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, !initLoading)
 
   // ── textarea ref (커서 위치 추적) ─────────────────────────────────────────
   const promptRef = useRef(null)
@@ -79,21 +82,16 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
     }).then((r) => {
       const data = r.data
       if (!chapternmUrl && data.chapter?.chapternm) setChapternm(data.chapter.chapternm)
-      setDatas(data.datas || [])
       setPrompts(data.prompts || [])
       setDisplayTypes(data.display_types || [])
 
       const ex = data.existing || {}
-      if (ex.datauid) {
-        setSelectedDatauid(ex.datauid)
-      } else {
-        setNoExistingData(true)
-      }
+      if (ex.datauid) setSelectedDatauid(ex.datauid)
       if (ex.displaytype !== undefined) setSelectedDisplayType(ex.displaytype || '')
       if (ex.gptq !== undefined)        setPromptText(ex.gptq || '')
     }).catch((e) => {
       const detail = e.response?.data?.detail || e.message || '알 수 없는 오류'
-      message.error(`초기 데이터 로드 실패: ${detail}`)
+      message.error(`${t('msg.init.load.error')}: ${detail}`)
     })
       .finally(() => setInitLoading(false))
   }, [chapteruid, objecttypecd])
@@ -146,7 +144,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
   const handlePreview = async () => {
     if (!objectnm || !selectedDatauid || !promptText.trim()) {
-      message.warning('데이터와 프롬프트를 입력해주세요.')
+      message.warning(t('msg.ai.input.required'))
       return
     }
     setPreviewLoading(true)
@@ -162,7 +160,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       })
       setPreviewResult(res.data)
     } catch (e) {
-      message.error(e.response?.data?.detail || '미리보기 실패')
+      message.error(e.response?.data?.detail || t('msg.preview.error'))
     } finally {
       setPreviewLoading(false)
     }
@@ -170,7 +168,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
   const handleSave = async () => {
     if (!objectnm || !selectedDatauid || !promptText.trim()) {
-      message.warning('데이터와 프롬프트를 입력해주세요.')
+      message.warning(t('msg.ai.input.required'))
       return
     }
     setSaveLoading(true)
@@ -183,27 +181,27 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         displaytype: selectedDisplayType || '',
         objecttypecd,
       })
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
     } catch (e) {
-      message.error(e.response?.data?.detail || '저장 실패')
+      message.error(e.response?.data?.detail || t('msg.save.error'))
     } finally {
       setSaveLoading(false)
     }
   }
 
   const handleDelete = async () => {
-    if (!window.confirm('정말 삭제하시겠습니까?')) return
+    if (!window.confirm(t('msg.confirm.delete'))) return
     setDeleteLoading(true)
     try {
       await apiClient.delete('/llm/delete', {
         data: { chapteruid, objectnm, objecttypecd },
       })
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       handleReset()
       setSelectedDatauid('')
       setSelectedDisplayType('')
     } catch (e) {
-      message.error(e.response?.data?.detail || '삭제 실패')
+      message.error(e.response?.data?.detail || t('msg.delete.error'))
     } finally {
       setDeleteLoading(false)
     }
@@ -212,7 +210,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   // ─────────────────────────────────────────────────────────────────────────
   // 렌더
   // ─────────────────────────────────────────────────────────────────────────
-  // AppLayout 기준: header 60 + content padding 24*2 + inner div padding 24*2 + footer 44 = 200px
   const CONTENT_HEIGHT = 'calc(100vh - 100px)'
 
   return (
@@ -222,12 +219,12 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       <div className="page-title" style={{ flexShrink: 0, marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{pageTitle}{user?.docnm ? ` - ${user.docnm}` : ''}</div>
+          <div>{t(pageTitle)}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
       </div>
 
       {/* ── 서브타이틀: 챕터명 | 항목명 ── */}
-      <div style={{ marginBottom: 12, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)', flexShrink: 0 }}>
+      <div style={{ marginBottom: 16, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)', flexShrink: 0 }}>
         {chapternm && <span>{t('lbl.chapternm')}: {chapternm}</span>}
         {chapternm && objectnm && <span style={{ margin: '0 14px', color: '#d9d9d9' }}>|</span>}
         {objectnm && <span>{t('lbl.objectnm_lbl')}: {objectnm}</span>}
@@ -255,15 +252,15 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
             {/* ── 데이터 선택 행 ── */}
             <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 4, flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>데이터 목록:</label>
+                <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>{t('ttl.data.list')}:</label>
                 <select
                   value={selectedDatauid}
                   onChange={(e) => { if (!isFilterDefault) setSelectedDatauid(e.target.value) }}
                   disabled={isFilterDefault}
-                  style={{ minWidth: 200 }}
+                  style={{ minWidth: 200, ...(isFilterDefault ? { cursor: 'not-allowed', opacity: 0.6 } : {}) }}
                 >
-                  <option value="">--- 선택 ---</option>
-                  {datas.map((d) => (
+                  <option value="">{t('msg.select.placeholder')}</option>
+                  {allDatas.map((d) => (
                     <option key={d.datauid} value={d.datauid}>{d.datanm}</option>
                   ))}
                 </select>
@@ -271,14 +268,14 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
               {(objecttypecd === 'CA' || objecttypecd === 'SA') && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>
-                    {objecttypecd === 'CA' ? '차트 유형:' : '문장 유형:'}
+                    {objecttypecd === 'CA' ? t('lbl.chart.type_lbl') : t('lbl.sentence.type')}
                   </label>
                   <select
                     value={selectedDisplayType}
                     onChange={(e) => setSelectedDisplayType(e.target.value)}
                     style={{ minWidth: 150 }}
                   >
-                    <option value="">--- 선택 ---</option>
+                    <option value="">{t('msg.select.placeholder')}</option>
                     {displayTypes.map((dt) => (
                       <option key={dt.value} value={dt.value}>{dt.label}</option>
                     ))}
@@ -288,8 +285,8 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
             </div>
 
             {/* ── 열이름 ── */}
-            <div style={{ color: '#333', flexWrap: 'wrap', flexShrink: 0 }}>
-              <strong>열이름&nbsp;&nbsp;</strong>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0, gap: 4 }}>
+              <span style={{ fontWeight: 600, fontSize: 14, color: '#333', marginRight: 8 }}>{t('lbl.colnames')}</span>
               {columns.map((col, idx) => (
                 <span
                   key={col}
@@ -321,11 +318,35 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
             </div>
 
             {/* ── 하단: 프롬프트 입력 | 미리보기 결과 ── */}
-            <div style={{ flex: 1, display: 'flex', gap: 20, minHeight: 0, overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+
+              {/* 공유 타이틀 행 — 한 행으로 묶어 textarea / preview 시작 위치 통일 */}
+              <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ margin: 0 }}>{t('ttl.prompt_ttl')}</h3>
+                </div>
+                <div style={{ flex: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ margin: 0 }}>{t('ttl.preview.result')}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)} disabled={prompts.length === 0}>{t('btn.sample.prompt')}</button>
+                    <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
+                    <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+                    <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
+                    {isEditYn && (
+                      <>
+                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveLoading}>{t('btn.save')}</button>
+                        <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteLoading}>{t('btn.delete')}</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 내용 행 */}
+              <div style={{ flex: 1, display: 'flex', gap: 20, minHeight: 0, overflow: 'hidden' }}>
 
               {/* 왼쪽: 프롬프트 입력 + 색상/컬러맵 */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                <h3 style={{ margin: 0, marginBottom: 8, flexShrink: 0 }}>프롬프트</h3>
                 <textarea
                   ref={promptRef}
                   value={promptText}
@@ -333,7 +354,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                   onClick={trackCursor}
                   onKeyUp={trackCursor}
                   onFocus={trackCursor}
-                  placeholder="예: 2024년 월별 생산수량에 대해 그래프를 그려주세요."
+                  placeholder={t('msg.ph.prompt')}
                   style={{
                     flex: 1,
                     width: '100%',
@@ -352,13 +373,13 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                 {objecttypecd !== 'SA' && (
                   <div style={{ flexShrink: 0, marginTop: 8 }}>
                     <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}>
-                      <label style={{ width: 60, fontSize: 13 }}>색 참조</label>
-                      <button type="button" className="btn" onClick={() => setShowColors((v) => !v)}>
-                        {showColors ? '색상 숨기기' : '색상 보기'}
+                      <label style={{ width: 60, fontSize: 13 }}>{t('lbl.color.ref')}</label>
+                      <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: '2px 8px' }} onClick={() => setShowColors((v) => !v)}>
+                        {showColors ? t('btn.color.hide') : t('btn.color.show')}
                       </button>
                       {objecttypecd === 'CA' && (
-                        <button type="button" className="btn" onClick={() => setShowColormap((v) => !v)}>
-                          {showColormap ? '컬러맵 숨기기' : '컬러맵 보기'}
+                        <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: '2px 8px' }} onClick={() => setShowColormap((v) => !v)}>
+                          {showColormap ? t('btn.colormap.hide') : t('btn.colormap.show')}
                         </button>
                       )}
                     </div>
@@ -406,17 +427,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
               {/* 오른쪽: 미리보기 결과 */}
               <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
-                  <h3 style={{ margin: 0 }}>미리보기 결과</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)} disabled={prompts.length === 0}>샘플 프롬프트</button>
-                    <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
-                    <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
-                    <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
-                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveLoading}>{t('btn.save')}</button>
-                    <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteLoading}>{t('btn.delete')}</button>
-                  </div>
-                </div>
                 <div
                   style={{
                     flex: 1,
@@ -433,6 +443,8 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                   {previewResult ? <PreviewDisplay result={previewResult} /> : null}
                 </div>
               </div>
+
+              </div>{/* 내용 행 end */}
             </div>
 
           </div>
@@ -455,7 +467,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
             <Spin />
-            <span>잠시만 기다려 주세요.</span>
+            <span>{t('msg.loading.wait')}</span>
           </div>
         </div>
       )}
@@ -485,7 +497,7 @@ function PreviewDisplay({ result }) {
     return (
       <img
         src={`data:image/png;base64,${result.image_data}`}
-        alt="미리보기"
+        alt="preview"
         style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
       />
     )
@@ -517,7 +529,7 @@ function PreviewDisplay({ result }) {
   }
 
   if (result.message_type === 'error') {
-    return <div style={{ color: 'red' }}>오류: {result.message}</div>
+    return <div style={{ color: 'red' }}>{result.message}</div>
   }
 
   return null
@@ -528,6 +540,7 @@ function PreviewDisplay({ result }) {
 // 샘플 프롬프트 모달 (Django ai_common.html 모달과 동일한 3분할 구조)
 // ─────────────────────────────────────────────────────────────────────────────
 function SamplePromptModal({ open, prompts, onClose, onApply }) {
+  useLangStore((s) => s.translations)
   const [selected, setSelected] = useState(null)
 
   useEffect(() => {
@@ -546,7 +559,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
       footer={null}
       title={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>샘플 프롬프트 관리</span>
+          <span>{t('ttl.sample.prompt')}</span>
           <button
             type="button"
             className="btn btn-primary"
@@ -554,7 +567,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
             disabled={!selected}
             style={{ marginRight: 30 }}
           >
-            프롬프트 교체
+            {t('btn.prompt.replace')}
           </button>
         </div>
       }
@@ -565,7 +578,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
 
         {/* 왼쪽: 샘플 목록 */}
         <div style={{ flex: '0 0 20%', borderRight: '1px solid #ccc', paddingRight: 10, overflowY: 'auto' }}>
-          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>샘플 목록</strong></h6>
+          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>{t('ttl.sample.list')}</strong></h6>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 14 }}>
             {prompts.map((p) => (
               <li
@@ -588,7 +601,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
 
         {/* 중앙: 프롬프트 설명 */}
         <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>프롬프트 설명</strong></h6>
+          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>{t('ttl.prompt.desc')}</strong></h6>
           <textarea
             readOnly
             value={selected?.desc || ''}
@@ -601,7 +614,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
 
         {/* 오른쪽: 프롬프트 내용 */}
         <div style={{ flex: '0 0 40%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>프롬프트</strong></h6>
+          <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>{t('ttl.prompt_ttl')}</strong></h6>
           <textarea
             readOnly
             value={selected?.prompt || ''}

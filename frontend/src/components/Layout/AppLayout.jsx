@@ -25,7 +25,7 @@ export default function AppLayout() {
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [registerModalOpen, setRegisterModalOpen] = useState(false)
   const [loginModalOpen, setLoginModalOpen] = useState(false)
-  const { tabs, activeKey, closeTab, setActiveKey, siderCollapsed, setSiderCollapsed, colorTheme, setColorTheme, openTab, clearTabs } = useTabStore()
+  const { tabs, activeKey, closeTab, setActiveKey, siderCollapsed, setSiderCollapsed, colorTheme, setColorTheme, openTab, clearTabs, closeOtherTabs, closeLeftTabs, closeRightTabs } = useTabStore()
   const isDark = !!user && colorTheme === 'dark'
   const headerBg = isDark ? '#081A2B' : '#163E64'
   const siderBg = isDark ? '#0E2740' : '#fff'
@@ -397,7 +397,66 @@ export default function AppLayout() {
                   }
                 }
               }}
-              items={tabs.map((tab) => ({ key: tab.key, label: t(`mnu.${tab.key}`, tab.label), closable: true }))}
+              items={tabs.map((tab, idx) => {
+                const isFirst = idx === 0
+                const isLast = idx === tabs.length - 1
+                const isSingle = tabs.length === 1
+                const contextMenu = {
+                  items: [
+                    {
+                      key: 'close-this',
+                      label: t('btn.tab.close.this', 'Close Tab'),
+                      disabled: isSingle,
+                      onClick: () => {
+                        const nextTab = tabs[idx + 1] ?? tabs[idx - 1] ?? null
+                        closeTab(tab.key)
+                        if (activeKey === tab.key) {
+                          if (nextTab) navigate('/' + nextTab.path)
+                          else navigate('/')
+                        }
+                      },
+                    },
+                    {
+                      key: 'close-others',
+                      label: t('btn.tab.close.others', 'Close Other Tabs'),
+                      disabled: isSingle,
+                      onClick: () => {
+                        closeOtherTabs(tab.key)
+                        if (activeKey !== tab.key) navigate('/' + tab.path)
+                      },
+                    },
+                    {
+                      key: 'close-left',
+                      label: t('btn.tab.close.left', 'Close Tabs to Left'),
+                      disabled: isFirst,
+                      onClick: () => {
+                        const wasActiveRemoved = !tabs.slice(idx).find((t) => t.key === activeKey)
+                        closeLeftTabs(tab.key)
+                        if (wasActiveRemoved) navigate('/' + tab.path)
+                      },
+                    },
+                    {
+                      key: 'close-right',
+                      label: t('btn.tab.close.right', 'Close Tabs to Right'),
+                      disabled: isLast,
+                      onClick: () => {
+                        const wasActiveRemoved = !tabs.slice(0, idx + 1).find((t) => t.key === activeKey)
+                        closeRightTabs(tab.key)
+                        if (wasActiveRemoved) navigate('/' + tab.path)
+                      },
+                    },
+                  ],
+                }
+                return {
+                  key: tab.key,
+                  label: (
+                    <Dropdown trigger={['contextMenu']} menu={contextMenu}>
+                      <span>{t(`mnu.${tab.key}`, tab.label)}</span>
+                    </Dropdown>
+                  ),
+                  closable: true,
+                }
+              })}
               style={{ marginBottom: 0 }}
               className={isDark ? 'tabs-dark' : 'tabs-light'}
             />

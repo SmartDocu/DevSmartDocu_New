@@ -30,7 +30,7 @@ export default function MasterSentencesPage() {
   const saveSentence   = useSaveSentence()
   const deleteSentence = useDeleteSentence()
 
-  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, sentenceSuccess && sentenceData === null)
+  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, sentenceSuccess)
 
   const [selectedDatauid, setSelectedDatauid] = useState('')
   const [isFilterDefault,  setIsFilterDefault] = useState(false)

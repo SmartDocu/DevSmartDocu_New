@@ -54,7 +54,7 @@ export default function MasterChartsPage() {
   const saveChart   = useSaveChart()
   const deleteChart = useDeleteChart()
 
-  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, chartSuccess && chartData === null)
+  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, chartSuccess)
 
   // ── 차트 타입 상세 ──────────────────────────────────────────────────────────
   const [chartTypesDetail, setChartTypesDetail] = useState([])

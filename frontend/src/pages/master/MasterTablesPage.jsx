@@ -31,7 +31,7 @@ export default function MasterTablesPage() {
   const saveTable   = useSaveTable()
   const deleteTable = useDeleteTable()
 
-  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, tableSuccess && tableData === null)
+  const { data: filterDatauid } = useObjectFilterDatauid(objectuid, tableSuccess)
 
   const [selectedDatauid, setSelectedDatauid] = useState('')
   const [isFilterDefault, setIsFilterDefault] = useState(false)
