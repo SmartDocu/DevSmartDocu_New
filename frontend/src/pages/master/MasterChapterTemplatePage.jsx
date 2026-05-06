@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { App, Spin, Select, Modal } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
 
 // ──────────────────────────────────────────────
 // objecttypecd → React 라우트 매핑
@@ -876,8 +877,10 @@ export default function MasterChapterTemplatePage() {
   const { message, modal } = App.useApp()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const user = useAuthStore((s) => s.user)  // ✅ 추가
   const chapteruid = searchParams.get('chapteruid')
-  const docid = searchParams.get('docid')
+  // ✅ URL에 docid 없으면 authStore에서 fallback
+  const docid = searchParams.get('docid') || (user?.docid ? String(user.docid) : null)
   const qc = useQueryClient()
 
   // ── 상태 ──
@@ -919,6 +922,14 @@ export default function MasterChapterTemplatePage() {
     enabled: !!docid,
   })
   const chaptersList = chaptersData?.chapters || []
+
+  // ✅ 추가: chapteruid 없으면 첫 번째 챕터로 자동 이동
+  useEffect(() => {
+    if (!chapteruid && chaptersList.length > 0) {
+      const first = chaptersList[0]
+      navigate(`/master/chapter-template?chapteruid=${first.chapteruid}&docid=${docid || ''}`, { replace: true })
+    }
+  }, [chapteruid, chaptersList, docid, navigate])
 
   const chapter    = data?.chapter    || {}
   const tbl_params = data?.tbl_params || []
@@ -1226,7 +1237,14 @@ export default function MasterChapterTemplatePage() {
     }
   }, [filterInfo, filterSelectedDatauid, filterColMappings, filterModalFmt, message])
 
-  if (!chapteruid) return <div style={{ padding: 24, color: '#888' }}>chapteruid가 없습니다.</div>
+  // ✅ 수정: 챕터 목록 로딩 중이면 스피너, 목록 없으면 안내
+  if (!chapteruid) {
+    return chaptersList.length === 0
+      ? <div style={{ padding: 24, color: '#888' }}>
+          {docid ? '챕터가 없습니다.' : 'docid가 없습니다.'}
+        </div>
+      : <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}><Spin /></div>
+  }
 
   return (
     <div style={{ height: '100%' }}>

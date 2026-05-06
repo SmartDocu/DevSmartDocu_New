@@ -685,7 +685,7 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
 
             # 2. @변수 추출 및 context 빌드
             result = extract_at_variables(texttemplate)
-            context = _build_context(sb, result["unique"])  # ← 아래 헬퍼 함수 필요
+            context = _build_context(sb, result["unique"], token, docid)  # ← 아래 헬퍼 함수 필요
 
             # 3. 템플릿 처리 → flattexttemplate
             registry = FunctionRegistry()
@@ -702,13 +702,21 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             extracted = extract_from_processed_html(flattexttemplate)
             _upsert_genobjects(sb, extracted, genchapteruid, chapteruid, user_id)
 
+            
+            # 2026-05-06 Min 주석처리 --> 여기서부터 교체 작업 진행 필요
             # 6. 각 genobject 콘텐츠 생성 (resulttext 저장)
-            for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
-                                             genChapterDirectYn=True, divide="Chapter"):
-                if progress_data.get("type") == "error":
-                    raise Exception(progress_data.get("message", "오류가 발생했습니다."))
-                elif progress_data.get("type") == "progress":
-                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
+            # for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
+            #                                  genChapterDirectYn=True, divide="Chapter"):
+            #     if progress_data.get("type") == "error":
+            #         raise Exception(progress_data.get("message", "오류가 발생했습니다."))
+            #     elif progress_data.get("type") == "progress":
+            #         yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
+
+            yield json.dumps({
+                'type': 'progress',
+                'explain': '현재 챕터 생성 완료',
+                'message': '현재 챕터 생성 완료'
+            })
 
             # 7. gentexttemplate 컴파일: {{objectNm}} 자리에 resulttext 삽입
             rpc_data = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
@@ -1099,34 +1107,29 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-def _build_context(sb, variables: list) -> dict:
+# 2026-05-06 Min 헬퍼 함수 수정 >> 실제 데이터를 동작시켜서 내용 작성
+def _build_context(sb, variables: list, token, docid) -> dict:
     """req_chapters_read.py의 _build_context와 동일"""
-    from utilsPrj.template_parser import parse_scalar_value
     context = {}
+    # print(f'변수 목록: {variables}')
     for v in variables:
-        find_tbl = sb.schema(SUPABASE_SCHEMA).table("tbl_param").select("*").eq("paramnm", v).execute().data
-        if find_tbl:
-            rows = []
-            for row in find_tbl:
-                raw = row.get("json")
-                if not raw:
-                    continue
-                if isinstance(raw, str):
-                    try:
-                        parsed = json.loads(raw)
-                        rows.extend(parsed) if isinstance(parsed, list) else rows.append(parsed)
-                    except json.JSONDecodeError:
-                        pass
-                elif isinstance(raw, list):
-                    rows.extend(raw)
-                elif isinstance(raw, dict):
-                    rows.append(raw)
-            context[f"@{v}"] = rows
+        class _FakeRequest:
+            def __init__(self, t):
+                self.session = {"access_token": t, "refresh_token": None}
+                self.method = "GET"
+
+        from utilsPrj.process_data_ai import process_data_ai_preview
+
+        find = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datanm", v).eq("dfv_docid", docid).eq("datasourcecd", "dfv").execute().data
+        datas = process_data_ai_preview(sb, _FakeRequest(token), find[0]['sourcedatauid'], find[0]['gensentence'], docid=docid)
+        df = datas.get("result")
+        # print(f'V: {v} //// \nDF: {df}')
+
+        if not df.empty:
+            context[f"@{v}"] = df.to_dict('records')
             continue
 
-        find_sca = sb.schema(SUPABASE_SCHEMA).table("sca_param").select("*").eq("paramnm", v).execute().data
-        if find_sca:
-            context[f"@{v}"] = parse_scalar_value(find_sca[0]["value"])
+    # print(f'[build_context Complete]')
     return context
 
 

@@ -21,7 +21,7 @@ def tokenize(template: str) -> list[dict]:
     pattern = re.compile(
         r"(\{\{#FOR\s+@(\w+)\}\}"          # FOR 시작
         r"|\{\{#END FOR\}\}"                       # FOR 끝
-        r"|\{\{#if\s+@(\w+)\s*([^}]*)\}\}"  # IF 시작 ← 조건 전체 포함
+        r"|\{\{#if\s+@([\w.]+)\s*([^}]*)\}\}"  # IF 시작 ← 조건 전체 포함
         r"|\{\{#ELSE\}\}"                           # ELSE
         r"|\{\{#END if\}\}"                        # IF 끝
         r"|\{\{([^}]+)\}\}\(([^)]*)\)"              # 함수형: {{이름}}(params)
@@ -97,13 +97,17 @@ def parse_condition(var_name: str, condition_str: str) -> dict:
         return {"var_name": var_name, "op": "exists", "value": None, "value_type": None}
 
     # 연산자 파싱 (순서 중요: >= <= != 먼저)
-    op_pattern = re.compile(r'^(>=|<=|!=|>|<|=)\s*(.+)$')
+    op_pattern = re.compile(r'^(>=|<=|!=|≠|>|<|=)\s*(.+)$')
     op_match   = op_pattern.match(condition_str)
 
     if not op_match:
         return {"var_name": var_name, "op": "exists", "value": None, "value_type": None}
 
     op        = op_match.group(1)
+    # ✅ ≠ → != 정규화
+    if op == "≠":
+        op = "!="
+
     raw_value = op_match.group(2).strip()
 
     # 값 타입 결정
@@ -139,10 +143,19 @@ def evaluate_condition(parsed: dict, context: dict) -> bool:
     cmp_value  = parsed["value"]
     value_type = parsed["value_type"]
 
-    # context에서 값 조회 (@키로 저장)
-    ctx_value = context.get(f"@{var_name}")
+    # ✅ 점 표기법 처리: "Deviation_Raw.일탈명" → @Deviation_Raw[0]["일탈명"]
+    if "." in var_name:
+        array_name, field = var_name.split(".", 1)
+        arr = context.get(f"@{array_name}")
+        if isinstance(arr, list) and arr:
+            ctx_value = arr[0].get(field)          # 리스트면 첫 번째 행
+        elif isinstance(arr, dict):
+            ctx_value = arr.get(field)
+        else:
+            ctx_value = None
+    else:
+        ctx_value = context.get(f"@{var_name}")
 
-    # 값이 없으면 False
     if ctx_value is None:
         return False
 
@@ -152,6 +165,13 @@ def evaluate_condition(parsed: dict, context: dict) -> bool:
             return len(ctx_value) > 0
         return bool(ctx_value)
 
+    # ✅ 여기에 추가
+    print(f"[조건 평가]")
+    print(f"  변수명   : {var_name}")
+    print(f"  연산자   : {op}")
+    print(f"  ctx_value: {ctx_value!r}  (type: {type(ctx_value).__name__})")
+    print(f"  cmp_value: {cmp_value!r}  (type: {type(cmp_value).__name__})")
+    
     # ── 테이블 변수 → 행 수로 비교 ─────────────────────────
     if isinstance(ctx_value, list):
         ctx_value = len(ctx_value)
@@ -176,7 +196,9 @@ def evaluate_condition(parsed: dict, context: dict) -> bool:
         }
 
         fn = ops.get(op)
-        return fn(ctx_value, cmp_value) if fn else False
+        result = fn(ctx_value, cmp_value) if fn else False
+        print(f"  최종결과 : {result}")
+        return result
 
     except (ValueError, TypeError):
         return False
@@ -290,6 +312,21 @@ class FunctionRegistry:
         return f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]"
 
 
+def _resolve_dotted(name: str, context: dict):
+    """
+    "@Deviation_Raw.일탈명" → context["@Deviation_Raw"][0]["일탈명"]
+    "@Deviation_Raw"        → context["@Deviation_Raw"] (기존 동작)
+    """
+    if name.startswith("@") and "." in name:
+        array_name, field = name[1:].split(".", 1)   # @ 제거 후 분리
+        arr = context.get(f"@{array_name}")
+        if isinstance(arr, list) and arr:
+            return arr[0].get(field)
+        elif isinstance(arr, dict):
+            return arr.get(field)
+        return None
+    return context.get(name)
+
 # ============================================================
 # 5. RENDERER
 # ============================================================
@@ -304,7 +341,11 @@ def render(nodes: list[dict], context: dict, registry: FunctionRegistry) -> str:
             result.append(node["value"])
 
         elif ntype == "Var":
-            value = context.get(node["name"], f"{{{{{node['name']}}}}}")
+            name  = node["name"]
+            # ✅ 점 표기법 지원
+            value = _resolve_dotted(name, context)
+            if value is None:
+                value = f"{{{{{name}}}}}"
             result.append(str(value))
 
         elif ntype == "Func":
@@ -318,11 +359,13 @@ def render(nodes: list[dict], context: dict, registry: FunctionRegistry) -> str:
             param_dict = {}
             it = iter(params)
             for p in it:
-                if p in context:
-                    # 컬럼명 → context 값으로 치환
+                # ✅ "@Array.field" 형태 파라미터 처리
+                if p.startswith("@") and "." in p:
+                    resolved = _resolve_dotted(p, context)
+                    param_dict[p] = resolved
+                elif p in context:
                     param_dict[p] = context[p]
                 else:
-                    # 리터럴 값이면 다음 토큰이 값
                     try:
                         val = next(it)
                         param_dict[p] = parse_scalar_value(val)

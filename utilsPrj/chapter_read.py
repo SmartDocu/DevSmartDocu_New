@@ -34,11 +34,14 @@ def chapter_contents_read(request, gendocuid, genchapteruid, sep, type):
     file_name = ''
 
     if sep == 'chapter':
-        texttemplate = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('chapteruid, gentexttemplate, updatefileurl').eq('genchapteruid', genchapteruid).execute().data
+        texttemplate = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('chapteruid, gentexttemplate, updatefileurl, flattexttemplate').eq('genchapteruid', genchapteruid).execute().data
         chaptername = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('chapternm').eq('chapteruid', texttemplate[0]['chapteruid']).execute().data[0]['chapternm']
         if type == 'auto':
             if texttemplate[0]['gentexttemplate']:
+                ## 2026-05-06 Min
                 html_contents = texttemplate[0]['gentexttemplate']
+                ## 2026-05-06 Min
+                # html_contents = texttemplate[0]['flattexttemplate']
                 html_contents_origin = html_contents
                 # 페이지 나누기 기능에 대하여 좀 더 시각적으로 표현 처리
                 sep_pagebreak = '<div class="page-break" style="page-break-after:always;"><span style="display:none;">&nbsp;</span></div>'
