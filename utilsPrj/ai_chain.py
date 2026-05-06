@@ -690,6 +690,17 @@ result = {{
     return prompt
 
 
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 def generate_report_from_statistics(llm, statistics_dict, user_question):
     """
     통계 JSON을 자연어 보고서로 변환
@@ -708,7 +719,7 @@ def generate_report_from_statistics(llm, statistics_dict, user_question):
     
     tokens = {"input_tokens": 0, "output_tokens": 0}
 
-    stats_formatted = json.dumps(statistics_dict, ensure_ascii=False, indent=2)
+    stats_formatted = json.dumps(statistics_dict, ensure_ascii=False, indent=2, cls=NumpyEncoder)
     
     prompt = f"""당신은 데이터 분석 보고서 작성 전문가입니다.
 **중요** 답변은 서술형 문장으로 작성합니다.
@@ -1263,7 +1274,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 statistics_dict=result_obj_anonymized,
                 user_question=question_anonymized
             )
-
+            
             # 역익명화 (원본 용어로 복원)
             if use_anonymization and anonymization_mapping:
                 final_report = reverse_anonymization(
@@ -1307,6 +1318,8 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
             }
 
     elif output_type == "DF_PREVIEW":
+        # print("jeff 001")
+        # print(f"jeff 002 result : {local_namespace}")
         if "result" in local_namespace and isinstance(local_namespace["result"], pd.DataFrame):
             df_result = local_namespace["result"]
 
