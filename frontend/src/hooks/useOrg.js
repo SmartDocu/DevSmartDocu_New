@@ -91,10 +91,8 @@ export function useSaveProjectUser() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/project-users', body).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success('저장되었습니다.')
       qc.invalidateQueries({ queryKey: ['org-project-users', vars.projectid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
   })
 }
 
@@ -104,10 +102,8 @@ export function useDeleteProjectUser() {
     mutationFn: (body) =>
       apiClient.delete('/org/project-users', { data: body }).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success('삭제되었습니다.')
       qc.invalidateQueries({ queryKey: ['org-project-users', vars.projectid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
   })
 }
 

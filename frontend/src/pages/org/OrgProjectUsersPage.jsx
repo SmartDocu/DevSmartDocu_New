@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { App, Modal, Popconfirm } from 'antd'
+import { App, Popconfirm } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import {
@@ -82,17 +82,13 @@ export default function OrgProjectUsersPage() {
 
   const handleDelete = () => {
     if (!form.useruid) { message.warning('삭제할 사용자를 선택하세요.'); return }
-    Modal.confirm({
-      title: '삭제 확인', content: '정말 삭제하시겠습니까?',
-      okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
-      onOk: () => deleteMutation.mutate(
-        { projectid: selectedProjectid, useruid: form.useruid },
-        {
-          onSuccess: () => { message.success('삭제되었습니다.'); handleNew() },
-          onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
-        },
-      ),
-    })
+    deleteMutation.mutate(
+      { projectid: selectedProjectid, useruid: form.useruid },
+      {
+        onSuccess: () => { message.success('삭제되었습니다.'); handleNew() },
+        onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
+      },
+    )
   }
 
   const handleModalUserSelect = (u) => {
