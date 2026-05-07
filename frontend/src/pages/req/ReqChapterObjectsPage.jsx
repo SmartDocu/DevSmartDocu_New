@@ -163,11 +163,12 @@ export default function ReqChapterObjectsPage() {
               <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
-                    <th style={{ width: '20%' }}>항목명</th>
-                    <th style={{ width: '20%' }}>항목<br />설명</th>
+                    <th style={{ width: '18%' }}>항목명</th>
+                    <th style={{ width: '16%' }}>항목<br />설명</th>
                     <th style={{ width: '8%' }}>항목<br />구분</th>
-                    <th style={{ width: '12%' }}>설정<br />일시</th>
-                    <th style={{ width: '10%' }}>설정<br />미반영</th>
+                    <th style={{ width: '18%' }}>필터</th>
+                    <th style={{ width: '10%' }}>설정<br />일시</th>
+                    <th style={{ width: '8%' }}>설정<br />미반영</th>
                     <th style={{ width: '12%' }}>작성<br />일시</th>
                     <th style={{ width: '10%' }}>항목<br />미반영</th>
                   </tr>
@@ -187,6 +188,15 @@ export default function ReqChapterObjectsPage() {
                         </span>
                       </td>
                       <td className="info">{obj.objecttypenm}</td>
+                      <td className="info" style={{ whiteSpace: 'pre-line' }}>
+                        {(() => {
+                          if (!obj.filterjson) return ''
+                          try {
+                            const parsed = typeof obj.filterjson === 'string' ? JSON.parse(obj.filterjson) : obj.filterjson
+                            return Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join('\n')
+                          } catch { return String(obj.filterjson) }
+                        })()}
+                      </td>
                       <td className="info">{obj.objcreatedts || ''}</td>
                       <td className="info">{obj.new_objectyn ? '√' : ''}</td>
                       <td className="info">{obj.genobjcreatedts || ''}</td>
