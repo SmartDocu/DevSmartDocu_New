@@ -492,11 +492,23 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         raise HTTPException(status_code=404, detail="msg.doc.not.found")
     projectid = doc_row[0]["projectid"]
 
-    # 프로젝트의 데이터 목록 (df/dfv 소스 제외)
-    datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas") \
+    # 프로젝트의 데이터 목록 (db/ex)
+    base_datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas") \
         .select("datauid, datanm, datasourcecd") \
-        .eq("projectid", projectid).not_.in_("datasourcecd", ["df", "dfv"]) \
+        .eq("projectid", projectid).in_("datasourcecd", ["db", "ex"]) \
         .order("datanm").execute().data or []
+
+    # base_datas의 datauid를 sourcedatauid로 갖는 df만 추가
+    base_uids = [d["datauid"] for d in base_datas]
+    df_datas = []
+    if base_uids:
+        df_datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas") \
+            .select("datauid, datanm, datasourcecd") \
+            .eq("projectid", projectid).eq("datasourcecd", "df") \
+            .in_("sourcedatauid", base_uids) \
+            .order("datanm").execute().data or []
+
+    datas = sorted(base_datas + df_datas, key=lambda d: d["datanm"])
 
     # 해당 데이터들의 datacols (orderno 순)
     data_uids = [d["datauid"] for d in datas]

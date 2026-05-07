@@ -95,13 +95,15 @@ def list_datas(
 
     # chapteruid가 있으면 해당 챕터의 projectid로 직접 필터 (llm/init 방식과 동일)
     single_pid = None
+    chapter_docid = None
     project_ids: list = []
     pmap: dict = {}
     if chapteruid:
         try:
             ch = sb.schema(SUPABASE_SCHEMA).table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data or []
             if ch:
-                docs = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid, docnm").eq("docid", ch[0]["docid"]).execute().data or []
+                chapter_docid = ch[0]["docid"]
+                docs = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid, docnm").eq("docid", chapter_docid).execute().data or []
                 if docs:
                     single_pid = docs[0]["projectid"]
                     pmap = {single_pid: docs[0].get("docnm", "")}
@@ -126,6 +128,14 @@ def list_datas(
     except Exception as e:
         print(f"[list_datas] datas 조회 오류: {e}", file=sys.stderr)
         return {"datas": []}
+
+    # doc_datas 필터: chapteruid 경로에서 doc_datas에 등록된 datauid만 노출 (db/ex/df 모두)
+    if chapter_docid:
+        doc_datas_rows = sb.schema(SUPABASE_SCHEMA).table("doc_datas") \
+            .select("datauid").eq("docid", chapter_docid) \
+            .execute().data or []
+        allowed_uids = {d["datauid"] for d in doc_datas_rows}
+        rows = [r for r in rows if r["datauid"] in allowed_uids]
 
     for r in rows:
         pid = r.get("projectid")

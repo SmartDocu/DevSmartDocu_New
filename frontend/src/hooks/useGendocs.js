@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import apiClient from '@/api/client'
 
-export function useGendocs(startDate, endDate) {
+export function useGendocs(startDate, endDate, docid) {
   return useQuery({
-    queryKey: ['gendocs', startDate, endDate],
+    queryKey: ['gendocs', startDate, endDate, docid],
     queryFn: () =>
-      apiClient.get('/gendocs', { params: { start_date: startDate, end_date: endDate } }).then((r) => r.data),
+      apiClient.get('/gendocs', { params: { start_date: startDate, end_date: endDate, docid } }).then((r) => r.data),
+    enabled: !!docid,
   })
 }
 

@@ -85,12 +85,13 @@ class FakeRequest:
 def list_gendocs(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    docid: Optional[int] = None,
     token: str = Depends(get_token),
 ):
     user = _get_user(token)
     sb = _sb(token)
-    user_id = str(user.id)
-    docid = _get_docid(sb, user_id)
+    if not docid:
+        docid = _get_docid(sb, str(user.id))
     if not docid:
         return {"gendocs": [], "docnm": None, "dataparams": []}
 
@@ -627,7 +628,11 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
-    chapteruid = genchap[0]["chapteruid"]  # ← chapteruid도 함께 조회 필요
+    chapteruid = genchap[0]["chapteruid"]
+
+    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    if docid_row:
+        docid = docid_row[0]["docid"]
 
     def event_stream():
         from utilsPrj.chapter_making import replace_doc
@@ -1121,6 +1126,8 @@ def _build_context(sb, variables: list, token, docid) -> dict:
         from utilsPrj.process_data_ai import process_data_ai_preview
 
         find = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datanm", v).eq("dfv_docid", docid).eq("datasourcecd", "dfv").execute().data
+        if not find:
+            continue
         datas = process_data_ai_preview(sb, _FakeRequest(token), find[0]['sourcedatauid'], find[0]['gensentence'], docid=docid)
         df = datas.get("result")
         # print(f'V: {v} //// \nDF: {df}')

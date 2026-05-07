@@ -160,7 +160,7 @@ export default function ReqDocListPage() {
   const sd = appliedDates[0]?.format('YYYY-MM-DD')
   const ed = appliedDates[1]?.format('YYYY-MM-DD')
 
-  const { data: listData = {}, isLoading, refetch } = useGendocs(sd, ed)
+  const { data: listData = {}, isLoading, refetch } = useGendocs(sd, ed, user?.docid)
   const { data: paramData = {} } = useDataparams()
 
   const gendocs      = listData.gendocs    || []
