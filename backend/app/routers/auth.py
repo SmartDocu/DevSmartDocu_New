@@ -111,6 +111,13 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
             ctx.docid = str(docid)
             ctx.docnm = target_doc.get("docnm", "")
 
+            # mydocid가 실제 선택 docid와 다를 때 DB 동기화
+            if str(docid) != str(mydocid or ""):
+                try:
+                    sd.table("users").update({"mydocid": docid}).eq("useruid", user_id).execute()
+                except Exception:
+                    pass
+
     except Exception:
         pass
 
