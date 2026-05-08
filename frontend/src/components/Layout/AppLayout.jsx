@@ -125,7 +125,7 @@ export default function AppLayout() {
             )}
             {!siderCollapsed && (
               <Text strong style={{ color: isDark ? '#fff' : '#163E64', fontSize: 16, whiteSpace: 'nowrap' }}>
-                SmartDocu
+                D2Doc
               </Text>
             )}
           </div>
@@ -159,8 +159,8 @@ export default function AppLayout() {
             style={{ color: isDark ? '#aaa' : undefined, borderTop: isDark ? '1px solid #1a5080' : undefined }}
           >
             {siderCollapsed
-              ? <span title="© SmartDocu 2025"></span>
-              : '© SmartDocu 2025. All rights reserved.'
+              ? <span title="© D2Doc 2025"></span>
+              : '© D2Doc 2025. All rights reserved.'
             }
           </div>
         </div>
@@ -189,8 +189,8 @@ export default function AppLayout() {
             onClick={() => navigate('/')}
             style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
           >
-            <img src="/SmartDocu.svg" alt="로고" style={{ height: 32, width: 'auto' }} />
-            <Text strong style={{ color: '#fff', fontSize: 18 }}>SmartDocu</Text>
+            <img src="/D2Doc.svg" alt="로고" style={{ height: 32, width: 'auto' }} />
+            <Text strong style={{ color: '#fff', fontSize: 18 }}>D2Doc</Text>
           </div>
 
           {/* 비로그인 공개 메뉴 */}

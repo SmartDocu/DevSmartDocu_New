@@ -100,7 +100,7 @@ export default function UsagePage() {
           >
             <div style={{ height: 150 }}>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#091747', marginBottom: 10 }}>Free</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#091747', marginBottom: 30 }}>Try SmartDocu</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#091747', marginBottom: 30 }}>Try D2Doc</div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#091747', marginBottom: 10 }}>Free</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10, height: 82, justifyContent: 'flex-end' }}>

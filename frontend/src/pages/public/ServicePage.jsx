@@ -4,27 +4,27 @@ export default function ServicePage() {
       {/* 서비스 소개 섹션 */}
       <div style={{ maxWidth: 950, margin: '50px auto 0 auto' }}>
         <h2 style={{ padding: '10px 15px', color: '#091747', fontSize: 22, fontWeight: 700, margin: '5px 0', textAlign: 'left' }}>
-          SmartDocu로 무엇을 할 수 있을까요?
+          D2Doc로 무엇을 할 수 있을까요?
         </h2>
         <p style={{ color: '#091747', fontSize: 18, fontWeight: 400, lineHeight: 1.6, marginTop: 10 }}>
-          - SmartDocu는 DB 연동 기반의 문서 자동 작성 솔루션입니다.
+          - D2Doc는 DB 연동 기반의 문서 자동 작성 솔루션입니다.
         </p>
       </div>
 
       <div style={{ maxWidth: 950, margin: '50px auto 0 auto' }}>
         <h2 style={{ padding: '10px 15px', color: '#091747', fontSize: 22, fontWeight: 700, margin: '5px 0', textAlign: 'left' }}>
-          기존 Reporting 도구와 SmartDocu의 차이는 무엇인가요?
+          기존 Reporting 도구와 D2Doc의 차이는 무엇인가요?
         </h2>
         <p style={{ color: '#091747', fontSize: 18, fontWeight: 400, lineHeight: 1.6, marginTop: 10 }}>
           - 기존 Reporting 도구는 데이터 시각화를 통해 유용한 정보제공 제공하는데 초점을 둡니다. <br />
-          - SmartDocu는 문서의 구조와 내용을 미리 정의하여 정기 보고서나 제출용 문서를 자동 작성할 수 있도록 지원합니다.
+          - D2Doc는 문서의 구조와 내용을 미리 정의하여 정기 보고서나 제출용 문서를 자동 작성할 수 있도록 지원합니다.
         </p>
       </div>
 
-      {/* SmartDocu 필요성 섹션 */}
+      {/* D2Doc 필요성 섹션 */}
       <div style={{ maxWidth: 950, margin: '50px auto 0 auto' }}>
         <h2 style={{ padding: '10px 15px', color: '#091747', fontSize: 22, fontWeight: 700, margin: '5px 0', textAlign: 'left' }}>
-          SmartDocu 필요성
+          D2Doc 필요성
         </h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 800, fontSize: 16, lineHeight: 1.5, marginTop: 20 }}>
@@ -65,7 +65,7 @@ export default function ServicePage() {
       {/* 주요 사용 대상 */}
       <div style={{ maxWidth: 950, margin: '50px auto 0 auto' }}>
         <h2 style={{ padding: '10px 15px', color: '#091747', fontSize: 22, fontWeight: 700, margin: '5px 0', textAlign: 'left' }}>
-          SmartDocu 주요 사용 대상
+          D2Doc 주요 사용 대상
         </h2>
       </div>
 

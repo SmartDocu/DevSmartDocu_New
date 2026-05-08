@@ -437,7 +437,7 @@ def send_contact(body: ContactRequest):
     if not all([body.name, body.email, body.title, body.message]):
         raise HTTPException(status_code=400, detail="모든 필드를 입력해주세요.")
 
-    subject = f"[SmartDocu 홈페이지 문의] {body.title}"
+    subject = f"[D2Doc 홈페이지 문의] {body.title}"
     mail_body = f"이름: {body.name}\n이메일: {body.email}\n\n문의 내용:\n{body.message}"
 
     recipient = "sales@rootel.kr"

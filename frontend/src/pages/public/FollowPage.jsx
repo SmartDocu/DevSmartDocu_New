@@ -50,11 +50,11 @@ export default function FollowPage() {
       ) : (
         <div>
           <p><strong>따라하기 안내</strong></p>
-          <p>따라하기는 제공된 자료를 기준으로 <strong>SmartDocu의 문서 작성 과정을 단계별로 직접 따라 해볼 수 있는 학습 기능</strong>입니다.</p>
-          <p>예제 Excel 자료를 활용하여 SmartDocu가 문서를 어떻게 생성하는지 기본적인 사용 방법을 익힐 수 있습니다.</p>
+          <p>따라하기는 제공된 자료를 기준으로 <strong>D2Doc의 문서 작성 과정을 단계별로 직접 따라 해볼 수 있는 학습 기능</strong>입니다.</p>
+          <p>예제 Excel 자료를 활용하여 D2Doc가 문서를 어떻게 생성하는지 기본적인 사용 방법을 익힐 수 있습니다.</p>
           <p>먼저 <strong>예제 Excel 자료를 다운로드</strong>합니다.</p>
           <p>이후 <strong>따라하기 안내 문서를 함께 다운로드</strong>하여, 안내된 작업 순서를 하나씩 따라 진행합니다.</p>
-          <p>이 과정을 통해 SmartDocu가</p>
+          <p>이 과정을 통해 D2Doc가</p>
           <ul>
             <li>자료를 어떻게 연동하고</li>
             <li>설정된 규칙에 따라</li>

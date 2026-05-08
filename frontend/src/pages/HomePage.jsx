@@ -46,7 +46,7 @@ export default function HomePage() {
       {/* 상단 타이틀 */}
       <div style={{ textAlign: 'center', padding: 20 }}>
         <p style={{ fontSize: '1rem', margin: 0, opacity: 0.8 }}>효율적인 문서 자동 작성</p>
-        <p style={{ fontSize: '5rem', fontWeight: 300, margin: 0 }}>SmartDocu</p>
+        <p style={{ fontSize: '5rem', fontWeight: 300, margin: 0 }}>D2Doc</p>
       </div>
 
       {/* 설명 배너 */}
@@ -54,7 +54,7 @@ export default function HomePage() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div style={{ marginLeft: 'auto', marginRight: '10%', backgroundColor: 'rgb(230,230,230)', padding: '15px 100px 15px 30px', borderRadius: 8 }}>
             <p style={{ textAlign: 'left', color: 'black', fontWeight: 'normal', margin: 0 }}>
-              SmartDocu는 DB와 Excel로부터 <br />
+              D2Doc는 DB와 Excel로부터 <br />
               AI 기능을 이용하여 문서를 작성합니다.
             </p>
           </div>
@@ -150,7 +150,7 @@ export default function HomePage() {
         </div>
 
         <div style={{ flex: 1, textAlign: 'center', padding: '0 20px' }}>
-          <p style={{ fontSize: 24, margin: '0 0 10px' }}>SmartDocu <span style={{ color: '#FFC107', fontWeight: 100 }}>AI</span></p>
+          <p style={{ fontSize: 24, margin: '0 0 10px' }}>D2Doc <span style={{ color: '#FFC107', fontWeight: 100 }}>AI</span></p>
           <p style={{ fontSize: 16, margin: '0 0 20px', lineHeight: 1.5, opacity: 0.8 }}>
             사용 및 적용<br />도입문의<br />커스터마이징 문의
           </p>
