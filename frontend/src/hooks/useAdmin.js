@@ -141,3 +141,81 @@ export function useSaveUserRole() {
     onError: (err) => message.error(err.response?.data?.detail || '변경에 실패했습니다.'),
   })
 }
+
+// ─── Prompts (sdoc.prompts) ───────────────────────────────────────────────────
+
+export function usePromptSampleDatas() {
+  return useQuery({
+    queryKey: ['admin-prompt-sample-datas'],
+    queryFn: () => apiClient.get('/admin/prompts/sample-datas').then((r) => r.data.datas),
+  })
+}
+
+export function useAdminPrompts() {
+  return useQuery({
+    queryKey: ['admin-prompts'],
+    queryFn: () => apiClient.get('/admin/prompts').then((r) => r.data.prompts),
+  })
+}
+
+export function usePromptTranslations(promptkey) {
+  return useQuery({
+    queryKey: ['admin-prompt-translations', promptkey],
+    queryFn: () =>
+      apiClient.get(`/admin/prompts/${encodeURIComponent(promptkey)}/translations`).then((r) => r.data.translations),
+    enabled: !!promptkey,
+  })
+}
+
+export function useSavePrompt() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/admin/prompts', body).then((r) => r.data),
+    onSuccess: () => {
+      message.success('저장되었습니다.')
+      qc.invalidateQueries({ queryKey: ['admin-prompts'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+  })
+}
+
+export function useDeletePrompt() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (promptkey) =>
+      apiClient.delete(`/admin/prompts/${encodeURIComponent(promptkey)}`).then((r) => r.data),
+    onSuccess: () => {
+      message.success('삭제되었습니다.')
+      qc.invalidateQueries({ queryKey: ['admin-prompts'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+  })
+}
+
+export function useSavePromptTranslation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ promptkey, ...body }) =>
+      apiClient
+        .post(`/admin/prompts/${encodeURIComponent(promptkey)}/translations`, body)
+        .then((r) => r.data),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['admin-prompt-translations', vars.promptkey] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '번역 저장에 실패했습니다.'),
+  })
+}
+
+export function useDeletePromptTranslation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ promptkey, languagecd }) =>
+      apiClient
+        .delete(`/admin/prompts/${encodeURIComponent(promptkey)}/translations/${languagecd}`)
+        .then((r) => r.data),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['admin-prompt-translations', vars.promptkey] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || '번역 삭제에 실패했습니다.'),
+  })
+}

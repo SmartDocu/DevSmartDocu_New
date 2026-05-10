@@ -38,7 +38,7 @@ export default function AboutPage() {
   return (
     <div>
       <div style={sectionStyle}>
-        <h2 style={h2Style}>SmartDocu는 데이터베이스와의 연동을 통해 문서 작성 과정을 자동화합니다.</h2>
+        <h2 style={h2Style}>D2Doc는 데이터베이스와의 연동을 통해 문서 작성 과정을 자동화합니다.</h2>
       </div>
 
       <div style={sectionStyle}>

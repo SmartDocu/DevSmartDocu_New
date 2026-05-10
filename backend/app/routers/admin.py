@@ -601,3 +601,132 @@ def search_help(url: str = Query(...)):
     sb = _sb_service()
     rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").eq("url", url).execute().data or []
     return {"helps": rows}
+
+
+# ══════════════════════════════════════════════════════
+#  PROMPTS (샘플 프롬프트 마스터)
+# ══════════════════════════════════════════════════════
+
+class PromptSaveRequest(BaseModel):
+    promptkey: str
+    prompttypecd: str
+    tag1: Optional[str] = None
+    tag2: Optional[str] = None
+    default_message: Optional[str] = None
+    desc: Optional[str] = None
+    datauid: Optional[str] = None
+    useyn: bool = True
+    orderno: Optional[int] = None
+    is_new: bool = False
+
+
+class PromptTranslationSaveRequest(BaseModel):
+    languagecd: str
+    translated_title: Optional[str] = None
+    translated_text1: Optional[str] = None
+    translated_text2: Optional[str] = None
+
+
+@router.get("/prompts/sample-datas")
+def list_prompt_sample_datas(token: str = Depends(get_token)):
+    """샘플 문서에서 사용 중인 데이터 목록"""
+    _require_admin(token)
+    sb = _sb_service()
+    doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid").eq("sampleyn", True).execute().data or []
+    docids = [r["docid"] for r in doc_rows]
+    if not docids:
+        return {"datas": []}
+    doc_data_rows = sb.schema(SUPABASE_SCHEMA).table("doc_datas").select("datauid").in_("docid", docids).execute().data or []
+    datauids = list({r["datauid"] for r in doc_data_rows if r.get("datauid")})
+    if not datauids:
+        return {"datas": []}
+    data_rows = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").in_("datauid", datauids).order("datanm").execute().data or []
+    return {"datas": data_rows}
+
+
+@router.get("/prompts")
+def list_prompts(token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("prompts").select("*")
+        .order("orderno").order("promptkey")
+        .execute().data or []
+    )
+    return {"prompts": rows}
+
+
+@router.post("/prompts")
+def save_prompt(body: PromptSaveRequest, token: str = Depends(get_token)):
+    user = _require_admin(token)
+    sb = _sb_service()
+    try:
+        payload = {
+            "promptkey": body.promptkey,
+            "prompttypecd": body.prompttypecd,
+            "tag1": body.tag1 or None,
+            "tag2": body.tag2 or None,
+            "default_message": body.default_message or None,
+            "desc": body.desc or None,
+            "datauid": body.datauid or None,
+            "useyn": body.useyn,
+            "orderno": body.orderno,
+        }
+        if body.is_new:
+            payload["creator"] = str(user.id)
+            sb.schema(SUPABASE_SCHEMA).table("prompts").insert(payload).execute()
+        else:
+            sb.schema(SUPABASE_SCHEMA).table("prompts").update(payload).eq("promptkey", body.promptkey).execute()
+        return {"ok": True, "promptkey": body.promptkey}
+    except Exception as e:
+        print(f"[save_prompt] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.delete("/prompts/{promptkey}")
+def delete_prompt(promptkey: str, token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+    sb.schema(SUPABASE_SCHEMA).table("prompt_translations").delete().eq("promptkey", promptkey).execute()
+    sb.schema(SUPABASE_SCHEMA).table("prompts").delete().eq("promptkey", promptkey).execute()
+    return {"ok": True}
+
+
+@router.get("/prompts/{promptkey}/translations")
+def list_prompt_translations(promptkey: str, token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("prompt_translations").select("*")
+        .eq("promptkey", promptkey).execute().data or []
+    )
+    return {"translations": rows}
+
+
+@router.post("/prompts/{promptkey}/translations")
+def save_prompt_translation(promptkey: str, body: PromptTranslationSaveRequest, token: str = Depends(get_token)):
+    user = _require_admin(token)
+    sb = _sb_service()
+    payload = {
+        "promptkey": promptkey,
+        "languagecd": body.languagecd,
+        "translated_title": body.translated_title or None,
+        "translated_text1": body.translated_text1 or None,
+        "translated_text2": body.translated_text2 or None,
+        "creator": str(user.id),
+    }
+    sb.schema(SUPABASE_SCHEMA).table("prompt_translations").upsert(
+        payload, on_conflict="promptkey,languagecd"
+    ).execute()
+    return {"ok": True}
+
+
+@router.delete("/prompts/{promptkey}/translations/{languagecd}")
+def delete_prompt_translation(promptkey: str, languagecd: str, token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+    (
+        sb.schema(SUPABASE_SCHEMA).table("prompt_translations").delete()
+        .eq("promptkey", promptkey).eq("languagecd", languagecd).execute()
+    )
+    return {"ok": True}

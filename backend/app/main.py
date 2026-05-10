@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from postgrest.exceptions import APIError
 
 from backend.app.config import settings
 from backend.app.routers import router
@@ -25,6 +26,21 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+
+
+# ─── Supabase JWT 만료 → 401 변환 ───────────────────────────────────────────
+_JWT_CODES = {"PGRST301", "PGRST302", "PGRST303"}
+
+@app.exception_handler(APIError)
+async def postgrest_api_error_handler(request: Request, exc: APIError):
+    code = getattr(exc, "code", "") or ""
+    message = str(getattr(exc, "message", exc) or exc)
+    if code in _JWT_CODES or "JWT" in message or "expired" in message.lower():
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "토큰이 만료되었습니다."},
+        )
+    return JSONResponse(status_code=500, content={"detail": message})
 
 
 @app.get("/health", tags=["health"])
