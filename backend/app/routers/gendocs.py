@@ -426,7 +426,9 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
 
     try:
         from utilsPrj.chapter_making import replace_doc
-        for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", objectuid, genObjectDirectYn=True):
+
+        for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "", genObjectDirectYn=True):
+        # for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", objectuid, genObjectDirectYn=True):
             if progress_data.get("type") == "error":
                 raise HTTPException(status_code=500, detail=progress_data.get("message", "오류가 발생했습니다."))
     except HTTPException:
@@ -726,11 +728,15 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             # 7. gentexttemplate 컴파일: {{objectNm}} 자리에 resulttext 삽입
             rpc_data = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
             compiled = texttemplate
+            item_count = 0 # jeff
             for item in rpc_data:
+                item_count += 1 # jeff
                 if item.get("genobjectuid"):
                     obj_result = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("resulttext").eq("genobjectuid", item["genobjectuid"]).execute().data
                     html_result = obj_result[0]["resulttext"] if obj_result else ""
                     placeholder = f"{{{{{item['objectnm']}}}}}"
+                    print(f"jeff 101 {item_count} / item['objectnm']: {item['objectnm']}")
+                    print(f"jeff 102 html_result: {html_result}")
                     compiled = compiled.replace(placeholder, html_result or "")
 
             now_compiled = datetime.now().isoformat()

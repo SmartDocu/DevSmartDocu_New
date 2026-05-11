@@ -235,78 +235,7 @@ def get_dataframe_information(df):
 """
 
 
-# def get_charts_prompt(df, column_dict, question):
-
-#     df_info = get_dataframe_information(df)
-
-#     prompt = f"""{df_info}
-
-# 질문: {question}
-
-# 컬럼 매핑:
-# {column_dict}
-
-# {prompt_common_text}
-
-# 요구사항 
-#     1. pandas와 matplotlib을 사용
-    
-#     2. 한글 깨어지는 현상과 운영체제에 따른 오류를 막기 위해 아래 코드를 반드시 포함:
-    
-#     import matplotlib
-#     matplotlib.use('Agg')
-    
-#     import matplotlib.pyplot as plt
-#     import matplotlib.font_manager as fm
-
-#     df = df.copy()
-
-#     # 사용 가능한 한글 폰트 찾기
-#     import os
-#     font_path = os.path.join(
-#         os.path.dirname(__file__), '..', 'static', 'fonts', 'NanumGothic-Regular.ttf'
-#     )
-#     font_path = os.path.abspath(font_path)
-
-#     fm.fontManager.addfont(font_path)
-#     font_name = fm.FontProperties(fname=font_path).get_name()
-#     plt.rcParams['font.family'] = font_name
-    
-#     3. **차트 크기가 A4 용지 크기를 넘어갈 수 있어 다음 figsize를 반드시 코드에 넣어주세요.**
-
-#     fig, ax = plt.figure(figsize=(5, 3))
-    
-#     4. 그래프 생성 후 plt.show()를 호출하여 표시하세요.
-#        (주의: plt.savefig()는 사용하지 마세요. 시스템에서 자동으로 처리합니다)
-    
-#     5. plt.tight_layout() 사용
-#         - 특히 subplot으로 작성되는 차트는 plt.tight_layout()을 사용하세요.
-    
-#     6. seaborn은 임포트하지 않고 matplotlib 만으로 그래프 구현하세요.
-    
-#     7. 레이아웃 조정이 필요하면 plt.subplots_adjust(hspace=0.3, wspace=0.3)을 사용하세요
-    
-#     8. **실행 가능한 Python 코드**로 작성
-#         - 응답은 반드시 ```python 으로 시작하고 ``` 로 끝나야 합니다.
-#         - 코드 블록 외부에 설명이나 주석을 추가하지 마세요.
-#         - 오직 실행 가능한 Python 코드만 반환하세요.
-
-# {prompt_common_python_text}
-
-# matplotlib 설정:
-#     - plt.figure(figsize=(width, height)) 크기는 적당한 값을 사용
-#         - A4 용지에 좌우 여백 각 3cm를 고려한 크기
-#         - width : 최대 6 으로 맞춰주세요. 
-#         - height : 최대 10 으로 맞춰주세요.
-#     - plt.title(), plt.xlabel(), plt.ylabel() 적절히 설정
-#     - 한글 표시 시 unicode 문제 방지
-
-
-# 코드:"""
-    
-#     return prompt
-
-def get_charts_prompt(df, column_dict, question):
+def get_charts_prompt(df, column_dict, question, ai_filter_json):
 
     df_info = get_dataframe_information(df)
 
@@ -317,7 +246,15 @@ def get_charts_prompt(df, column_dict, question):
 컬럼 매핑:
 {column_dict}
 
+데이터 필터:
+{ai_filter_json}
+
 {prompt_common_text}
+
+**중요 제약:**
+    - 데이터 필터
+         - ai_filter_json의 key는 컬럼명, value는 해당 컬럼에서 같은 값을 가지는 항목만 추출
+         - ai_filter_json가 빈 딕셔너리일 경우는 필터가 적용되지 않음
 
 요구사항 
     1. pandas와 matplotlib을 사용
@@ -401,58 +338,7 @@ matplotlib 설정:
     return prompt
 
 
-# def get_charts_prompt(df, column_dict, question):
-
-#     df_info = get_dataframe_information(df)
-
-#     prompt = f"""{df_info}
-
-# 질문: {question}
-
-# 컬럼 매핑:
-# {column_dict}
-
-# {prompt_common_text}
-
-# 요구사항:
-#     1. 한글 폰트 설정 (필수):
-    
-#     import matplotlib
-#     matplotlib.use('Agg')
-#     import matplotlib.pyplot as plt
-#     import matplotlib.font_manager as fm
-#     import os
-
-#     df = df.copy()
-    
-#     font_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'NanumGothic-Regular.ttf')
-#     font_path = os.path.abspath(font_path)
-#     fm.fontManager.addfont(font_path)
-#     plt.rcParams['font.family'] = fm.FontProperties(fname=font_path).get_name()
-    
-#     2. 차트 생성 (ax 객체 사용):
-    
-#     fig, ax = plt.subplots(figsize=(5, 3))  # 또는 (3, 2) 등
-#     ax.plot(...)  # ax.bar(), ax.hist() 등
-#     ax.set_title('제목')
-    
-#     3. 코드 마지막 (필수):
-    
-#     fig.tight_layout()
-#     output_fig = fig
-    
-#     4. 금지사항: plt.show(), plt.savefig(), seaborn 사용 금지
-    
-#     5. figsize: width 최대 6, height 최대 10
-
-# {prompt_common_python_text}
-
-# 코드:"""
-    
-#     return prompt
-
-
-def get_tables_prompt(df, column_dict, question):
+def get_tables_prompt(df, column_dict, question, ai_filter_json):
     df_info = get_dataframe_information(df)
 
     prompt = f"""{df_info}
@@ -462,6 +348,9 @@ def get_tables_prompt(df, column_dict, question):
 컬럼 매핑:
 {column_dict}
 
+데이터 필터:
+{ai_filter_json}
+
 {prompt_common_text}
     - result 라는 변수에 결과 값을 대입해주세요.
 
@@ -469,7 +358,10 @@ def get_tables_prompt(df, column_dict, question):
     - openpyxl, xlsxwriter 등 엑셀 라이브러리 사용 금지
     - to_excel(), wb.save() 등 파일 저장 코드 금지
     - PatternFill, Workbook 등 엑셀 관련 객체 사용 금지
-    - 오직 pandas DataFrame만 사용하세요        
+    - 오직 pandas DataFrame만 사용하세요
+    - 데이터 필터
+         - ai_filter_json의 key는 컬럼명, value는 해당 컬럼에서 같은 값을 가지는 항목만 추출
+         - ai_filter_json가 빈 딕셔너리일 경우는 필터가 적용되지 않음
 
 제약 조건:
     1. pandas만 사용하세요.
@@ -565,7 +457,7 @@ DataFrame 컬럼: {all_columns}
     return prompt
 
 
-def get_sentences_prompt(df, column_dict, question):
+def get_sentences_prompt(df, column_dict, question, ai_filter_json):
     """
     통계 데이터 추출용 Python 코드 생성 프롬프트 (이상치 탐지 포함)
     
@@ -586,7 +478,15 @@ def get_sentences_prompt(df, column_dict, question):
 컬럼 매핑:
 {column_dict}
 
+데이터 필터:
+{ai_filter_json}
+
 {prompt_common_text}
+
+**중요 제약:**
+    - 데이터 필터
+         - ai_filter_json의 key는 컬럼명, value는 해당 컬럼에서 같은 값을 가지는 항목만 추출
+         - ai_filter_json가 빈 딕셔너리일 경우는 필터가 적용되지 않음
 
 **작업 목표:**
 사용자의 질문에 답하기 위한 통계 데이터를 JSON(dict) 형식으로 추출하세요.
@@ -1110,7 +1010,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 "code": code,
             }
 
-    # print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
+    print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
     # # if output_type == "TA":
     # #     print("python_code: \n", code)
 
@@ -1318,12 +1218,10 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
             }
 
     elif output_type == "DF_PREVIEW":
-        # print("jeff 001")
-        # print(f"jeff 002 result : {local_namespace}")
+
         if "result" in local_namespace and isinstance(local_namespace["result"], pd.DataFrame):
             df_result = local_namespace["result"]
 
-            # print(f"jeff 901 result_df: {df_result}")
             meta_info = {}
             for col in df_result.columns:
                 dtype = str(df_result[col].dtype)
@@ -1333,7 +1231,6 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 }
             meta_info["is_table_value"] = is_groupby_in_code
             cols_result = json.dumps(meta_info, ensure_ascii=False, indent=2)
-            # print(f"jeff 902 columns_info: {cols_result}")
 
             return {
                 "result": df_result,

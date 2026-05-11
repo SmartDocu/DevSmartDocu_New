@@ -312,6 +312,10 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
     try:
         if data_item['genobjectuid']:
             genobjectuid = data_item['genobjectuid']
+
+            gen_objects = supabase.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", gen_chapter_uid).eq("genobjectuid", genobjectuid).execute()
+            filter_json = json.loads(gen_objects.data[0]["filterjson"]) if gen_objects.data[0]["filterjson"] else {}
+
         else:
             genobjectuid = str(uuid.uuid4())
             run_start_dts = datetime.now().isoformat()
@@ -351,13 +355,20 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
         run_start_dts = datetime.now().isoformat()
         queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
                         data_item['objectuid'], data_item['objecttypecd'], user_id, 40, run_start_dts)
+        
+
+        ai_filter_json = {
+            key: filter_json[val]
+            for key, val in column_dict.items()
+            if val in filter_json
+        }
 
         if object_type == "CA":
-            prompt = get_charts_prompt(result_df, column_dict, question)
+            prompt = get_charts_prompt(result_df, column_dict, question, ai_filter_json)
         elif object_type == "SA":
-            prompt = get_sentences_prompt(result_df, column_dict, question)
+            prompt = get_sentences_prompt(result_df, column_dict, question, ai_filter_json)
         elif object_type == "TA":
-            prompt = get_tables_prompt(result_df, column_dict, question)
+            prompt = get_tables_prompt(result_df, column_dict, question, ai_filter_json)
         else:
             return {
                 "message_type": "error",
@@ -413,6 +424,8 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 'success': False,
                 'error': '응답 형식이 딕셔너리가 아닙니다.'
             }
+        
+        # print(f"jeff final_result: {final_result}")
 
         gen_uuid = data_item['genobjectuid'] if data_item['genobjectuid'] else str(uuid.uuid4())
         run_start_dts = datetime.now().isoformat()
@@ -823,6 +836,7 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                 
                 try:
                     result_data = future.result()
+                    # print(f"jeff 002 result_data: {result_data}")
                     
                     if result_data['success']:
                         result_data['attempt'] = 1  # 첫 시도에서 성공
@@ -930,10 +944,9 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
 
 def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template, gen_chapter_uid, user_id, sep):
     """AI 결과를 템플릿에 순서대로 적용"""
-    
+
     for original_idx, data_item in ai_objects:
         if original_idx in ai_results:
-            # print(f"jeff 001 ai_results[{original_idx}]: {ai_results[original_idx]}")
             result_data = ai_results[original_idx]
 
             final_result = result_data.get('final_result') or ""
@@ -943,6 +956,7 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
             if not result_data["success"]:
                 result_data["result"] = ""
             else:
+                # print(f"jeff 003 data_item: {data_item['objectnm']}")
                
                 place_holder = f"{{{{{data_item['objectnm']}}}}}"
                 place_holder_with_p = f"<p>{place_holder}</p>"
@@ -961,9 +975,11 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                         'createuserid': user_id,
                     }, gen_chapter_uid)
 
+            # print(f"jeff 003 result_data: {result_data['result']}")
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
                 update_genobjects(supabase, [result_data['result']])
-
+    
+    # print(f"jeff 004 text_template: {text_template}")
     return text_template
 
 
@@ -1009,9 +1025,10 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                 # sep == 'Not'이면 전체, 아니면 개별 작성용 texttemplate 가져오기
                 if sep == 'Not':
                     objects_erase_resulttext = supabase.schema(SUPABASE_SCHEMA).table("genobjects")\
-                        .select("genobjectuid, resulttext")\
+                        .select("genobjectuid, resulttext, filterjson")\
                         .eq("genchapteruid", gen_chapter_uid)\
                         .execute().data
+
                     for row in objects_erase_resulttext:
                         update_data = {
                             "genobjectuid": row["genobjectuid"],
@@ -1043,7 +1060,6 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     run_yn = True
 
                     ui_objects, ai_objects = separate_ui_ai_objects(datas)
-                    # print(f"jeff 002 ai_objects: {ai_objects}")
 
                     if ui_objects:
 
