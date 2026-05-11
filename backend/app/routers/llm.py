@@ -191,10 +191,11 @@ def llm_init(
 
         # ⑦ prompts — service client (공용 데이터)
         sb_svc = get_service_client()
-        prompts_rows = sb_svc.schema(SUPABASE_SCHEMA).table("prompts").select("*").eq(
-            "objecttypecd", objecttypecd
-        ).execute().data or []
-        prompts = sorted(prompts_rows, key=lambda x: x.get("orderno", 999))
+        prompts_rows = sb_svc.schema(SUPABASE_SCHEMA).table("prompts").select(
+            "promptkey, prompttypecd, tag1, tag2, datauid, orderno"
+        ).eq("tag1", objecttypecd).eq("prompttypecd", "prm").execute().data or []
+        prompts = sorted(prompts_rows, key=lambda x: x.get("orderno") or 999)
+        prompts = sorted(prompts_rows, key=lambda x: x.get("orderno") or 999)
 
     except HTTPException:
         raise
@@ -246,20 +247,13 @@ def llm_get_prompts(
     token: str = Depends(get_token),
 ):
     sb = get_service_client()
-    query = sb.schema(SUPABASE_SCHEMA).table("prompts").select("*").eq("objecttypecd", object_type)
+    query = sb.schema(SUPABASE_SCHEMA).table("prompts").select(
+        "promptkey, prompttypecd, tag1, tag2, datauid, orderno"
+    ).eq("tag1", object_type).eq("prompttypecd", "prm")
     if displaytype:
-        query = query.eq("displaytype", displaytype)
+        query = query.eq("tag2", displaytype)
     rows = query.execute().data or []
-    return {"prompts": [
-        {
-            "promptuid": p["promptuid"],
-            "prompt_nm": p["promptnm"],
-            "prompt_text": p["prompt"],
-            "prompt_desc": p.get("desc", ""),
-            "display_type": p.get("displaytype", ""),
-        }
-        for p in rows
-    ]}
+    return {"prompts": sorted(rows, key=lambda x: x.get("orderno") or 999)}
 
 
 # ── Preview ───────────────────────────────────────────────────────────────────

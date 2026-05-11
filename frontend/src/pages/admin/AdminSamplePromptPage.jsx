@@ -14,7 +14,12 @@ import {
 } from '@/hooks/useAdmin'
 import { useLanguages } from '@/hooks/useMenus'
 
-const PROMPT_TYPE_OPTIONS = ['Prompt', 'TestPrompt', 'FAQ']
+const PROMPT_TYPE_OPTIONS = [
+  { value: 'prm', label: 'Prompt' },
+  { value: 'tpr', label: 'TestPrompt' },
+  { value: 'faq', label: 'FAQ' },
+]
+const PROMPTTYPE_LABEL = Object.fromEntries(PROMPT_TYPE_OPTIONS.map((o) => [o.value, o.label]))
 
 const EMPTY_FORM = {
   promptkey: '',
@@ -231,7 +236,7 @@ export default function AdminSamplePromptPage() {
                       onClick={() => handlePromptSelect(p)}
                     >
                       <td>{p.promptkey}</td>
-                      <td>{p.prompttypecd}</td>
+                      <td>{PROMPTTYPE_LABEL[p.prompttypecd] || p.prompttypecd}</td>
                       <td>{p.tag1}</td>
                       <td style={{ textAlign: 'center' }}>{p.orderno}</td>
                       <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
@@ -282,7 +287,7 @@ export default function AdminSamplePromptPage() {
             >
               <option value="">— {t('lbl.select')} —</option>
               {PROMPT_TYPE_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </div>
@@ -446,7 +451,7 @@ export default function AdminSamplePromptPage() {
                 onClick={handlePreview}
                 disabled={previewLoading}
               >
-                {t('btn.preview')}
+                {t('btn.preview_btn')}
               </button>
             </div>
             <div className="form-group">
@@ -533,7 +538,7 @@ export default function AdminSamplePromptPage() {
           {/* 우측: 미리보기 */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-              <h3 style={{ margin: 0 }}>{t('btn.preview')}</h3>
+              <h3 style={{ margin: 0 }}>{t('btn.preview_btn')}</h3>
               <button
                 className="btn btn-primary"
                 type="button"

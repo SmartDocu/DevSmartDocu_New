@@ -7,7 +7,36 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 1. cod. (32개)
+## 1. cod. (46개)
+
+### code.ai_chart (9개)
+
+| term_key | default_text |
+|----------|--------------|
+| cod.ai_chart.bar | Bar |
+| cod.ai_chart.boxplot | Box Plot |
+| cod.ai_chart.dual_axis | Dual Axis |
+| cod.ai_chart.heatmap | Heatmap |
+| cod.ai_chart.histogram | Histogram |
+| cod.ai_chart.line | Line |
+| cod.ai_chart.pie | Pie |
+| cod.ai_chart.scatter | Scatter |
+| cod.ai_chart.subplot | Subplot |
+
+### code.ai_sentence (4개)
+
+| term_key | default_text |
+|----------|--------------|
+| cod.ai_sentence.predict | Predict |
+| cod.ai_sentence.report | Report |
+| cod.ai_sentence.simple_question | Simple Question |
+| cod.ai_sentence.summary | Summary |
+
+### code.ai_table (1개)
+
+| term_key | default_text |
+|----------|--------------|
+| cod.ai_table.table | Table |
 
 ### code.align (3개)
 
@@ -100,7 +129,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.code.select.trans |
 | msg.code.value.required |
 | msg.col.empty |
-| msg.col.save.created |
+| msg.save.col.created |
 | msg.confirm.delete |
 | msg.confirm.file.overwrite |
 | msg.datanm.required |
@@ -139,7 +168,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.preparing |
 | msg.preview.error |
 | msg.project.not.found |
+| msg.prompt.key.required |
+| msg.prompt.preview.hint |
+| msg.prompt.prompttypecd.required |
 | msg.prompt.required |
+| msg.prompt.select.delete |
+| msg.prompt.select.trans |
+| msg.prompt.text1.required |
 | msg.register.failed |
 | msg.register.success |
 | msg.register.tenant.required |
@@ -175,7 +210,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 3. mnu. (5개)
+## 3. mnu. (6개)
 
 | term_key |
 |----------|
@@ -183,6 +218,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | mnu.system.translation.codes |
 | mnu.system.translation.menus |
 | mnu.system.translation.messages |
+| mnu.system.translation.sample_prompt |
 | mnu.system.translation.terms |
 
 ---
@@ -192,7 +228,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 > suffix 규칙: 동일 base key가 여러 group에 존재하면 `_{group}` 추가  
 > 예) `orderno` → `orderno_lbl` (lbl), `orderno_thd` (thd)
 
-### btn. (30개)
+### btn. (31개)
 
 | term_key | default_text |
 |----------|--------------|
@@ -218,6 +254,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.reset.send | Send Reset Email |
 | btn.sample.prompt | Sample Prompt |
 | btn.save | Save |
+| btn.setting | Setting |
 | btn.savecols | Save Columns |
 | btn.tab.close.left | Close Tabs to Left |
 | btn.tab.close.others | Close Other Tabs |
@@ -241,7 +278,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.bordercolor |
 | lbl.chapternm |
 | lbl.chapterno |
-| lbl.chart.type |
+| lbl.chart.type_lbl |
 | lbl.codegroupcd_lbl |
 | lbl.codevalue_lbl |
 | lbl.color.ref |
@@ -254,7 +291,10 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.dataset.used |
 | lbl.datasourcecd_lbl |
 | lbl.datauid |
+| lbl.datauid_lbl |
 | lbl.default_message |
+| lbl.default_message_lbl |
+| lbl.desc_lbl |
 | lbl.default_name_lbl |
 | lbl.default_text_lbl |
 | lbl.description |
@@ -296,9 +336,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.project |
 | lbl.projectnm_lbl |
 | lbl.prompt |
+| lbl.promptkey_lbl |
+| lbl.prompttypecd_lbl |
 | lbl.query |
 | lbl.required |
 | lbl.reset.email |
+| lbl.select |
 | lbl.rolecd_lbl |
 | lbl.route_path |
 | lbl.sample |
@@ -306,6 +349,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.sentence.type |
 | lbl.sort |
 | lbl.source.data |
+| lbl.tag1_lbl |
+| lbl.tag2_lbl |
 | lbl.status |
 | lbl.template.upload |
 | lbl.tenant |
@@ -403,7 +448,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.chart.prop.pareto.labelField | X-Axis Data (pareto) |
 | lbl.chart.prop.pareto.yField | Y-Axis Data (pareto) |
 
-### thd. (41개)
+### thd. (49개)
 
 | term_key |
 |----------|
@@ -414,6 +459,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.codevalue_thd |
 | thd.colnm |
 | thd.comma |
+| thd.configured_thd |
 | thd.connectnm_thd |
 | thd.connecttype_thd |
 | thd.datanm_thd |
@@ -440,12 +486,19 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.orderno_thd |
 | thd.paramnm_thd |
 | thd.projectnm_thd |
+| thd.promptkey_thd |
+| thd.prompttypecd_thd |
 | thd.querycolnm |
 | thd.rolecd_thd |
+| thd.setting_thd |
+| thd.tag1_thd |
 | thd.termgroupcd_thd |
 | thd.termkey_thd |
 | thd.translated_desc |
 | thd.translated_text |
+| thd.translated_text1_thd |
+| thd.translated_text2_thd |
+| thd.translated_title_thd |
 | thd.useyn_thd |
 | thd.width_px |
 
@@ -478,11 +531,10 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.myinfo.terms |
 | ttl.preview.result |
 | ttl.preview_ttl |
-| ttl.prompt |
 | ttl.prompt.desc |
+| ttl.prompt_ttl |
 | ttl.register_ttl |
 | ttl.sample.list |
-| ttl.sample.prompt |
 | ttl.sentence.manage |
 | ttl.table.manage |
 | ttl.translations |
@@ -504,15 +556,15 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 | prefix | 개수 |
 |--------|------|
-| cod.   | 32   |
-| msg.   | 77   |
-| mnu.   | 5    |
-| btn.   | 30   |
-| lbl.   | 139  |
-| thd.   | 41   |
+| cod.   | 46   |
+| msg.   | 83   |
+| mnu.   | 6    |
+| btn.   | 31   |
+| lbl.   | 146  |
+| thd.   | 49   |
 | ttl.   | 34   |
 | inf.   | 5    |
-| **합계** | **363** |
+| **합계** | **400** |
 
 > lbl 139 = 일반 레이블 84 + legendpos 11 + linestyle 4 + marker 4 + valueformat 3 + chart.prop 37 - 중복 4(barWidth/barGap/bins/box.categoryField는 prop에 포함)  
 > ※ DB 조회 결과(idx 0-99) 기준; lbl 일부는 기존 파일 유지

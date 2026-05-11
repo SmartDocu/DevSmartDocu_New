@@ -37,7 +37,7 @@ import OrgTenantLlmsPage from '@/pages/org/OrgTenantLlmsPage'
 import OrgProjectsPage from '@/pages/org/OrgProjectsPage'
 import OrgProjectUsersPage from '@/pages/org/OrgProjectUsersPage'
 import AdminUserRolePage from '@/pages/admin/AdminUserRolePage'
-import AdminSamplePromptsPage from '@/pages/admin/AdminSamplePromptsPage'
+import AdminSamplePromptPage from '@/pages/admin/AdminSamplePromptPage'
 import AdminLlmsPage from '@/pages/admin/AdminLlmsPage'
 import AdminLlmApisPage from '@/pages/admin/AdminLlmApisPage'
 import AdminTenantRequestsPage from '@/pages/admin/AdminTenantRequestsPage'
@@ -46,7 +46,6 @@ import AdminMenusPage from '@/pages/admin/AdminMenusPage'
 import AdminMessagesPage from '@/pages/admin/AdminMessagesPage'
 import AdminTermsPage from '@/pages/admin/AdminTermsPage'
 import AdminCodesPage from '@/pages/admin/AdminCodesPage'
-import AdminSamplePromptPage from '@/pages/admin/AdminSamplePromptPage'
 import MasterAiChartsPage from '@/pages/master/MasterAiChartsPage'
 import MasterAiSentencesPage from '@/pages/master/MasterAiSentencesPage'
 import MasterAiTablesPage from '@/pages/master/MasterAiTablesPage'
@@ -130,7 +129,7 @@ export const router = createBrowserRouter([
 
       // admin/ (roleid=7 전용)
       { path: 'admin/user-role', element: <AdminUserRolePage /> },
-      { path: 'admin/sample-prompts', element: <AdminSamplePromptsPage /> },
+      { path: 'admin/sample-prompts', element: <AdminSamplePromptPage /> },
       { path: 'admin/llms', element: <AdminLlmsPage /> },
       { path: 'admin/llmapis', element: <AdminLlmApisPage /> },
       { path: 'admin/tenant-requests', element: <AdminTenantRequestsPage /> },
@@ -139,7 +138,6 @@ export const router = createBrowserRouter([
       { path: 'admin/messages', element: <AdminMessagesPage /> },
       { path: 'admin/terms', element: <AdminTermsPage /> },
       { path: 'admin/codes', element: <AdminCodesPage /> },
-      { path: 'admin/sample-prompt', element: <AdminSamplePromptPage /> },
     ],
   },
 

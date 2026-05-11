@@ -536,6 +536,17 @@ function PreviewDisplay({ result }) {
 }
 
 
+// 포맷: prm.chart_bar_title / prm.chart_bar_text1 / prm.chart_bar_text2
+function promptTermKey(p, suffix) {
+  return `${p.prompttypecd}.${p.promptkey}_${suffix}`
+}
+
+// 프롬프트 전용: translations → key (defaults 건너뜀)
+function tPrompt(key) {
+  const { translations } = useLangStore.getState()
+  return translations[key] ?? key
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 샘플 프롬프트 모달 (Django ai_common.html 모달과 동일한 3분할 구조)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,7 +560,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
 
   const handleApply = () => {
     if (!selected) return
-    onApply(selected.prompt || '')
+    onApply(tPrompt(promptTermKey(selected, 'text1')))
   }
 
   return (
@@ -559,7 +570,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
       footer={null}
       title={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>{t('ttl.sample.prompt')}</span>
+          <span>{t('ttl.sample.prompt_ttl')}</span>
           <button
             type="button"
             className="btn btn-primary"
@@ -582,18 +593,18 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 14 }}>
             {prompts.map((p) => (
               <li
-                key={p.promptuid}
+                key={p.promptkey}
                 onClick={() => setSelected(p)}
                 style={{
                   padding: '8px',
                   cursor: 'pointer',
                   borderBottom: '1px solid #eee',
-                  backgroundColor: selected?.promptuid === p.promptuid ? '#e6f0fa' : 'transparent',
+                  backgroundColor: selected?.promptkey === p.promptkey ? '#e6f0fa' : 'transparent',
                 }}
-                onMouseEnter={(e) => { if (selected?.promptuid !== p.promptuid) e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-                onMouseLeave={(e) => { if (selected?.promptuid !== p.promptuid) e.currentTarget.style.backgroundColor = 'transparent' }}
+                onMouseEnter={(e) => { if (selected?.promptkey !== p.promptkey) e.currentTarget.style.backgroundColor = '#f5f5f5' }}
+                onMouseLeave={(e) => { if (selected?.promptkey !== p.promptkey) e.currentTarget.style.backgroundColor = 'transparent' }}
               >
-                {p.promptnm}
+                {tPrompt(promptTermKey(p, 'title'))}
               </li>
             ))}
           </ul>
@@ -604,7 +615,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
           <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>{t('ttl.prompt.desc')}</strong></h6>
           <textarea
             readOnly
-            value={selected?.desc || ''}
+            value={selected ? tPrompt(promptTermKey(selected, 'text2')) : ''}
             style={{
               flex: 1, width: '100%', resize: 'none', padding: 8,
               border: '1px solid #ccc', fontSize: 14, whiteSpace: 'pre-wrap', minHeight: 0,
@@ -617,7 +628,7 @@ function SamplePromptModal({ open, prompts, onClose, onApply }) {
           <h6 style={{ fontSize: 16, marginBottom: 6 }}><strong>{t('ttl.prompt_ttl')}</strong></h6>
           <textarea
             readOnly
-            value={selected?.prompt || ''}
+            value={selected ? tPrompt(promptTermKey(selected, 'text1')) : ''}
             style={{
               flex: 1, width: '100%', resize: 'none', padding: 8,
               border: '1px solid #ccc', fontSize: 14, whiteSpace: 'pre-wrap', minHeight: 0,

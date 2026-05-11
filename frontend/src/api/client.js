@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/authStore'
+import { useTabStore } from '@/stores/tabStore'
 
 const apiClient = axios.create({
   baseURL: '/api',
@@ -45,6 +46,7 @@ apiClient.interceptors.response.use(
 
       if (!refreshToken) {
         clearAuth()
+        useTabStore.getState().clearTabs()
         window.location.href = '/'
         return Promise.reject(error)
       }
@@ -72,6 +74,7 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null)
         clearAuth()
+        useTabStore.getState().clearTabs()
         window.location.href = '/'
         return Promise.reject(refreshError)
       } finally {
