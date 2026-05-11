@@ -632,7 +632,8 @@ def list_prompt_sample_datas(token: str = Depends(get_token)):
     """샘플 문서에서 사용 중인 데이터 목록"""
     _require_admin(token)
     sb = _sb_service()
-    doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid").eq("sampleyn", True).execute().data or []
+    # doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid").eq("sampleyn", True).execute().data or []   임시, 현재는 샘플 문서가 없어서.. 추후 변경 예정
+    doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid").execute().data or []
     docids = [r["docid"] for r in doc_rows]
     if not docids:
         return {"datas": []}

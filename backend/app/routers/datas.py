@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import uuid
 from typing import Optional
 from urllib.parse import urlparse
@@ -15,6 +16,66 @@ from backend.app.schemas.datas import (
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
+
+_DDL_TYPE_MAP = {
+    # string
+    'varchar': 'string', 'nvarchar': 'string', 'char': 'string', 'nchar': 'string',
+    'varchar2': 'string', 'nvarchar2': 'string',
+    # text
+    'text': 'text', 'ntext': 'text', 'clob': 'text', 'nclob': 'text',
+    'longtext': 'text', 'mediumtext': 'text', 'tinytext': 'text',
+    # number
+    'int': 'number', 'integer': 'number', 'bigint': 'number', 'smallint': 'number', 'tinyint': 'number',
+    'float': 'number', 'real': 'number', 'double': 'number',
+    'numeric': 'number', 'decimal': 'number', 'number': 'number',
+    # currency
+    'money': 'currency', 'smallmoney': 'currency',
+    # date
+    'date': 'date',
+    # datetime
+    'datetime': 'datetime', 'datetime2': 'datetime', 'timestamp': 'datetime',
+    'smalldatetime': 'datetime', 'datetimeoffset': 'datetime', 'time': 'datetime',
+    # boolean
+    'bit': 'boolean', 'boolean': 'boolean', 'bool': 'boolean',
+    # identifier
+    'uniqueidentifier': 'identifier', 'serial': 'identifier', 'bigserial': 'identifier',
+}
+_DDL_SKIP = {'constraint', 'primary', 'foreign', 'unique', 'index', 'check', 'key'}
+
+
+def parse_ddl_columns(ddl: str) -> list[dict]:
+    """CREATE TABLE DDL에서 컬럼 목록을 추출한다."""
+    match = re.search(r'\((.+)\)\s*;?\s*$', ddl.strip(), re.DOTALL)
+    if not match:
+        return []
+    inner = match.group(1)
+    segments, depth, buf = [], 0, []
+    for ch in inner:
+        if ch == '(':
+            depth += 1; buf.append(ch)
+        elif ch == ')':
+            depth -= 1; buf.append(ch)
+        elif ch == ',' and depth == 0:
+            segments.append(''.join(buf).strip()); buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        segments.append(''.join(buf).strip())
+    result = []
+    for i, seg in enumerate(segments, 1):
+        tokens = seg.strip().split()
+        if not tokens or tokens[0].lower() in _DDL_SKIP:
+            continue
+        col_name = tokens[0].strip('[]"`\' ')
+        raw_type = tokens[1].lower().split('(')[0] if len(tokens) > 1 else 'varchar'
+        result.append({
+            'querycolnm': col_name,
+            'dispcolnm':  col_name,
+            'datatypecd': _DDL_TYPE_MAP.get(raw_type, 'C'),
+            'measureyn':  False,
+            'orderno':    i,
+        })
+    return result
 
 
 def _active_projects(sb, user_id: str):
@@ -183,11 +244,20 @@ def list_source_datas(token: str = Depends(get_token)):
 def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    if body.databasiscd == "dbq":
+        query_val = body.querybasis
+    elif body.databasiscd == "dbt":
+        query_val = f"SELECT * FROM {body.querybasis}" if body.querybasis else None
+    else:  # dbs — createCols 시점에 DDL 파싱 후 채워짐
+        query_val = None
+
     record = {
-        "projectid": body.projectid,
-        "datanm": body.datanm,
-        "connectid": body.connectid,
-        "query": body.query,
+        "projectid":   body.projectid,
+        "datanm":      body.datanm,
+        "connectid":   body.connectid,
+        "databasiscd": body.databasiscd,
+        "querybasis":  body.querybasis,
+        "query":       query_val,
     }
     if body.datauid:
         sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
@@ -416,6 +486,39 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
     data_resp = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute()
     if not data_resp.data:
         raise HTTPException(status_code=404, detail="해당 데이터가 없습니다.")
+
+    data_row = data_resp.data[0]
+    databasiscd = data_row.get("databasiscd")
+
+    # ── dbs 모드: DDL 파싱 → 컬럼 생성 + query 컬럼 업데이트 ───────────
+    if databasiscd == "dbs":
+        querybasis = data_row.get("querybasis") or ""
+        parsed = parse_ddl_columns(querybasis)
+        if not parsed:
+            raise HTTPException(status_code=400, detail="DDL에서 컬럼을 추출할 수 없습니다.")
+
+        tbl_match = re.search(r'CREATE\s+TABLE\s+(\S+)\s*\(', querybasis, re.IGNORECASE)
+        table_name = tbl_match.group(1).strip('[]"`') if tbl_match else "unknown"
+        col_list = ", ".join(c["querycolnm"] for c in parsed)
+        select_query = f"SELECT {col_list} FROM {table_name}"
+
+        sb.schema(SUPABASE_SCHEMA).table("datas").update({"query": select_query}).eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
+        records = [
+            {
+                "datauid":    datauid,
+                "querycolnm": c["querycolnm"],
+                "dispcolnm":  c["dispcolnm"],
+                "datatypecd": c["datatypecd"],
+                "measureyn":  c["measureyn"],
+                "orderno":    c["orderno"],
+                "creator":    str(user.id),
+            }
+            for c in parsed
+        ]
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
+        return {"message": "컬럼이 생성되었습니다.", "columns": [c["querycolnm"] for c in parsed]}
+    # ────────────────────────────────────────────────────────────────────
 
     import string
     from utilsPrj.process_data import process_data

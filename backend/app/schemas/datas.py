@@ -20,6 +20,8 @@ class DataItem(BaseModel):
     connectid: Optional[str] = None
     connectnm: Optional[str] = None
     query: Optional[str] = None
+    querybasis: Optional[str] = None
+    databasiscd: Optional[str] = None
     excelurl: Optional[str] = None
     excelnm: Optional[str] = None
     sourcedatauid: Optional[str] = None
@@ -49,6 +51,8 @@ class DbDataSaveRequest(BaseModel):
     datanm: str
     connectid: Optional[int] = None
     query: Optional[str] = None
+    databasiscd: Optional[str] = None
+    querybasis: Optional[str] = None
 
 
 class AiDataSaveRequest(BaseModel):
