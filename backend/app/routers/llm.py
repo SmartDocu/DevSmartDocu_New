@@ -346,6 +346,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     column_dict = {r["querycolnm"]: r["dispcolnm"] for r in datacols}
 
     # ⑧ objecttypecd별 프롬프트 생성 — Django ai_llm_click_preview_button 동일
+    # ai_filter_json = {}
     if body.objecttypecd == "CA":
         prompt = get_charts_prompt(result_df, column_dict, body.prompt)
     elif body.objecttypecd == "SA":

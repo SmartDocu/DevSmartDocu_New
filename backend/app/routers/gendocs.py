@@ -697,7 +697,9 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             # 3. 템플릿 처리 → flattexttemplate
             registry = FunctionRegistry()
             registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
+            print("jeff 901")
             flattexttemplate = process_template(texttemplate, context, registry, True)
+            print(f"jeff 902 flattexttemplate: {flattexttemplate}")
 
             # 4. genchapters에 flattexttemplate 저장
             sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({
@@ -1169,4 +1171,5 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
         })
 
     if rows:
+        print(f"jeff 910 genobjects 추가 : {rows}")
         sb.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()

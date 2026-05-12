@@ -235,7 +235,7 @@ def get_dataframe_information(df):
 """
 
 
-def get_charts_prompt(df, column_dict, question, ai_filter_json):
+def get_charts_prompt(df, column_dict, question, ai_filter_json={}):
 
     df_info = get_dataframe_information(df)
 
@@ -338,7 +338,7 @@ matplotlib 설정:
     return prompt
 
 
-def get_tables_prompt(df, column_dict, question, ai_filter_json):
+def get_tables_prompt(df, column_dict, question, ai_filter_json={}):
     df_info = get_dataframe_information(df)
 
     prompt = f"""{df_info}
@@ -457,7 +457,7 @@ DataFrame 컬럼: {all_columns}
     return prompt
 
 
-def get_sentences_prompt(df, column_dict, question, ai_filter_json):
+def get_sentences_prompt(df, column_dict, question, ai_filter_json={}):
     """
     통계 데이터 추출용 Python 코드 생성 프롬프트 (이상치 탐지 포함)
     
@@ -1010,7 +1010,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 "code": code,
             }
 
-    print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
+    # print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
     # # if output_type == "TA":
     # #     print("python_code: \n", code)
 

@@ -424,8 +424,6 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 'success': False,
                 'error': '응답 형식이 딕셔너리가 아닙니다.'
             }
-        
-        # print(f"jeff final_result: {final_result}")
 
         gen_uuid = data_item['genobjectuid'] if data_item['genobjectuid'] else str(uuid.uuid4())
         run_start_dts = datetime.now().isoformat()
@@ -836,7 +834,6 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                 
                 try:
                     result_data = future.result()
-                    # print(f"jeff 002 result_data: {result_data}")
                     
                     if result_data['success']:
                         result_data['attempt'] = 1  # 첫 시도에서 성공
@@ -944,27 +941,47 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
 
 def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template, gen_chapter_uid, user_id, sep):
     """AI 결과를 템플릿에 순서대로 적용"""
+    print(f"jeff 201 ai_objects: {ai_objects}")
+    print(f"jeff 202 ai_results: {ai_results}")
+    replace_dict = {}
+    replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
+    # replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data if item['replacestring'] is not None}
+    replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data}
+    item_count = 0
 
     for original_idx, data_item in ai_objects:
-        if original_idx in ai_results:
+        item_count += 1
+        print(f"jeff 103 item_count: {item_count}")
+        
+        if original_idx in ai_results.keys():
+            print(f"jeff 102 original_idx: {original_idx}")
             result_data = ai_results[original_idx]
 
             final_result = result_data.get('final_result') or ""
+            gen_object_uid = result_data["result"]["genobjectuid"]
+    
             if not result_data.get('success', False):
                 final_result = ""
 
             if not result_data["success"]:
                 result_data["result"] = ""
             else:
-                # print(f"jeff 003 data_item: {data_item['objectnm']}")
-               
-                place_holder = f"{{{{{data_item['objectnm']}}}}}"
+                # place_holder = f"{{{{{data_item['objectnm']}}}}}"
+                # place_holder_with_p = f"<p>{place_holder}</p>"
+                place_holder = replace_dict.get(gen_object_uid)
+                if place_holder is None:
+                    continue
+                # place_holder = f"{replace_dict[gen_object_uid]}"
                 place_holder_with_p = f"<p>{place_holder}</p>"
                 
                 if place_holder_with_p in text_template:
+                    print(f"jeff 001 : {place_holder} \n{text_template}")
                     text_template = text_template.replace(place_holder_with_p, final_result)
                 elif place_holder in text_template:
+                    print(f"jeff 002 : {place_holder} \n{text_template}")
                     text_template = text_template.replace(place_holder, final_result)
+                else:    # jeff
+                    print(f"jeff 003 : {place_holder} \n{text_template}")
 
                 text_template += '<p></p>'
 
@@ -975,11 +992,12 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                         'createuserid': user_id,
                     }, gen_chapter_uid)
 
-            # print(f"jeff 003 result_data: {result_data['result']}")
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
                 update_genobjects(supabase, [result_data['result']])
+        
+        else: # jeff
+            print(f"jeff 105 item_count: {item_count}")
     
-    # print(f"jeff 004 text_template: {text_template}")
     return text_template
 
 
@@ -1015,7 +1033,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
         updatafileurl = read_genchapter[0]['updatefileurl']
         genchapters = ''
         
-        read_chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
+        # read_chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
+        read_chapter = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('flattexttemplate').eq('chapteruid', chapter_uid).execute().data
 
         now = datetime.now().isoformat()
         
@@ -1037,8 +1056,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
 
                         supabase.schema(SUPABASE_SCHEMA).table("genobjects").update(update_data).eq("genobjectuid", row["genobjectuid"]).execute()
 
-                    text_template = read_chapter[0]['texttemplate']
-                    
+                    text_template = read_chapter[0]['flattexttemplate']
+                    # text_template = read_chapter[0]['texttemplate']                    
                     loggenchapteruid = str(uuid.uuid4())
                     update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, gen_chapter_uid, gendoc_uid, user_id, 'str', docid, chapter_uid)
                 else:
@@ -1090,6 +1109,11 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                                 ai_results = progress_item['ai_results']
                             else:
                                 yield progress_item
+                        
+                        # # jeff
+                        # replace_string = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
+                        
+                        # #####
                             
                         # AI 결과를 템플릿에 적용
                         ai_text_template = apply_ai_results_to_template(
