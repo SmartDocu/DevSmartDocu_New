@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import uuid
 from typing import Optional
 from urllib.parse import urlparse
@@ -15,6 +16,68 @@ from backend.app.schemas.datas import (
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
+
+_DDL_TYPE_MAP = {
+    # string
+    'varchar': 'string', 'nvarchar': 'string', 'char': 'string', 'nchar': 'string',
+    'varchar2': 'string', 'nvarchar2': 'string',
+    # text
+    'text': 'text', 'ntext': 'text', 'clob': 'text', 'nclob': 'text',
+    'longtext': 'text', 'mediumtext': 'text', 'tinytext': 'text',
+    # number
+    'int': 'number', 'integer': 'number', 'bigint': 'number', 'smallint': 'number', 'tinyint': 'number',
+    'float': 'number', 'real': 'number', 'double': 'number',
+    'numeric': 'number', 'decimal': 'number', 'number': 'number',
+    # currency
+    'money': 'currency', 'smallmoney': 'currency',
+    # date
+    'date': 'date',
+    # datetime
+    'datetime': 'datetime', 'datetime2': 'datetime', 'timestamp': 'datetime',
+    'smalldatetime': 'datetime', 'datetimeoffset': 'datetime', 'time': 'datetime',
+    # boolean
+    'bit': 'boolean', 'boolean': 'boolean', 'bool': 'boolean',
+    # identifier
+    'uniqueidentifier': 'identifier', 'serial': 'identifier', 'bigserial': 'identifier',
+}
+_DDL_SKIP = {'constraint', 'primary', 'foreign', 'unique', 'index', 'check', 'key'}
+
+
+def parse_ddl_columns(ddl: str) -> list[dict]:
+    """CREATE TABLE DDL에서 컬럼 목록을 추출한다."""
+    # ON [filegroup] 등 CREATE TABLE 끝 절 허용
+    match = re.search(r'\((.+)\)\s*(?:ON\s+\S+)?\s*;?\s*$', ddl.strip(), re.DOTALL | re.IGNORECASE)
+    if not match:
+        return []
+    inner = match.group(1)
+    segments, depth, buf = [], 0, []
+    for ch in inner:
+        if ch == '(':
+            depth += 1; buf.append(ch)
+        elif ch == ')':
+            depth -= 1; buf.append(ch)
+        elif ch == ',' and depth == 0:
+            segments.append(''.join(buf).strip()); buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        segments.append(''.join(buf).strip())
+    result = []
+    for i, seg in enumerate(segments, 1):
+        tokens = seg.strip().split()
+        if not tokens or tokens[0].lower().strip('[]"`\'') in _DDL_SKIP:
+            continue
+        col_name = tokens[0].strip('[]"`\' ')
+        # 대괄호·따옴표 제거 후 타입 추출 ([int] → int, [nvarchar](25) → nvarchar)
+        raw_type = tokens[1].strip('[]"`\'').lower().split('(')[0] if len(tokens) > 1 else 'varchar'
+        result.append({
+            'querycolnm': col_name,
+            'dispcolnm':  col_name,
+            'datatypecd': _DDL_TYPE_MAP.get(raw_type, 'string'),
+            'measureyn':  False,
+            'orderno':    i,
+        })
+    return result
 
 
 def _active_projects(sb, user_id: str):
@@ -183,11 +246,21 @@ def list_source_datas(token: str = Depends(get_token)):
 def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    if body.databasiscd == "dbq":
+        query_val = body.querybasis
+    elif body.databasiscd == "dbt":
+        query_val = f"SELECT * FROM {body.querybasis}" if body.querybasis else None
+    else:  # dbs — createCols 시점에 DDL 파싱 후 채워짐
+        query_val = None
+
     record = {
-        "projectid": body.projectid,
-        "datanm": body.datanm,
-        "connectid": body.connectid,
-        "query": body.query,
+        "projectid":   body.projectid,
+        "datanm":      body.datanm,
+        "desc":        body.desc,
+        "connectid":   body.connectid,
+        "databasiscd": body.databasiscd,
+        "querybasis":  body.querybasis,
+        "query":       query_val,
     }
     if body.datauid:
         sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
@@ -417,6 +490,40 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
     if not data_resp.data:
         raise HTTPException(status_code=404, detail="해당 데이터가 없습니다.")
 
+    data_row = data_resp.data[0]
+    databasiscd = data_row.get("databasiscd")
+
+    # ── dbs 모드: DDL 파싱 → 컬럼 생성 + query 컬럼 업데이트 ───────────
+    if databasiscd == "dbs":
+        querybasis = data_row.get("querybasis") or ""
+        parsed = parse_ddl_columns(querybasis)
+        if not parsed:
+            raise HTTPException(status_code=400, detail="DDL에서 컬럼을 추출할 수 없습니다.")
+
+        tbl_match = re.search(r'CREATE\s+TABLE\s+(\S+)\s*\(', querybasis, re.IGNORECASE)
+        table_name = tbl_match.group(1).strip('[]"`') if tbl_match else "unknown"
+        col_list = ", ".join(c["querycolnm"] for c in parsed)
+        select_query = f"SELECT {col_list} FROM {table_name}"
+
+        sb.schema(SUPABASE_SCHEMA).table("datas").update({"query": select_query}).eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
+        records = [
+            {
+                "datauid":    datauid,
+                "querycolnm": c["querycolnm"],
+                "dispcolnm":  c["dispcolnm"],
+                "datatypecd": c["datatypecd"],
+                "measureyn":  c["measureyn"],
+                "orderno":    c["orderno"],
+                "useyn":      True,
+                "creator":    str(user.id),
+            }
+            for c in parsed
+        ]
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
+        return {"message": "컬럼이 생성되었습니다.", "columns": [c["querycolnm"] for c in parsed]}
+    # ────────────────────────────────────────────────────────────────────
+
     import string
     from utilsPrj.process_data import process_data
 
@@ -463,7 +570,15 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
 
     sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     records = [
-        {"datauid": datauid, "querycolnm": c, "dispcolnm": c, "creator": str(user.id), "orderno": i}
+        {
+            "datauid":    datauid,
+            "querycolnm": c,
+            "dispcolnm":  c,
+            "datatypecd": "string",
+            "useyn":      True,
+            "creator":    str(user.id),
+            "orderno":    i,
+        }
         for i, c in enumerate(cols, 1)
     ]
     if records:
@@ -508,18 +623,43 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
     if len(datauids) != 1:
         raise HTTPException(status_code=400, detail="모든 컬럼의 datauid가 동일해야 합니다.")
     datauid = datauids.pop()
-    sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
-    records = [
-        {
-            "datauid": c.datauid,
-            "querycolnm": c.querycolnm,
-            "dispcolnm": c.dispcolnm or c.querycolnm,
-            "datatypecd": c.datatypecd,
-            "measureyn": c.measureyn or False,
-            "creator": str(user.id),
-            "orderno": i,
-        }
-        for i, c in enumerate(cols, 1)
-    ]
-    sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
+
+    existing = sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm").eq("datauid", datauid).execute().data or []
+    existing_names = {r["querycolnm"] for r in existing}
+    incoming_map = {c.querycolnm: c for c in cols}
+    incoming_names = set(incoming_map.keys())
+
+    # 삭제: DB에 있지만 incoming에 없는 컬럼
+    to_delete = existing_names - incoming_names
+    if to_delete:
+        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).in_("querycolnm", list(to_delete)).execute()
+
+    # 추가: incoming에 있지만 DB에 없는 컬럼
+    to_insert = incoming_names - existing_names
+    if to_insert:
+        insert_records = [
+            {
+                "datauid":    datauid,
+                "querycolnm": c.querycolnm,
+                "dispcolnm":  c.dispcolnm or c.querycolnm,
+                "datatypecd": c.datatypecd,
+                "measureyn":  c.measureyn or False,
+                "useyn":      c.useyn if c.useyn is not None else True,
+                "creator":    str(user.id),
+                "orderno":    i,
+            }
+            for i, c in enumerate(cols, 1)
+            if c.querycolnm in to_insert
+        ]
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(insert_records).execute()
+
+    # useyn 수정: 양쪽에 모두 있는 컬럼은 useyn만 업데이트
+    to_update = existing_names & incoming_names
+    for c in cols:
+        if c.querycolnm not in to_update:
+            continue
+        sb.schema(SUPABASE_SCHEMA).table("datacols").update({
+            "useyn": c.useyn if c.useyn is not None else True,
+        }).eq("datauid", datauid).eq("querycolnm", c.querycolnm).execute()
+
     return {"message": "저장되었습니다."}

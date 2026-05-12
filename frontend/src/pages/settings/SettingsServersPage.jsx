@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { App, Modal } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
@@ -29,6 +29,12 @@ export default function SettingsServersPage() {
 
   const connectors = data.connectors || []
   const dbtypes    = data.dbtypes    || []
+
+  useEffect(() => {
+    if (dbtypes.length > 0) {
+      setForm(f => ({ ...f, connecttype: f.connecttype || dbtypes[0] }))
+    }
+  }, [dbtypes])
 
   const handleRowClick = (row) => {
     setSelectedId(row.connectid)

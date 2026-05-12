@@ -9,14 +9,20 @@ import {
 } from '@/hooks/useDatas'
 import { useDocs } from '@/hooks/useDocs'
 
-const DATATYPE_OPTIONS = [
-  { value: 'D', label: t('cod.keycoldatatypecd_D') },
-  { value: 'C', label: t('cod.keycoldatatypecd_C') },
-  { value: 'I', label: t('cod.keycoldatatypecd_I') },
-]
-
 export default function MasterDatasExPage() {
   useLangStore((s) => s.translations)
+
+  const DATATYPE_OPTIONS = [
+    { value: 'string',     label: t('cod.keycoldatatypecd_string') },
+    { value: 'text',       label: t('cod.keycoldatatypecd_text') },
+    { value: 'number',     label: t('cod.keycoldatatypecd_number') },
+    { value: 'currency',   label: t('cod.keycoldatatypecd_currency') },
+    { value: 'date',       label: t('cod.keycoldatatypecd_date') },
+    { value: 'datetime',   label: t('cod.keycoldatatypecd_datetime') },
+    { value: 'boolean',    label: t('cod.keycoldatatypecd_boolean') },
+    { value: 'identifier', label: t('cod.keycoldatatypecd_identifier') },
+  ]
+
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
 
@@ -288,7 +294,7 @@ export default function MasterDatasExPage() {
                       </td>
                       <td>
                         <select
-                          value={col.datatypecd || 'C'}
+                          value={col.datatypecd || 'string'}
                           onChange={(e) => updateCol(idx, 'datatypecd', e.target.value)}
                         >
                           {DATATYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

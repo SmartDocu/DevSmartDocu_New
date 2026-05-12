@@ -9,11 +9,6 @@ import {
   useAiDataPreview, useDatasSource, useDatacols,
 } from '@/hooks/useDatas'
 
-const DATATYPE_OPTIONS = [
-  { value: 'I', label: t('cod.keycoldatatypecd_I') },
-  { value: 'C', label: t('cod.keycoldatatypecd_C') },
-  { value: 'D', label: t('cod.keycoldatatypecd_D') },
-]
 
 const EMPTY_FORM = { datauid: '', datanm: '', datasourcecd: 'df', sourcedatauid: '', gensentence: '' }
 
@@ -24,8 +19,8 @@ function parseCols(colsInfoJson) {
       .filter(([k]) => k !== 'is_table_value')
       .map(([k, v], i) => {
         const dtype = v['데이터형'] || ''
-        const datatypecd = dtype.startsWith('int') || dtype.startsWith('float') ? 'I'
-          : dtype.startsWith('datetime') ? 'D' : 'C'
+        const datatypecd = dtype.startsWith('int') || dtype.startsWith('float') ? 'number'
+          : dtype.startsWith('datetime') ? 'datetime' : 'string'
         return { querycolnm: k, dispcolnm: k, datatypecd, measureyn: !!v['측정값'], orderno: i + 1 }
       })
   } catch { return [] }
@@ -35,6 +30,17 @@ export default function MasterDatasAiPage() {
   const { modal } = App.useApp()
   useLangStore((s) => s.translations)
   const translationVersion = useLangStore((s) => s.translationVersion)
+
+  const DATATYPE_OPTIONS = [
+    { value: 'string',     label: t('cod.keycoldatatypecd_string') },
+    { value: 'text',       label: t('cod.keycoldatatypecd_text') },
+    { value: 'number',     label: t('cod.keycoldatatypecd_number') },
+    { value: 'currency',   label: t('cod.keycoldatatypecd_currency') },
+    { value: 'date',       label: t('cod.keycoldatatypecd_date') },
+    { value: 'datetime',   label: t('cod.keycoldatatypecd_datetime') },
+    { value: 'boolean',    label: t('cod.keycoldatatypecd_boolean') },
+    { value: 'identifier', label: t('cod.keycoldatatypecd_identifier') },
+  ]
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -394,7 +400,7 @@ export default function MasterDatasAiPage() {
                         </td>
                         <td>
                           <select
-                            value={col.datatypecd || 'C'}
+                            value={col.datatypecd || 'string'}
                             onChange={(e) => updateCol(idx, 'datatypecd', e.target.value)}
                           >
                             {DATATYPE_OPTIONS.map((o) => (
