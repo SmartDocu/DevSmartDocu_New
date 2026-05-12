@@ -9,23 +9,28 @@ import {
   useDatacols, useCreateDatacols, useSaveDatacols,
 } from '@/hooks/useDatas'
 
-const DATATYPE_OPTIONS = [
-  { value: 'D', label: t('cod.keycoldatatypecd_D') },
-  { value: 'C', label: t('cod.keycoldatatypecd_C') },
-  { value: 'I', label: t('cod.keycoldatatypecd_I') },
-]
-
-const BASIS_OPTIONS = [
-  { value: 'dbq', label: t('cod.databasiscd_dbq'), placeholder: 'SELECT * FROM ...' },
-  { value: 'dbt', label: t('cod.databasiscd_dbt'), placeholder: 'dbo.users' },
-  { value: 'dbs', label: t('cod.databasiscd_dbs'), placeholder: 'CREATE TABLE ...' },
-]
-
-const EMPTY_FORM = { datauid: '', projectid: '', connectid: '', datanm: '', databasiscd: 'dbq', querybasis: '' }
+const EMPTY_FORM = { datauid: '', projectid: '', connectid: '', datanm: '', desc: '', databasiscd: 'dbq', querybasis: '' }
 
 export default function MasterDatasDbPage() {
   const { message } = App.useApp()
   useLangStore((s) => s.translations)
+
+  const DATATYPE_OPTIONS = [
+    { value: 'string',     label: t('cod.keycoldatatypecd_string') },
+    { value: 'text',       label: t('cod.keycoldatatypecd_text') },
+    { value: 'number',     label: t('cod.keycoldatatypecd_number') },
+    { value: 'currency',   label: t('cod.keycoldatatypecd_currency') },
+    { value: 'date',       label: t('cod.keycoldatatypecd_date') },
+    { value: 'datetime',   label: t('cod.keycoldatatypecd_datetime') },
+    { value: 'boolean',    label: t('cod.keycoldatatypecd_boolean') },
+    { value: 'identifier', label: t('cod.keycoldatatypecd_identifier') },
+  ]
+
+  const BASIS_OPTIONS = [
+    { value: 'dbq', label: t('cod.databasiscd_dbq'), placeholder: 'SELECT * FROM ...' },
+    { value: 'dbt', label: t('cod.databasiscd_dbt'), placeholder: 'dbo.users' },
+    { value: 'dbs', label: t('cod.databasiscd_dbs'), placeholder: 'CREATE TABLE ...' },
+  ]
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -70,6 +75,7 @@ export default function MasterDatasDbPage() {
       projectid:   row.projectid   || '',
       connectid:   row.connectid   || '',
       datanm:      row.datanm      || '',
+      desc:        row.desc        || '',
       databasiscd: row.databasiscd || 'dbq',
       querybasis:  row.querybasis  || '',
     })
@@ -91,6 +97,7 @@ export default function MasterDatasDbPage() {
     const body = {
       datauid:     form.datauid || null,
       datanm:      form.datanm,
+      desc:        form.desc || null,
       connectid:   form.connectid ? Number(form.connectid) : null,
       projectid:   Number(form.projectid),
       databasiscd: form.databasiscd,
@@ -130,8 +137,9 @@ export default function MasterDatasDbPage() {
       datauid:    c.datauid || selectedUid,
       querycolnm: c.querycolnm,
       dispcolnm:  c.dispcolnm || '',
-      datatypecd: c.datatypecd || 'C',
+      datatypecd: c.datatypecd || 'string',
       measureyn:  !!c.measureyn,
+      useyn:      c.useyn !== false,
     }))
     saveCols.mutate(payload, {
       onSuccess: () => message.success(t('msg.save.success')),
@@ -176,7 +184,7 @@ export default function MasterDatasDbPage() {
                   <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : datas.map((d) => (
                   <tr key={d.datauid}
-                    style={{ cursor: 'pointer', background: selectedUid === d.datauid ? '#e6f4ff' : '' }}
+                    style={{ cursor: 'pointer', background: selectedUid === d.datauid ? 'var(--selected-row-bg)' : '', color: selectedUid === d.datauid ? 'var(--selected-row)' : '', fontWeight: selectedUid === d.datauid ? 600 : 'normal' }}
                     onClick={() => handleRowClick(d)}
                   >
                     <td>{d.projectnm || ''}</td>
@@ -242,6 +250,13 @@ export default function MasterDatasDbPage() {
           <input type="text" style={{ position: 'absolute', left: -9999, top: -9999 }} autoComplete="off" readOnly />
 
           <div className="form-group">
+            <label>{t('lbl.desc_lbl')}</label>
+            <textarea rows={3} value={form.desc}
+              style={{ resize: 'vertical' }}
+              onChange={(e) => setForm(f => ({ ...f, desc: e.target.value }))} />
+          </div>
+
+          <div className="form-group">
             <label>{t('lbl.databasiscd')}</label>
             <div style={{ display: 'flex', gap: 20, marginTop: 4 }}>
               {BASIS_OPTIONS.map((opt) => (
@@ -303,11 +318,12 @@ export default function MasterDatasDbPage() {
                   <th>{t('thd.dispcolnm')}</th>
                   <th>{t('thd.datatypecd')}</th>
                   <th>{t('thd.measureyn')}</th>
+                  <th>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {colsLocal.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.select.data')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.select.data')}</td></tr>
                 ) : colsLocal.map((col, i) => (
                   <tr key={i}>
                     <td>{col.querycolnm || ''}</td>
@@ -316,7 +332,7 @@ export default function MasterDatasDbPage() {
                         onChange={(e) => updateCol(i, 'dispcolnm', e.target.value)} />
                     </td>
                     <td>
-                      <select value={col.datatypecd || 'C'}
+                      <select value={col.datatypecd || 'string'}
                         onChange={(e) => updateCol(i, 'datatypecd', e.target.value)}>
                         {DATATYPE_OPTIONS.map((o) => (
                           <option key={o.value} value={o.value}>{o.label}</option>
@@ -326,6 +342,10 @@ export default function MasterDatasDbPage() {
                     <td style={{ textAlign: 'center' }}>
                       <input type="checkbox" checked={!!col.measureyn}
                         onChange={(e) => updateCol(i, 'measureyn', e.target.checked)} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={col.useyn !== false}
+                        onChange={(e) => updateCol(i, 'useyn', e.target.checked)} />
                     </td>
                   </tr>
                 ))}

@@ -97,7 +97,7 @@ export default function MasterTablesPage() {
             enabled:    'y',
             bgcolor:    '#ffffff',
             color:      '#000000',
-            align:      col.datatypecd === 'I' ? 'right' : 'left',
+            align:      ['number', 'currency'].includes(col.datatypecd) ? 'right' : 'left',
             fontweight: 'normal',
             fontsize:   14,
             width:      100,

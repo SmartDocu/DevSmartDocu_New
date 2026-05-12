@@ -38,6 +38,7 @@ class DataColItem(BaseModel):
     dispcolnm: Optional[str] = None
     datatypecd: Optional[str] = None
     measureyn: Optional[bool] = False
+    useyn: Optional[bool] = True
     orderno: Optional[int] = None
 
 
@@ -49,6 +50,7 @@ class DbDataSaveRequest(BaseModel):
     datauid: Optional[str] = None
     projectid: int
     datanm: str
+    desc: Optional[str] = None
     connectid: Optional[int] = None
     query: Optional[str] = None
     databasiscd: Optional[str] = None
