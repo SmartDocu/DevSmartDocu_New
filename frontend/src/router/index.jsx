@@ -52,6 +52,8 @@ import MasterAiTablesPage from '@/pages/master/MasterAiTablesPage'
 import MasterChapterTemplatePage from '@/pages/master/MasterChapterTemplatePage'
 import MasterConditionsPage from '@/pages/master/MasterConditionsPage'
 import MasterDatasetPage from '@/pages/master/MasterDatasetPage'
+import MasterChatTablesPage from '@/pages/master/MasterChatTablesPage'
+import MasterChatColumnsPage from '@/pages/master/MasterChatColumnsPage'
 import ExperiencePage from '@/pages/public/ExperiencePage'
 
 export const router = createBrowserRouter([
@@ -89,6 +91,8 @@ export const router = createBrowserRouter([
       { path: 'master/docs', element: <MasterDocsPage /> },
       { path: 'master/conditions', element: <MasterConditionsPage /> },
       { path: 'master/datasets', element: <MasterDatasetPage /> },
+      { path: 'master/chat/tables', element: <MasterChatTablesPage /> },
+      { path: 'master/chat/columns', element: <MasterChatColumnsPage /> },
       { path: 'master/chapter-template', element: <MasterChapterTemplatePage /> },
       { path: 'master/chapters', element: <MasterChaptersPage /> },
 

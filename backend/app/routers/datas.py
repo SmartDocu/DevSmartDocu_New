@@ -470,7 +470,7 @@ def get_datacols(datauid: str, token: str = Depends(get_token)):
     sb = _sb(token)
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("datacols")
-        .select("*").eq("datauid", datauid).order("orderno")
+        .select("*").eq("datauid", datauid).eq("useyn", True).order("orderno")
         .execute().data or []
     )
     return {"columns": rows}
@@ -576,6 +576,7 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
             "dispcolnm":  c,
             "datatypecd": "string",
             "useyn":      True,
+            "measureyn":  False,
             "creator":    str(user.id),
             "orderno":    i,
         }

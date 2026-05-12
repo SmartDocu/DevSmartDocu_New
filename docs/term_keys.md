@@ -1,141 +1,170 @@
 # 다국어 Term Key 목록
 
-프로젝트 전체 수집 기준일: 2026-05-06  
+프로젝트 전체 수집 기준일: 2026-05-12  
 ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
-
-> **참고**: `cod.chart.*` 옵션 키가 `lbl.chart.*` 로 prefix 변경됨 (DB 기준)
 
 ---
 
-## 1. cod. (46개)
+## 1. cod. (63개)
 
 ### code.ai_chart (9개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.ai_chart.bar | Bar |
-| cod.ai_chart.boxplot | Box Plot |
-| cod.ai_chart.dual_axis | Dual Axis |
-| cod.ai_chart.heatmap | Heatmap |
-| cod.ai_chart.histogram | Histogram |
-| cod.ai_chart.line | Line |
-| cod.ai_chart.pie | Pie |
-| cod.ai_chart.scatter | Scatter |
-| cod.ai_chart.subplot | Subplot |
+| term_key |
+|----------|
+| cod.ai_chart.bar |
+| cod.ai_chart.boxplot |
+| cod.ai_chart.dual_axis |
+| cod.ai_chart.heatmap |
+| cod.ai_chart.histogram |
+| cod.ai_chart.line |
+| cod.ai_chart.pie |
+| cod.ai_chart.scatter |
+| cod.ai_chart.subplot |
 
 ### code.ai_sentence (4개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.ai_sentence.predict | Predict |
-| cod.ai_sentence.report | Report |
-| cod.ai_sentence.simple_question | Simple Question |
-| cod.ai_sentence.summary | Summary |
+| term_key |
+|----------|
+| cod.ai_sentence.predict |
+| cod.ai_sentence.report |
+| cod.ai_sentence.simple_question |
+| cod.ai_sentence.summary |
 
 ### code.ai_table (1개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.ai_table.table | Table |
+| term_key |
+|----------|
+| cod.ai_table.table |
 
 ### code.align (3개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.align_center | Center |
-| cod.align_left | Left |
-| cod.align_right | Right |
+| term_key |
+|----------|
+| cod.align_center |
+| cod.align_left |
+| cod.align_right |
+
+### code.databasiscd (3개)
+
+| term_key |
+|----------|
+| cod.databasiscd_dbq |
+| cod.databasiscd_dbs |
+| cod.databasiscd_dbt |
 
 ### code.datasourcecd (2개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.datasourcecd_df | Dataset |
-| cod.datasourcecd_dfv | Variable Dataset |
+| term_key |
+|----------|
+| cod.datasourcecd_df |
+| cod.datasourcecd_dfv |
 
 ### code.is_multirow (2개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.is_multirow_n | Single Row |
-| cod.is_multirow_y | Multi Row |
+| term_key |
+|----------|
+| cod.is_multirow_n |
+| cod.is_multirow_y |
 
-### code.keycoldatatypecd (3개)
+### code.keycoldatatypecd (8개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.keycoldatatypecd_C | Character |
-| cod.keycoldatatypecd_D | Date |
-| cod.keycoldatatypecd_I | Integer |
+| term_key |
+|----------|
+| cod.keycoldatatypecd_boolean |
+| cod.keycoldatatypecd_currency |
+| cod.keycoldatatypecd_date |
+| cod.keycoldatatypecd_datetime |
+| cod.keycoldatatypecd_identifier |
+| cod.keycoldatatypecd_number |
+| cod.keycoldatatypecd_string |
+| cod.keycoldatatypecd_text |
 
 ### code.menu_rolecd (5개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.menu_rolecd_P | All User |
-| cod.menu_rolecd_PM | Project Manager |
-| cod.menu_rolecd_S | System User |
-| cod.menu_rolecd_TM | Tenant Manager |
-| cod.menu_rolecd_U | Login User |
+| term_key |
+|----------|
+| cod.menu_rolecd_P |
+| cod.menu_rolecd_PM |
+| cod.menu_rolecd_S |
+| cod.menu_rolecd_TM |
+| cod.menu_rolecd_U |
 
 ### code.message_typecd (4개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.message_typecd_confirm | confirm |
-| cod.message_typecd_error | Error |
-| cod.message_typecd_info | Information |
-| cod.message_typecd_warn | warn |
+| term_key |
+|----------|
+| cod.message_typecd_confirm |
+| cod.message_typecd_error |
+| cod.message_typecd_info |
+| cod.message_typecd_warn |
 
 ### code.objecttypecd (6개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.objecttypecd_CA | Chart |
-| cod.objecttypecd_CU | Chart |
-| cod.objecttypecd_SA | Sentence |
-| cod.objecttypecd_SU | Sentence |
-| cod.objecttypecd_TA | Table |
-| cod.objecttypecd_TU | Table |
+| term_key |
+|----------|
+| cod.objecttypecd_CA |
+| cod.objecttypecd_CU |
+| cod.objecttypecd_SA |
+| cod.objecttypecd_SU |
+| cod.objecttypecd_TA |
+| cod.objecttypecd_TU |
 
 ### code.term_groupcd (5개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.term_groupcd_btn | Button |
-| cod.term_groupcd_inf | Information |
-| cod.term_groupcd_lbl | Label |
-| cod.term_groupcd_thd | Table Header |
-| cod.term_groupcd_ttl | Title |
+| term_key |
+|----------|
+| cod.term_groupcd_btn |
+| cod.term_groupcd_inf |
+| cod.term_groupcd_lbl |
+| cod.term_groupcd_thd |
+| cod.term_groupcd_ttl |
+
+### code.ui_chart (9개)
+
+| term_key |
+|----------|
+| cod.ui_chart.bar |
+| cod.ui_chart.box |
+| cod.ui_chart.bubble |
+| cod.ui_chart.doughnut |
+| cod.ui_chart.hist |
+| cod.ui_chart.horizontalBar |
+| cod.ui_chart.line |
+| cod.ui_chart.pareto |
+| cod.ui_chart.pie |
 
 ### code.useyn (2개)
 
-| term_key | default_text |
-|----------|--------------|
-| cod.useyn_n | No |
-| cod.useyn_y | Yes |
+| term_key |
+|----------|
+| cod.useyn_n |
+| cod.useyn_y |
 
 ---
 
-## 2. msg. (77개)
+## 2. msg. (93개)
 
 | term_key |
 |----------|
 | msg.ai.input.required |
+| msg.chart.select.required |
 | msg.chapter.required |
 | msg.chapter.select.delete |
+| msg.chat.tables.required |
 | msg.code.groupcd.required |
 | msg.code.select.delete |
 | msg.code.select.trans |
 | msg.code.value.required |
 | msg.col.empty |
-| msg.save.col.created |
 | msg.confirm.delete |
 | msg.confirm.file.overwrite |
 | msg.datanm.required |
+| msg.dataset.filter.readonly |
 | msg.db.required |
 | msg.delete.error |
 | msg.delete.success |
+| msg.deleted |
+| msg.doc.empty |
 | msg.doc.loading |
 | msg.doc.name.duplicate |
 | msg.doc.no.permission |
@@ -145,7 +174,6 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.doc.select.delete |
 | msg.docselect.error |
 | msg.docselect.required |
-| msg.dataset.filter.readonly |
 | msg.docselect.tabs.close |
 | msg.email.required |
 | msg.favorite.error |
@@ -165,6 +193,11 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.password.minlength |
 | msg.password.mismatch |
 | msg.password.required |
+| msg.ph.email |
+| msg.ph.prompt |
+| msg.ph.tenant.select |
+| msg.placeholder.password.change |
+| msg.placeholder.password.confirm |
 | msg.preparing |
 | msg.preview.error |
 | msg.project.not.found |
@@ -186,13 +219,17 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.save.col.warn |
 | msg.save.error |
 | msg.save.success |
+| msg.saved |
 | msg.select |
 | msg.select.chapter |
 | msg.select.data |
 | msg.select.delete |
 | msg.select.placeholder |
 | msg.select.project |
+| msg.sentence.preview.required |
 | msg.server.error |
+| msg.sidebar.favorites |
+| msg.sidebar.search |
 | msg.source.select |
 | msg.tab.maxcount |
 | msg.template.none |
@@ -200,76 +237,106 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.term.select.delete |
 | msg.term.select.trans |
 | msg.usernm.required |
-| msg.ph.email |
-| msg.ph.prompt |
-| msg.ph.tenant.select |
-| msg.placeholder.password.change |
-| msg.placeholder.password.confirm |
-| msg.sidebar.favorites |
-| msg.sidebar.search |
 
 ---
 
-## 3. mnu. (6개)
+## 3. mnu. (43개)
 
 | term_key |
 |----------|
+| mnu.company |
+| mnu.company.llm |
+| mnu.company.llm_api |
+| mnu.company.request |
+| mnu.company.tenants |
+| mnu.db |
+| mnu.db.dataset |
+| mnu.db.servers |
+| mnu.dev |
+| mnu.dev.mcp |
+| mnu.dev.rag |
+| mnu.document |
+| mnu.master_data |
+| mnu.master_data.chapters |
+| mnu.master_data.chapters.base |
+| mnu.master_data.chapters.chapter-template |
+| mnu.master_data.chat |
+| mnu.master_data.chat.columns |
+| mnu.master_data.chat.tables |
+| mnu.master_data.data |
+| mnu.master_data.data.ai |
+| mnu.master_data.data.dataset |
+| mnu.master_data.data.excel |
+| mnu.master_data.docs |
 | mnu.master_data.docs.base |
+| mnu.master_data.docs.condition |
+| mnu.master_data.docs.dataset |
+| mnu.master_data.objects |
+| mnu.master_data.objects.base |
+| mnu.project |
+| mnu.project.llm |
+| mnu.project.project_users |
+| mnu.project.projects |
+| mnu.project.users |
+| mnu.system |
+| mnu.system.help |
+| mnu.system.translation |
 | mnu.system.translation.codes |
 | mnu.system.translation.menus |
 | mnu.system.translation.messages |
 | mnu.system.translation.sample_prompt |
 | mnu.system.translation.terms |
+| mnu.system.users |
 
 ---
 
-## 4. 기타 prefix (btn / lbl / thd / ttl / inf)
+## 4. btn. (31개)
 
-> suffix 규칙: 동일 base key가 여러 group에 존재하면 `_{group}` 추가  
-> 예) `orderno` → `orderno_lbl` (lbl), `orderno_thd` (thd)
+| term_key |
+|----------|
+| btn.apply |
+| btn.cancel |
+| btn.color.hide |
+| btn.color.show |
+| btn.colormap.hide |
+| btn.colormap.show |
+| btn.delete |
+| btn.login_btn |
+| btn.login.ing |
+| btn.logout |
+| btn.new |
+| btn.object.manage |
+| btn.objectconfig |
+| btn.ok |
+| btn.preview_btn |
+| btn.prompt.replace |
+| btn.register_btn |
+| btn.register.ing |
+| btn.reset.password |
+| btn.reset.send |
+| btn.sample.prompt |
+| btn.save |
+| btn.savecols |
+| btn.setting |
+| btn.tab.close.left |
+| btn.tab.close.others |
+| btn.tab.close.right |
+| btn.tab.close.this |
+| btn.template.edit |
+| btn.upgrade |
+| btn.upload_btn |
 
-### btn. (31개)
+---
 
-| term_key | default_text |
-|----------|--------------|
-| btn.apply | Apply |
-| btn.cancel | Cancel |
-| btn.color.hide | Hide Colors |
-| btn.color.show | Show Colors |
-| btn.colormap.hide | Hide Colormap |
-| btn.colormap.show | Show Colormap |
-| btn.delete | Delete |
-| btn.login_btn | Login |
-| btn.login.ing | Login in progress |
-| btn.logout | Logout |
-| btn.new | New |
-| btn.object.manage | Object Manage |
-| btn.objectconfig | Object Config |
-| btn.ok | OK |
-| btn.preview_btn | Preview |
-| btn.prompt.replace | Replace Prompt |
-| btn.register_btn | Register |
-| btn.register.ing | Register Progressing |
-| btn.reset.password | Reset Password |
-| btn.reset.send | Send Reset Email |
-| btn.sample.prompt | Sample Prompt |
-| btn.save | Save |
-| btn.setting | Setting |
-| btn.savecols | Save Columns |
-| btn.tab.close.left | Close Tabs to Left |
-| btn.tab.close.others | Close Other Tabs |
-| btn.tab.close.right | Close Tabs to Right |
-| btn.tab.close.this | Close Tab |
-| btn.template.edit | Template Edit |
-| btn.upgrade | Upgrade |
-| btn.upload_btn | Upload |
+## 5. lbl. (일반 레이블 95개 + chart 59개 = 154개)
 
-### lbl. (일반 레이블)
+### 일반 레이블 (95개)
 
 | term_key |
 |----------|
 | lbl.agree.all |
 | lbl.align |
+| lbl.aliases |
 | lbl.bgcolor |
 | lbl.billing.model |
 | lbl.billing.multi |
@@ -278,13 +345,14 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.bordercolor |
 | lbl.chapternm |
 | lbl.chapterno |
-| lbl.chart.type_lbl |
+| lbl.child_column |
 | lbl.codegroupcd_lbl |
 | lbl.codevalue_lbl |
 | lbl.color.ref |
 | lbl.colnames |
 | lbl.connectnm_lbl |
 | lbl.connecttype_lbl |
+| lbl.databasiscd |
 | lbl.datanm_lbl |
 | lbl.dataset_lbl |
 | lbl.dataset.unused |
@@ -294,9 +362,10 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.datauid_lbl |
 | lbl.default_message |
 | lbl.default_message_lbl |
-| lbl.desc_lbl |
 | lbl.default_name_lbl |
 | lbl.default_text_lbl |
+| lbl.default_time_column |
+| lbl.desc_lbl |
 | lbl.description |
 | lbl.dim.cols |
 | lbl.doc |
@@ -308,6 +377,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.file |
 | lbl.fontcolor |
 | lbl.fontsize |
+| lbl.grain |
 | lbl.iconnm_lbl |
 | lbl.joindt |
 | lbl.keycoldatatypecd |
@@ -328,30 +398,36 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.ordercolnm |
 | lbl.orderno_lbl |
 | lbl.paramnm_lbl |
+| lbl.parent_column |
+| lbl.parent_schema |
+| lbl.parent_table |
 | lbl.password |
 | lbl.password.confirm |
 | lbl.plan |
 | lbl.plan.free |
 | lbl.plan.pro |
+| lbl.primary_key |
 | lbl.project |
 | lbl.projectnm_lbl |
 | lbl.prompt |
 | lbl.promptkey_lbl |
 | lbl.prompttypecd_lbl |
+| lbl.purpose |
 | lbl.query |
+| lbl.query_examples |
 | lbl.required |
 | lbl.reset.email |
-| lbl.select |
 | lbl.rolecd_lbl |
 | lbl.route_path |
 | lbl.sample |
 | lbl.samplevalue |
+| lbl.select |
 | lbl.sentence.type |
 | lbl.sort |
 | lbl.source.data |
+| lbl.status |
 | lbl.tag1_lbl |
 | lbl.tag2_lbl |
-| lbl.status |
 | lbl.template.upload |
 | lbl.tenant |
 | lbl.tenantnm |
@@ -362,93 +438,100 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.usernm |
 | lbl.useyn_lbl |
 
-### lbl.chart.legendpos.* — 범례 위치 옵션 (11개)
+### lbl.chart.legendpos.* (11개)
 
-| term_key | default_text |
-|----------|--------------|
-| lbl.chart.legendpos.best | Auto |
-| lbl.chart.legendpos.center | Center |
-| lbl.chart.legendpos.center_left | Center Left |
-| lbl.chart.legendpos.center_right | Center Right |
-| lbl.chart.legendpos.lower_center | Lower Center |
-| lbl.chart.legendpos.lower_left | Lower Left |
-| lbl.chart.legendpos.lower_right | Lower Right |
-| lbl.chart.legendpos.right | Right |
-| lbl.chart.legendpos.upper_center | Upper Center |
-| lbl.chart.legendpos.upper_left | Upper Left |
-| lbl.chart.legendpos.upper_right | Upper Right |
+| term_key |
+|----------|
+| lbl.chart.legendpos.best |
+| lbl.chart.legendpos.center |
+| lbl.chart.legendpos.center_left |
+| lbl.chart.legendpos.center_right |
+| lbl.chart.legendpos.lower_center |
+| lbl.chart.legendpos.lower_left |
+| lbl.chart.legendpos.lower_right |
+| lbl.chart.legendpos.right |
+| lbl.chart.legendpos.upper_center |
+| lbl.chart.legendpos.upper_left |
+| lbl.chart.legendpos.upper_right |
 
-### lbl.chart.linestyle.* — 선 스타일 옵션 (4개)
+### lbl.chart.linestyle.* (4개)
 
-| term_key | default_text |
-|----------|--------------|
-| lbl.chart.linestyle.dash_dot | Dash-Dot |
-| lbl.chart.linestyle.dashed | Dashed |
-| lbl.chart.linestyle.dotted | Dotted |
-| lbl.chart.linestyle.solid | Solid |
+| term_key |
+|----------|
+| lbl.chart.linestyle.dash_dot |
+| lbl.chart.linestyle.dashed |
+| lbl.chart.linestyle.dotted |
+| lbl.chart.linestyle.solid |
 
-### lbl.chart.marker.* — 마커 모양 옵션 (4개)
+### lbl.chart.marker.* (4개)
 
-| term_key | default_text |
-|----------|--------------|
-| lbl.chart.marker.circle | Circle |
-| lbl.chart.marker.diamond | Diamond |
-| lbl.chart.marker.square | Square |
-| lbl.chart.marker.triangle | Triangle |
+| term_key |
+|----------|
+| lbl.chart.marker.circle |
+| lbl.chart.marker.diamond |
+| lbl.chart.marker.square |
+| lbl.chart.marker.triangle |
 
-### lbl.chart.valueformat.* — 값 포맷 옵션 (3개)
+### lbl.chart.valueformat.* (3개)
 
-| term_key | default_text |
-|----------|--------------|
-| lbl.chart.valueformat.percent | Percent |
-| lbl.chart.valueformat.value | Value |
-| lbl.chart.valueformat.value_percent | Value + Percent |
+| term_key |
+|----------|
+| lbl.chart.valueformat.percent |
+| lbl.chart.valueformat.value |
+| lbl.chart.valueformat.value_percent |
 
-### lbl.chart.prop.* — 차트 속성 필드 레이블 (37개)
+### lbl.chart.prop.* (37개)
 
-> `chart_definitions.py`의 각 property `term_key` 값. `MasterChartsPage` 설정 패널에 표시됨.
+| term_key |
+|----------|
+| lbl.chart.prop.barGap |
+| lbl.chart.prop.barWidth |
+| lbl.chart.prop.bins |
+| lbl.chart.prop.box.categoryField |
+| lbl.chart.prop.box.valueField |
+| lbl.chart.prop.categoryField |
+| lbl.chart.prop.colorPalette |
+| lbl.chart.prop.cutout |
+| lbl.chart.prop.hbar.xField |
+| lbl.chart.prop.hbar.xLabel |
+| lbl.chart.prop.hbar.yField |
+| lbl.chart.prop.hbar.yLabel |
+| lbl.chart.prop.labelField |
+| lbl.chart.prop.legendPosition |
+| lbl.chart.prop.lineStyle |
+| lbl.chart.prop.lineWidth |
+| lbl.chart.prop.marker |
+| lbl.chart.prop.markerSize |
+| lbl.chart.prop.notch |
+| lbl.chart.prop.pareto.labelField |
+| lbl.chart.prop.pareto.yField |
+| lbl.chart.prop.rwidth |
+| lbl.chart.prop.showDataLabels |
+| lbl.chart.prop.showFliers |
+| lbl.chart.prop.showGroupLabels |
+| lbl.chart.prop.showMarkers |
+| lbl.chart.prop.showMeans |
+| lbl.chart.prop.sizeField |
+| lbl.chart.prop.title |
+| lbl.chart.prop.valueField |
+| lbl.chart.prop.valueFormat |
+| lbl.chart.prop.whis |
+| lbl.chart.prop.widths |
+| lbl.chart.prop.xField |
+| lbl.chart.prop.xLabel |
+| lbl.chart.prop.yField |
+| lbl.chart.prop.yLabel |
 
-| term_key | default_text |
-|----------|--------------|
-| lbl.chart.prop.title | Chart Title |
-| lbl.chart.prop.xField | X-Axis Field |
-| lbl.chart.prop.xLabel | X-Axis Label |
-| lbl.chart.prop.yField | Y-Axis Field |
-| lbl.chart.prop.yLabel | Y-Axis Label |
-| lbl.chart.prop.categoryField | Category |
-| lbl.chart.prop.colorPalette | Color Theme |
-| lbl.chart.prop.showDataLabels | Show Data Labels |
-| lbl.chart.prop.barWidth | Bar Width |
-| lbl.chart.prop.barGap | Bar Gap |
-| lbl.chart.prop.legendPosition | Legend Position |
-| lbl.chart.prop.showMarkers | Show Markers |
-| lbl.chart.prop.lineStyle | Line Style |
-| lbl.chart.prop.lineWidth | Line Width |
-| lbl.chart.prop.marker | Marker Shape |
-| lbl.chart.prop.markerSize | Marker Size |
-| lbl.chart.prop.labelField | Label Field |
-| lbl.chart.prop.valueField | Value Field |
-| lbl.chart.prop.valueFormat | Value Format |
-| lbl.chart.prop.cutout | Cutout (%) |
-| lbl.chart.prop.sizeField | Size Field |
-| lbl.chart.prop.showGroupLabels | Show Group Labels |
-| lbl.chart.prop.bins | Bins |
-| lbl.chart.prop.rwidth | Bar Width Ratio |
-| lbl.chart.prop.notch | Notch |
-| lbl.chart.prop.showMeans | Show Means |
-| lbl.chart.prop.showFliers | Show Fliers |
-| lbl.chart.prop.widths | Box Width |
-| lbl.chart.prop.whis | Whisker Range |
-| lbl.chart.prop.hbar.xField | Y-Axis Field (horizontalBar) |
-| lbl.chart.prop.hbar.xLabel | Y-Axis Label (horizontalBar) |
-| lbl.chart.prop.hbar.yField | X-Axis Field (horizontalBar) |
-| lbl.chart.prop.hbar.yLabel | X-Axis Label (horizontalBar) |
-| lbl.chart.prop.box.categoryField | X-Axis Field (box plot) |
-| lbl.chart.prop.box.valueField | Y-Axis Field (box plot) |
-| lbl.chart.prop.pareto.labelField | X-Axis Data (pareto) |
-| lbl.chart.prop.pareto.yField | Y-Axis Data (pareto) |
+### lbl.chart 기타 (2개)
 
-### thd. (49개)
+| term_key |
+|----------|
+| lbl.chart.size |
+| lbl.chart.type_lbl |
+
+---
+
+## 6. thd. (54개)
 
 | term_key |
 |----------|
@@ -469,10 +552,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.default_name_thd |
 | thd.default_text_thd |
 | thd.dispcolnm |
+| thd.email_thd |
 | thd.fontcolor_thd |
 | thd.fontsize_thd |
 | thd.languagecd |
 | thd.languagenm |
+| thd.logical_name_thd |
 | thd.measureyn |
 | thd.menucd_thd |
 | thd.messagekey_thd |
@@ -500,9 +585,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.translated_text2_thd |
 | thd.translated_title_thd |
 | thd.useyn_thd |
+| thd.value_count_thd |
+| thd.value_thd |
 | thd.width_px |
 
-### ttl. (34개)
+---
+
+## 7. ttl. (38개)
 
 | term_key |
 |----------|
@@ -511,6 +600,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.ai.table.manage |
 | ttl.chapter.list |
 | ttl.chart.manage |
+| ttl.chart.settings |
+| ttl.chart.type |
 | ttl.col.info |
 | ttl.condition |
 | ttl.data.list |
@@ -535,20 +626,81 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.prompt_ttl |
 | ttl.register_ttl |
 | ttl.sample.list |
+| ttl.sample.prompt_ttl |
 | ttl.sentence.manage |
 | ttl.table.manage |
 | ttl.translations |
 | ttl.value.settings |
 
-### inf. (5개)
+---
 
-| term_key | default_text |
-|----------|--------------|
-| inf.gensentence.default | Analyze the data and write the results in a clear, descriptive sentence.\nData: {data}\nResult: |
-| inf.iconnm_inf | Enter icon class name (e.g., HomeOutlined) |
-| inf.password.hidden | * Existing password is not displayed |
-| inf.preview.empty | No preview results. Click Preview button. |
-| inf.preview.rows | Display Only 5 Rows |
+## 8. inf. (5개)
+
+| term_key |
+|----------|
+| inf.gensentence.default |
+| inf.iconnm_inf |
+| inf.password.hidden |
+| inf.preview.empty |
+| inf.preview.rows |
+
+---
+
+## 9. prm. (51개)
+
+| term_key |
+|----------|
+| prm.chart_bar_99_text1 |
+| prm.chart_bar_99_text2 |
+| prm.chart_bar_99_title |
+| prm.chart_bar_text1 |
+| prm.chart_bar_text2 |
+| prm.chart_bar_title |
+| prm.chart_boxplot_text1 |
+| prm.chart_boxplot_text2 |
+| prm.chart_boxplot_title |
+| prm.chart_dual_axis_text1 |
+| prm.chart_dual_axis_text2 |
+| prm.chart_dual_axis_title |
+| prm.chart_heatmap_text1 |
+| prm.chart_heatmap_text2 |
+| prm.chart_heatmap_title |
+| prm.chart_histogram_text1 |
+| prm.chart_histogram_text2 |
+| prm.chart_histogram_title |
+| prm.chart_line_text1 |
+| prm.chart_line_text2 |
+| prm.chart_line_title |
+| prm.chart_pie_text1 |
+| prm.chart_pie_text2 |
+| prm.chart_pie_title |
+| prm.chart_samplt_scatter_text1 |
+| prm.chart_samplt_scatter_text2 |
+| prm.chart_samplt_scatter_title |
+| prm.chart_subplot_different_type_text1 |
+| prm.chart_subplot_different_type_text2 |
+| prm.chart_subplot_different_type_title |
+| prm.chart_subplot_same_type_text1 |
+| prm.chart_subplot_same_type_text2 |
+| prm.chart_subplot_same_type_title |
+| prm.sentence_predict_01_text1 |
+| prm.sentence_predict_01_text2 |
+| prm.sentence_predict_01_title |
+| prm.sentence_predict_text1 |
+| prm.sentence_predict_text2 |
+| prm.sentence_predict_title |
+| prm.sentence_report_text1 |
+| prm.sentence_report_text2 |
+| prm.sentence_report_title |
+| prm.sentence_simple_text1 |
+| prm.sentence_simple_text2 |
+| prm.sentence_simple_title |
+| prm.sentence_summary_text1 |
+| prm.sentence_summary_text2 |
+| prm.sentence_summary_title |
+| prm.table_apqr_summary_text1 |
+| prm.table_apqr_summary_text2 |
+| prm.table_apqr_summary_title |
 
 ---
 
@@ -556,16 +708,25 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 | prefix | 개수 |
 |--------|------|
-| cod.   | 46   |
-| msg.   | 83   |
-| mnu.   | 6    |
+| cod.   | 63   |
+| msg.   | 93   |
+| mnu.   | 43   |
 | btn.   | 31   |
-| lbl.   | 146  |
-| thd.   | 49   |
-| ttl.   | 34   |
+| lbl.   | 154  |
+| thd.   | 54   |
+| ttl.   | 38   |
 | inf.   | 5    |
-| **합계** | **400** |
+| prm.   | 51   |
+| **합계** | **532** |
 
-> lbl 139 = 일반 레이블 84 + legendpos 11 + linestyle 4 + marker 4 + valueformat 3 + chart.prop 37 - 중복 4(barWidth/barGap/bins/box.categoryField는 prop에 포함)  
-> ※ DB 조회 결과(idx 0-99) 기준; lbl 일부는 기존 파일 유지
-
+### 2026-05-12 변경 내역
+- `cod.keycoldatatypecd_C/D/I` 삭제 (구버전)
+- `cod.keycoldatatypecd_boolean/currency/date/datetime/identifier/number/string/text` 추가 (8개)
+- `cod.databasiscd_dbq/dbs/dbt` 추가 (3개)
+- `cod.ui_chart.*` 추가 (9개)
+- `lbl.aliases/child_column/databasiscd/default_time_column/grain/parent_column/parent_schema/parent_table/primary_key/purpose/query_examples/chart.size` 추가 (12개)
+- `msg.deleted/saved/chat.tables.required/doc.empty/chart.select.required/sentence.preview.required/select.col` 추가 (7개)
+- `thd.aliases_thd/email_thd/logical_name_thd/value_count_thd/value_thd` 추가 (5개)
+- `ttl.chart.settings/chart.type/col.detail/colvalue.info/sample.prompt_ttl` 추가 (5개)
+- `mnu.*` 전체 재정리 (6→43개)
+- `prm.*` 섹션 신규 추가 (51개)

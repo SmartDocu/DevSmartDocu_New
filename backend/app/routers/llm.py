@@ -227,7 +227,7 @@ def llm_get_columns(datauid: str, token: str = Depends(get_token)):
     sb = get_sb(token)
     rows = sb.schema(SUPABASE_SCHEMA).table("datacols").select(
         "querycolnm, dispcolnm, orderno"
-    ).eq("datauid", datauid).execute().data or []
+    ).eq("datauid", datauid).eq("useyn", True).execute().data or []
 
     sorted_rows = sorted(
         [r for r in rows if r.get("orderno") is not None],
