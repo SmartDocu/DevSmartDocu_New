@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = ""
 
     # 이메일
+    EMAIL_HOST_USER: str = ""
     EMAIL_HOST_PASSWORD: str = ""
 
     # SMS (Naver Cloud)

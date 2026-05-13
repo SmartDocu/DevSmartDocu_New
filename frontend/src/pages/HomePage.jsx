@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { useLangStore, t } from '@/stores/langStore'
 
 const slides = [
   {
@@ -20,7 +21,8 @@ const slides = [
 ]
 
 export default function HomePage() {
-  const navigate = useNavigate()
+  const openInTab = useOpenInTab()
+  useLangStore((s) => s.translations)
   const [current, setCurrent] = useState(0)
   const timerRef = useRef(null)
 
@@ -129,7 +131,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => navigate('/experience')}
+              onClick={() => openInTab('experience')}
             >
               체험 시작
             </button>
@@ -142,7 +144,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => navigate('/follow')}
+              onClick={() => openInTab('follow')}
             >
               따라하기
             </button>
@@ -157,7 +159,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => navigate('/contact')}
+              onClick={() => openInTab('contact', '', t('ttl.contact'))}
             >
               문의
             </button>

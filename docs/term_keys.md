@@ -184,6 +184,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.code.value.required |
 | msg.col.empty |
 | msg.confirm.delete |
+| msg.contact.error |
+| msg.contact.required |
+| msg.contact.success |
 | msg.confirm.file.overwrite |
 | msg.datanm.required |
 | msg.dataset.filter.readonly |
@@ -206,7 +209,10 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.favorite.error |
 | msg.init.load.error |
 | msg.load.error |
+| msg.llmmodel.required |
+| msg.llmmodelnm.required |
 | msg.loading |
+| msg.usetypecd.required |
 | msg.loading.wait |
 | msg.login.failed |
 | msg.menu.required |
@@ -349,6 +355,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.reset.send |
 | btn.sample.prompt |
 | btn.save |
+| btn.send |
 | btn.savecols |
 | btn.setting |
 | btn.tab.close.left |
@@ -369,6 +376,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 |----------|
 | lbl.agree.all |
 | lbl.align |
+| lbl.address |
 | lbl.aliases |
 | lbl.bgcolor |
 | lbl.billing.model |
@@ -401,7 +409,6 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.default_text_lbl |
 | lbl.default_time_column |
 | lbl.desc_lbl |
-| lbl.description |
 | lbl.dim.cols |
 | lbl.doc |
 | lbl.docnm |
@@ -422,9 +429,11 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.keycolnm |
 | lbl.measure.cols |
 | lbl.menucd_lbl |
+| lbl.message_lbl |
 | lbl.messagekey_lbl |
 | lbl.messagetypecd_lbl |
 | lbl.myrole |
+| lbl.name |
 | lbl.nmcolnm |
 | lbl.not.agreed |
 | lbl.newuser |
@@ -464,6 +473,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.sentence.type |
 | lbl.sort |
 | lbl.source.data |
+| lbl.subject |
 | lbl.status |
 | lbl.tag1_lbl |
 | lbl.tag2_lbl |
@@ -472,8 +482,11 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.tenantnm |
 | lbl.tenant.icon |
 | lbl.billingusercnt |
+| lbl.isdefault |
 | lbl.issystemtenant |
 | lbl.llmlimityn |
+| lbl.llmmodelnicknm |
+| lbl.llmvendornm |
 | lbl.telno |
 | lbl.timezone |
 | lbl.termgroupcd_lbl |
@@ -596,6 +609,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.decimal |
 | thd.default_name_thd |
 | thd.default_text_thd |
+| thd.desc_thd |
 | thd.dispcolnm |
 | thd.activeyn_thd |
 | thd.billingmodelcd |
@@ -604,7 +618,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.fontsize_thd |
 | thd.languagecd |
 | thd.llmmodelnm_thd |
+| thd.llmmodelnicknm_thd |
 | thd.llmmodeluseyn_thd |
+| thd.llmvendornm_thd |
 | thd.languagenm |
 | thd.logical_name_thd |
 | thd.measureyn |
@@ -636,6 +652,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.translated_title_thd |
 | thd.useyn_thd |
 | thd.usernm_thd |
+| thd.usetypecd_thd |
 | thd.value_count_thd |
 | thd.value_thd |
 | thd.width_px |
@@ -655,6 +672,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.chart.type |
 | ttl.col.info |
 | ttl.condition |
+| ttl.contact |
 | ttl.data.list |
 | ttl.data.preview |
 | ttl.datacols |
@@ -774,6 +792,22 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | inf.   | 6    |
 | prm.   | 51   |
 | **합계** | **574** |
+
+### 2026-05-13 변경 내역 (8차 — ContactPage)
+- `lbl.address`, `lbl.name`, `lbl.subject`, `lbl.message_lbl` 추가 (4개) — 문의 폼 라벨/플레이스홀더
+- `btn.send` 추가 (1개) — 메세지 보내기 버튼
+- `msg.contact.required`, `msg.contact.success`, `msg.contact.error` 추가 (3개) — 문의 폼 메시지
+
+### 2026-05-13 변경 내역 (7차 — AdminLlmApisPage)
+- `thd.usetypecd_thd`, `thd.desc_thd` 추가 (2개) — LLM API 목록 테이블 헤더
+- `lbl.usetypecd` 추가 (1개) — 사용 유형 폼 라벨
+- `ttl.llmapi.detail` 추가 (1개) — LLM API 상세 제목
+- `msg.llmmodel.required`, `msg.usetypecd.required` 추가 (2개) — 필수 입력 경고 메시지
+
+### 2026-05-13 변경 내역 (6차 — AdminLlmsPage)
+- `thd.llmvendornm_thd`, `thd.llmmodelnicknm_thd` 추가 (2개) — LLM 목록 테이블 헤더
+- `lbl.llmvendornm`, `lbl.llmmodelnicknm`, `lbl.isdefault` 추가 (3개) — LLM 상세 폼 라벨
+- `msg.llmmodelnm.required` 추가 (1개) — LLM 모델명 필수 입력 메시지
 
 ### 2026-05-13 변경 내역 (5차 — SettingsTenantsPage)
 - `cod.billing_Fr/Pr/Te/En` 추가 (4개)

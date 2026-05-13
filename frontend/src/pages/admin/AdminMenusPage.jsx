@@ -187,7 +187,7 @@ export default function AdminMenusPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="menu-description">{t('lbl.description')}:</label>
+            <label htmlFor="menu-description">{t('lbl.desc_lbl')}:</label>
             <textarea
               id="menu-description"
               rows={3}

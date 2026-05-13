@@ -440,8 +440,9 @@ def send_contact(body: ContactRequest):
     subject = f"[D2Doc 홈페이지 문의] {body.title}"
     mail_body = f"이름: {body.name}\n이메일: {body.email}\n\n문의 내용:\n{body.message}"
 
-    recipient = "sales@rootel.kr"
+    login_user = settings.EMAIL_HOST_USER
     sender = "sales@rootel.kr"
+    recipient = login_user
 
     try:
         msg = MIMEText(mail_body, "plain", "utf-8")
@@ -450,8 +451,8 @@ def send_contact(body: ContactRequest):
         msg["To"] = recipient
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(sender, settings.EMAIL_HOST_PASSWORD)
-            smtp.sendmail(sender, [recipient], msg.as_string())
+            smtp.login(login_user, settings.EMAIL_HOST_PASSWORD)
+            smtp.sendmail(login_user, [recipient], msg.as_string())
 
         return {"result": "success", "message": "문의가 성공적으로 전송되었습니다."}
     except Exception as e:

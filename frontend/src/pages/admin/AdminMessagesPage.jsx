@@ -203,7 +203,7 @@ setSelectedMessage(msg)
             />
           </div>
           <div className="form-group">
-            <label htmlFor="msg-description">{t('lbl.description')}:</label>
+            <label htmlFor="msg-description">{t('lbl.desc_lbl')}:</label>
             <textarea
               id="msg-description"
               rows={3}

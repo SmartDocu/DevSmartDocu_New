@@ -186,7 +186,7 @@ export default function AppLayout() {
         >
           {/* 로고 + 이름 */}
           <div
-            onClick={() => navigate('/')}
+            onClick={() => { clearTabs(); navigate('/') }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
           >
             <img src="/D2Doc.svg" alt="로고" style={{ height: 32, width: 'auto' }} />

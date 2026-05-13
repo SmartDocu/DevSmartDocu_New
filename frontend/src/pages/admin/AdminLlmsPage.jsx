@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { App } from 'antd'
 import { useAdminLlms, useSaveLlm, useDeleteLlm } from '@/hooks/useAdmin'
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function AdminLlmsPage() {
   const { message, modal } = App.useApp()
   const { data = {}, isLoading } = useAdminLlms()
   const saveMutation = useSaveLlm()
   const deleteMutation = useDeleteLlm()
+  useLangStore((s) => s.translations)
 
   const { llmmodels = [] } = data
 
@@ -32,7 +34,7 @@ export default function AdminLlmsPage() {
   }
 
   const handleSave = () => {
-    if (!form.llmmodelnm.trim()) { message.warning('LLM 모델명을 입력하세요.'); return }
+    if (!form.llmmodelnm.trim()) { message.warning(t('msg.llmmodelnm.required')); return }
     saveMutation.mutate(
       {
         llmmodelnm: form.llmmodelnm,
@@ -47,11 +49,11 @@ export default function AdminLlmsPage() {
   }
 
   const handleDelete = () => {
-    if (!selectedRow) { message.warning('삭제할 LLM을 먼저 선택하세요.'); return }
+    if (!selectedRow) { message.warning(t('msg.select.delete')); return }
     modal.confirm({
-      title: '삭제 확인',
-      content: `"${selectedRow.llmmodelnm}" LLM을 삭제하시겠습니까?`,
-      okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
+      title: t('msg.confirm.delete'),
+      content: `"${selectedRow.llmmodelnm}" ${t('msg.confirm.delete')}`,
+      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteMutation.mutate(selectedRow.llmmodelnm, { onSuccess: handleNew }),
     })
   }
@@ -61,14 +63,19 @@ export default function AdminLlmsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>LLM 관리</div>
+          <div>{t('mnu.company.llm')}</div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
-        {/* 왼쪽: LLM 목록 */}
-        <div style={{ flex: '60%' }}>
-          <h3>LLM 목록</h3>
+        {/* 좌측: LLM 목록 */}
+        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              {t('btn.new')}
+            </button>
+          </div>
           <div className="table-container">
             {isLoading ? (
               <div style={{ textAlign: 'center', padding: 32 }}><div className="spinner" /></div>
@@ -76,12 +83,10 @@ export default function AdminLlmsPage() {
               <table id="llms-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '10%' }}>LLM 벤더명</th>
-                    <th style={{ width: '25%' }}>LLM 모델명</th>
-                    <th style={{ width: '20%' }}>LLM 모델 별칭</th>
-                    <th style={{ width: '8%' }} className="info">사용</th>
-                    <th style={{ width: '10%' }}>등록자</th>
-                    <th style={{ width: '10%' }}>등록일시</th>
+                    <th style={{ width: '15%' }}>{t('thd.llmvendornm_thd')}</th>
+                    <th style={{ width: '35%' }}>{t('thd.llmmodelnm_thd')}</th>
+                    <th style={{ width: '30%' }}>{t('thd.llmmodelnicknm_thd')}</th>
+                    <th style={{ width: '10%' }} className="info">{t('thd.useyn_thd')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -96,8 +101,6 @@ export default function AdminLlmsPage() {
                       <td>{llm.llmmodelnm}</td>
                       <td>{llm.llmmodelnicknm}</td>
                       <td className="info">{llm.useyn ? '✔' : ''}</td>
-                      <td>{llm.createuser}</td>
-                      <td>{llm.createdts}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -106,11 +109,23 @@ export default function AdminLlmsPage() {
           </div>
         </div>
 
-        {/* 오른쪽: LLM 상세 */}
-        <div style={{ flex: '40%' }}>
-          <h3>LLM 상세</h3>
+        {/* 우측: LLM 상세 */}
+        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.llm.detail')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
+                {t('btn.save')}
+              </button>
+              {selectedRow && (
+                <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteMutation.isPending}>
+                  {t('btn.delete')}
+                </button>
+              )}
+            </div>
+          </div>
           <div className="form-group">
-            <label>LLM 벤더명:</label>
+            <label>{t('lbl.llmvendornm')}:</label>
             <input
               type="text"
               value={form.llmvendornm}
@@ -118,7 +133,7 @@ export default function AdminLlmsPage() {
             />
           </div>
           <div className="form-group">
-            <label>LLM 모델명:</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.llmmodelnm')}:</label>
             <input
               type="text"
               value={form.llmmodelnm}
@@ -126,7 +141,7 @@ export default function AdminLlmsPage() {
             />
           </div>
           <div className="form-group">
-            <label>LLM 모델별칭:</label>
+            <label>{t('lbl.llmmodelnicknm')}:</label>
             <input
               type="text"
               value={form.llmmodelnicknm}
@@ -135,7 +150,7 @@ export default function AdminLlmsPage() {
             />
           </div>
           <div className="form-group">
-            <label>사용:</label>
+            <label>{t('lbl.useyn_lbl')}:</label>
             <input
               type="checkbox"
               checked={form.useyn}
@@ -143,7 +158,7 @@ export default function AdminLlmsPage() {
             />
           </div>
           <div className="form-group">
-            <label>기본 모델:</label>
+            <label>{t('lbl.isdefault')}:</label>
             <input
               type="checkbox"
               checked={form.isdefault}
@@ -151,36 +166,15 @@ export default function AdminLlmsPage() {
             />
           </div>
           <div className="form-group">
-            <label>API Key:</label>
+            <label>{t('lbl.apikey')}:</label>
             <input
               type="password"
               value={form.apikey}
-              placeholder="변경 시에만 입력"
+              placeholder={t('msg.placeholder.password.change')}
               autoComplete="new-password"
               onChange={(e) => setForm((f) => ({ ...f, apikey: e.target.value }))}
             />
-            <small style={{ color: '#888' }}>※ 기존 키는 표시되지 않습니다.</small>
-          </div>
-
-          <div className="button-group">
-            <button type="button" className="icon-btn" onClick={handleNew}>
-              <div className="icon-wrapper">
-                <img src="/icons/new.svg" className="icon-img new-icon" title="신규" alt="신규" />
-                <span className="icon-label">신규</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleSave} disabled={saveMutation.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" title="저장" alt="저장" />
-                <span className="icon-label">저장</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleDelete} disabled={deleteMutation.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/delete.svg" className="icon-img del-icon" title="삭제" alt="삭제" />
-                <span className="icon-label">삭제</span>
-              </div>
-            </button>
+            <small style={{ color: '#888' }}>{t('inf.password.hidden')}</small>
           </div>
         </div>
       </div>

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { App } from 'antd'
 import apiClient from '@/api/client'
+import { useLangStore, t } from '@/stores/langStore'
 
-/* 이전앱 .qna-left-box */
 const leftBoxStyle = {
   border: '1px solid #d8dfeb',
   padding: 20,
@@ -11,7 +11,7 @@ const leftBoxStyle = {
   lineHeight: 1.8,
   fontSize: 15,
   color: '#ffffff',
-  height: '100%',       /* 우측 폼 높이에 맞춰 늘어남 */
+  height: '100%',
   boxSizing: 'border-box',
 }
 
@@ -27,22 +27,23 @@ export default function ContactPage() {
   const { message } = App.useApp()
   const [form, setForm] = useState(EMPTY)
   const [loading, setLoading] = useState(false)
+  useLangStore((s) => s.translations)
 
   const handleChange = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.name || !form.email || !form.title || !form.message) {
-      message.warning('모든 필드를 입력해주세요.')
+      message.warning(t('msg.contact.required'))
       return
     }
     setLoading(true)
     try {
       await apiClient.post('/misc/contact', form)
-      message.success('문의가 성공적으로 전송되었습니다.')
+      message.success(t('msg.contact.success'))
       setForm(EMPTY)
     } catch (err) {
-      message.error(err.response?.data?.detail || '전송에 실패했습니다.')
+      message.error(err.response?.data?.detail || t('msg.server.error'))
     } finally {
       setLoading(false)
     }
@@ -53,36 +54,35 @@ export default function ContactPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>문의</div>
+          <div>{t('ttl.contact')}</div>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
-        {/* 이전앱 .qna-container — align-items:stretch 로 좌우 전체 높이 동일 */}
         <div style={{ display: 'flex', gap: 40, maxWidth: 1000, margin: '30px auto 0', alignItems: 'stretch' }}>
 
-          {/* 좌측: 연락처 — 이전앱 .qna-left */}
+          {/* 좌측: 연락처 */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={leftBoxStyle}>
-              <div>전화</div>
+              <div>{t('lbl.telno')}</div>
               <div>010-4255-7999</div>
               <br />
               <hr style={hrStyle} />
-              <div>이메일</div>
+              <div>{t('lbl.email')}</div>
               <div>sales@rootel.kr</div>
               <br />
               <hr style={hrStyle} />
-              <div>주소</div>
+              <div>{t('lbl.address')}</div>
               <div>서울시 강남구 논현로 80 3층</div>
             </div>
           </div>
 
-          {/* 우측: 입력 필드만 — 버튼은 행 바깥 */}
+          {/* 우측: 입력 필드 */}
           <div style={{ flex: 1 }}>
             <div style={{ marginBottom: 20 }}>
               <input
                 type="text"
-                placeholder="이름"
+                placeholder={t('lbl.name')}
                 value={form.name}
                 onChange={handleChange('name')}
                 style={{ height: 50, width: '100%', boxSizing: 'border-box' }}
@@ -91,7 +91,7 @@ export default function ContactPage() {
             <div style={{ marginBottom: 20 }}>
               <input
                 type="text"
-                placeholder="이메일"
+                placeholder={t('lbl.email')}
                 value={form.email}
                 onChange={handleChange('email')}
                 style={{ height: 50, width: '100%', boxSizing: 'border-box' }}
@@ -100,7 +100,7 @@ export default function ContactPage() {
             <div style={{ marginBottom: 20 }}>
               <input
                 type="text"
-                placeholder="제목"
+                placeholder={t('lbl.subject')}
                 value={form.title}
                 onChange={handleChange('title')}
                 style={{ height: 50, width: '100%', boxSizing: 'border-box' }}
@@ -109,7 +109,7 @@ export default function ContactPage() {
             <div>
               <textarea
                 rows={11}
-                placeholder="메세지"
+                placeholder={t('lbl.message_lbl')}
                 value={form.message}
                 onChange={handleChange('message')}
                 style={{ resize: 'none', width: '100%', boxSizing: 'border-box' }}
@@ -119,12 +119,12 @@ export default function ContactPage() {
 
         </div>
 
-        {/* 버튼: 우측 컬럼 아래 — 좌측 절반 spacer + 우측 절반 중앙 */}
+        {/* 버튼: 우측 컬럼 아래 */}
         <div style={{ display: 'flex', gap: 40, maxWidth: 1000, margin: '20px auto 0' }}>
           <div style={{ flex: 1 }} />
           <div style={{ flex: 1, textAlign: 'center' }}>
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              메세지 보내기
+              {t('btn.send')}
             </button>
           </div>
         </div>

@@ -205,7 +205,7 @@ export default function AdminTermsPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="term-description">{t('lbl.description')}:</label>
+            <label htmlFor="term-description">{t('lbl.desc_lbl')}:</label>
             <textarea
               id="term-description"
               rows={3}
