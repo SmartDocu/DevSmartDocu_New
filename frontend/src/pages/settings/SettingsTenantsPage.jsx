@@ -1,25 +1,46 @@
 import { useRef, useState } from 'react'
 import { App } from 'antd'
-import { useNavigate } from 'react-router-dom'
+import { useLangStore, t } from '@/stores/langStore'
 import { useSettingsTenants, useSaveTenant, useDeleteTenant } from '@/hooks/useSettings'
 
 const BILLING_OPTIONS = [
-  { value: 'Fr', label: 'Free' },
-  { value: 'Pr', label: 'Pro' },
-  { value: 'Te', label: 'Teams' },
-  { value: 'En', label: 'Enterprise' },
+  { value: 'Fr' },
+  { value: 'Pr' },
+  { value: 'Te' },
+  { value: 'En' },
 ]
 
-const BILLING_LABELS = { Fr: 'Free', Pr: 'Pro', Te: 'Teams', En: 'Enterprise' }
+const IANA_TIMEZONES = [
+  'Africa/Cairo', 'Africa/Johannesburg', 'Africa/Lagos', 'Africa/Nairobi',
+  'America/Anchorage', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Mexico_City', 'America/New_York', 'America/Phoenix', 'America/Sao_Paulo',
+  'America/Toronto', 'America/Vancouver',
+  'Asia/Bangkok', 'Asia/Dhaka', 'Asia/Dubai', 'Asia/Hong_Kong',
+  'Asia/Jakarta', 'Asia/Karachi', 'Asia/Kolkata', 'Asia/Kuala_Lumpur',
+  'Asia/Manila', 'Asia/Riyadh', 'Asia/Seoul', 'Asia/Shanghai',
+  'Asia/Singapore', 'Asia/Taipei', 'Asia/Tehran', 'Asia/Tokyo', 'Asia/Yangon',
+  'Atlantic/Azores',
+  'Australia/Adelaide', 'Australia/Brisbane', 'Australia/Melbourne',
+  'Australia/Perth', 'Australia/Sydney',
+  'Europe/Amsterdam', 'Europe/Athens', 'Europe/Berlin', 'Europe/Brussels',
+  'Europe/Budapest', 'Europe/Copenhagen', 'Europe/Dublin', 'Europe/Helsinki',
+  'Europe/Istanbul', 'Europe/Kiev', 'Europe/Lisbon', 'Europe/London',
+  'Europe/Madrid', 'Europe/Moscow', 'Europe/Oslo', 'Europe/Paris',
+  'Europe/Prague', 'Europe/Rome', 'Europe/Stockholm', 'Europe/Vienna',
+  'Europe/Warsaw', 'Europe/Zurich',
+  'Pacific/Auckland', 'Pacific/Fiji', 'Pacific/Guam', 'Pacific/Honolulu',
+  'UTC',
+]
 
 const EMPTY_FORM = {
   tenantid: '', tenantnm: '', useyn: true, billingmodelcd: 'Fr',
   billingusercnt: '', llmlimityn: false, email: '', telno: '',
+  languagecd: '', timezone: '', issystemtenant: false,
 }
 
 export default function SettingsTenantsPage() {
   const { message, modal } = App.useApp()
-  const navigate = useNavigate()
+  useLangStore((s) => s.translations)
   const { data = {}, isLoading } = useSettingsTenants()
   const saveTenant = useSaveTenant()
   const deleteTenant = useDeleteTenant()
@@ -27,17 +48,16 @@ export default function SettingsTenantsPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedId, setSelectedId] = useState(null)
 
-  // 아이콘 파일 상태
   const iconFileRef = useRef(null)
   const [iconFile, setIconFile] = useState(null)
   const [iconFileNm, setIconFileNm] = useState('')
   const [iconFileUrl, setIconFileUrl] = useState('')
 
-  // 읽기 전용 표시
   const [creatornm, setCreatornm] = useState('')
   const [createdts, setCreatedts] = useState('')
 
   const tenants = data.tenants || []
+  const languages = data.languages || []
 
   const handleRowSelect = (row) => {
     setSelectedId(row.tenantid)
@@ -50,6 +70,9 @@ export default function SettingsTenantsPage() {
       llmlimityn: !!row.llmlimityn,
       email: row.decemail || '',
       telno: row.dectelno || '',
+      languagecd: row.languagecd || '',
+      timezone: row.timezone || '',
+      issystemtenant: !!row.issystemtenant,
     })
     setIconFile(null)
     setIconFileNm(row.iconfilenm || '')
@@ -69,7 +92,7 @@ export default function SettingsTenantsPage() {
   }
 
   const handleSave = () => {
-    if (!form.tenantnm.trim()) { message.warning('기업명을 입력하세요.'); return }
+    if (!form.tenantnm.trim()) { message.warning(t('msg.tenantnm.required')); return }
     const fd = new FormData()
     if (form.tenantid) fd.append('tenantid', form.tenantid)
     fd.append('tenantnm', form.tenantnm)
@@ -79,17 +102,26 @@ export default function SettingsTenantsPage() {
     fd.append('llmlimityn', form.llmlimityn ? 'true' : 'false')
     if (form.email) fd.append('email', form.email)
     if (form.telno) fd.append('telno', form.telno)
+    if (form.languagecd) fd.append('languagecd', form.languagecd)
+    if (form.timezone) fd.append('timezone', form.timezone)
+    fd.append('issystemtenant', form.issystemtenant ? 'true' : 'false')
     if (iconFile) fd.append('iconfile', iconFile)
-    saveTenant.mutate(fd, { onSuccess: handleNew })
+    saveTenant.mutate(fd, {
+      onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    })
   }
 
   const handleDelete = () => {
-    if (!selectedId) { message.warning('삭제할 기업을 선택하세요.'); return }
+    if (!selectedId) { message.warning(t('msg.select.delete')); return }
     modal.confirm({
-      title: '삭제 확인',
-      content: '정말 삭제하시겠습니까?',
-      okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
-      onOk: () => deleteTenant.mutate(selectedId, { onSuccess: handleNew }),
+      title: t('btn.delete'),
+      content: t('msg.confirm.delete'),
+      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
+      onOk: () => deleteTenant.mutate(selectedId, {
+        onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
+        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+      }),
     })
   }
 
@@ -110,39 +142,40 @@ export default function SettingsTenantsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>기업 관리</div>
+          <div>{t('mnu.company.tenants')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, minHeight: '80%' }}>
-        {/* 왼쪽: 기업 목록 */}
-        <div style={{ flex: 1.5 }}>
-          <h3>기업 목록</h3>
+      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+        {/* 좌측 패널: 기업 목록 */}
+        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+          </div>
           <div className="table-container">
             {isLoading ? (
               <div style={{ textAlign: 'center', padding: 32 }}><div className="spinner" /></div>
             ) : (
-              <table>
+              <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
-                    <th style={{ width: '50%' }}>기업명</th>
-                    <th style={{ width: '20%' }}>요금제</th>
-                    <th className="info" style={{ width: '10%' }}>사용</th>
-                    <th className="info" style={{ width: '20%' }}>생성일시</th>
+                    <th style={{ width: '50%' }}>{t('thd.tenantnm_thd')}</th>
+                    <th style={{ width: '35%' }}>{t('thd.billingmodelcd')}</th>
+                    <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tenants.map((t) => (
+                  {tenants.map((row) => (
                     <tr
-                      key={t.tenantid}
-                      className={t.tenantid === selectedId ? 'selected-row' : ''}
+                      key={row.tenantid}
+                      className={row.tenantid === selectedId ? 'selected-row' : ''}
                       style={{ cursor: 'pointer' }}
-                      onClick={() => handleRowSelect(t)}
+                      onClick={() => handleRowSelect(row)}
                     >
-                      <td>{t.tenantnm}</td>
-                      <td className="info">{BILLING_LABELS[t.billingmodelcd] || t.billingmodelcd}</td>
-                      <td className="info">{t.useyn ? '✔' : ''}</td>
-                      <td className="info">{t.createdts}</td>
+                      <td>{row.tenantnm}</td>
+                      <td>{t(`cod.billing_${row.billingmodelcd}`)}</td>
+                      <td style={{ textAlign: 'center' }}>{row.useyn ? '✔' : ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -151,95 +184,113 @@ export default function SettingsTenantsPage() {
           </div>
         </div>
 
-        {/* 오른쪽: 기업 상세 */}
-        <div style={{ flex: 1.5, paddingLeft: 20 }}>
-          <h3>기업 상세</h3>
-
-          <div className="form-group-left">
-            <label>기업명:</label>
-            <input
-              type="text"
-              value={form.tenantnm}
-              onChange={(e) => setForm((f) => ({ ...f, tenantnm: e.target.value }))}
-            />
-          </div>
-
-          <div className="form-group" style={{ display: 'block' }}>
-            <label>사용:</label>
-            <input
-              type="checkbox"
-              checked={form.useyn}
-              style={{ marginLeft: 50 }}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-            />
-          </div>
-
-          <div className="form-group-left">
-            <label>요금제:</label>
-            {BILLING_OPTIONS.map((o) => (
-              <label key={o.value} style={{ fontWeight: 'normal' }}>
-                <input
-                  type="radio"
-                  name="billingmodelcd"
-                  value={o.value}
-                  checked={form.billingmodelcd === o.value}
-                  onChange={() => setForm((f) => ({ ...f, billingmodelcd: o.value }))}
-                />
-                {o.label}
-              </label>
-            ))}
-          </div>
-
-          <div className="form-group-left">
-            <label>사용자수:</label>
-            <input
-              type="number"
-              value={form.billingusercnt}
-              style={{ flex: 'none', width: 120 }}
-              onChange={(e) => setForm((f) => ({ ...f, billingusercnt: e.target.value }))}
-            />
+        {/* 우측 패널: 기업 상세 */}
+        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveTenant.isPending}>
+                {t('btn.save')}
+              </button>
+              {selectedId && (
+                <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteTenant.isPending}>
+                  {t('btn.delete')}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="form-group">
-            <label>LLM사용제한여부:</label>
-            <input
-              type="checkbox"
-              checked={form.llmlimityn}
-              onChange={(e) => setForm((f) => ({ ...f, llmlimityn: e.target.checked }))}
-            />
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.tenantnm')}:</label>
+            <input type="text" value={form.tenantnm}
+              onChange={(e) => setForm((f) => ({ ...f, tenantnm: e.target.value }))} />
           </div>
 
-          <div className="form-group-left">
-            <label>이메일주소:</label>
-            <input
-              type="text"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            />
+          <div className="form-group">
+            <label>{t('lbl.useyn_lbl')}:</label>
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
+            </div>
           </div>
 
-          <div className="form-group-left">
-            <label>전화번호:</label>
-            <input
-              type="text"
-              value={form.telno}
-              onChange={(e) => setForm((f) => ({ ...f, telno: e.target.value }))}
-            />
+          <div className="form-group">
+            <label>{t('lbl.plan')}:</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 24, paddingLeft: 60 }}>
+              {BILLING_OPTIONS.map((o) => (
+                <span key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                  <input type="radio" name="billingmodelcd" value={o.value}
+                    checked={form.billingmodelcd === o.value}
+                    onChange={() => setForm((f) => ({ ...f, billingmodelcd: o.value }))} />
+                  <span>{t(`cod.billing_${o.value}`)}</span>
+                </span>
+              ))}
+            </div>
           </div>
 
-          {/* 기업 이미지 */}
-          <div className="form-group-left">
-            <label>기업 이미지:</label>
-            <input
-              type="file"
-              ref={iconFileRef}
-              style={{ display: 'none' }}
-              accept="image/*"
-              onChange={handleIconFileChange}
-            />
+          <div className="form-group">
+            <label>{t('lbl.billingusercnt')}:</label>
+            <input type="number" value={form.billingusercnt} style={{ width: 120 }}
+              onChange={(e) => setForm((f) => ({ ...f, billingusercnt: e.target.value }))} />
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.llmlimityn')}:</label>
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.llmlimityn}
+                onChange={(e) => setForm((f) => ({ ...f, llmlimityn: e.target.checked }))} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.email')}:</label>
+            <input type="text" value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.telno')}:</label>
+            <input type="text" value={form.telno}
+              onChange={(e) => setForm((f) => ({ ...f, telno: e.target.value }))} />
+          </div>
+
+          <div className="form-group">
+            <label>{t('thd.languagenm')}:</label>
+            <select value={form.languagecd}
+              onChange={(e) => setForm((f) => ({ ...f, languagecd: e.target.value }))}>
+              <option value="">{t('msg.select')}</option>
+              {languages.map((lang) => (
+                <option key={lang.languagecd} value={lang.languagecd}>{lang.languagenm}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.timezone')}:</label>
+            <select value={form.timezone}
+              onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))}>
+              <option value="">{t('msg.select')}</option>
+              {IANA_TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>{tz}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.issystemtenant')}:</label>
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.issystemtenant}
+                onChange={(e) => setForm((f) => ({ ...f, issystemtenant: e.target.checked }))} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.tenant.icon')}:</label>
+            <input type="file" ref={iconFileRef} style={{ display: 'none' }}
+              accept="image/*" onChange={handleIconFileChange} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button type="button" className="icon-btn" onClick={handleIconUploadClick}>
-                <img src="/icons/upload.svg" title="업로드" className="icon-img new-icon" alt="업로드" />
+              <button type="button" className="btn btn-primary" onClick={handleIconUploadClick}>
+                {t('btn.upload_btn')}
               </button>
               <span
                 style={{
@@ -249,62 +300,10 @@ export default function SettingsTenantsPage() {
                 }}
                 onClick={() => iconFileUrl && window.open(iconFileUrl, '_blank')}
               >
-                {iconFileNm || '이미지 파일 없음'}
+                {iconFileNm || t('msg.no.image')}
               </span>
             </div>
           </div>
-
-          <div className="form-group-left">
-            <label>생성자:</label>
-            <input type="text" value={creatornm} disabled />
-          </div>
-
-          <div className="form-group-left">
-            <label>생성일시:</label>
-            <input type="text" value={createdts} disabled />
-          </div>
-
-          {/* 버튼 영역 */}
-          <div className="button-group">
-            <button type="button" className="icon-btn" onClick={handleNew}>
-              <div className="icon-wrapper">
-                <img src="/icons/new.svg" className="icon-img new-icon" title="신규" alt="신규" />
-                <span className="icon-label">신규</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleSave} disabled={saveTenant.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" title="저장" alt="저장" />
-                <span className="icon-label">저장</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleDelete} disabled={deleteTenant.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/delete.svg" className="icon-img del-icon" title="삭제" alt="삭제" />
-                <span className="icon-label">삭제</span>
-              </div>
-            </button>
-          </div>
-
-          {/* 선택된 기업에 대한 이동 버튼 */}
-          {selectedId && (
-            <div id="nav-buttons" className="button-group" style={{ display: 'flex' }}>
-              <button
-                className="btn btn-link"
-                type="button"
-                onClick={() => navigate(`/org/projects?tenantid=${selectedId}`)}
-              >
-                프로젝트 설정 &#x279C;
-              </button>
-              <button
-                className="btn btn-link"
-                type="button"
-                onClick={() => navigate(`/org/tenant-users?tenantid=${selectedId}`)}
-              >
-                기업 사용자 설정 &#x279C;
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

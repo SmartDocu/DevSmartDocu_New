@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { App, Modal, Popconfirm } from 'antd'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 import { useOrgTenantUsers, useSaveTenantUser, useDeleteTenantUser } from '@/hooks/useOrg'
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
@@ -13,9 +14,9 @@ const EMPTY_FORM = {
 
 export default function OrgTenantUsersPage() {
   const { message } = App.useApp()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
+  useLangStore((s) => s.translations)
   const roleid = user?.roleid
 
   const paramTenantid = roleid === 7 ? searchParams.get('tenantid') : null
@@ -48,22 +49,22 @@ export default function OrgTenantUsersPage() {
   const handleRowClick = (row) => {
     setSelectedUid(row.useruid || row.tenantnewuid)
     setForm({
-      sep:         row.sep || '',
+      sep:          row.sep || '',
       tenantnewuid: row.tenantnewuid || '',
-      useruid:     row.useruid || '',
-      email:       row.email || '',
-      usernm:      row.usernm || '',
-      rolecd:      row.rolecd || 'U',
-      useyn:       !!row.useyn,
-      creatornm:   row.creatornm || '',
-      createdts:   row.createdts || '',
+      useruid:      row.useruid || '',
+      email:        row.email || '',
+      usernm:       row.usernm || '',
+      rolecd:       row.rolecd || 'U',
+      useyn:        !!row.useyn,
+      creatornm:    row.creatornm || '',
+      createdts:    row.createdts || '',
     })
   }
 
   const handleNew = () => { setSelectedUid(null); setForm(EMPTY_FORM) }
 
   const handleSave = () => {
-    if (!form.email.trim()) { message.warning('이메일을 입력하세요.'); return }
+    if (!form.email.trim()) { message.warning(t('msg.email.required')); return }
     saveMutation.mutate(
       {
         sep: form.sep || null,
@@ -75,14 +76,14 @@ export default function OrgTenantUsersPage() {
         useyn: form.useyn ?? true,
       },
       {
-        onSuccess: () => { message.success('저장되었습니다.'); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || '저장 실패'),
+        onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
+        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
       },
     )
   }
 
   const handleDelete = () => {
-    if (!form.useruid && !form.tenantnewuid) { message.warning('삭제할 사용자를 선택하세요.'); return }
+    if (!form.useruid && !form.tenantnewuid) { message.warning(t('msg.select.delete')); return }
 
     const doDelete = (approvenote) => {
       deleteMutation.mutate(
@@ -94,8 +95,8 @@ export default function OrgTenantUsersPage() {
           approvenote: approvenote || null,
         },
         {
-          onSuccess: () => { message.success('삭제되었습니다.'); handleNew() },
-          onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
+          onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
+          onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
         },
       )
     }
@@ -103,31 +104,31 @@ export default function OrgTenantUsersPage() {
     if (form.sep === 'newusers') {
       let note = ''
       Modal.confirm({
-        title: '가입 거절',
+        title: t('ttl.tenant.user.reject'),
         content: (
           <div>
-            <p>가입 거절 사유를 입력해주세요:</p>
+            <p>{t('msg.tenant.user.reject.reason')}</p>
             <textarea rows={3} style={{ width: '100%' }}
               onChange={(e) => { note = e.target.value }} />
           </div>
         ),
-        okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
+        okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
         onOk: () => {
-          if (!note.trim()) { Modal.error({ title: '삭제 사유를 입력해야 합니다.' }); return Promise.reject() }
+          if (!note.trim()) { Modal.error({ title: t('msg.reject.reason.required') }); return Promise.reject() }
           doDelete(note.trim())
         },
       })
     } else {
       Modal.confirm({
-        title: '삭제 확인', content: '정말 삭제하시겠습니까?',
-        okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
+        title: t('btn.delete'), content: t('msg.confirm.delete'),
+        okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
         onOk: () => doDelete(null),
       })
     }
   }
 
   const pageTitle = roleid === 7 && tenantnm
-    ? `기업 사용자 관리: ${tenantnm}` : '기업 사용자 관리'
+    ? `${t('mnu.project.users')}: ${tenantnm}` : t('mnu.project.users')
 
   return (
     <div>
@@ -136,68 +137,65 @@ export default function OrgTenantUsersPage() {
           <div className="gradient-bar" />
           <div>{pageTitle}</div>
         </div>
-        {roleid === 7 && (
-          <button type="button" className="icon-btn" onClick={() => navigate('/settings/tenants')}>
-            <img src="/icons/back.svg" alt="뒤로가기" className="icon-img config-icon" />
-          </button>
-        )}
       </div>
 
       {/* 필터 */}
       <div className="form-filter-group">
         <div className="filter-item">
-          <label>신규:</label>
-          {[['all','전체'],['newusers','신규']].map(([v,t]) => (
+          <label>{t('lbl.newuser')}:</label>
+          {[['all', t('cod.filter_all')], ['newusers', t('cod.sep_newusers')]].map(([v, lbl]) => (
             <span key={v}>
               <input type="radio" id={`sep_${v}`} name="sepFilter" value={v}
                 checked={sepFilter === v} onChange={() => setSepFilter(v)} />
-              <label className="radio-label" htmlFor={`sep_${v}`}>{t}</label>
+              <label className="radio-label" htmlFor={`sep_${v}`}>{lbl}</label>
             </span>
           ))}
         </div>
         <div className="filter-item">
-          <label>상태:</label>
-          {[['all','전체'],['active','활성'],['inactive','비활성']].map(([v,t]) => (
+          <label>{t('lbl.status')}:</label>
+          {[['all', t('cod.filter_all')], ['active', t('cod.status_active')], ['inactive', t('cod.status_inactive')]].map(([v, lbl]) => (
             <span key={v}>
               <input type="radio" id={`status_${v}`} name="statusFilter" value={v}
                 checked={statusFilter === v} onChange={() => setStatusFilter(v)} />
-              <label className="radio-label" htmlFor={`status_${v}`}>{t}</label>
+              <label className="radio-label" htmlFor={`status_${v}`}>{lbl}</label>
             </span>
           ))}
         </div>
         <div className="filter-item">
-          <label>역할:</label>
-          {[['all','전체'],['M','Manager'],['U','User']].map(([v,t]) => (
+          <label>{t('lbl.rolecd_lbl')}:</label>
+          {[['all', t('cod.filter_all')], ['M', t('cod.rolecd_M')], ['U', t('cod.rolecd_U')]].map(([v, lbl]) => (
             <span key={v}>
               <input type="radio" id={`role_${v}`} name="roleFilter" value={v}
                 checked={roleFilter === v} onChange={() => setRoleFilter(v)} />
-              <label className="radio-label" htmlFor={`role_${v}`}>{t}</label>
+              <label className="radio-label" htmlFor={`role_${v}`}>{lbl}</label>
             </span>
           ))}
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, minHeight: '80%' }}>
-        {/* 왼쪽: 목록 */}
-        <div style={{ flex: 1.5, paddingRight: 20 }}>
-          <h3>사용자 목록</h3>
+      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+        {/* 좌측 패널: 목록 */}
+        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+          </div>
           <div className="table-container">
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '30%' }}>이메일</th>
-                  <th style={{ width: '20%' }}>사용자명</th>
-                  <th style={{ width: '10%' }}>역할</th>
-                  <th style={{ width: '10%' }}>사용</th>
-                  <th style={{ width: '10%' }}>신규</th>
-                  <th style={{ width: '20%' }}>생성일시</th>
+                  <th style={{ width: '35%' }}>{t('thd.email_thd')}</th>
+                  <th style={{ width: '25%' }}>{t('thd.usernm_thd')}</th>
+                  <th style={{ width: '15%' }}>{t('thd.rolecd_thd')}</th>
+                  <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '10%' }}>{t('lbl.newuser')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center' }}>로딩 중...</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : filteredUsers.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#888' }}>등록된 사용자가 없습니다.</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : filteredUsers.map((u) => {
                   const key = u.useruid || u.tenantnewuid
                   return (
@@ -207,10 +205,9 @@ export default function OrgTenantUsersPage() {
                     >
                       <td>{u.email}</td>
                       <td>{u.usernm}</td>
-                      <td>{u.rolecd === 'M' ? 'Manager' : 'User'}</td>
+                      <td>{u.rolecd === 'M' ? t('cod.rolecd_M') : t('cod.rolecd_U')}</td>
                       <td style={{ textAlign: 'center' }}>{u.useyn ? '✔' : ''}</td>
-                      <td>{u.sep === 'newusers' ? '신규' : ''}</td>
-                      <td>{u.createdts}</td>
+                      <td>{u.sep === 'newusers' ? t('cod.sep_newusers') : ''}</td>
                     </tr>
                   )
                 })}
@@ -219,77 +216,67 @@ export default function OrgTenantUsersPage() {
           </div>
         </div>
 
-        {/* 오른쪽: 상세 */}
-        <div style={{ flex: 1.5, paddingLeft: 20 }}>
-          <h3>사용자 상세</h3>
+        {/* 우측 패널: 상세 */}
+        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
+                {t('btn.save')}
+              </button>
+              {selectedUid && (
+                <Popconfirm
+                  title={t('msg.confirm.delete')}
+                  onConfirm={handleDelete}
+                  okText={t('btn.delete')}
+                  cancelText={t('btn.cancel')}
+                  okButtonProps={{ danger: true }}
+                >
+                  <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>
+                    {t('btn.delete')}
+                  </button>
+                </Popconfirm>
+              )}
+            </div>
+          </div>
 
-          <div className="form-group-left">
-            <label>이메일:</label>
+          <div className="form-group">
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.email')}:</label>
             <input type="text" value={form.email}
               onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} />
           </div>
 
-          <div className="form-group-left">
-            <label>사용자명:</label>
+          <div className="form-group">
+            <label>{t('lbl.usernm')}:</label>
             <input type="text" value={form.usernm} disabled style={roStyle} />
           </div>
 
-          <div className="form-group-left">
-            <label>역할:</label>
-            <label>
-              <input type="radio" name="rolecd" value="M"
-                checked={form.rolecd === 'M'}
-                onChange={() => setForm(f => ({ ...f, rolecd: 'M' }))} />
-              {' '}Manager
-            </label>
-            <label style={{ marginLeft: 10 }}>
-              <input type="radio" name="rolecd" value="U"
-                checked={form.rolecd === 'U'}
-                onChange={() => setForm(f => ({ ...f, rolecd: 'U' }))} />
-              {' '}User
-            </label>
+          <div className="form-group">
+            <label>{t('lbl.rolecd_lbl')}:</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 64, paddingLeft: 60 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <input type="radio" name="rolecd" value="M"
+                  checked={form.rolecd === 'M'}
+                  onChange={() => setForm(f => ({ ...f, rolecd: 'M' }))} />
+                <span>{t('cod.rolecd_M')}</span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <input type="radio" name="rolecd" value="U"
+                  checked={form.rolecd === 'U'}
+                  onChange={() => setForm(f => ({ ...f, rolecd: 'U' }))} />
+                <span>{t('cod.rolecd_U')}</span>
+              </span>
+            </div>
           </div>
 
-          <div className="form-group-left" style={{ display: 'block' }}>
-            <label>사용:</label>
-            <input type="checkbox" checked={form.useyn} style={{ marginLeft: 50 }}
-              onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />
+          <div className="form-group">
+            <label>{t('lbl.useyn_lbl')}:</label>
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.useyn}
+                onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />
+            </div>
           </div>
 
-          <div className="form-group-left">
-            <label>생성자:</label>
-            <input type="text" value={form.creatornm} disabled style={roStyle} />
-          </div>
-
-          <div className="form-group-left">
-            <label>생성일시:</label>
-            <input type="text" value={form.createdts} disabled style={roStyle} />
-          </div>
-
-          <div className="button-group">
-            <button type="button" className="icon-btn" onClick={handleNew}>
-              <div className="icon-wrapper">
-                <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                <span className="icon-label">신규</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleSave} disabled={saveMutation.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                <span className="icon-label">저장</span>
-              </div>
-            </button>
-            <Popconfirm title="정말 삭제하시겠습니까?" onConfirm={handleDelete}
-              okText="삭제" cancelText="취소" okButtonProps={{ danger: true }}
-              disabled={!form.useruid && !form.tenantnewuid}>
-              <button type="button" className="icon-btn" disabled={deleteMutation.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                  <span className="icon-label">삭제</span>
-                </div>
-              </button>
-            </Popconfirm>
-          </div>
         </div>
       </div>
     </div>

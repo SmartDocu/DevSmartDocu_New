@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
 import apiClient from '@/api/client'
 
 // ─── Servers ──────────────────────────────────────────────────────────────────
@@ -16,11 +15,9 @@ export function useSaveServer() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/servers', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
       qc.invalidateQueries({ queryKey: ['settings-servers'] })
       qc.invalidateQueries({ queryKey: ['datas-dbconnectors'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
   })
 }
 
@@ -29,11 +26,9 @@ export function useDeleteServer() {
   return useMutation({
     mutationFn: (connectid) => apiClient.delete(`/settings/servers/${connectid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
       qc.invalidateQueries({ queryKey: ['settings-servers'] })
       qc.invalidateQueries({ queryKey: ['datas-dbconnectors'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
   })
 }
 
@@ -51,10 +46,8 @@ export function useSaveProject() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/projects', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
       qc.invalidateQueries({ queryKey: ['settings-projects'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
   })
 }
 
@@ -63,10 +56,8 @@ export function useDeleteProject() {
   return useMutation({
     mutationFn: (projectid) => apiClient.delete(`/settings/projects/${projectid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
       qc.invalidateQueries({ queryKey: ['settings-projects'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
   })
 }
 
@@ -84,10 +75,8 @@ export function useSaveTenant() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/tenants', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
       qc.invalidateQueries({ queryKey: ['settings-tenants'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
   })
 }
 
@@ -96,10 +85,8 @@ export function useDeleteTenant() {
   return useMutation({
     mutationFn: (tenantid) => apiClient.delete(`/settings/tenants/${tenantid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
       qc.invalidateQueries({ queryKey: ['settings-tenants'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
   })
 }
 

@@ -155,7 +155,7 @@ export default function RegisterModal({ open, onClose }) {
             <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.tenant')}</span>
             <select value={tenantid} onChange={(e) => setTenantid(e.target.value)}
               style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }}>
-              <option value="">{t('msg.ph.tenant.select')}</option>
+              <option value="">{t('msg.register.tenant.required')}</option>
               {tenants.map((tn) => (
                 <option key={tn.id || tn.tenantid} value={tn.id || tn.tenantid}>
                   {tn.tenantname || tn.tenantnm}

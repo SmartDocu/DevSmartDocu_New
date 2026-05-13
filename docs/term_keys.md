@@ -140,6 +140,33 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | cod.useyn_n |
 | cod.useyn_y |
 
+### code.llmmodeluseyn (2개)
+
+| term_key |
+|----------|
+| cod.llmmodeluseyn_C |
+| cod.llmmodeluseyn_S |
+
+### code.common (6개)
+
+| term_key |
+|----------|
+| cod.filter_all |
+| cod.status_active |
+| cod.status_inactive |
+| cod.sep_newusers |
+| cod.rolecd_M |
+| cod.rolecd_U |
+
+### code.billing (4개)
+
+| term_key |
+|----------|
+| cod.billing_Fr |
+| cod.billing_Pr |
+| cod.billing_Te |
+| cod.billing_En |
+
 ---
 
 ## 2. msg. (93개)
@@ -189,18 +216,19 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.message.select.delete |
 | msg.message.select.trans |
 | msg.no.change.history |
+| msg.no.image |
 | msg.no.data |
 | msg.password.minlength |
 | msg.password.mismatch |
 | msg.password.required |
 | msg.ph.email |
 | msg.ph.prompt |
-| msg.ph.tenant.select |
 | msg.placeholder.password.change |
 | msg.placeholder.password.confirm |
 | msg.preparing |
 | msg.preview.error |
 | msg.project.not.found |
+| msg.projectnm.required |
 | msg.prompt.key.required |
 | msg.prompt.preview.hint |
 | msg.prompt.prompttypecd.required |
@@ -208,6 +236,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.prompt.select.delete |
 | msg.prompt.select.trans |
 | msg.prompt.text1.required |
+| msg.reject.reason.required |
 | msg.register.failed |
 | msg.register.success |
 | msg.register.tenant.required |
@@ -232,6 +261,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.sidebar.search |
 | msg.source.select |
 | msg.tab.maxcount |
+| msg.tenant.user.reject.reason |
+| msg.tenantnm.required |
 | msg.template.none |
 | msg.term.required |
 | msg.term.select.delete |
@@ -296,12 +327,14 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 |----------|
 | btn.apply |
 | btn.cancel |
+| btn.close |
 | btn.color.hide |
 | btn.color.show |
 | btn.colormap.hide |
 | btn.colormap.show |
 | btn.delete |
 | btn.login_btn |
+| btn.lookup |
 | btn.login.ing |
 | btn.logout |
 | btn.new |
@@ -352,6 +385,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.colnames |
 | lbl.connectnm_lbl |
 | lbl.connecttype_lbl |
+| lbl.creatornm |
+| lbl.createdts |
 | lbl.databasiscd |
 | lbl.datanm_lbl |
 | lbl.dataset_lbl |
@@ -377,9 +412,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.file |
 | lbl.fontcolor |
 | lbl.fontsize |
+| lbl.llmmodelnm |
 | lbl.grain |
 | lbl.iconnm_lbl |
+| lbl.jobnm |
 | lbl.joindt |
+| lbl.apikey |
 | lbl.keycoldatatypecd |
 | lbl.keycolnm |
 | lbl.measure.cols |
@@ -389,6 +427,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.myrole |
 | lbl.nmcolnm |
 | lbl.not.agreed |
+| lbl.newuser |
 | lbl.note |
 | lbl.objectdesc_lbl |
 | lbl.objectnm_lbl |
@@ -431,6 +470,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.template.upload |
 | lbl.tenant |
 | lbl.tenantnm |
+| lbl.tenant.icon |
+| lbl.billingusercnt |
+| lbl.issystemtenant |
+| lbl.llmlimityn |
+| lbl.telno |
+| lbl.timezone |
 | lbl.termgroupcd_lbl |
 | lbl.termkey_lbl |
 | lbl.theme |
@@ -552,10 +597,14 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.default_name_thd |
 | thd.default_text_thd |
 | thd.dispcolnm |
+| thd.activeyn_thd |
+| thd.billingmodelcd |
 | thd.email_thd |
 | thd.fontcolor_thd |
 | thd.fontsize_thd |
 | thd.languagecd |
+| thd.llmmodelnm_thd |
+| thd.llmmodeluseyn_thd |
 | thd.languagenm |
 | thd.logical_name_thd |
 | thd.measureyn |
@@ -570,6 +619,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.operator_thd |
 | thd.orderno_thd |
 | thd.paramnm_thd |
+| thd.projectdesc_thd |
 | thd.projectnm_thd |
 | thd.promptkey_thd |
 | thd.prompttypecd_thd |
@@ -585,6 +635,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.translated_text2_thd |
 | thd.translated_title_thd |
 | thd.useyn_thd |
+| thd.usernm_thd |
 | thd.value_count_thd |
 | thd.value_thd |
 | thd.width_px |
@@ -614,6 +665,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.docselect.change |
 | ttl.header.settings |
 | ttl.list |
+| ttl.llm.detail |
 | ttl.login_ttl |
 | ttl.myinfo.personal |
 | ttl.myinfo.projects |
@@ -629,6 +681,10 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.sample.prompt_ttl |
 | ttl.sentence.manage |
 | ttl.table.manage |
+| ttl.tenant.llm |
+| ttl.tenant.user.reject |
+| ttl.user.select |
+| ttl.project.llm |
 | ttl.translations |
 | ttl.value.settings |
 
@@ -708,16 +764,44 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 | prefix | 개수 |
 |--------|------|
-| cod.   | 63   |
-| msg.   | 93   |
+| cod.   | 75   |
+| msg.   | 97   |
 | mnu.   | 43   |
-| btn.   | 31   |
-| lbl.   | 154  |
-| thd.   | 54   |
-| ttl.   | 38   |
-| inf.   | 5    |
+| btn.   | 33   |
+| lbl.   | 164  |
+| thd.   | 62   |
+| ttl.   | 43   |
+| inf.   | 6    |
 | prm.   | 51   |
-| **합계** | **532** |
+| **합계** | **574** |
+
+### 2026-05-13 변경 내역 (5차 — SettingsTenantsPage)
+- `cod.billing_Fr/Pr/Te/En` 추가 (4개)
+- `msg.tenantnm.required`, `msg.no.image` 추가 (2개)
+- `lbl.tenant.icon/billingusercnt/llmlimityn/telno/languagecd/timezone/issystemtenant` 추가 (7개)
+- `thd.billingmodelcd_thd` 추가 (1개)
+
+### 2026-05-13 변경 내역 (4차 — OrgProjectUsersPage)
+- `btn.close/btn.lookup` 추가 (2개)
+- `inf.email.or.search` 추가 (1개)
+- `ttl.user.select` 추가 (1개)
+
+### 2026-05-13 변경 내역 (3차 — OrgProjectsPage)
+- `btn.project.users` 추가 (1개) — 사용자 설정 이동 버튼
+- `msg.projectnm.required` 추가 (1개) — 프로젝트명 필수 입력 메시지
+
+### 2026-05-13 변경 내역 (2차 — OrgTenantLlmsPage)
+- `cod.llmmodeluseyn_C/S` 추가 (2개)
+- `lbl.jobnm/apikey/llmmodelnm` 추가 (3개)
+- `thd.activeyn_thd/llmmodelnm_thd/llmmodeluseyn_thd/projectdesc_thd/tenantnm_thd` 추가 (5개)
+- `ttl.tenant.llm/project.llm/llm.detail` 추가 (3개)
+
+### 2026-05-13 변경 내역
+- `cod.filter_all/status_active/status_inactive/sep_newusers/rolecd_M/rolecd_U` 추가 (6개) — OrgTenantUsersPage 필터·역할 코드값
+- `lbl.creatornm/createdts/newuser` 추가 (3개)
+- `thd.usernm_thd` 추가 (1개)
+- `ttl.tenant.user.reject` 추가 (1개)
+- `msg.reject.reason.required/msg.tenant.user.reject.reason` 추가 (2개)
 
 ### 2026-05-12 변경 내역
 - `cod.keycoldatatypecd_C/D/I` 삭제 (구버전)

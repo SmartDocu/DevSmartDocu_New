@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { App, Modal, Popconfirm } from 'antd'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 import { useOrgProjects, useSaveOrgProject, useDeleteOrgProject } from '@/hooks/useOrg'
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
@@ -13,9 +14,9 @@ const EMPTY_FORM = {
 
 export default function OrgProjectsPage() {
   const { message } = App.useApp()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
+  useLangStore((s) => s.translations)
   const roleid = user?.roleid
 
   const paramTenantid = roleid === 7 ? searchParams.get('tenantid') : null
@@ -44,7 +45,7 @@ export default function OrgProjectsPage() {
   const handleNew = () => { setSelectedRow(null); setForm(EMPTY_FORM) }
 
   const handleSave = () => {
-    if (!form.projectnm.trim()) { message.warning('프로젝트명을 입력하세요.'); return }
+    if (!form.projectnm.trim()) { message.warning(t('msg.projectnm.required')); return }
     saveMutation.mutate(
       {
         projectid:   form.projectid || null,
@@ -54,28 +55,29 @@ export default function OrgProjectsPage() {
         useyn:       form.useyn ?? true,
       },
       {
-        onSuccess: () => { message.success('저장되었습니다.'); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || '저장 실패'),
+        onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
+        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
       },
     )
   }
 
   const handleDelete = () => {
-    if (!form.projectid) { message.warning('삭제할 프로젝트를 선택하세요.'); return }
+    if (!form.projectid) { message.warning(t('msg.select.delete')); return }
     Modal.confirm({
-      title: '삭제 확인', content: '정말 삭제하시겠습니까?',
-      okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
+      title: t('btn.delete'), content: t('msg.confirm.delete'),
+      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteMutation.mutate(
         { projectid: form.projectid },
         {
-          onSuccess: () => { message.success('삭제되었습니다.'); handleNew() },
-          onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
+          onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
+          onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
         },
       ),
     })
   }
 
-  const pageTitle = tenantnm ? `프로젝트 관리: ${tenantnm}` : '프로젝트 관리'
+  const pageTitle = tenantnm
+    ? `${t('mnu.project.projects')}: ${tenantnm}` : t('mnu.project.projects')
 
   return (
     <div>
@@ -84,32 +86,29 @@ export default function OrgProjectsPage() {
           <div className="gradient-bar" />
           <div>{pageTitle}</div>
         </div>
-        {roleid === 7 && (
-          <button type="button" className="icon-btn" onClick={() => navigate('/settings/tenants')}>
-            <img src="/icons/back.svg" alt="뒤로가기" className="icon-img config-icon" />
-          </button>
-        )}
       </div>
 
-      <div style={{ display: 'flex', gap: 20, minHeight: '80%' }}>
-        {/* 왼쪽: 목록 */}
-        <div style={{ flex: 1.5 }}>
-          <h3>프로젝트 목록</h3>
+      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+        {/* 좌측 패널: 목록 */}
+        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+          </div>
           <div className="table-container">
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '30%' }}>프로젝트명</th>
-                  <th style={{ width: '30%' }}>설명</th>
-                  <th style={{ width: '10%' }}>사용</th>
-                  <th style={{ width: '20%' }}>생성일시</th>
+                  <th style={{ width: '40%' }}>{t('thd.projectnm_thd')}</th>
+                  <th style={{ width: '45%' }}>{t('thd.projectdesc_thd')}</th>
+                  <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>로딩 중...</td></tr>
+                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : projects.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>등록된 프로젝트가 없습니다.</td></tr>
+                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : projects.map((p) => (
                   <tr key={p.projectid}
                     className={selectedRow?.projectid === p.projectid ? 'selected-row' : ''}
@@ -118,7 +117,6 @@ export default function OrgProjectsPage() {
                     <td>{p.projectnm}</td>
                     <td style={{ whiteSpace: 'pre-wrap' }}>{p.projectdesc || ''}</td>
                     <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
-                    <td>{p.createdts}</td>
                   </tr>
                 ))}
               </tbody>
@@ -126,73 +124,50 @@ export default function OrgProjectsPage() {
           </div>
         </div>
 
-        {/* 오른쪽: 상세 */}
-        <div style={{ flex: 1.5, paddingLeft: 20 }}>
-          <h3>프로젝트 상세</h3>
+        {/* 우측 패널: 상세 */}
+        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+<button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
+                {t('btn.save')}
+              </button>
+              {selectedRow && (
+                <Popconfirm
+                  title={t('msg.confirm.delete')}
+                  onConfirm={handleDelete}
+                  okText={t('btn.delete')}
+                  cancelText={t('btn.cancel')}
+                  okButtonProps={{ danger: true }}
+                >
+                  <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>
+                    {t('btn.delete')}
+                  </button>
+                </Popconfirm>
+              )}
+            </div>
+          </div>
 
-          <div className="form-group-left">
-            <label>프로젝트명:</label>
+          <div className="form-group">
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:</label>
             <input type="text" value={form.projectnm}
               onChange={(e) => setForm(f => ({ ...f, projectnm: e.target.value }))} />
           </div>
 
-          <div className="form-group-left">
-            <label>설명:</label>
-            <textarea value={form.projectdesc} rows={4}
-              style={{ resize: 'none', height: '80%' }}
+          <div className="form-group">
+            <label>{t('lbl.desc_lbl')}:</label>
+            <textarea rows={3} value={form.projectdesc} style={{ resize: 'vertical' }}
               onChange={(e) => setForm(f => ({ ...f, projectdesc: e.target.value }))} />
           </div>
 
-          <div className="form-group-left" style={{ display: 'block' }}>
-            <label>사용:</label>
-            <input type="checkbox" checked={form.useyn} style={{ marginLeft: 50 }}
-              onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />
-          </div>
-
-          <div className="form-group-left">
-            <label>생성자:</label>
-            <input type="text" value={form.creatornm} disabled style={roStyle} />
-          </div>
-
-          <div className="form-group-left">
-            <label>생성일시:</label>
-            <input type="text" value={form.createdts} disabled style={roStyle} />
-          </div>
-
-          <div className="button-group">
-            <button type="button" className="icon-btn" onClick={handleNew}>
-              <div className="icon-wrapper">
-                <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                <span className="icon-label">신규</span>
-              </div>
-            </button>
-            <button type="button" className="icon-btn" onClick={handleSave} disabled={saveMutation.isPending}>
-              <div className="icon-wrapper">
-                <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                <span className="icon-label">저장</span>
-              </div>
-            </button>
-            <Popconfirm title="정말 삭제하시겠습니까?" onConfirm={handleDelete}
-              okText="삭제" cancelText="취소" okButtonProps={{ danger: true }}
-              disabled={!form.projectid}>
-              <button type="button" className="icon-btn" disabled={deleteMutation.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                  <span className="icon-label">삭제</span>
-                </div>
-              </button>
-            </Popconfirm>
-          </div>
-
-          {/* 사용자 설정 이동 버튼 */}
-          {selectedRow && (
-            <div className="button-group" style={{ marginTop: 8 }}>
-              <button type="button" className="btn btn-link"
-                onClick={() => navigate(`/org/project-users?projects=${encodeURIComponent(form.projectid)}`)}>
-                사용자 설정 이동 &#x279C;
-              </button>
+          <div className="form-group">
+            <label>{t('lbl.useyn_lbl')}:</label>
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.useyn}
+                onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />
             </div>
-          )}
+          </div>
+
         </div>
       </div>
     </div>

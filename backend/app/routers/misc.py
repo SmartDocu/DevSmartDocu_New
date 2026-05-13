@@ -192,9 +192,9 @@ def save_qna_answer(body: QnaAnswerRequest, token: str = Depends(get_token)):
 @router.get("/follow")
 def get_follow_links():
     sb = _sb_svc()
-    excel_url = sb.storage.from_("smartdoc").get_public_url("follow/APQR_Excel.xlsx")
-    pdf_url = sb.storage.from_("smartdoc").get_public_url("follow/Follow.pdf")
-    content_url = sb.storage.from_("smartdoc").get_public_url("follow/Follow_Content.txt")
+    excel_url = sb.storage.from_("sdoc").get_public_url("follow/APQR_Excel.xlsx")
+    pdf_url = sb.storage.from_("sdoc").get_public_url("follow/Follow.pdf")
+    content_url = sb.storage.from_("sdoc").get_public_url("follow/Follow_Content.txt")
     return {"excel_url": excel_url, "pdf_url": pdf_url, "content_url": content_url}
 
 
@@ -231,21 +231,21 @@ def _save_iconfile(sb, file: UploadFile, folder: str, existing_url: Optional[str
     if existing_url:
         try:
             parsed = urlparse(existing_url)
-            prefix = "/storage/v1/object/public/smartdoc/"
+            prefix = "/storage/v1/object/public/sdoc/"
             if prefix in parsed.path:
                 path_to_delete = parsed.path.split(prefix)[-1]
-                sb.storage.from_("smartdoc").remove([path_to_delete])
+                sb.storage.from_("sdoc").remove([path_to_delete])
         except Exception:
             pass
     ext = os.path.splitext(file.filename)[1]
     uuid_name = f"{uuid.uuid4()}{ext}"
     storage_path = f"{folder}/{uuid_name}"
-    sb.storage.from_("smartdoc").upload(
+    sb.storage.from_("sdoc").upload(
         storage_path,
         file.file.read(),
         {"content-type": file.content_type},
     )
-    public_url = sb.storage.from_("smartdoc").get_public_url(storage_path).split("?")[0]
+    public_url = sb.storage.from_("sdoc").get_public_url(storage_path).split("?")[0]
     return file.filename, public_url
 
 

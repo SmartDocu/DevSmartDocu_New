@@ -71,7 +71,7 @@ def get_llm_model(request):
             project_id = user.get("projectid")
             tenant_id = user.get("tenantid")
         else:
-            rows_t = process_data_in_supabase(supabase, "tenants", "select", {}, {"issytemtenant": True}, "tenantid")
+            rows_t = process_data_in_supabase(supabase, "tenants", "select", {}, {"issystemtenant": True}, "tenantid")
             tenant_id = rows_t[0]["tenantid"]
 
             rows_p = process_data_in_supabase(supabase, "projects", "select", {}, {"tenantid": tenant_id, "projectnm": "public"}, "projectid")

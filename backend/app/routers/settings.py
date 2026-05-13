@@ -58,21 +58,21 @@ def _save_iconfile(sb, file: UploadFile, folder: str, existing_url: Optional[str
     if existing_url:
         try:
             parsed = urlparse(existing_url)
-            prefix = "/storage/v1/object/public/smartdoc/"
+            prefix = "/storage/v1/object/public/sdoc/"
             if prefix in parsed.path:
                 path_to_delete = parsed.path.split(prefix)[-1]
-                sb.storage.from_("smartdoc").remove([path_to_delete])
+                sb.storage.from_("sdoc").remove([path_to_delete])
         except Exception:
             pass
     ext = os.path.splitext(file.filename)[1]
     uuid_name = f"{uuid.uuid4()}{ext}"
     storage_path = f"{folder}/{uuid_name}"
-    sb.storage.from_("smartdoc").upload(
+    sb.storage.from_("sdoc").upload(
         storage_path,
         file.file.read(),
         {"content-type": file.content_type},
     )
-    public_url = sb.storage.from_("smartdoc").get_public_url(storage_path).split("?")[0]
+    public_url = sb.storage.from_("sdoc").get_public_url(storage_path).split("?")[0]
     return file.filename, public_url
 
 
@@ -239,7 +239,8 @@ def list_tenants(token: str = Depends(get_token)):
             row["decemail"] = ""
             row["dectelno"] = ""
 
-    return {"tenants": rows, "billing_models": BILLING_MODELS}
+    langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
+    return {"tenants": rows, "billing_models": BILLING_MODELS, "languages": langs}
 
 
 @router.post("/tenants")
@@ -252,6 +253,9 @@ async def save_tenant(
     llmlimityn: str = Form("false"),
     email: Optional[str] = Form(None),
     telno: Optional[str] = Form(None),
+    languagecd: Optional[str] = Form(None),
+    timezone: Optional[str] = Form(None),
+    issystemtenant: str = Form("false"),
     iconfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
 ):
@@ -260,14 +264,22 @@ async def save_tenant(
 
     useyn_bool = useyn.lower() not in ("false", "0", "")
     llmlimityn_bool = llmlimityn.lower() not in ("false", "0", "")
+    issystemtenant_bool = issystemtenant.lower() not in ("false", "0", "")
     billingusercnt_int = int(billingusercnt) if billingusercnt and billingusercnt.strip() else None
 
     tenant_data = {
         "tenantnm": tenantnm,
         "useyn": useyn_bool,
+        "billingmodelcd": billingmodelcd or "Fr",
+        "billingusercnt": billingusercnt_int,
         "llmlimityn": llmlimityn_bool,
+        "issystemtenant": issystemtenant_bool,
         "creator": user.id,
     }
+    if languagecd:
+        tenant_data["languagecd"] = languagecd
+    if timezone:
+        tenant_data["timezone"] = timezone
 
     if tenantid:
         existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid, iconfileurl").eq("tenantid", tenantid).execute().data
@@ -278,20 +290,6 @@ async def save_tenant(
                 tenant_data["iconfilenm"] = icon_nm
                 tenant_data["iconfileurl"] = icon_url
             sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
-            bill_data = {
-                "billingmodelcd": billingmodelcd,
-                "billingusercnt": billingusercnt_int,
-            }
-            if email is not None:
-                bill_data["encemail"] = _encrypt(email)
-            if telno is not None:
-                bill_data["enctelno"] = _encrypt(telno)
-            existing_bill = sb.schema(SUPABASE_SCHEMA).table("billmasters").select("tenantid").eq("tenantid", tenantid).execute().data
-            if existing_bill:
-                sb.schema(SUPABASE_SCHEMA).table("billmasters").update(bill_data).eq("tenantid", tenantid).execute()
-            else:
-                bill_data["tenantid"] = tenantid
-                sb.schema(SUPABASE_SCHEMA).table("billmasters").insert(bill_data).execute()
             return {"status": "updated"}
 
     resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert(tenant_data).execute()
@@ -303,12 +301,16 @@ async def save_tenant(
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
+        from datetime import date
         bill_data = {
+            "billtargetcd": "T",
             "tenantid": new_tenantid,
-            "billingmodelcd": billingmodelcd,
-            "billingusercnt": billingusercnt_int,
+            "billingmodelcd": billingmodelcd or "Fr",
+            "billingfirstdt": date.today().isoformat(),
+            "useyn": True,
             "encemail": _encrypt(email or ""),
             "enctelno": _encrypt(telno or ""),
+            "creator": user.id,
         }
         sb.schema(SUPABASE_SCHEMA).table("billmasters").insert(bill_data).execute()
     return {"status": "inserted"}

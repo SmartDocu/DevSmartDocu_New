@@ -488,7 +488,7 @@ def register(body: RegisterRequest):
         service.schema(SCHEMA)
         .table("tenants")
         .select("tenantid")
-        .eq("issytemtenant", True)
+        .eq("issystemtenant", True)
         .execute()
     )
     if not smartdoc_row.data:

@@ -110,9 +110,9 @@ async def save_chapter(
         ext = os.path.splitext(templatefile.filename)[1]
         path = f"template/chaptertemplate/{uuid.uuid4()}{ext}"
         content = await templatefile.read()
-        sb.storage.from_("smartdoc").upload(path, content, {"content-type": templatefile.content_type})
+        sb.storage.from_("sdoc").upload(path, content, {"content-type": templatefile.content_type})
         record["chaptertemplatenm"] = templatefile.filename
-        record["chaptertemplateurl"] = sb.storage.from_("smartdoc").get_public_url(path).split("?")[0]
+        record["chaptertemplateurl"] = sb.storage.from_("sdoc").get_public_url(path).split("?")[0]
 
     try:
         if existing:
@@ -411,9 +411,9 @@ def save_objectfiltermap(body: ObjectFilterMapSaveRequest, token: str = Depends(
 def _delete_storage_file(sb, url: str):
     try:
         parsed = urlparse(url)
-        prefix = "/storage/v1/object/public/smartdoc/"
+        prefix = "/storage/v1/object/public/sdoc/"
         if prefix in parsed.path:
             path = parsed.path.split(prefix)[-1]
-            sb.storage.from_("smartdoc").remove([path])
+            sb.storage.from_("sdoc").remove([path])
     except Exception:
         pass

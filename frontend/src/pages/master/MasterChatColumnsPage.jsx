@@ -29,6 +29,7 @@ export default function MasterChatColumnsPage() {
   const [aliasesInput,    setAliasesInput]    = useState('')
   const [newRows,         setNewRows]         = useState([])
   const [deletedValues,   setDeletedValues]   = useState([])
+  const [editedValues,    setEditedValues]    = useState({})
   const [isSaving,        setIsSaving]        = useState(false)
 
   const { data: cols   = [] } = useDataCols(selectedDataUid)
@@ -47,6 +48,7 @@ export default function MasterChatColumnsPage() {
     setAliasesInput('')
     setNewRows([])
     setDeletedValues([])
+    setEditedValues({})
   }
 
   const handleColClick = (col) => {
@@ -54,6 +56,7 @@ export default function MasterChatColumnsPage() {
     setAliasesInput(col.aliases || '')
     setNewRows([])
     setDeletedValues([])
+    setEditedValues({})
   }
 
   const handleAddRow = () => {
@@ -66,6 +69,16 @@ export default function MasterChatColumnsPage() {
 
   const removeNewRow = (i) => {
     setNewRows((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  const updateExistingRow = (originalValue, field, val) => {
+    setEditedValues((prev) => ({
+      ...prev,
+      [originalValue]: {
+        ...(prev[originalValue] || values.find((v) => v.value === originalValue)),
+        [field]: val,
+      },
+    }))
   }
 
   const handleSave = async () => {
@@ -92,12 +105,32 @@ export default function MasterChatColumnsPage() {
             params: { datauid: v.datauid, querycolnm: v.querycolnm, value: v.value },
           })
         ),
+        ...Object.entries(editedValues)
+          .filter(([orig]) => !deletedValues.some((d) => d.value === orig))
+          .flatMap(([orig, cur]) => {
+            const ops = []
+            if (cur.value !== orig) {
+              ops.push(apiClient.delete('/data-cols/values', {
+                params: { datauid: selectedCol.datauid, querycolnm: selectedCol.querycolnm, value: orig },
+              }))
+            }
+            ops.push(apiClient.post('/data-cols/values', {
+              datauid:      selectedCol.datauid,
+              querycolnm:   selectedCol.querycolnm,
+              value:        cur.value,
+              logical_name: cur.logical_name || null,
+              aliases:      cur.aliases      || null,
+              orderno:      cur.orderno !== '' && cur.orderno !== null ? Number(cur.orderno) : null,
+            }))
+            return ops
+          }),
       ])
       queryClient.invalidateQueries({ queryKey: ['data-cols', selectedDataUid] })
       queryClient.invalidateQueries({ queryKey: ['data-col-values', selectedCol.datauid, selectedCol.querycolnm] })
       queryClient.invalidateQueries({ queryKey: ['data-col-datas'] })
       setNewRows([])
       setDeletedValues([])
+      setEditedValues({})
       message.success(t('msg.save.success'))
     } catch (err) {
       message.error(err.response?.data?.detail || t('msg.save.error'))
@@ -218,20 +251,35 @@ export default function MasterChatColumnsPage() {
                     )}
                     {values
                       .filter((v) => !deletedValues.some((d) => d.value === v.value && d.querycolnm === v.querycolnm))
-                      .map((v) => (
-                      <tr key={v.value}>
-                        <td>{v.value}</td>
-                        <td>{v.logical_name || ''}</td>
-                        <td>{v.aliases || ''}</td>
-                        <td>{v.orderno ?? ''}</td>
-                        {isEditYn && (
-                          <td style={{ textAlign: 'center', padding: '2px 4px' }}>
-                            <button type="button" style={btnX}
-                              onClick={() => handleMarkDelete(v)}>×</button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
+                      .map((v) => {
+                        const cur = editedValues[v.value] || v
+                        return (
+                          <tr key={v.value}>
+                            {isEditYn ? (
+                              <>
+                                <td><input type="text" value={cur.value}
+                                  onChange={(e) => updateExistingRow(v.value, 'value', e.target.value)} /></td>
+                                <td><input type="text" value={cur.logical_name || ''}
+                                  onChange={(e) => updateExistingRow(v.value, 'logical_name', e.target.value)} /></td>
+                                <td><input type="text" value={cur.aliases || ''}
+                                  onChange={(e) => updateExistingRow(v.value, 'aliases', e.target.value)} /></td>
+                                <td><input type="number" value={cur.orderno ?? ''}
+                                  onChange={(e) => updateExistingRow(v.value, 'orderno', e.target.value)} /></td>
+                                <td style={{ textAlign: 'center', padding: '2px 4px' }}>
+                                  <button type="button" style={btnX} onClick={() => handleMarkDelete(v)}>×</button>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td>{v.value}</td>
+                                <td>{v.logical_name || ''}</td>
+                                <td>{v.aliases || ''}</td>
+                                <td>{v.orderno ?? ''}</td>
+                              </>
+                            )}
+                          </tr>
+                        )
+                      })}
                     {isEditYn && newRows.map((row, i) => (
                       <tr key={`new-${i}`} style={{ background: 'var(--table-new-row-bg, #fafafa)' }}>
                         <td><input type="text" value={row.value}

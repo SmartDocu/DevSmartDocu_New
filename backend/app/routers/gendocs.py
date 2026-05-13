@@ -276,10 +276,10 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
     if row and row[0].get("createfileurl"):
         url = row[0]["createfileurl"]
         parsed = urlparse(url)
-        prefix = "/storage/v1/object/public/smartdoc/"
+        prefix = "/storage/v1/object/public/sdoc/"
         if prefix in parsed.path:
             try:
-                sb.storage.from_("smartdoc").remove([parsed.path.split(prefix)[-1]])
+                sb.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
             except Exception:
                 pass
     sb.schema(SUPABASE_SCHEMA).table("gendoc_params").delete().eq("gendocuid", gendocuid).execute()
@@ -788,18 +788,18 @@ async def upload_chapter_file(
     if genchap[0].get("updatefileurl"):
         old_url = genchap[0]["updatefileurl"]
         parsed = urlparse(old_url)
-        prefix = "/storage/v1/object/public/smartdoc/"
+        prefix = "/storage/v1/object/public/sdoc/"
         if prefix in parsed.path:
             try:
-                sb.storage.from_("smartdoc").remove([parsed.path.split(prefix)[-1]])
+                sb.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
             except Exception:
                 pass
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "docx"
     path = f"result/{gendocuid}/chapters/{uuid.uuid4()}.{ext}"
     content = await file.read()
-    sb.storage.from_("smartdoc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
-    public_url = sb.storage.from_("smartdoc").get_public_url(path)
+    sb.storage.from_("sdoc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
+    public_url = sb.storage.from_("sdoc").get_public_url(path)
     now = datetime.now().isoformat()
 
     sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
@@ -840,18 +840,18 @@ async def upload_file(
     old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("updatefileurl,updatefilenm").eq("gendocuid", gendocuid).execute().data
     if old and old[0].get("updatefileurl"):
         parsed = urlparse(old[0]["updatefileurl"])
-        prefix = "/storage/v1/object/public/smartdoc/"
+        prefix = "/storage/v1/object/public/sdoc/"
         if prefix in parsed.path:
             try:
-                sb.storage.from_("smartdoc").remove([parsed.path.split(prefix)[-1]])
+                sb.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
             except Exception:
                 pass
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "docx"
     path = f"result/{gendocuid}/{uuid.uuid4()}.{ext}"
     content = await file.read()
-    sb.storage.from_("smartdoc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
-    public_url = sb.storage.from_("smartdoc").get_public_url(path)
+    sb.storage.from_("sdoc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
+    public_url = sb.storage.from_("sdoc").get_public_url(path)
     now = datetime.now().isoformat()
 
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
@@ -1091,9 +1091,9 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
                 if old and old[0].get("createfileurl"):
                     old_url = old[0]["createfileurl"]
                     parsed = urlparse(old_url)
-                    prefix = "/storage/v1/object/public/smartdoc/"
+                    prefix = "/storage/v1/object/public/sdoc/"
                     if prefix in parsed.path:
-                        sb_svc.storage.from_("smartdoc").remove([parsed.path.split(prefix)[-1]])
+                        sb_svc.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
             except Exception:
                 pass
 
@@ -1102,11 +1102,11 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
             buf.seek(0)
 
             try:
-                sb_svc.storage.from_("smartdoc").upload(path, buf.read(), {"cacheControl": "3600", "upsert": "true"})
+                sb_svc.storage.from_("sdoc").upload(path, buf.read(), {"cacheControl": "3600", "upsert": "true"})
             except Exception as e:
                 raise Exception(f"[Storage 업로드 오류] {e}")
 
-            public_url = sb_svc.storage.from_("smartdoc").get_public_url(path)
+            public_url = sb_svc.storage.from_("sdoc").get_public_url(path)
 
             try:
                 sb.schema(SUPABASE_SCHEMA).table("gendocs").update({

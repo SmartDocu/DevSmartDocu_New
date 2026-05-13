@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
@@ -8,6 +8,11 @@ import {
   useDataMetaDatas, useDataMeta, useSaveDataMeta, useDeleteDataMeta,
 } from '@/hooks/useDataMetas'
 import { useDataCols } from '@/hooks/useDataCols'
+
+const parseKeys = (str) =>
+  str ? (str.match(/"([^"]+)"/g)?.map((s) => s.replace(/"/g, '')) ?? []) : []
+
+const formatKeys = (arr) => arr.map((v) => `"${v}"`).join(', ')
 
 const EMPTY_FORM = {
   aliases: '',
@@ -40,6 +45,15 @@ export default function MasterChatTablesPage() {
 
   const [selectedUid, setSelectedUid] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [pkOpen, setPkOpen] = useState(false)
+  const pkRef = useRef(null)
+
+  useEffect(() => {
+    if (!pkOpen) return
+    const close = (e) => { if (pkRef.current && !pkRef.current.contains(e.target)) setPkOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [pkOpen])
 
   const { data: meta } = useDataMeta(selectedUid)
   const { data: cols = [] } = useDataCols(selectedUid)
@@ -169,12 +183,56 @@ export default function MasterChatTablesPage() {
 
           <div className="form-group">
             <label>{t('lbl.aliases')}</label>
-            <input type="text" value={form.aliases} onChange={setField('aliases')} />
+            <input type="text" value={form.aliases} onChange={setField('aliases')} placeholder='"SalesOrderDetail", "OrderDetailID"' />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.primary_key')}</label>
-            <input type="text" value={form.primary_key} onChange={setField('primary_key')} />
+            <div ref={pkRef} style={{ position: 'relative' }}>
+              <select
+                value=""
+                onMouseDown={(e) => { e.preventDefault(); if (isEditYn) setPkOpen((o) => !o) }}
+                onChange={() => {}}
+                disabled={!isEditYn}
+                style={{ cursor: isEditYn ? 'pointer' : 'default' }}
+              >
+                <option value="">
+                  {parseKeys(form.primary_key).length === 0
+                    ? t('msg.select.placeholder')
+                    : parseKeys(form.primary_key).join(', ')}
+                </option>
+              </select>
+              {pkOpen && isEditYn && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0,
+                  background: '#fff', border: '1px solid #d9d9d9', borderRadius: 4,
+                  zIndex: 1000, maxHeight: 200, overflowY: 'auto',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                }}>
+                  {cols.map((c) => {
+                    const checked = parseKeys(form.primary_key).includes(c.querycolnm)
+                    return (
+                      <div key={c.querycolnm}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '5px 10px', cursor: 'pointer',
+                          background: checked ? '#f0f7ff' : 'transparent', color: '#333',
+                        }}
+                        onClick={() => {
+                          const cur = parseKeys(form.primary_key)
+                          const next = checked ? cur.filter((v) => v !== c.querycolnm) : [...cur, c.querycolnm]
+                          setForm((f) => ({ ...f, primary_key: formatKeys(next) }))
+                        }}
+                      >
+                        <input type="checkbox" checked={checked} readOnly
+                          style={{ margin: 0, cursor: 'pointer', pointerEvents: 'none' }} />
+                        {c.querycolnm}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="form-group">
@@ -189,37 +247,39 @@ export default function MasterChatTablesPage() {
 
           <div className="form-group">
             <label>{t('lbl.grain')}</label>
-            <input type="text" value={form.grain} onChange={setField('grain')} />
+            <input type="text" value={form.grain} onChange={setField('grain')} placeholder='"SalesOrderDetailID"' />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.purpose')}</label>
-            <textarea rows={3} value={form.purpose} style={{ resize: 'vertical' }} onChange={setField('purpose')} />
+            <textarea rows={3} value={form.purpose} style={{ resize: 'vertical' }} onChange={setField('purpose')}
+              placeholder={'"Product sales volume analysis",\n"Sales analysis by category",\n"Sales aggregation by line"'} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.query_examples')}</label>
-            <textarea rows={3} value={form.query_examples} style={{ resize: 'vertical' }} onChange={setField('query_examples')} />
+            <textarea rows={3} value={form.query_examples} style={{ resize: 'vertical' }} onChange={setField('query_examples')}
+              placeholder={'"Best-selling products",\n"Sales by category",\n"Product sales ranking"'} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.parent_schema')}</label>
-            <input type="text" value={form.parent_schema} onChange={setField('parent_schema')} />
+            <input type="text" value={form.parent_schema} onChange={setField('parent_schema')} placeholder="Sales" />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.parent_table')}</label>
-            <input type="text" value={form.parent_table} onChange={setField('parent_table')} />
+            <input type="text" value={form.parent_table} onChange={setField('parent_table')} placeholder="SalesOrderHeader" />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.parent_column')}</label>
-            <input type="text" value={form.parent_column} onChange={setField('parent_column')} />
+            <input type="text" value={form.parent_column} onChange={setField('parent_column')} placeholder="SalesOrderID" />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.child_column')}</label>
-            <input type="text" value={form.child_column} onChange={setField('child_column')} />
+            <input type="text" value={form.child_column} onChange={setField('child_column')} placeholder="SalesOrderID" />
           </div>
 
 
