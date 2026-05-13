@@ -314,12 +314,17 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             genobjectuid = data_item['genobjectuid']
 
             gen_objects = supabase.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", gen_chapter_uid).eq("genobjectuid", genobjectuid).execute()
-            filter_json = json.loads(gen_objects.data[0]["filterjson"]) if gen_objects.data[0]["filterjson"] else {}
+            raw_filterjson = gen_objects.data[0]["filterjson"]
+            if raw_filterjson:
+                filter_json = raw_filterjson if isinstance(raw_filterjson, dict) else json.loads(raw_filterjson)
+            else:
+                filter_json = {}
 
         else:
+            filter_json = {}
             genobjectuid = str(uuid.uuid4())
             run_start_dts = datetime.now().isoformat()
-            queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
+            queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts)
 
         data_item['genobjectuid'] = genobjectuid
@@ -941,20 +946,14 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
 
 def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template, gen_chapter_uid, user_id, sep):
     """AI 결과를 템플릿에 순서대로 적용"""
-    print(f"jeff 201 ai_objects: {ai_objects}")
-    print(f"jeff 202 ai_results: {ai_results}")
     replace_dict = {}
     replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
     # replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data if item['replacestring'] is not None}
     replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data}
-    item_count = 0
 
     for original_idx, data_item in ai_objects:
-        item_count += 1
-        print(f"jeff 103 item_count: {item_count}")
         
         if original_idx in ai_results.keys():
-            print(f"jeff 102 original_idx: {original_idx}")
             result_data = ai_results[original_idx]
 
             final_result = result_data.get('final_result') or ""
@@ -975,13 +974,9 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                 place_holder_with_p = f"<p>{place_holder}</p>"
                 
                 if place_holder_with_p in text_template:
-                    print(f"jeff 001 : {place_holder} \n{text_template}")
                     text_template = text_template.replace(place_holder_with_p, final_result)
                 elif place_holder in text_template:
-                    print(f"jeff 002 : {place_holder} \n{text_template}")
                     text_template = text_template.replace(place_holder, final_result)
-                else:    # jeff
-                    print(f"jeff 003 : {place_holder} \n{text_template}")
 
                 text_template += '<p></p>'
 
@@ -995,9 +990,6 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
                 update_genobjects(supabase, [result_data['result']])
         
-        else: # jeff
-            print(f"jeff 105 item_count: {item_count}")
-    
     return text_template
 
 
@@ -1033,8 +1025,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
         updatafileurl = read_genchapter[0]['updatefileurl']
         genchapters = ''
         
-        # read_chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
-        read_chapter = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('flattexttemplate').eq('chapteruid', chapter_uid).execute().data
+        read_chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
+        # read_chapter = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('flattexttemplate').eq('chapteruid', chapter_uid).execute().data
 
         now = datetime.now().isoformat()
         
@@ -1056,8 +1048,9 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
 
                         supabase.schema(SUPABASE_SCHEMA).table("genobjects").update(update_data).eq("genobjectuid", row["genobjectuid"]).execute()
 
-                    text_template = read_chapter[0]['flattexttemplate']
-                    # text_template = read_chapter[0]['texttemplate']                    
+                    read_flat = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('flattexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
+                    flat_template = read_flat[0].get('flattexttemplate') if read_flat else None
+                    text_template = flat_template or read_chapter[0]['texttemplate']
                     loggenchapteruid = str(uuid.uuid4())
                     update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, gen_chapter_uid, gendoc_uid, user_id, 'str', docid, chapter_uid)
                 else:
@@ -1069,9 +1062,42 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     else:
                         text_template = read_chapter[0]['texttemplate']
 
-                read_text_template = supabase.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {'p_genchapteruid': gen_chapter_uid}).execute().data
-                
-                if sep != 'Not':
+                if sep == 'Not':
+                    # RPC 대신 genobjects 직접 조회 (FOR 루프 확장으로 동일 objectuid에 genobject 여러 개)
+                    _type_map = {"CA": "AI_chart", "TA": "AI_table", "SA": "AI_sentence"}
+                    _domain_tbl_map = {"CA": "charts", "SA": "sentences", "TA": "tables"}
+                    read_text_template = []
+                    go_rows = supabase.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", gen_chapter_uid).execute().data
+                    for go in go_rows:
+                        obj_rows = supabase.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("objectuid", go["objectuid"]).execute().data
+                        if not obj_rows:
+                            continue
+                        obj = obj_rows[0]
+                        typecd = go.get("objecttypecd") or obj.get("objecttypecd")
+                        domain_row = {}
+                        domain_tbl = _domain_tbl_map.get(typecd)
+                        if domain_tbl:
+                            d_rows = supabase.schema(SUPABASE_SCHEMA).table(domain_tbl).select("*").eq("objectuid", go["objectuid"]).execute().data
+                            if d_rows:
+                                domain_row = d_rows[0]
+                        read_text_template.append({
+                            "gendocnm": gendoc_uid,
+                            "chapteruid": chapter_uid,
+                            "chapternm": obj.get("objectnm", ""),
+                            "texttemplate": text_template,
+                            "objectuid": go["objectuid"],
+                            "objectnm": obj.get("objectnm"),
+                            "type": _type_map.get(typecd, ""),
+                            "objecttypecd": typecd,
+                            "sourcebase": domain_row.get("gptq") or obj.get("sourcebase"),
+                            "sourcetext": domain_row.get("sourcetext") or obj.get("sourcetext"),
+                            "etc1": domain_row.get("etc1") or obj.get("etc1"),
+                            "etc2": domain_row.get("etc2") or obj.get("etc2"),
+                            "datauid": domain_row.get("datauid"),
+                            "genobjectuid": go["genobjectuid"],
+                        })
+                else:
+                    read_text_template = supabase.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {'p_genchapteruid': gen_chapter_uid}).execute().data
                     read_text_template = [row for row in read_text_template if row['objectuid'] == sep]
 
                 if read_text_template:
@@ -1109,12 +1135,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                                 ai_results = progress_item['ai_results']
                             else:
                                 yield progress_item
-                        
-                        # # jeff
-                        # replace_string = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
-                        
-                        # #####
-                            
+
                         # AI 결과를 템플릿에 적용
                         ai_text_template = apply_ai_results_to_template(
                             supabase, ai_objects, ai_results, text_template,

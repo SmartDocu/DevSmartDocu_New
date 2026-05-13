@@ -365,12 +365,13 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
 
-    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid,docid").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid,docid,createfiledts").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
     docid = genchap[0].get("docid")
+    createfiledts = _fmt(genchap[0].get("createfiledts"))
 
     chapter = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
     chapternm = chapter[0]["chapternm"] if chapter else ""
@@ -379,10 +380,36 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     closeyn = bool(gendoc[0]["closeyn"]) if gendoc else False
     gendocnm = gendoc[0]["gendocnm"] if gendoc else ""
 
-    objects = sb.schema(SUPABASE_SCHEMA).rpc("fn_genobjects__r", {"p_genchapteruid": genchapteruid}).execute().data or []
-    for obj in objects:
-        obj["objcreatedts"] = _fmt(obj.get("objcreatedts"))
-        obj["genobjcreatedts"] = _fmt(obj.get("genobjcreatedts"))
+    # RPC 대신 genobjects 직접 조회 (FOR 루프 확장으로 동일 objectuid에 genobject 여러 개)
+    _type_nm_map = {
+        "CA": "AI차트", "TA": "AI표", "SA": "AI문장",
+        "CU": "차트", "TU": "표", "SU": "문장",
+    }
+    go_rows = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", genchapteruid).execute().data or []
+    objects = []
+    for go in go_rows:
+        obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectnm,objectdesc,objecttypecd,orderno,createdts").eq("objectuid", go["objectuid"]).execute().data
+        if not obj_rows:
+            continue
+        obj = obj_rows[0]
+        typecd = go.get("objecttypecd") or obj.get("objecttypecd")
+        objects.append({
+            "genobjectuid": go["genobjectuid"],
+            "objectuid": go["objectuid"],
+            "objectnm": obj.get("objectnm", ""),
+            "objectdesc": obj.get("objectdesc", ""),
+            "objecttypecd": typecd,
+            "objecttypenm": _type_nm_map.get(typecd, typecd or ""),
+            "filterjson": go.get("filterjson"),
+            "orderno": obj.get("orderno", 0),
+            "resulttext": go.get("resulttext"),
+            "replacestring": go.get("replacestring"),
+            "objcreatedts": _fmt(obj.get("createdts")),
+            "genobjcreatedts": _fmt(go.get("createdts")),
+            "new_objectyn": False,
+            "new_genobjectyn": not bool(go.get("resulttext")),
+            "chapteruid": chapteruid,
+        })
     objects = sorted(objects, key=lambda x: x.get("orderno", 0))
 
     return {
@@ -393,6 +420,7 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
         "docid": docid,
         "chapteruid": chapteruid,
         "closeyn": closeyn,
+        "createfiledts": createfiledts,
     }
 
 
@@ -427,8 +455,7 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
     try:
         from utilsPrj.chapter_making import replace_doc
 
-        for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "", genObjectDirectYn=True):
-        # for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", objectuid, genObjectDirectYn=True):
+        for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", objectuid, genObjectDirectYn=True):
             if progress_data.get("type") == "error":
                 raise HTTPException(status_code=500, detail=progress_data.get("message", "오류가 발생했습니다."))
     except HTTPException:
@@ -460,18 +487,19 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     if is_locked:
         raise HTTPException(status_code=409, detail="이 문서의 해당 챕터가 이미 작성 중입니다.")
 
-    # Get base text template
+    # flattexttemplate 우선 사용 (FOR 루프 확장 플레이스홀더 포함), 없으면 texttemplate
+    flat_row = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("flattexttemplate").eq("genchapteruid", genchapteruid).execute().data
+    flat_template = flat_row[0].get("flattexttemplate") if flat_row else None
     chapter_row = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
-    texttemplate = chapter_row[0]["texttemplate"] if chapter_row else ""
+    texttemplate = flat_template or (chapter_row[0]["texttemplate"] if chapter_row else "")
 
-    # Replace placeholders with generated object results
-    read_texttemplate = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
-    for item in read_texttemplate:
-        if item.get("genobjectuid"):
-            read_datas = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("resulttext").eq("genobjectuid", item["genobjectuid"]).execute().data
-            html = read_datas[0]["resulttext"] if read_datas else ""
-            placeholder = f"{{{{{item['objectnm']}}}}}"
-            texttemplate = texttemplate.replace(placeholder, html or "")
+    # replacestring 기반 교체 (FOR 루프 확장 genobject 각각의 플레이스홀더 정확히 매칭)
+    go_rows = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("genobjectuid,replacestring,resulttext").eq("genchapteruid", genchapteruid).execute().data or []
+    for go in go_rows:
+        replace_key = go.get("replacestring")
+        html = go.get("resulttext") or ""
+        if replace_key:
+            texttemplate = texttemplate.replace(replace_key, html)
 
     now = datetime.now().isoformat()
 
@@ -697,9 +725,7 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             # 3. 템플릿 처리 → flattexttemplate
             registry = FunctionRegistry()
             registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
-            print("jeff 901")
             flattexttemplate = process_template(texttemplate, context, registry, True)
-            print(f"jeff 902 flattexttemplate: {flattexttemplate}")
 
             # 4. genchapters에 flattexttemplate 저장
             sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({
@@ -712,48 +738,20 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             _upsert_genobjects(sb, extracted, genchapteruid, chapteruid, user_id)
 
             
-            # 2026-05-06 Min 주석처리 --> 여기서부터 교체 작업 진행 필요
-            # 6. 각 genobject 콘텐츠 생성 (resulttext 저장)
-            # for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
-            #                                  genChapterDirectYn=True, divide="Chapter"):
-            #     if progress_data.get("type") == "error":
-            #         raise Exception(progress_data.get("message", "오류가 발생했습니다."))
-            #     elif progress_data.get("type") == "progress":
-            #         yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
-
-            yield json.dumps({
-                'type': 'progress',
-                'explain': '현재 챕터 생성 완료',
-                'message': '현재 챕터 생성 완료'
-            })
-
-            # 7. gentexttemplate 컴파일: {{objectNm}} 자리에 resulttext 삽입
-            rpc_data = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {"p_genchapteruid": genchapteruid}).execute().data or []
-            compiled = texttemplate
-            item_count = 0 # jeff
-            for item in rpc_data:
-                item_count += 1 # jeff
-                if item.get("genobjectuid"):
-                    obj_result = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("resulttext").eq("genobjectuid", item["genobjectuid"]).execute().data
-                    html_result = obj_result[0]["resulttext"] if obj_result else ""
-                    placeholder = f"{{{{{item['objectnm']}}}}}"
-                    print(f"jeff 101 {item_count} / item['objectnm']: {item['objectnm']}")
-                    print(f"jeff 102 html_result: {html_result}")
-                    compiled = compiled.replace(placeholder, html_result or "")
-
-            now_compiled = datetime.now().isoformat()
-            sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
-                "gentexttemplate": compiled,
-                "createuserid": user_id,
-                "createfiledts": now_compiled,
-            }).eq("genchapteruid", genchapteruid).execute()
+            # 6. 각 genobject 콘텐츠 생성 (resulttext 저장 + gentexttemplate 컴파일)
+            for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
+                                             genChapterDirectYn=True, divide="Chapter"):
+                if progress_data.get("type") == "error":
+                    raise Exception(progress_data.get("message", "오류가 발생했습니다."))
+                elif progress_data.get("type") == "progress":
+                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
 
             try:
                 sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
                     "gendocuid": gendocuid,
                     "genchapteruid": genchapteruid,
                     "creator": user_id,
-                    "createdts": now_compiled,
+                    "createdts": datetime.now().isoformat(),
                 }).execute()
             except Exception:
                 pass
@@ -990,6 +988,22 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
 
                 chapter_done = False
                 try:
+                    # FOR 루프 → flattexttemplate → genobjects 전처리
+                    from utilsPrj.template_parser import process_template, FunctionRegistry, extract_at_variables
+                    from utilsPrj.template_extracter import extract_from_processed_html
+                    _gc = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("chapteruid,docid").eq("genchapteruid", genchapteruid).execute().data
+                    if _gc:
+                        _chapteruid = _gc[0]["chapteruid"]
+                        _chap = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", _chapteruid).execute().data
+                        _tt = _chap[0]["texttemplate"] if _chap else ""
+                        _atv = extract_at_variables(_tt)
+                        _ctx = _build_context(sb, _atv["unique"], token, docid)
+                        _reg = FunctionRegistry()
+                        _reg.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
+                        _flat = process_template(_tt, _ctx, _reg, True)
+                        sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
+                        _upsert_genobjects(sb, extract_from_processed_html(_flat), genchapteruid, _chapteruid, user_id)
+
                     for progress_data in replace_doc(req, sb, user_id, genchapteruid, 'create', 'rewrite', 'Not',
                                                      genChapterDirectYn=False, divide="Chapter", doc_write=True):
                         if 'chapter_index' not in progress_data:
@@ -1171,5 +1185,4 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
         })
 
     if rows:
-        print(f"jeff 910 genobjects 추가 : {rows}")
         sb.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()

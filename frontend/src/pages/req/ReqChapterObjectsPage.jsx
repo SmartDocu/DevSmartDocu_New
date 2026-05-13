@@ -176,8 +176,8 @@ export default function ReqChapterObjectsPage() {
                 <tbody>
                   {objects.map((obj) => (
                     <tr
-                      key={obj.objectuid || obj.objectnm}
-                      className={selectedRow?.objectuid === obj.objectuid ? 'selected-row' : ''}
+                      key={obj.genobjectuid || obj.objectuid || obj.objectnm}
+                      className={selectedRow?.genobjectuid === obj.genobjectuid ? 'selected-row' : ''}
                       onClick={() => setSelectedRow(obj)}
                       style={{ cursor: 'pointer' }}
                     >
