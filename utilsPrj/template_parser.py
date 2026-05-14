@@ -91,6 +91,13 @@ def parse_condition(var_name: str, condition_str: str) -> dict:
     }
     """
     condition_str = condition_str.strip()
+    # CKEditor가 변환하는 스마트 따옴표 / HTML 엔티티 → 일반 따옴표로 정규화
+    condition_str = (condition_str
+        .replace('‘', "'").replace('’', "'")  # 왼/오 작은따옴표
+        .replace('“', '"').replace('”', '"')  # 왼/오 큰따옴표
+        .replace('&#39;', "'").replace('&apos;', "'")   # HTML 엔티티 단따옴표
+        .replace('&#34;', '"').replace('&quot;', '"')   # HTML 엔티티 큰따옴표
+    )
 
     # 조건식이 없으면 존재 여부 체크
     if not condition_str:
@@ -165,13 +172,16 @@ def evaluate_condition(parsed: dict, context: dict) -> bool:
             return len(ctx_value) > 0
         return bool(ctx_value)
 
-    # ✅ 여기에 추가
-    print(f"[조건 평가]")
-    print(f"  변수명   : {var_name}")
-    print(f"  연산자   : {op}")
-    print(f"  ctx_value: {ctx_value!r}  (type: {type(ctx_value).__name__})")
-    print(f"  cmp_value: {cmp_value!r}  (type: {type(cmp_value).__name__})")
-    
+    # ── FOR 루프 현재 행 (dict) → 스칼라 추출 ──────────────
+    # FOR 렌더러가 child_context["@변수"] = row(dict)로 설정하므로
+    # 단일 필드 dict는 그 값을 직접 비교값으로 사용한다.
+    if isinstance(ctx_value, dict):
+        if len(ctx_value) == 1:
+            ctx_value = list(ctx_value.values())[0]
+        else:
+            # 다중 필드 dict는 점 표기법(@배열.필드)을 사용해야 함
+            return False
+
     # ── 테이블 변수 → 행 수로 비교 ─────────────────────────
     if isinstance(ctx_value, list):
         ctx_value = len(ctx_value)
@@ -196,9 +206,7 @@ def evaluate_condition(parsed: dict, context: dict) -> bool:
         }
 
         fn = ops.get(op)
-        result = fn(ctx_value, cmp_value) if fn else False
-        print(f"  최종결과 : {result}")
-        return result
+        return fn(ctx_value, cmp_value) if fn else False
 
     except (ValueError, TypeError):
         return False
@@ -380,6 +388,9 @@ def render(nodes: list[dict], context: dict, registry: FunctionRegistry) -> str:
             for row in rows:
                 # 현재 context + row 데이터 병합 (중첩 FOR 도 자연스럽게 동작)
                 child_context = {**context, **row}
+                # 루프 변수를 현재 행(dict)으로 덮어쓰기 → IF 조건이 현재 항목을 비교할 수 있도록
+                if isinstance(row, dict):
+                    child_context[f"@{node['array_name']}"] = row
                 result.append(render(node["children"], child_context, registry))
 
         elif ntype == "If":

@@ -26,6 +26,7 @@ class ObjectsListResponse(BaseModel):
 class ObjectSaveRequest(BaseModel):
     chapteruid: str
     objectuid: Optional[str] = None
+    objectnm: Optional[str] = None
     objectdesc: Optional[str] = None
     objecttypecd_orig: Optional[str] = None
     objecttypecd: Optional[str] = None

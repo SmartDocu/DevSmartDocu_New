@@ -47,6 +47,10 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
     if user_row:
         billingmodelcd = user_row[0].get("billingmodelcd")
 
+    # 신규 생성 시 objectnm 필수
+    if not body.objectuid and not body.objectnm:
+        raise HTTPException(status_code=400, detail="항목명(objectnm)은 필수입니다.")
+
     transdata = {
         "chapteruid": body.chapteruid,
         "objectuid": body.objectuid or None,
@@ -55,6 +59,8 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
         "useyn": body.useyn,
         "orderno": body.orderno,
     }
+    if body.objectnm:
+        transdata["objectnm"] = body.objectnm
 
     # If type changed, clear old content
     if body.objectuid and body.objecttypecd != body.objecttypecd_orig:

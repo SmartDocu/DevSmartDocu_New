@@ -99,15 +99,21 @@ export default function MasterObjectPage() {
     setForm({ objectuid: '', objectnm: '', objectdesc: '', objecttypecd: '', objecttypecd_orig: '', useyn: false, orderno: '', creatornm: '', createdts: '' })
   }
 
+  const handleNew = () => {
+    if (!selectedChapteruid) { alert('챕터를 선택해주세요.'); return }
+    resetForm()
+  }
+
   const handleSave = () => {
     if (!selectedChapteruid) { alert('챕터를 선택해주세요.'); return }
-    if (!form.objectuid) { alert('항목 목록에서 항목을 선택하세요.'); return }
+    if (!form.objectuid && !form.objectnm.trim()) { alert('항목명을 입력해주세요.'); return }
     if (form.objecttypecd !== form.objecttypecd_orig && form.objecttypecd_orig) {
       if (!window.confirm('항목 구분 변경 시 기존 설정은 초기화 됩니다.\n그래도 하시겠습니까?')) return
     }
     saveObject.mutate({
       chapteruid: selectedChapteruid,
-      objectuid: form.objectuid,
+      objectuid: form.objectuid || undefined,
+      objectnm: form.objectnm || undefined,
       objectdesc: form.objectdesc,
       objecttypecd: form.objecttypecd,
       objecttypecd_orig: form.objecttypecd_orig,
@@ -230,6 +236,9 @@ export default function MasterObjectPage() {
               )}
               {isEditYn && (
                 <>
+                  <button className="btn btn-primary" type="button" onClick={handleNew}>
+                    {t('btn.new')}
+                  </button>
                   <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveObject.isPending}>
                     {t('btn.save')}
                   </button>
@@ -245,7 +254,17 @@ export default function MasterObjectPage() {
 
           <div className="form-group">
             <label>{t('lbl.objectnm_lbl')}:</label>
-            <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
+            {form.objectuid ? (
+              <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
+            ) : (
+              <input
+                type="text"
+                value={form.objectnm}
+                onChange={(e) => setForm((f) => ({ ...f, objectnm: e.target.value }))}
+                placeholder="항목명 입력 (예: Ch02_원형차트)"
+                style={{ width: '100%' }}
+              />
+            )}
           </div>
 
           <div className="form-group">
