@@ -313,6 +313,8 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
 
         if is_filter == True:
             datauid = filters_raw.get("datauid")
+            if not datauid:
+                continue  # datauid 없는 항목은 objectfilters 저장 건너뜀
             params_org = filters_raw.get("params_org")
             functionnm = filters_raw.get("functionnm")
             dfvnm = "@" + sb_svc.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute().data[0]['datanm']
