@@ -100,6 +100,48 @@ router.include_router([domain].router, prefix="/[domain]", tags=["[domain]"])
 
 ---
 
+## 날짜/시간 포맷 — `_fmt_dt` 사용 필수
+
+DB에 저장된 timestamp(UTC)를 화면에 표시할 때는 반드시 `_fmt_dt(s, tz_name)`을 사용한다.
+직접 `strftime` 또는 `datetime.now()` 포맷을 쓰지 말 것.
+
+```python
+# misc.py 내 정의 — 필요 시 공통 유틸로 이동 예정
+def _fmt_dt(s, tz_name=None):
+    ...  # UTC → tz_name 변환 후 "%y-%m-%d %H:%M" 포맷 반환
+```
+
+### 사용 패턴
+
+```python
+# 1. 사용자 tenantid로 timezone 조회 (list 엔드포인트 상단에서 1회)
+tz_name = None
+tu_row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user.id).execute().data
+if tu_row:
+    tenantid = tu_row[0].get("tenantid")
+    tz_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tenantid).execute().data
+    if tz_row:
+        tz_name = tz_row[0].get("timezone")
+
+# 2. 각 row의 timestamp 필드에 적용
+row["createdts"] = _fmt_dt(row.get("createdts"), tz_name)
+row["updateddts"] = _fmt_dt(row.get("updateddts"), tz_name)
+```
+
+### 저장 시 UTC 명시
+
+```python
+from datetime import datetime, timezone
+
+# answerdts, updateddts 등 Python에서 직접 생성하는 timestamp
+"answerdts": datetime.now(timezone.utc).isoformat(),
+```
+
+- `createdts`는 DB `DEFAULT now()`에 맡기므로 INSERT payload에 포함하지 않는다.
+- `datetime.now()` (naive) 사용 금지 — 서버 로컬 시간이 찍혀 UTC와 불일치 발생.
+
+---
+
 ## 공통 유틸리티 엔드포인트
 
 신규 화면 작성 시 아래 엔드포인트를 재사용할 것. 별도 라우터 추가 불필요.

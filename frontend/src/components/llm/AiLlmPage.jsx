@@ -543,8 +543,8 @@ function promptTermKey(p, suffix) {
 
 // 프롬프트 전용: translations → key (defaults 건너뜀)
 function tPrompt(key) {
-  const { translations } = useLangStore.getState()
-  return translations[key] ?? key
+  const val = t(key)
+  return val === key ? '' : val
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

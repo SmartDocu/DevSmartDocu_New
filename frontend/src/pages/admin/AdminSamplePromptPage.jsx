@@ -184,6 +184,8 @@ export default function AdminSamplePromptPage() {
     setModalOpen(false)
   }
 
+  const isFaq = form.prompttypecd === 'faq'
+
   return (
     <div>
       <div className="page-title">
@@ -227,6 +229,11 @@ export default function AdminSamplePromptPage() {
                     const q = searchText.trim().toLowerCase()
                     if (!q) return true
                     return p.promptkey?.toLowerCase().includes(q) || p.prompttypecd?.toLowerCase().includes(q)
+                  })
+                  .sort((a, b) => {
+                    const tc = (a.prompttypecd || '').localeCompare(b.prompttypecd || '')
+                    if (tc !== 0) return tc
+                    return (a.orderno ?? 0) - (b.orderno ?? 0)
                   })
                   .map((p) => (
                     <tr
@@ -445,14 +452,25 @@ export default function AdminSamplePromptPage() {
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
               <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-              <button
-                className="btn btn-primary"
-                type="button"
-                onClick={handlePreview}
-                disabled={previewLoading}
-              >
-                {t('btn.preview_btn')}
-              </button>
+              {isFaq ? (
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={handleModalSave}
+                  disabled={saveTrans.isPending || deleteTrans.isPending}
+                >
+                  {t('btn.save')}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={handlePreview}
+                  disabled={previewLoading}
+                >
+                  {t('btn.preview_btn')}
+                </button>
+              )}
             </div>
             <div className="form-group">
               <label>{t('thd.translated_title_thd')}:</label>
@@ -465,9 +483,11 @@ export default function AdminSamplePromptPage() {
             <div className="form-group">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <label style={{ margin: 0, display: 'inline' }}>{t('thd.translated_text1_thd')}:</label>
-                <button type="button" className="btn btn-primary" onClick={() => setShowColors((v) => !v)}>
-                  {showColors ? t('btn.color.hide') : t('btn.color.show')}
-                </button>
+                {!isFaq && (
+                  <button type="button" className="btn btn-primary" onClick={() => setShowColors((v) => !v)}>
+                    {showColors ? t('btn.color.hide') : t('btn.color.show')}
+                  </button>
+                )}
                 {form.tag1 === 'CA' && (
                   <button type="button" className="btn btn-primary" onClick={() => setShowColormap((v) => !v)}>
                     {showColormap ? t('btn.colormap.hide') : t('btn.colormap.show')}
@@ -536,7 +556,7 @@ export default function AdminSamplePromptPage() {
 
 
           {/* 우측: 미리보기 */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {!isFaq && <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
               <h3 style={{ margin: 0 }}>{t('btn.preview_btn')}</h3>
               <button
@@ -584,7 +604,7 @@ export default function AdminSamplePromptPage() {
                 <div style={{ color: '#bbb', fontSize: 13 }}>{t('msg.prompt.preview.hint')}</div>
               )}
             </div>
-          </div>
+          </div>}
 
         </div>
       </Modal>

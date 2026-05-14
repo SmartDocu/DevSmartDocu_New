@@ -195,7 +195,6 @@ def llm_init(
             "promptkey, prompttypecd, tag1, tag2, datauid, orderno"
         ).eq("tag1", objecttypecd).eq("prompttypecd", "prm").execute().data or []
         prompts = sorted(prompts_rows, key=lambda x: x.get("orderno") or 999)
-        prompts = sorted(prompts_rows, key=lambda x: x.get("orderno") or 999)
 
     except HTTPException:
         raise

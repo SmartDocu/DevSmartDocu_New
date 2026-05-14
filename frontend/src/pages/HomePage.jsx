@@ -159,7 +159,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => openInTab('contact', '', t('ttl.contact'))}
+              onClick={() => openInTab('contact', '', t('mnu.contact'))}
             >
               문의
             </button>

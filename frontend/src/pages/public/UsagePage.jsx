@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import RegisterModal from '@/components/RegisterModal/RegisterModal'
+import LoginModal from '@/components/LoginModal/LoginModal'
+import { useAuthStore } from '@/stores/authStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 import TenantRequestModal from '@/components/TenantRequestModal/TenantRequestModal'
 
 const cardStyle = {
@@ -64,6 +67,9 @@ const extraDescStyle = {
 export default function UsagePage() {
   const navigate = useNavigate()
   const [registerOpen,    setRegisterOpen]    = useState(false)
+  const [loginOpen,       setLoginOpen]       = useState(false)
+  const isLoggedIn = useAuthStore((s) => !!s.accessToken)
+  const openInTab = useOpenInTab()
   const [tenantType,      setTenantType]      = useState(null)
   const [tenantModalOpen, setTenantModalOpen] = useState(false)
   const [hoveredCard,     setHoveredCard]     = useState(null)
@@ -225,7 +231,7 @@ export default function UsagePage() {
               <div style={{ fontSize: 16, fontWeight: 700, color: '#091747', marginBottom: 10 }}>기능 추가에 따른</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10, height: 82, justifyContent: 'flex-end' }}>
-              <button style={btnStyle} onClick={() => navigate('/qna')}>문의</button>
+              <button style={btnStyle} onClick={() => navigate('/contact')}>문의</button>
             </div>
             <div style={{ fontSize: 14, color: '#091747', lineHeight: 1.6, marginTop: 5, height: 67 }} />
           </div>
@@ -249,10 +255,11 @@ export default function UsagePage() {
       }}>
         <span>문의:</span>
         <button style={btnContactStyle} onClick={() => navigate('/contact')}>Mail</button>
-        <button style={btnContactStyle} onClick={() => navigate('/qna')}>Q&amp;A</button>
+        <button style={btnContactStyle} onClick={() => isLoggedIn ? openInTab('qna', '', 'Q&A') : setLoginOpen(true)}>Q&amp;A</button>
       </div>
 
       <RegisterModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
       <TenantRequestModal
         open={tenantModalOpen}
         onClose={() => { setTenantModalOpen(false); setTenantType(null) }}

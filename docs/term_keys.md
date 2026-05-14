@@ -5,7 +5,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 1. cod. (63개)
+## 1. cod. (65개)
 
 ### code.ai_chart (9개)
 
@@ -167,9 +167,16 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | cod.billing_Te |
 | cod.billing_En |
 
+### code.qna (2개)
+
+| term_key |
+|----------|
+| cod.qna_answered |
+| cod.qna_pending |
+
 ---
 
-## 2. msg. (93개)
+## 2. msg. (96개)
 
 | term_key |
 |----------|
@@ -274,6 +281,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.term.select.delete |
 | msg.term.select.trans |
 | msg.usernm.required |
+| msg.qna.private |
+| msg.qna.title.required |
+| msg.qna.question.required |
 
 ---
 
@@ -283,6 +293,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 |----------|
 | mnu.company |
 | mnu.company.llm |
+| mnu.contact |
 | mnu.company.llm_api |
 | mnu.company.request |
 | mnu.company.tenants |
@@ -327,7 +338,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 4. btn. (31개)
+## 4. btn. (32개)
 
 | term_key |
 |----------|
@@ -355,6 +366,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.reset.send |
 | btn.sample.prompt |
 | btn.save |
+| btn.answer_btn |
 | btn.send |
 | btn.savecols |
 | btn.setting |
@@ -368,9 +380,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 5. lbl. (일반 레이블 95개 + chart 59개 = 154개)
+## 5. lbl. (일반 레이블 100개 + chart 59개 = 159개)
 
-### 일반 레이블 (95개)
+### 일반 레이블 (100개)
 
 | term_key |
 |----------|
@@ -495,6 +507,11 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.upload_lbl |
 | lbl.usernm |
 | lbl.useyn_lbl |
+| lbl.question |
+| lbl.isprivate |
+| lbl.answer |
+| lbl.answernm |
+| lbl.answerdts |
 
 ### lbl.chart.legendpos.* (11개)
 
@@ -659,7 +676,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 7. ttl. (38개)
+## 7. ttl. (39개)
 
 | term_key |
 |----------|
@@ -672,7 +689,6 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.chart.type |
 | ttl.col.info |
 | ttl.condition |
-| ttl.contact |
 | ttl.data.list |
 | ttl.data.preview |
 | ttl.datacols |
@@ -705,6 +721,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.project.llm |
 | ttl.translations |
 | ttl.value.settings |
+| ttl.qna.answer |
 
 ---
 
@@ -782,16 +799,23 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 | prefix | 개수 |
 |--------|------|
-| cod.   | 75   |
-| msg.   | 97   |
+| cod.   | 77   |
+| msg.   | 100  |
 | mnu.   | 43   |
-| btn.   | 33   |
-| lbl.   | 164  |
+| btn.   | 35   |
+| lbl.   | 169  |
 | thd.   | 62   |
-| ttl.   | 43   |
+| ttl.   | 44   |
 | inf.   | 6    |
 | prm.   | 51   |
-| **합계** | **574** |
+| **합계** | **587** |
+
+### 2026-05-13 변경 내역 (9차 — QnaPage)
+- `cod.qna_answered`, `cod.qna_pending` 추가 (2개) — Q&A 상태 코드값
+- `lbl.question`, `lbl.isprivate`, `lbl.answer`, `lbl.answernm`, `lbl.answerdts` 추가 (5개) — Q&A 폼 라벨
+- `btn.answer_btn` 추가 (1개) — 답변 작성 버튼
+- `ttl.qna.answer` 추가 (1개) — 답변 모달 제목
+- `msg.qna.private`, `msg.qna.title.required`, `msg.qna.question.required` 추가 (3개) — Q&A 경고 메시지
 
 ### 2026-05-13 변경 내역 (8차 — ContactPage)
 - `lbl.address`, `lbl.name`, `lbl.subject`, `lbl.message_lbl` 추가 (4개) — 문의 폼 라벨/플레이스홀더

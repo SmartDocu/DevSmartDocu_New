@@ -54,7 +54,7 @@ export default function ContactPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('ttl.contact')}</div>
+          <div>{t('mnu.contact')}</div>
         </div>
       </div>
 

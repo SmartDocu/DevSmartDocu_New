@@ -34,8 +34,8 @@ def _parse_schema_table(sql):
         return "", ""
     if "." in table_ref:
         schema, table = table_ref.split(".", 1)
-        return schema.strip(), table.strip()
-    return "", table_ref.strip()
+        return schema.strip().strip('[]"`'), table.strip().strip('[]"`')
+    return "", table_ref.strip().strip('[]"`')
 
 
 def master_data_json_create(supabase, datauid):

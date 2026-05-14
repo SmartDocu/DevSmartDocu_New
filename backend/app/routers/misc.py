@@ -2,7 +2,8 @@
 import os
 import smtplib
 import uuid
-from datetime import datetime, timedelta
+import zoneinfo
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import Optional
 from urllib.parse import urlparse
@@ -21,12 +22,19 @@ def _sb_svc():
     return get_service_client()
 
 
-def _fmt_dt(s):
+def _fmt_dt(s, tz_name=None):
     if not s:
         return ""
     try:
         from dateutil import parser as dp
         dt = dp.parse(s) if isinstance(s, str) else s
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if tz_name:
+            try:
+                dt = dt.astimezone(zoneinfo.ZoneInfo(tz_name))
+            except Exception:
+                pass
         return dt.strftime("%y-%m-%d %H:%M")
     except Exception:
         return str(s)
@@ -39,8 +47,15 @@ def _fmt_dt(s):
 @router.get("/faqs")
 def list_faqs():
     sb = _sb_svc()
-    rows = sb.schema(SUPABASE_SCHEMA).table("faqs").select("*").order("orderno").execute().data or []
-    return {"faqs": rows}
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("prompts")
+        .select("promptkey")
+        .eq("prompttypecd", "faq")
+        .eq("useyn", True)
+        .order("orderno")
+        .execute().data or []
+    )
+    return {"faqs": [r["promptkey"] for r in rows]}
 
 
 class FaqSaveRequest(BaseModel):
@@ -98,6 +113,15 @@ def list_qnas(token: str = Depends(get_token)):
     roleid_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     roleid = roleid_row[0].get("roleid", 1) if roleid_row else 1
 
+    # 사용자 tenant timezone 조회
+    tz_name = None
+    tu_row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user.id).execute().data
+    if tu_row:
+        tenantid = tu_row[0].get("tenantid")
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tenantid).execute().data
+        if tz_row:
+            tz_name = tz_row[0].get("timezone")
+
     rows = sb.schema(SUPABASE_SCHEMA).table("qnas").select("*").order("createdts", desc=True).execute().data or []
 
     users_rows = sb.schema(SUPABASE_SCHEMA).table("users").select("useruid,email").execute().data or []
@@ -107,13 +131,16 @@ def list_qnas(token: str = Depends(get_token)):
     for q in rows:
         q["creatornm"] = user_map.get(q.get("creator"), "")
         q["answernm"] = user_map.get(q.get("answeruseruid"), "") if q.get("answeruseruid") else ""
-        q["createdts"] = _fmt_dt(q.get("createdts"))
-        q["answerdts"] = _fmt_dt(q.get("answerdts"))
+        q["createdts"] = _fmt_dt(q.get("createdts"), tz_name)
+        q["answerdts"] = _fmt_dt(q.get("answerdts"), tz_name)
         is_private = q.get("isprivate", False)
         if roleid == 7:
             q["can_click"] = True
         else:
             q["can_click"] = not (is_private and q.get("creator") != str(user.id))
+        if not q["can_click"]:
+            q["question"] = None
+            q["answer"] = None
         result.append(q)
 
     return {"qnas": result, "roleid": roleid}
@@ -176,7 +203,7 @@ def save_qna_answer(body: QnaAnswerRequest, token: str = Depends(get_token)):
     if body.answer:
         sb.schema(SUPABASE_SCHEMA).table("qnas").update({
             "answer": body.answer, "answeruseruid": str(user.id),
-            "answerdts": datetime.now().isoformat(),
+            "answerdts": datetime.now(timezone.utc).isoformat(),
         }).eq("qnauid", body.qnauid).execute()
     else:
         sb.schema(SUPABASE_SCHEMA).table("qnas").update({

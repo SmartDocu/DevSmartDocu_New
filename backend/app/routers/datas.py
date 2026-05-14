@@ -501,7 +501,7 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
             raise HTTPException(status_code=400, detail="DDL에서 컬럼을 추출할 수 없습니다.")
 
         tbl_match = re.search(r'CREATE\s+TABLE\s+(\S+)\s*\(', querybasis, re.IGNORECASE)
-        table_name = tbl_match.group(1).strip('[]"`') if tbl_match else "unknown"
+        table_name = tbl_match.group(1).rstrip('(') if tbl_match else "unknown"
         col_list = ", ".join(c["querycolnm"] for c in parsed)
         select_query = f"SELECT {col_list} FROM {table_name}"
 

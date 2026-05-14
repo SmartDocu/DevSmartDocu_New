@@ -193,9 +193,8 @@ export default function AppLayout() {
             <Text strong style={{ color: '#fff', fontSize: 18 }}>D2Doc</Text>
           </div>
 
-          {/* 비로그인 공개 메뉴 */}
-          {!isLoggedIn && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* 공개 메뉴 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {[
                 { path: 'service', label: '서비스 소개', icon: <HomeOutlined /> },
                 { path: 'about',   label: '기능 소개',   icon: <InfoCircleOutlined /> },
@@ -222,8 +221,7 @@ export default function AppLayout() {
                   {icon}{label}
                 </button>
               ))}
-            </div>
-          )}
+          </div>
 
           {/* 사용자 영역 */}
           <div style={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
