@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { App, Popconfirm, Spin } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
+import { useLanguages } from '@/hooks/useI18n'
+import { useLangStore, t } from '@/stores/langStore'
 
-const EMPTY_FORM = { helpuid: '', help: '', url: '', desc: '' }
+const EMPTY_FORM = { helpuid: '', help: '', url: '', desc: '', languagecd: 'en' }
 
 export default function AdminHelpsPage() {
   const { message } = App.useApp()
   const qc = useQueryClient()
+  useLangStore((s) => s.translations)
 
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -17,31 +20,36 @@ export default function AdminHelpsPage() {
     queryKey: ['admin-helps'],
     queryFn: () => apiClient.get('/admin/helps').then((r) => r.data.helps),
   })
-  const helps = data || []
+  const helps = [...(data || [])].sort((a, b) => {
+    const u = (a.url || '').localeCompare(b.url || '')
+    return u !== 0 ? u : (a.languagecd || '').localeCompare(b.languagecd || '')
+  })
+
+  const { data: languages = [] } = useLanguages()
 
   const saveMutation = useMutation({
     mutationFn: (body) => apiClient.post('/admin/helps', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-helps'] })
       handleNew()
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장 실패'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (helpuid) => apiClient.delete(`/admin/helps/${helpuid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-helps'] })
       handleNew()
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 
   const selectHelp = (h) => {
     setSelected(h)
-    setForm({ helpuid: h.helpuid, help: h.help || '', url: h.url || '', desc: h.desc || '' })
+    setForm({ helpuid: h.helpuid, help: h.help || '', url: h.url || '', desc: h.desc || '', languagecd: h.languagecd || 'en' })
     setPreview(false)
   }
 
@@ -52,18 +60,15 @@ export default function AdminHelpsPage() {
   }
 
   const handleSave = () => {
-    if (!form.help.trim()) { message.warning('제목을 입력해주세요.'); return }
+    if (!form.help.trim()) { message.warning(t('msg.qna.title.required')); return }
+    if (!form.url.trim()) { message.warning(t('msg.url.required')); return }
     saveMutation.mutate({
       helpuid: form.helpuid || null,
       help: form.help,
       url: form.url,
       desc: form.desc,
+      languagecd: form.languagecd,
     })
-  }
-
-  const fmtDate = (s) => {
-    if (!s) return ''
-    return new Date(s).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
   return (
@@ -71,7 +76,7 @@ export default function AdminHelpsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>도움말 관리</div>
+          <div>{t('mnu.system.help')}</div>
         </div>
       </div>
 
@@ -80,21 +85,30 @@ export default function AdminHelpsPage() {
       ) : (
         <div style={{ display: 'flex', gap: 20 }}>
           {/* 좌측: 도움말 목록 */}
-          <div style={{ width: 260, flexShrink: 0 }}>
-            <h3>도움말 목록</h3>
+          <div style={{ width: 280, flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+              <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+              <div />
+            </div>
             <div className="chapter-card-container" style={{ flexDirection: 'column', maxHeight: 600 }}>
               {helps.length === 0 ? (
-                <div style={{ padding: 16, color: '#888', textAlign: 'center' }}>등록된 도움말이 없습니다.</div>
+                <div style={{ padding: 16, color: '#888', textAlign: 'center' }}>{t('msg.no.data')}</div>
               ) : helps.map((h) => (
                 <div
                   key={h.helpuid}
                   className={`chapter-card${selected?.helpuid === h.helpuid ? ' selected' : ''}`}
                   onClick={() => selectHelp(h)}
                 >
-                  <div className="card-title">{h.help || '제목 없음'}</div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-                    <span>{fmtDate(h.createdts)}</span>
-                    {h.createuser && <span> · {h.createuser}</span>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ flex: 1, fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {h.url || ''}
+                    </div>
+                    <span style={{ fontSize: 11, color: '#fff', background: '#1677ff', borderRadius: 3, padding: '1px 6px', marginLeft: 6, flexShrink: 0 }}>
+                      {h.languagecd || 'en'}
+                    </span>
+                  </div>
+                  <div className="card-title" style={{ marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {h.help || '제목 없음'}
                   </div>
                 </div>
               ))}
@@ -103,9 +117,48 @@ export default function AdminHelpsPage() {
 
           {/* 우측: 편집 영역 */}
           <div style={{ flex: 1 }}>
-            <h3>상세 정보</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+              <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>{t('btn.save')}</button>
+                {selected?.helpuid && (
+                  <Popconfirm
+                    title={t('msg.confirm.delete')}
+                    onConfirm={() => deleteMutation.mutate(selected.helpuid)}
+                    okText={t('btn.delete')} cancelText={t('btn.cancel')} okButtonProps={{ danger: true }}
+                  >
+                    <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>{t('btn.delete')}</button>
+                  </Popconfirm>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 16 }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>URL</label>
+                <input
+                  type="text"
+                  value={form.url}
+                  placeholder="관련 페이지 경로 (예: /master/docs)"
+                  onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                />
+              </div>
+              <div className="form-group" style={{ width: 120 }}>
+                <label>{t('thd.languagenm')}</label>
+                <select
+                  value={form.languagecd}
+                  onChange={(e) => setForm((f) => ({ ...f, languagecd: e.target.value }))}
+                >
+                  {languages.map((l) => (
+                    <option key={l.languagecd} value={l.languagecd}>{l.languagenm}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="form-group">
-              <label>제목</label>
+              <label>{t('lbl.subject')}</label>
               <input
                 type="text"
                 value={form.help}
@@ -113,24 +166,16 @@ export default function AdminHelpsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, help: e.target.value }))}
               />
             </div>
-            <div className="form-group">
-              <label>URL</label>
-              <input
-                type="text"
-                value={form.url}
-                placeholder="관련 페이지 URL (예: /master/docs)"
-                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-              />
-            </div>
+
             <div className="form-group">
               <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>내용 (HTML)</span>
+                <span>{t('lbl.desc_lbl')}</span>
                 <button
                   type="button"
-                  style={{ fontSize: 12, background: 'none', border: '1px solid #d9d9d9', borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}
+                  className="btn btn-primary"
                   onClick={() => setPreview((p) => !p)}
                 >
-                  {preview ? '편집' : '미리보기'}
+                  {preview ? t('btn.setting') : t('btn.preview_btn')}
                 </button>
               </label>
               {preview ? (
@@ -146,35 +191,6 @@ export default function AdminHelpsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
                   style={{ fontFamily: 'monospace', fontSize: 12 }}
                 />
-              )}
-            </div>
-
-            <div className="button-group">
-              <button className="icon-btn" type="button" onClick={handleNew}>
-                <div className="icon-wrapper">
-                  <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                  <span className="icon-label">신규</span>
-                </div>
-              </button>
-              <button className="icon-btn" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
-                <div className="icon-wrapper">
-                  <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                  <span className="icon-label">저장</span>
-                </div>
-              </button>
-              {selected?.helpuid && (
-                <Popconfirm
-                  title="정말 삭제하시겠습니까?"
-                  onConfirm={() => deleteMutation.mutate(selected.helpuid)}
-                  okText="삭제" cancelText="취소" okButtonProps={{ danger: true }}
-                >
-                  <button className="icon-btn" type="button" disabled={deleteMutation.isPending}>
-                    <div className="icon-wrapper">
-                      <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                      <span className="icon-label">삭제</span>
-                    </div>
-                  </button>
-                </Popconfirm>
               )}
             </div>
           </div>

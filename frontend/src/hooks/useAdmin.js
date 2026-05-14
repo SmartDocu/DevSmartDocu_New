@@ -2,6 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
 import apiClient from '@/api/client'
 
+// ─── Help Search ──────────────────────────────────────────────────────────────
+
+export function useHelpSearch(url, languagecd) {
+  return useQuery({
+    queryKey: ['help-search', url, languagecd],
+    queryFn: () =>
+      apiClient.get('/admin/helps/search', { params: { url, languagecd } }).then(r => r.data),
+    enabled: !!url && !!languagecd,
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
 // ─── Sample Prompts ───────────────────────────────────────────────────────────
 
 export function useAdminSamplePrompts(objectType, displaytype) {

@@ -284,6 +284,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.qna.private |
 | msg.qna.title.required |
 | msg.qna.question.required |
+| msg.url.required |
 
 ---
 
@@ -809,6 +810,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | inf.   | 6    |
 | prm.   | 51   |
 | **합계** | **587** |
+
+### 2026-05-14 변경 내역 (10차 — AdminHelpsPage)
+- `msg.url.required` 추가 (1개) — URL 필수 입력 메시지
 
 ### 2026-05-13 변경 내역 (9차 — QnaPage)
 - `cod.qna_answered`, `cod.qna_pending` 추가 (2개) — Q&A 상태 코드값

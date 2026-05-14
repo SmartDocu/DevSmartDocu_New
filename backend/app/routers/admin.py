@@ -548,18 +548,24 @@ class HelpSaveRequest(BaseModel):
     help: str
     url: Optional[str] = None
     desc: Optional[str] = None
+    languagecd: str = "en"
 
 
-class HelpDeleteRequest(BaseModel):
-    helpuid: str
+@router.get("/helps/search")
+def search_help(url: str = Query(...), languagecd: str = Query(default="en")):
+    """URL + 언어로 도움말 검색 (인증 불필요). 없으면 영어 fallback."""
+    sb = _sb_service()
+    rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").eq("url", url).eq("languagecd", languagecd).execute().data or []
+    if not rows and languagecd != "en":
+        rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").eq("url", url).eq("languagecd", "en").execute().data or []
+    return {"help": rows[0] if rows else None}
 
 
 @router.get("/helps")
 def list_helps(token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
-    rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").order("createdts", desc=True).execute().data or []
-    # creator uuid → full_name
+    rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").order("url").order("languagecd").execute().data or []
     for row in rows:
         if row.get("creator"):
             try:
@@ -581,6 +587,7 @@ def save_help(body: HelpSaveRequest, token: str = Depends(get_token)):
         "help": body.help,
         "url": body.url or "",
         "desc": body.desc or "",
+        "languagecd": body.languagecd or "en",
         "creator": str(user.id),
     }
     sb.schema(SUPABASE_SCHEMA).table("helps").upsert(payload).execute()
@@ -593,14 +600,6 @@ def delete_help(helpuid: str, token: str = Depends(get_token)):
     sb = _sb_service()
     sb.schema(SUPABASE_SCHEMA).table("helps").delete().eq("helpuid", helpuid).execute()
     return {"ok": True}
-
-
-@router.get("/helps/search")
-def search_help(url: str = Query(...)):
-    """URL로 도움말 검색 (인증 불필요)"""
-    sb = _sb_service()
-    rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").eq("url", url).execute().data or []
-    return {"helps": rows}
 
 
 # ══════════════════════════════════════════════════════

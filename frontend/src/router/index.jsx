@@ -55,8 +55,12 @@ import MasterDatasetPage from '@/pages/master/MasterDatasetPage'
 import MasterChatTablesPage from '@/pages/master/MasterChatTablesPage'
 import MasterChatColumnsPage from '@/pages/master/MasterChatColumnsPage'
 import ExperiencePage from '@/pages/public/ExperiencePage'
+import SampleEventPopup from '@/pages/popup/SampleEventPopup'
 
 export const router = createBrowserRouter([
+  // ── 팝업 콘텐츠 페이지 (iframe 로드용, 레이아웃 없음) ───────────────────
+  { path: '/popup/sample-event', element: <SampleEventPopup /> },
+
   // ── 인증 불필요 ───────────────────────────────────────────────────────────
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },

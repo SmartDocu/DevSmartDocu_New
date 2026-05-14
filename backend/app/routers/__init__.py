@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc, menus, configs, i18n, codes, messages, terms, data_metas, data_cols
+from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc, menus, configs, i18n, codes, messages, terms, data_metas, data_cols, popups
 
 router = APIRouter()
 router.include_router(auth.router,      prefix="/auth",      tags=["auth"])
@@ -24,3 +24,4 @@ router.include_router(messages.router,  prefix="/messages",  tags=["messages"])
 router.include_router(terms.router,      prefix="/terms",      tags=["terms"])
 router.include_router(data_metas.router, prefix="/data-metas", tags=["data-metas"])
 router.include_router(data_cols.router,  prefix="/data-cols",  tags=["data-cols"])
+router.include_router(popups.router,     prefix="/popups",     tags=["popups"])

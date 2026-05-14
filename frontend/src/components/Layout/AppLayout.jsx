@@ -1,6 +1,6 @@
-import { Outlet, useNavigate } from 'react-router-dom'
-import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App } from 'antd'
-import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal } from 'antd'
+import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
@@ -12,6 +12,7 @@ import LoginModal from '@/components/LoginModal/LoginModal'
 import AppSidebar from '@/components/Layout/AppSidebar'
 import { useState, useEffect } from 'react'
 import { useTabStore } from '@/stores/tabStore'
+import { useHelpSearch } from '@/hooks/useAdmin'
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
@@ -22,9 +23,11 @@ export default function AppLayout() {
   const { user, clearAuth, updateUser } = useAuthStore()
   const { message } = App.useApp()
 
+  const location = useLocation()
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [registerModalOpen, setRegisterModalOpen] = useState(false)
   const [loginModalOpen, setLoginModalOpen] = useState(false)
+  const [helpModalOpen, setHelpModalOpen] = useState(false)
   const { tabs, activeKey, closeTab, setActiveKey, siderCollapsed, setSiderCollapsed, colorTheme, setColorTheme, openTab, clearTabs, closeOtherTabs, closeLeftTabs, closeRightTabs } = useTabStore()
   const isDark = !!user && colorTheme === 'dark'
   const headerBg = isDark ? '#081A2B' : '#163E64'
@@ -36,6 +39,8 @@ export default function AppLayout() {
   const { data: translationsData } = useTranslations(languageCd)
   const setLanguageMutation = useSetLanguage()
   const { data: allMenus = [] } = useMenus()
+  const { data: helpData } = useHelpSearch(location.pathname, languageCd || 'en')
+  const helpItem = helpData?.help ?? null
 
   // re-render 트리거용 구독
   useLangStore((s) => s.translations)
@@ -462,7 +467,16 @@ export default function AppLayout() {
         )}
 
         <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px', flex: 1 }}>
+          <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px', flex: 1, position: 'relative' }}>
+            {helpItem && (
+              <div style={{ position: 'absolute', top: 28, right: 24, zIndex: 1 }}>
+                <QuestionCircleOutlined
+                  style={{ fontSize: 20, cursor: 'pointer', color: '#8c8c8c' }}
+                  onClick={() => setHelpModalOpen(true)}
+                  title="도움말"
+                />
+              </div>
+            )}
             <Outlet />
           </div>
         </Content>
@@ -471,6 +485,19 @@ export default function AppLayout() {
       <DocSelectModal open={docModalOpen} onClose={() => setDocModalOpen(false)} />
       <RegisterModal open={registerModalOpen} onClose={() => setRegisterModalOpen(false)} />
       <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+
+      <Modal
+        title={<div style={{ textAlign: 'center' }}>{helpItem?.help}</div>}
+        open={helpModalOpen}
+        onCancel={() => setHelpModalOpen(false)}
+        footer={null}
+        width={640}
+      >
+        <div
+          style={{ padding: '8px 0', lineHeight: 1.7 }}
+          dangerouslySetInnerHTML={{ __html: helpItem?.desc || '' }}
+        />
+      </Modal>
     </Layout>
   )
 }

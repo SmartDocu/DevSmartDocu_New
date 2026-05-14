@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useLangStore, t } from '@/stores/langStore'
+import PopupManager from '@/components/Popup/PopupManager'
+import { usePopups } from '@/hooks/usePopups'
 
 const slides = [
   {
@@ -23,6 +25,7 @@ const slides = [
 export default function HomePage() {
   const openInTab = useOpenInTab()
   useLangStore((s) => s.translations)
+  const { data: popups = [] } = usePopups('M')
   const [current, setCurrent] = useState(0)
   const timerRef = useRef(null)
 
@@ -45,6 +48,7 @@ export default function HomePage() {
 
   return (
     <div>
+      <PopupManager popups={popups} />
       {/* 상단 타이틀 */}
       <div style={{ textAlign: 'center', padding: 20 }}>
         <p style={{ fontSize: '1rem', margin: 0, opacity: 0.8 }}>효율적인 문서 자동 작성</p>
