@@ -301,21 +301,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999;
       min-width: 260px; max-height: 350px; overflow-y: auto;
     `
-    const tbl_params = tbl_params_ref.current || []
     const sca_params = sca_params_ref.current || []
-
-    if (tbl_params.length > 0) {
-      dropdown.appendChild(createSectionHeader('📦 TBL Params'))
-      tbl_params.forEach(obj => {
-        const nm = obj.paramnm ?? ''
-        dropdown.appendChild(createItem(nm, () => {
-          editor.model.change(writer => {
-            const pos = editor.model.document.selection.getFirstPosition()
-            writer.insertText(`@${nm}`, { fontBackgroundColor: 'hsl(25, 90%, 85%)' }, pos)
-          })
-        }))
-      })
-    }
 
     if (sca_params.length > 0) {
       dropdown.appendChild(createSectionHeader('🔍 SCA Params'))
@@ -330,7 +316,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       })
     }
 
-    if (tbl_params.length === 0 && sca_params.length === 0) {
+    if (sca_params.length === 0) {
       const empty = document.createElement('div')
       empty.textContent = '데이터가 없습니다.'
       empty.style.cssText = 'padding: 12px; font-size: 13px; color: #aaa;'
