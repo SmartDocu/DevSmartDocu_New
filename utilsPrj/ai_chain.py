@@ -974,13 +974,32 @@ def fix_groupby_agg_pattern(code):
     # 이를 groupby(...).agg(...)로 변경
     pattern = r"groupby\(([^)]+)\)\['([^']+)'\]\.agg\("
     replacement = r"groupby(\1).agg("
-    
+
     fixed_code = re.sub(pattern, replacement, code)
-    
+
     if fixed_code != code:
         print("[AUTO FIX] groupby().agg() 패턴 자동 수정됨")
-    
+
     return fixed_code
+
+
+def fix_numeric_only_pattern(code):
+    """
+    object 타입 컬럼에 집계 함수 적용 시 발생하는 오류 방지.
+    인자 없는 집계 호출에 numeric_only=True 추가.
+    예: .mean() → .mean(numeric_only=True)
+    """
+    agg_funcs = ['mean', 'sum', 'median', 'std', 'var']
+    changed = False
+    for func in agg_funcs:
+        pattern = rf'\.{func}\(\)'
+        replacement = rf'.{func}(numeric_only=True)'
+        new_code = re.sub(pattern, replacement, code)
+        if new_code != code:
+            print(f"[AUTO FIX] .{func}() → .{func}(numeric_only=True) 수정됨")
+            code = new_code
+            changed = True
+    return code
 
 
 def create_python_code(llm, prompt, df, question, column_dict, output_type):
@@ -1010,7 +1029,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 "code": code,
             }
 
-    # print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
+    print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
     # # if output_type == "TA":
     # #     print("python_code: \n", code)
 
@@ -1021,6 +1040,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
     code = code.replace("'Malgun Gothic'", "'sans-serif'")
 
     code = fix_groupby_agg_pattern(code)
+    code = fix_numeric_only_pattern(code)
 
     aggregation_function = [
         ".sum", ".mean", ".median", ".min", ".max",
@@ -1042,16 +1062,40 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
         '__name__': '__main__',
     }
 
+    # object 타입 컬럼: null이 새로 생기지 않은 경우에만 숫자로 변환
+    for col in df.columns:
+        if df[col].dtype == object:
+            converted = pd.to_numeric(df[col], errors='coerce')
+            original_null = df[col].isna().sum()
+            if converted.notna().any() and converted.isna().sum() == original_null:
+                df[col] = converted
+
     try:
         exec(code, local_namespace)
         # exec(code, {"__builtins__": __builtins__}, local_namespace)
     except Exception as e:
-        print("Error ", e)
-        return {
-            "status": "error",
-            "error": f"코드 실행 오류: {str(e)}",
-            "code": code,
-        }
+        err_msg = str(e)
+        # object dtype 컬럼 집계 오류 시 numeric_only 강제 적용 후 재시도
+        if 'agg function failed' in err_msg and 'dtype->object' in err_msg:
+            print("[AUTO FIX] agg/dtype->object 오류 감지, numeric_only 강제 적용 후 재시도")
+            retry_code = re.sub(r'\.(mean|sum|median|std|var)\((?!numeric_only)', r'.\1(numeric_only=True, ', code)
+            try:
+                exec(retry_code, local_namespace)
+                code = retry_code
+            except Exception as e2:
+                print("Error ", e2)
+                return {
+                    "status": "error",
+                    "error": f"코드 실행 오류: {str(e2)}",
+                    "code": retry_code,
+                }
+        else:
+            print("Error ", e)
+            return {
+                "status": "error",
+                "error": f"코드 실행 오류: {err_msg}",
+                "code": code,
+            }
 
     if output_type == "CA":
         # LLM이 생성한 output_fig 가져오기

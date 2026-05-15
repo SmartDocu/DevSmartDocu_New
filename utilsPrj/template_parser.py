@@ -91,12 +91,15 @@ def parse_condition(var_name: str, condition_str: str) -> dict:
     }
     """
     condition_str = condition_str.strip()
-    # CKEditor가 변환하는 스마트 따옴표 / HTML 엔티티 → 일반 따옴표로 정규화
+    # CKEditor가 변환하는 스마트 따옴표 / HTML 엔티티 → 정규화
     condition_str = (condition_str
-        .replace('‘', "'").replace('’', "'")  # 왼/오 작은따옴표
-        .replace('“', '"').replace('”', '"')  # 왼/오 큰따옴표
-        .replace('&#39;', "'").replace('&apos;', "'")   # HTML 엔티티 단따옴표
-        .replace('&#34;', '"').replace('&quot;', '"')   # HTML 엔티티 큰따옴표
+        .replace("&gt;=", ">=").replace("&lt;=", "<=")
+        .replace("&gt;", ">").replace("&lt;", "<")
+        .replace("&amp;", "&")
+        .replace('‘', "'").replace('’', "'")
+        .replace("“", '"').replace("”", '"')
+        .replace('&#39;', "'").replace('&apos;', "'")
+        .replace('&#34;', '"').replace('&quot;', '"')
     )
 
     # 조건식이 없으면 존재 여부 체크

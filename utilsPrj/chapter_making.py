@@ -972,7 +972,9 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
             result_data = ai_results[original_idx]
 
             final_result = result_data.get('final_result') or ""
-            gen_object_uid = result_data["result"]["genobjectuid"]
+            # gen_object_uid = result_data["result"]["genobjectuid"]
+            result_inner = result_data.get("result") or {}
+            gen_object_uid = result_inner.get("genobjectuid") if isinstance(result_inner, dict) else None
     
             if not result_data.get('success', False):
                 final_result = ""
