@@ -130,9 +130,6 @@ export default function ReqChapterObjectsPage() {
           <div>챕터 항목 조회: {chapternm}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <button type="button" className="icon-btn">
-            <img src="/icons/help.svg" title="도움말" className="icon-img config-icon" alt="도움말" />
-          </button>
           <button type="button" className="icon-btn" onClick={handleBack}>
             <img src="/icons/back.svg" title="뒤로가기" className="icon-img config-icon" alt="뒤로가기" />
           </button>

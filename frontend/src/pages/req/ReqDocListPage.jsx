@@ -359,9 +359,6 @@ export default function ReqDocListPage() {
           <div>문서: {docnm_base}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <button type="button" className="icon-btn" title="도움말">
-            <img src="/icons/help.svg" className="icon-img config-icon" alt="도움말" />
-          </button>
         </div>
       </div>
 

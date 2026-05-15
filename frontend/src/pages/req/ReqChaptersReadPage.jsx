@@ -303,9 +303,6 @@ export default function ReqChaptersReadPage() {
           <div>챕터 목록: {gendoc.gendocnm || ''}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <button type="button" className="icon-btn" title="도움말">
-            <img src="/icons/help.svg" className="icon-img config-icon" alt="도움말" />
-          </button>
           <button type="button" className="icon-btn" onClick={handleBack} title="뒤로가기">
             <img src="/icons/back.svg" className="icon-img config-icon" alt="뒤로가기" />
           </button>
