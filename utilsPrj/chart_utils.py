@@ -877,8 +877,12 @@ def draw_chart(request, supabase, charttypecd, dict_rows, properties, datauid):
             """properties에 온 필드명을 dispcolnm으로 변환 (querycolnm도 허용)"""
             return col_map.get(fieldname, fieldname)  # 못 찾으면 원래 필드 유지
 
-        properties["labelField"] = normalize_field(properties.get("labelField"))
-        properties["valueField"] = normalize_field(properties.get("valueField"))
+        properties["labelField"]    = normalize_field(properties.get("labelField"))
+        properties["valueField"]    = normalize_field(properties.get("valueField"))
+        properties["xField"]        = normalize_field(properties.get("xField"))
+        properties["yField"]        = normalize_field(properties.get("yField"))
+        properties["categoryField"] = normalize_field(properties.get("categoryField"))
+        properties["sizeField"]     = normalize_field(properties.get("sizeField"))
         
         # 폰트 경로 지정 (프로젝트 내 경로)
         font_path = os.path.join(

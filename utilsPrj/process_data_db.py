@@ -146,7 +146,8 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
             .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
         df_gendoc = pd.DataFrame(gendoc_params_resp.data)
 
-        if not df_gendoc.empty and 'paramuid' in df_gendoc.columns:
+        if (not df_dtls.empty and 'paramuid' in df_dtls.columns
+                and not df_gendoc.empty and 'paramuid' in df_gendoc.columns):
             df_dtls = df_dtls.merge(df_gendoc, on="paramuid", how="left")
             df_dtls["value"] = df_dtls["paramvalue"]
         else:
@@ -157,13 +158,17 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
             .select("paramuid, operator").eq("docid", docid).execute()
         df_params = pd.DataFrame(dataparams_resp.data)
 
-        if not df_params.empty and 'paramuid' in df_params.columns and 'paramuid' in df_dtls.columns:
+        if (not df_dtls.empty and 'paramuid' in df_dtls.columns
+                and not df_params.empty and 'paramuid' in df_params.columns):
             df_dtls = df_dtls.merge(df_params, on="paramuid", how="left")
         else:
             df_dtls["operator"] = "="
 
-        # 5. 최종 컬럼
-        df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna(subset=["value"])
+        # 5. 최종 컬럼 (파라미터가 없으면 빈 DataFrame 유지)
+        if not df_dtls.empty and "querycolnm" in df_dtls.columns:
+            df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna(subset=["value"])
+        else:
+            df_dtls = pd.DataFrame(columns=["querycolnm", "value", "operator"])
 
     else:
         raise ValueError("잘못된 docid / gendoc_uid 조합")

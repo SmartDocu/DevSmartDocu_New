@@ -256,24 +256,22 @@ def flush_logs_to_db(supabase, log_source="AI"):
         traceback.print_exc()
 
 
-def process_ui_object(data_item, html_result, text_template, gen_chapter_uid, user_id, sep):
+def process_ui_object(data_item, html_result, text_template, gen_chapter_uid, user_id, sep, replacestring=None):
     """UI 객체 공통 처리 함수"""
-    
+
     # placeholder 교체
     if sep == 'Not':
-        place_holder = f"{{{data_item['objectnm']}}}"
-        
-        if data_item['type'] == 'UI_sentence':
-            place_holder = f"{{{place_holder}}}"
-            text_template = text_template.replace(place_holder, html_result.replace('\n', '<br>'))
-        else:
-            # place_holder = f"<p>{{{place_holder}}}</p>"
-            place_holder = f"{{{place_holder}}}"
-            text_template = text_template.replace(place_holder, html_result)
-            
-            if data_item['type'] == 'UI_chart':
-                place_holder_strong = f"<p><strong>{{{data_item['objectnm']}}}</strong></p>"
-                text_template = text_template.replace(place_holder_strong, html_result)
+        place_holder = replacestring
+        if place_holder is None:
+            place_holder = f"{{{data_item['objectnm']}}}"
+
+        place_holder_with_p = f"<p>{place_holder}</p>"
+        result_html = html_result if data_item['type'] != 'UI_sentence' else html_result.replace('\n', '<br>')
+
+        if place_holder_with_p in text_template:
+            text_template = text_template.replace(place_holder_with_p, result_html)
+        elif place_holder in text_template:
+            text_template = text_template.replace(place_holder, result_html)
     
     # 안전을 위하여 추가
     text_template += '<p></p>'
@@ -538,12 +536,32 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
     """단일 UI 객체의 HTML 생성"""
     columns, dict_rows = call_params_ui(request, supabase, docid, gendoc_uid, data_uid, params, query)
 
+    # filterjson 기반 행 필터링
+    genobjectuid = data_item.get('genobjectuid')
+    if genobjectuid:
+        go_resp = supabase.schema(SUPABASE_SCHEMA).table("genobjects") \
+            .select("filterjson").eq("genobjectuid", genobjectuid).execute()
+        filterjson = go_resp.data[0].get("filterjson") if go_resp.data else None
+        if filterjson and dict_rows:
+            if isinstance(filterjson, str):
+                filterjson = json.loads(filterjson)
+            # querycolnm → dispcolnm 변환
+            data_uid_for_map = data_item.get('datauid')
+            col_resp = supabase.schema(SUPABASE_SCHEMA).table("datacols") \
+                .select("querycolnm, dispcolnm").eq("datauid", data_uid_for_map).execute()
+            q2d = {c["querycolnm"]: c.get("dispcolnm") or c["querycolnm"]
+                   for c in (col_resp.data or [])}
+            for key, value in filterjson.items():
+                disp_key = q2d.get(key, key)
+                dict_rows = [row for row in dict_rows if str(row.get(disp_key, "")) == str(value)]
+
     if data_item["type"] == 'UI_table': 
         tablejson = json.loads(data_item['sourcebase'])
         coljson = json.loads(data_item['sourcetext'])
         final_html = draw_table(request, columns, dict_rows, tablejson, coljson)
         
     elif data_item["type"] == 'UI_chart':
+        matplotlib.use('Agg')
         charttypecd = data_item['sourcebase']
         chartjson = json.loads(data_item['sourcetext'])
 
@@ -568,7 +586,7 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
         buf.seek(0)
 
         img_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-        final_html = f'<img src="data:image/png;base64,{img_base64}" alt="{data_item["objectnm"]} 차트">'
+        final_html = f'<img src="data:image/png;base64,{img_base64}" style="width:{int(chart_width)}px;height:{int(chart_height)}px;" alt="{data_item["objectnm"]} 차트">'
         
     elif data_item["type"] == 'UI_sentence':                             
         seneteces = supabase.schema(SUPABASE_SCHEMA).table('sentences').select('sentencestext').eq('objectnm', data_item['objectnm']).eq('chapteruid', data_item['chapteruid']).execute().data
@@ -588,6 +606,9 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                                     sep, genObjectDirectYn, loggenchapteruid):
     """UI 객체들을 순차적으로 처리"""
     
+    replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
+    replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data}
+
     # for ui_idx, (original_idx, data_item) in enumerate(ui_objects):
     for ui_idx, (original_idx, data_item) in enumerate(ui_objects):
         loggenobjectuid = None
@@ -623,7 +644,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             params = re.findall(r'@(\w+)', query)
 
             run_start_dts = datetime.now().isoformat()
-            queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
+            queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 40, run_start_dts)
 
             final_html = process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, data_uid, params, query)
@@ -632,28 +653,22 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 60, run_start_dts)
 
-            result, result_text_template = process_ui_object(data_item, final_html, text_template, gen_chapter_uid, user_id, sep)
+            replacestring = replace_dict.get(genobjectuid)
+            result, result_text_template = process_ui_object(data_item, final_html, text_template, gen_chapter_uid, user_id, sep, replacestring)
             text_template = result_text_template
 
             update_genobjects(supabase, [result])
 
             if sep == "Not":
                 genchapters = {
-                    'docid': docid,
                     'genchapteruid': gen_chapter_uid,
-                    'chapteruid': result['chapteruid'],
-                    'texttemplate': text_template,
                     'gentexttemplate': result_text_template,
                     'createuserid': result['creator'],
-                    # 'creator': result['creator'],
                     'createfiledts': datetime.now().isoformat()
                 }
             else:
                 genchapters = {
-                    'docid': docid,
                     'genchapteruid': gen_chapter_uid,
-                    'chapteruid': result['chapteruid'],
-                    'texttemplate': text_template,
                     'gentexttemplate': result_text_template,
                     'createuserid': result['creator'],
                 }
@@ -1064,8 +1079,14 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
 
                 if sep == 'Not':
                     # RPC 대신 genobjects 직접 조회 (FOR 루프 확장으로 동일 objectuid에 genobject 여러 개)
-                    _type_map = {"CA": "AI_chart", "TA": "AI_table", "SA": "AI_sentence"}
-                    _domain_tbl_map = {"CA": "charts", "SA": "sentences", "TA": "tables"}
+                    _type_map = {
+                        "CA": "AI_chart",  "TA": "AI_table",  "SA": "AI_sentence",
+                        "CU": "UI_chart",  "TU": "UI_table",  "SU": "UI_sentence",
+                    }
+                    _domain_tbl_map = {
+                        "CA": "charts", "TA": "tables", "SA": "sentences",
+                        "CU": "charts", "TU": "tables", "SU": "sentences",
+                    }
                     read_text_template = []
                     go_rows = supabase.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", gen_chapter_uid).execute().data
                     for go in go_rows:
@@ -1080,6 +1101,24 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             d_rows = supabase.schema(SUPABASE_SCHEMA).table(domain_tbl).select("*").eq("objectuid", go["objectuid"]).execute().data
                             if d_rows:
                                 domain_row = d_rows[0]
+                        if typecd == "CU":
+                            sourcebase = domain_row.get("displaytype") or obj.get("sourcebase")
+                            sourcetext = domain_row.get("chartjson") or obj.get("sourcetext")
+                            if isinstance(sourcetext, dict):
+                                sourcetext = json.dumps(sourcetext)
+                        elif typecd == "TU":
+                            sourcebase = domain_row.get("tablejson") or obj.get("sourcebase")
+                            sourcetext = domain_row.get("coljson") or obj.get("sourcetext")
+                            if isinstance(sourcebase, dict):
+                                sourcebase = json.dumps(sourcebase)
+                            if isinstance(sourcetext, dict):
+                                sourcetext = json.dumps(sourcetext)
+                        elif typecd == "SU":
+                            sourcebase = obj.get("sourcebase")
+                            sourcetext = domain_row.get("sentencestext") or obj.get("sourcetext")
+                        else:
+                            sourcebase = domain_row.get("gptq") or obj.get("sourcebase")
+                            sourcetext = domain_row.get("sourcetext") or obj.get("sourcetext")
                         read_text_template.append({
                             "gendocnm": gendoc_uid,
                             "chapteruid": chapter_uid,
@@ -1089,10 +1128,10 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             "objectnm": obj.get("objectnm"),
                             "type": _type_map.get(typecd, ""),
                             "objecttypecd": typecd,
-                            "sourcebase": domain_row.get("gptq") or obj.get("sourcebase"),
-                            "sourcetext": domain_row.get("sourcetext") or obj.get("sourcetext"),
-                            "etc1": domain_row.get("etc1") or obj.get("etc1"),
-                            "etc2": domain_row.get("etc2") or obj.get("etc2"),
+                            "sourcebase": sourcebase,
+                            "sourcetext": sourcetext,
+                            "etc1": (domain_row.get("chart_width") if typecd == "CU" else domain_row.get("etc1")) or obj.get("etc1"),
+                            "etc2": (domain_row.get("chart_height") if typecd == "CU" else domain_row.get("etc2")) or obj.get("etc2"),
                             "datauid": domain_row.get("datauid"),
                             "genobjectuid": go["genobjectuid"],
                         })

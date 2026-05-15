@@ -115,8 +115,10 @@ def add_image_to_doc(doc, img_element, styles):
     if not src:
         return
     try:
-        width_in = css_length_to_inches(styles.get('width'))
-        height_in = css_length_to_inches(styles.get('height'))
+        img_own_styles = parse_css_style(img_element.get('style', ''))
+        merged_styles = {**styles, **img_own_styles}
+        width_in = css_length_to_inches(merged_styles.get('width'))
+        height_in = css_length_to_inches(merged_styles.get('height'))
         image_data = None
 
         if src.startswith('data:image'):

@@ -7,6 +7,8 @@ import koKR from 'antd/locale/ko_KR'
 import enUS from 'antd/locale/en_US'
 import App from './App'
 import { useLangStore } from '@/stores/langStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useEffect } from 'react'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +36,10 @@ const ANT_LOCALES = { ko: koKR, en: enUS }
 function LocalizedApp() {
   const langCd = useLangStore((s) => s.languageCd)
   const antLocale = ANT_LOCALES[langCd] ?? koKR
+
+  useEffect(() => {
+    useAuthStore.getState().initRefresh()
+  }, [])
 
   return (
     <ConfigProvider locale={antLocale} theme={theme}>

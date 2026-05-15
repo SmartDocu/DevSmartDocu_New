@@ -140,9 +140,13 @@ export default function ReqChaptersReadPage() {
   const handleDownload = () => {
     if (!content?.file_path) return
     const a = document.createElement('a')
-    a.href = content.file_path
+    if (content.inmemoryyn) {
+      a.href = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${content.file_path}`
+    } else {
+      a.href = content.file_path
+      a.target = '_blank'
+    }
     a.download = content.file_name || 'chapter.docx'
-    a.target = '_blank'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
 
