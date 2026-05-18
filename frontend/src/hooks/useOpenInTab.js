@@ -31,8 +31,9 @@ export function useOpenInTab() {
       message.warning(t('msg.tab.maxcount').replace('{n}', maxTabs))
       return
     }
+    const labelKey = menu ? `mnu.${menu.menucd}` : null
     const label = menu ? t(`mnu.${menu.menucd}`, menu.default_text) : fallbackLabel
-    openTab({ key, label, path: `${routePath}${query}` })
+    openTab({ key, label, labelKey, path: `${routePath}${query}` })
     navigate(`/${routePath}${query}`)
   }
 

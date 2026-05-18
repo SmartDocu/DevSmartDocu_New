@@ -172,6 +172,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | term_key |
 |----------|
 | cod.qna_answered |
+| cod.approve_pending |
+| cod.approve_rejected |
 | cod.qna_pending |
 
 ---

@@ -254,7 +254,7 @@ export default function RegisterPage() {
                 <Row>
                   <Col span={24}>
                     <Checkbox value="terms">
-                      (필수) SmartDoc 이용약관 동의
+                      (필수) D2Doc 이용약관 동의
                     </Checkbox>
                   </Col>
                   <Col span={24}>

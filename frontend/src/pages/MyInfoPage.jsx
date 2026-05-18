@@ -10,7 +10,7 @@ const { Title } = Typography
 
 const BILLING_LABELS = { Fr: 'Free', Pr: 'Pro', Te: 'Teams', En: 'Enterprise' }
 const BILLING_COLORS = { Fr: 'default', Pr: 'blue', Te: 'green', En: 'gold' }
-const APPROVE_LABELS = { A: '대기중', D: '승인 거절' }
+const APPROVE_LABELS = () => ({ A: t('cod.approve_pending'), D: t('cod.approve_rejected') })
 
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
@@ -54,7 +54,7 @@ export default function MyInfoPage() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>My Page</Title>
+      <Title level={4} style={{ marginBottom: 16 }}>{t('ttl.myinfo.personal')}</Title>
 
       <Row gutter={16}>
         {/* 개인 정보 */}
@@ -144,7 +144,7 @@ export default function MyInfoPage() {
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={t('lbl.tenantnm')}>{tenantChange.tenantnm || '-'}</Descriptions.Item>
             <Descriptions.Item label={t('lbl.status')}>
-              {APPROVE_LABELS[tenantChange.approvecd] || tenantChange.approvecd || '-'}
+              {APPROVE_LABELS()[tenantChange.approvecd] || tenantChange.approvecd || '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('lbl.note')}>
               {tenantChange.approvecd === 'D' ? tenantChange.approvenote || '-' : '-'}

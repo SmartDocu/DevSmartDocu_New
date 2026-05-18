@@ -50,9 +50,9 @@ export default function AppLayout() {
   const openMyInfoInTab = () => {
     const menu = allMenus.find((m) => m.route_path === 'myinfo')
     if (menu) {
-      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: 'myinfo' })
+      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), labelKey: `mnu.${menu.menucd}`, path: 'myinfo' })
     } else {
-      openTab({ key: 'myinfo', label: '내 계정', path: 'myinfo' })
+      openTab({ key: 'myinfo', label: t('ttl.myinfo.personal'), labelKey: 'ttl.myinfo.personal', path: 'myinfo' })
     }
     navigate('/myinfo')
   }
@@ -454,7 +454,7 @@ export default function AppLayout() {
                   key: tab.key,
                   label: (
                     <Dropdown trigger={['contextMenu']} menu={contextMenu}>
-                      <span>{t(`mnu.${tab.key}`, tab.label)}</span>
+                      <span>{tab.labelKey ? t(tab.labelKey, tab.label) : t(`mnu.${tab.key}`, tab.label)}</span>
                     </Dropdown>
                   ),
                   closable: true,

@@ -494,7 +494,7 @@ def register(body: RegisterRequest):
     if not smartdoc_row.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="DB 저장 실패: SmartDoc 테넌트를 찾을 수 없습니다.",
+            detail="DB 저장 실패: 테넌트를 찾을 수 없습니다.",
         )
     smartdoc_tenantid = smartdoc_row.data[0]["tenantid"]
 
@@ -513,7 +513,7 @@ def register(body: RegisterRequest):
     if not public_proj_row.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="DB 저장 실패: SmartDoc public 프로젝트를 찾을 수 없습니다.",
+            detail="DB 저장 실패: public 프로젝트를 찾을 수 없습니다.",
         )
     public_projectid = public_proj_row.data[0]["projectid"]
 
@@ -628,7 +628,7 @@ def send_sms(body: SendSmsRequest):
         sender = NaverSMSSender()
         sender.send_sms(
             to=phone,
-            content=f"[SmartDoc] 인증번호: {code} (5분 이내 입력)",
+            content=f"[D2Doc] 인증번호: {code} (5분 이내 입력)",
         )
     except Exception as e:
         # SMS 발송 실패 시에도 개발 환경에서는 코드를 반환 (로그로 확인)
