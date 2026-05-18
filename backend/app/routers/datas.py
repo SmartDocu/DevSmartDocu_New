@@ -187,7 +187,7 @@ def list_datas(
 
         if datasourcecd:
             query = query.eq("datasourcecd", datasourcecd)
-        rows = query.order("datanm").execute().data or []
+        rows = query.execute().data or []
     except Exception as e:
         print(f"[list_datas] datas 조회 오류: {e}", file=sys.stderr)
         return {"datas": []}
@@ -215,6 +215,12 @@ def list_datas(
             cmap = {c["connectid"]: c["connectnm"] for c in connectors}
             for r in rows:
                 r["connectnm"] = cmap.get(r.get("connectid"), "")
+
+    rows.sort(key=lambda r: (
+        (r.get("projectnm") or "").lower(),
+        (r.get("connectnm") or "").lower(),
+        (r.get("datanm") or "").lower(),
+    ))
 
     return {"datas": rows}
 
@@ -654,13 +660,17 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
         ]
         sb.schema(SUPABASE_SCHEMA).table("datacols").insert(insert_records).execute()
 
-    # useyn 수정: 양쪽에 모두 있는 컬럼은 useyn만 업데이트
+    # 수정: 양쪽에 모두 있는 컬럼은 편집 가능한 모든 필드 업데이트
     to_update = existing_names & incoming_names
-    for c in cols:
+    for i, c in enumerate(cols, 1):
         if c.querycolnm not in to_update:
             continue
         sb.schema(SUPABASE_SCHEMA).table("datacols").update({
-            "useyn": c.useyn if c.useyn is not None else True,
+            "dispcolnm":  c.dispcolnm or c.querycolnm,
+            "datatypecd": c.datatypecd,
+            "measureyn":  c.measureyn or False,
+            "useyn":      c.useyn if c.useyn is not None else True,
+            "orderno":    i,
         }).eq("datauid", datauid).eq("querycolnm", c.querycolnm).execute()
 
     return {"message": "저장되었습니다."}
