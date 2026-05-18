@@ -579,20 +579,24 @@ export default function AdminSamplePromptPage() {
                   {previewResult.message_type === 'image' && (
                     <img src={`data:image/png;base64,${previewResult.image_data}`} style={{ maxWidth: '100%' }} alt="preview" />
                   )}
-                  {previewResult.message_type === 'table' && (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
-                        <thead>
-                          <tr>{previewResult.data?.cols?.map((c) => <th key={c} style={{ border: '1px solid #ddd', padding: '4px 8px', background: '#f0f0f0' }}>{c}</th>)}</tr>
-                        </thead>
-                        <tbody>
-                          {previewResult.data?.rows?.map((row, i) => (
-                            <tr key={i}>{row.map((cell, j) => <td key={j} style={{ border: '1px solid #ddd', padding: '4px 8px' }}>{cell}</td>)}</tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                  {previewResult.message_type === 'table' && (() => {
+                    const records = Array.isArray(previewResult.data) ? previewResult.data : []
+                    const cols = records.length > 0 ? Object.keys(records[0]) : []
+                    return (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
+                          <thead>
+                            <tr>{cols.map((c) => <th key={c} style={{ border: '1px solid #ddd', padding: '4px 8px', background: '#f0f0f0' }}>{c}</th>)}</tr>
+                          </thead>
+                          <tbody>
+                            {records.map((row, i) => (
+                              <tr key={i}>{cols.map((c) => <td key={c} style={{ border: '1px solid #ddd', padding: '4px 8px' }}>{row[c] ?? ''}</td>)}</tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
                   {previewResult.message_type === 'error' && (
                     <div style={{ color: 'red', fontSize: 13, whiteSpace: 'pre-wrap' }}>{previewResult.message}</div>
                   )}

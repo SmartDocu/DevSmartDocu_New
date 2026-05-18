@@ -198,6 +198,51 @@ prompt_common_text = """작업: df 분석 및 처리
 사용자 지정 컬럼명(VALUE)은 시각화나 레이블에만 사용하세요.
 """
 
+
+def detect_question_language(question: str) -> str:
+    """
+    질문 텍스트의 언어를 탐지하여 명시적 언어 지시문을 반환한다.
+    한글/일어/중문은 유니코드 범위로 판별, 나머지는 langdetect 또는 영어 기본값.
+    """
+    if not question:
+        return "IMPORTANT: Write ALL output text in English only."
+
+    total = len([c for c in question if not c.isspace()])
+    if total == 0:
+        return "IMPORTANT: Write ALL output text in English only."
+
+    korean_chars = sum(1 for c in question if '가' <= c <= '힣' or '㄰' <= c <= '㆏')
+    if korean_chars / total > 0.05:
+        return "IMPORTANT: 사용자 질문이 한국어입니다. 모든 출력 텍스트(차트 제목, 축 레이블, 범례, 테이블 컬럼명, 보고서 문장 등)를 한국어로 작성하세요."
+
+    japanese_chars = sum(1 for c in question if '぀' <= c <= 'ヿ')
+    if japanese_chars / total > 0.05:
+        return "IMPORTANT: The user's question is in Japanese (日本語). Write ALL output text (chart titles, axis labels, legends, column names, report sentences, etc.) in Japanese only."
+
+    chinese_chars = sum(1 for c in question if '一' <= c <= '鿿')
+    if chinese_chars / total > 0.05:
+        return "IMPORTANT: The user's question is in Chinese (中文). Write ALL output text (chart titles, axis labels, legends, column names, report sentences, etc.) in Chinese only."
+
+    try:
+        from langdetect import detect as _langdetect
+        lang_code = _langdetect(question)
+        lang_map = {
+            "fr": "French (Français)",
+            "de": "German (Deutsch)",
+            "es": "Spanish (Español)",
+            "it": "Italian (Italiano)",
+            "pt": "Portuguese (Português)",
+            "nl": "Dutch (Nederlands)",
+            "ru": "Russian (Русский)",
+        }
+        if lang_code in lang_map:
+            lang_name = lang_map[lang_code]
+            return f"IMPORTANT: The user's question is in {lang_name}. Write ALL output text (chart titles, axis labels, legends, column names, report sentences, etc.) in {lang_name} only."
+    except Exception:
+        pass
+
+    return "IMPORTANT: The user's question is in English. Write ALL output text (chart titles, axis labels, legends, column names, report sentences, etc.) in English only."
+
 prompt_common_python_text = """
 파이썬 코드 처리:
     - 중요 : 파이썬 명령이 실행될 수 있는 코드로 작성
@@ -237,9 +282,12 @@ def get_dataframe_information(df):
 
 def get_charts_prompt(df, column_dict, question, ai_filter_json={}):
 
+    lang_instruction = detect_question_language(question)
     df_info = get_dataframe_information(df)
 
-    prompt = f"""{df_info}
+    prompt = f"""{lang_instruction}
+
+{df_info}
 
 질문: {question}
 
@@ -339,9 +387,12 @@ matplotlib 설정:
 
 
 def get_tables_prompt(df, column_dict, question, ai_filter_json={}):
+    lang_instruction = detect_question_language(question)
     df_info = get_dataframe_information(df)
 
-    prompt = f"""{df_info}
+    prompt = f"""{lang_instruction}
+
+{df_info}
 
 질문: {question}
 
@@ -460,18 +511,21 @@ DataFrame 컬럼: {all_columns}
 def get_sentences_prompt(df, column_dict, question, ai_filter_json={}):
     """
     통계 데이터 추출용 Python 코드 생성 프롬프트 (이상치 탐지 포함)
-    
+
     Args:
         df: 분석 대상 데이터프레임 (익명화된 상태)
         column_dict: 컬럼 매핑 정보
         question: 사용자 질문
-        
+
     Returns:
         str: LLM에 전달할 프롬프트
     """
+    lang_instruction = detect_question_language(question)
     df_info = get_dataframe_information(df)
 
-    prompt = f"""{df_info}
+    prompt = f"""{lang_instruction}
+
+{df_info}
 
 질문: {question}
 
@@ -507,7 +561,7 @@ def get_sentences_prompt(df, column_dict, question, ai_filter_json={}):
     - result 변수에 dict 타입으로 저장하세요. (절대 문자열 아님)
         - 사용자 질문에 답을 할 때 답변에 필요한 값들만 dict 타입으로 저장하세요.
         - **예를 들면 단순히 "2024년 배치수는 얼마인가요?"하는 경우는 결과는 '배치수: __ 개'의 간단한 dict가 결과입니다.**
-    - JSON 키는 한글로 작성하되, 사용자 질문과 관련된 의미 있는 이름을 사용하세요.
+    - JSON 키는 위 언어 지시에 따라 작성하되, 사용자 질문과 관련된 의미 있는 이름을 사용하세요.
     - 숫자는 적절히 반올림하세요 (소수점 1~2자리).
     - 사용자 질문에서 요구하지 않은 분석은 포함하지 마세요.
     - 컬럼명은 column_dict의 VALUE(사용자 친화 이름)를 사용하세요.
@@ -619,9 +673,12 @@ def generate_report_from_statistics(llm, statistics_dict, user_question):
     
     tokens = {"input_tokens": 0, "output_tokens": 0}
 
+    lang_instruction = detect_question_language(user_question)
     stats_formatted = json.dumps(statistics_dict, ensure_ascii=False, indent=2, cls=NumpyEncoder)
-    
-    prompt = f"""당신은 데이터 분석 보고서 작성 전문가입니다.
+
+    prompt = f"""{lang_instruction}
+
+당신은 데이터 분석 보고서 작성 전문가입니다.
 **중요** 답변은 서술형 문장으로 작성합니다.
     - 수치에 대한 집계를 사용자가 요청하는 경우도 이 내용을 서술형으로 작성합니다.
     - 집계치를 마크다운의 테이블 작성 형태를 허용하지 않습니다.
@@ -1150,10 +1207,15 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 tokens["input_tokens"] += usage.get("input_tokens", 0)
                 tokens["output_tokens"] += usage.get("output_tokens", 0)
 
-            style_dict = json.loads(style_json)
+            try:
+                style_dict = json.loads(style_json)
+            except (json.JSONDecodeError, ValueError):
+                style_dict = {}
             table_header_json = json.dumps(style_dict.get("header", {}))
             table_data_json = json.dumps(style_dict.get("data", {}))
 
+            # NaN → None 변환 (JSON 직렬화 안전, std() 단일항목 등)
+            df_result = df_result.where(pd.notnull(df_result), other=None)
             data = df_result.to_dict(orient="records")
                 
             return {
