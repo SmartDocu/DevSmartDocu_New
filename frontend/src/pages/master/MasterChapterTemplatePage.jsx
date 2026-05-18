@@ -4,6 +4,8 @@ import { App, Spin, Select, Modal } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 
 // ──────────────────────────────────────────────
 // objecttypecd → React 라우트 매핑
@@ -15,6 +17,15 @@ const TYPE_ROUTE = {
   TA: '/master/ai-tables',
   CA: '/master/ai-charts',
   SA: '/master/ai-sentences',
+}
+
+const TYPE_TAB_LABEL_KEY = {
+  TU: 'ttl.table.manage',
+  CU: 'ttl.chart.manage',
+  SU: 'ttl.sentence.manage',
+  TA: 'ttl.ai.table.manage',
+  CA: 'ttl.ai.chart.manage',
+  SA: 'ttl.ai.sentence.manage',
 }
 
 // ══════════════════════════════════════════════
@@ -176,7 +187,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       min-width: 200px; max-height: 250px; overflow-y: auto;
     `
     const header = document.createElement('div')
-    header.textContent = '📋 컬럼 선택'
+    header.textContent = `📋 ${t('lbl.col.select')}`
     header.style.cssText = `padding: 8px 12px; font-size: 12px; font-weight: bold; color: #555;
       background: #f7f7f7; border-bottom: 1px solid #eee; position: sticky; top: 0;`
     dropdown.appendChild(header)
@@ -219,7 +230,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       min-width: 260px; max-height: 300px; overflow-y: auto;
     `
     const header = document.createElement('div')
-    header.textContent = '📦 Tbl_Params 목록'
+    header.textContent = `📦 ${t('lbl.tblparams.list')}`
     header.style.cssText = `padding: 8px 12px; font-size: 12px; font-weight: bold; color: #555;
       background: #f7f7f7; border-bottom: 1px solid #eee; position: sticky; top: 0;`
     dropdown.appendChild(header)
@@ -227,7 +238,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
     const tbl_params = tbl_params_ref.current || []
     if (tbl_params.length === 0) {
       const empty = document.createElement('div')
-      empty.textContent = 'tbl_params 데이터가 없습니다.'
+      empty.textContent = t('msg.tblparams.empty')
       empty.style.cssText = 'padding: 12px; font-size: 13px; color: #aaa;'
       dropdown.appendChild(empty)
     } else {
@@ -304,7 +315,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
     const sca_params = sca_params_ref.current || []
 
     if (sca_params.length > 0) {
-      dropdown.appendChild(createSectionHeader('🔍 SCA Params'))
+      dropdown.appendChild(createSectionHeader(`🔍 ${t('lbl.sca.params')}`))
       sca_params.forEach(obj => {
         const nm = obj.paramnm ?? ''
         dropdown.appendChild(createItem(nm, () => {
@@ -318,7 +329,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
 
     if (sca_params.length === 0) {
       const empty = document.createElement('div')
-      empty.textContent = '데이터가 없습니다.'
+      empty.textContent = t('msg.no.data')
       empty.style.cssText = 'padding: 12px; font-size: 13px; color: #aaa;'
       dropdown.appendChild(empty)
     }
@@ -341,7 +352,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       min-width: 260px; max-height: 300px; overflow-y: auto;
     `
     const header = document.createElement('div')
-    header.textContent = '🔍 SCA Params 목록'
+    header.textContent = `🔍 ${t('lbl.sca.params.list')}`
     header.style.cssText = `padding: 8px 12px; font-size: 12px; font-weight: bold; color: #555;
       background: #f7f7f7; border-bottom: 1px solid #eee; position: sticky; top: 0;`
     dropdown.appendChild(header)
@@ -349,7 +360,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
     const sca_params = sca_params_ref.current || []
     if (sca_params.length === 0) {
       const empty = document.createElement('div')
-      empty.textContent = 'sca_params 데이터가 없습니다.'
+      empty.textContent = t('msg.scaparams.empty')
       empty.style.cssText = 'padding: 12px; font-size: 13px; color: #aaa;'
       dropdown.appendChild(empty)
     } else {
@@ -395,7 +406,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       min-width: 200px; max-height: 250px; overflow-y: auto;
     `
     const header = document.createElement('div')
-    header.textContent = `📋 ${paramnm} 컬럼 선택`
+    header.textContent = `📋 ${paramnm} ${t('lbl.col.select')}`
     header.style.cssText = `padding: 8px 12px; font-size: 12px; font-weight: bold; color: #555;
       background: #f7f7f7; border-bottom: 1px solid #eee; position: sticky; top: 0;`
     dropdown.appendChild(header)
@@ -468,7 +479,7 @@ function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
       box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; min-width: 220px; overflow: hidden;
     `
     const header = document.createElement('div')
-    header.textContent = `"${keyword}" 구문 선택`
+    header.textContent = `"${keyword}" ${t('lbl.syntax.select')}`
     header.style.cssText = `padding: 6px 12px; font-size: 11px; color: #888; background: #f7f7f7; border-bottom: 1px solid #eee;`
     dropdown.appendChild(header)
 
@@ -693,33 +704,33 @@ function validateTemplateBlocks(editorInstance) {
     if (!line) return
 
     if (!PATTERNS.FOR_END.test(line) && PATTERNS.FOR_END_ERR.test(line)) {
-      errors.push(`${lineNo}번째 줄: FOR 닫기 태그 오타 → "${line}"\n올바른 형식: {{#END FOR}}`); return
+      errors.push(t('msg.tmpl.err.for.typo').replace('{line}', lineNo).replace('{text}', line)); return
     }
     if (!PATTERNS.IF_END.test(line) && PATTERNS.IF_END_ERR.test(line)) {
-      errors.push(`${lineNo}번째 줄: IF 닫기 태그 오타 → "${line}"\n올바른 형식: {{#END if}}`); return
+      errors.push(t('msg.tmpl.err.if.typo').replace('{line}', lineNo).replace('{text}', line)); return
     }
     if (!PATTERNS.IF_ELSE.test(line) && PATTERNS.IF_ELSE_ERR.test(line)) {
-      errors.push(`${lineNo}번째 줄: ELSE 태그 오타 → "${line}"\n올바른 형식: {{#ELSE}}`); return
+      errors.push(t('msg.tmpl.err.else.typo').replace('{line}', lineNo).replace('{text}', line)); return
     }
 
     if (PATTERNS.FOR_OPEN.test(line))       stack.push({ type: 'FOR', line: lineNo })
     else if (PATTERNS.IF_OPEN.test(line))   stack.push({ type: 'IF', line: lineNo, hasElse: false })
     else if (PATTERNS.IF_ELSE.test(line)) {
       const top = stack[stack.length - 1]
-      if (!top || top.type !== 'IF') errors.push(`${lineNo}번째 줄: {{#ELSE}} 앞에 {{#if}}가 없습니다.`)
+      if (!top || top.type !== 'IF') errors.push(t('msg.tmpl.err.else.no.if').replace('{line}', lineNo))
       else top.hasElse = true
     } else if (PATTERNS.FOR_END.test(line)) {
       const top = stack[stack.length - 1]
-      if (!top || top.type !== 'FOR') errors.push(`${lineNo}번째 줄: {{#END FOR}} 앞에 {{#FOR}}가 없습니다.`)
+      if (!top || top.type !== 'FOR') errors.push(t('msg.tmpl.err.endfor.no.for').replace('{line}', lineNo))
       else stack.pop()
     } else if (PATTERNS.IF_END.test(line)) {
       const top = stack[stack.length - 1]
-      if (!top || top.type !== 'IF') errors.push(`${lineNo}번째 줄: {{#END if}} 앞에 {{#if}}가 없습니다.`)
+      if (!top || top.type !== 'IF') errors.push(t('msg.tmpl.err.endif.no.if').replace('{line}', lineNo))
       else stack.pop()
     }
   })
 
-  stack.forEach(u => errors.push(`${u.line}번째 줄에서 시작한 {{#${u.type}}} 블록이 닫히지 않았습니다.`))
+  stack.forEach(u => errors.push(t('msg.tmpl.err.unclosed').replace('{line}', u.line).replace('{type}', u.type)))
   return errors
 }
 
@@ -860,7 +871,9 @@ function parseEditorFormats(editorInstance, existingFormats, tbl_params, sca_par
 // 메인 컴포넌트
 // ══════════════════════════════════════════════
 export default function MasterChapterTemplatePage() {
+  useLangStore((s) => s.translations)
   const { message, modal } = App.useApp()
+  const openInTab = useOpenInTab()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)  // ✅ 추가
@@ -920,7 +933,7 @@ export default function MasterChapterTemplatePage() {
   const chapter    = data?.chapter    || {}
   const tbl_params = data?.tbl_params || []
   const sca_params = data?.sca_params || []
-  const editYn     = chapter.editbuttonyn === 'Y'
+  const editYn     = user?.editbuttonyn === 'Y'
 
   // ── 문서 데이터셋 (필터 모달용) ──
   const { data: docParamsData } = useQuery({
@@ -1069,12 +1082,12 @@ export default function MasterChapterTemplatePage() {
   // ── 항목 추출 ──
   const extractFormats = useCallback(() => {
     if (!isEditorReadyRef.current || !editorInstanceRef.current) {
-      message.warning('에디터가 아직 로드되지 않았습니다.')
+      message.warning(t('msg.editor.not.ready'))
       return
     }
     const errors = validateTemplateBlocks(editorInstanceRef.current)
     if (errors.length > 0) {
-      modal.error({ title: '⚠️ 템플릿 구문 오류', content: errors.join('\n\n'), width: 500 })
+      modal.error({ title: t('ttl.tmpl.syntax.error'), content: errors.join('\n\n'), width: 500 })
       return
     }
     setReadLoading(true)
@@ -1086,7 +1099,7 @@ export default function MasterChapterTemplatePage() {
     )
     setFormats(parsed)
     setReadLoading(false)
-    message.success(`${parsed.length}개 항목을 추출했습니다.`)
+    message.success(t('msg.objects.extracted').replace('{count}', parsed.length))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formats, message, modal])
 
@@ -1109,29 +1122,29 @@ export default function MasterChapterTemplatePage() {
     onSuccess: (res) => {
       setSaveLoading(false)
       if (res && res.ok === false) {
-        message.error(`${res.message || '저장 실패'}${res.add ? '\n' + res.add : ''}`)
+        message.error(`${res.message || t('msg.save.error')}${res.add ? '\n' + res.add : ''}`)
         return
       }
-      message.success(`'${chapter.chapternm}' 저장되었습니다.`)
+      message.success(t('msg.saved.name').replace('{name}', chapter.chapternm))
       initialized.current = false
       qc.invalidateQueries({ queryKey: ['chapter-template', chapteruid] })
     },
     onError: (err) => {
       setSaveLoading(false)
-      message.error(err.response?.data?.detail || '저장 실패')
+      message.error(err.response?.data?.detail || t('msg.save.error'))
     },
   })
 
   const handleSave = useCallback(() => {
-    if (!editYn) { message.warning('편집 권한이 없습니다.'); return }
+    if (!editYn) { message.warning(t('msg.no.edit.permission')); return }
     if (!isEditorReadyRef.current || !editorInstanceRef.current) {
-      message.warning('에디터가 아직 로드되지 않았습니다.')
+      message.warning(t('msg.editor.not.ready'))
       return
     }
 
     const errors = validateTemplateBlocks(editorInstanceRef.current)
     if (errors.length > 0) {
-      modal.error({ title: '⚠️ 템플릿 구문 오류', content: errors.join('\n\n'), width: 500 })
+      modal.error({ title: t('ttl.tmpl.syntax.error'), content: errors.join('\n\n'), width: 500 })
       return
     }
 
@@ -1151,24 +1164,22 @@ export default function MasterChapterTemplatePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editYn, formats, message, modal, saveMutation])
 
-  // ── 항목 편집 이동 ──
-  const editToObjects = useCallback((fmt) => {
-    const route = TYPE_ROUTE[fmt.objectTypeCd]
-    if (!route) { message.warning('설정된 항목 타입이 없습니다.'); return }
-    const enc = encodeURIComponent(fmt.objectNm)
+  // ── 항목 관리 이동: objectTypeCd 있으면 새 탭, 없으면 /master/object ──
+  const handleObjectManage = useCallback((fmt) => {
     sessionStorage.setItem('chapter_template_chapteruid', chapteruid)
-    navigate(`${route}?chapteruid=${chapteruid}&objectnm=${enc}`)
-  }, [chapteruid, message, navigate])
-
-  // ── 항목 설정 이동 ──
-  const moveToObjects = useCallback((fmt) => {
-    sessionStorage.setItem('chapter_template_chapteruid', chapteruid)
-    if (fmt?.objectUID) {
-      navigate(`/master/object?chapteruid=${chapteruid}&objectuid=${fmt.objectUID}`)
+    if (fmt.objectTypeCd) {
+      const route = TYPE_ROUTE[fmt.objectTypeCd]
+      if (!route) { message.warning(t('msg.no.object.type')); return }
+      const enc = encodeURIComponent(fmt.objectNm)
+      const routePath = route.replace(/^\//, '')
+      const query = `?chapteruid=${chapteruid}&objectnm=${enc}`
+      const tabLabel = TYPE_TAB_LABEL_KEY[fmt.objectTypeCd] ? t(TYPE_TAB_LABEL_KEY[fmt.objectTypeCd]) : fmt.objectNm
+      openInTab(routePath, query, tabLabel)
     } else {
-      navigate(`/master/object?chapteruid=${chapteruid}`)
+      const uid = fmt?.objectUID ? `&objectuid=${fmt.objectUID}` : ''
+      openInTab('master/object', `?chapteruid=${chapteruid}${uid}`, t('btn.object.manage'))
     }
-  }, [chapteruid, navigate])
+  }, [chapteruid, message, openInTab])
 
   // ── 필터 매핑 모달 오픈 ──
   const openFilterModal = useCallback(async (fmt) => {
@@ -1198,12 +1209,12 @@ export default function MasterChapterTemplatePage() {
   const saveFilterMap = useCallback(async () => {
     const dfvcolnms = filterInfo?.dfvcolnms || []
     if (!filterInfo?.filter || !filterSelectedDatauid) {
-      message.warning('데이터셋을 선택해 주세요.')
+      message.warning(t('msg.dataset.required'))
       return
     }
     const unmapped = dfvcolnms.filter(col => !filterColMappings[col])
     if (unmapped.length > 0) {
-      message.warning(`'${unmapped.join(', ')}' 컬럼을 매핑해 주세요.`)
+      message.warning(t('msg.col.mapping.required').replace('{col}', unmapped.join(', ')))
       return
     }
     try {
@@ -1216,10 +1227,10 @@ export default function MasterChapterTemplatePage() {
       setFormats(prev => prev.map(f =>
         f.objectUID === filterModalFmt?.objectUID ? { ...f, isFilterMapped: true } : f
       ))
-      message.success('필터 매핑이 저장되었습니다.')
+      message.success(t('msg.filter.map.saved'))
       setFilterModalFmt(null)
     } catch {
-      message.error('저장에 실패했습니다.')
+      message.error(t('msg.filter.save.error'))
     }
   }, [filterInfo, filterSelectedDatauid, filterColMappings, filterModalFmt, message])
 
@@ -1227,50 +1238,53 @@ export default function MasterChapterTemplatePage() {
   if (!chapteruid) {
     return chaptersList.length === 0
       ? <div style={{ padding: 24, color: '#888' }}>
-          {docid ? '챕터가 없습니다.' : 'docid가 없습니다.'}
+          {docid ? t('msg.no.chapter') : t('msg.no.docid')}
         </div>
       : <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}><Spin /></div>
   }
 
   return (
     <div style={{ height: '100%' }}>
-      {/* 페이지 헤더 */}
-      <div style={{ marginBottom: 12 }}>
-        {/* 최상단: 타이틀 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ width: 4, height: 22, background: 'linear-gradient(#1677ff,#69b1ff)', borderRadius: 2 }} />
-          <span style={{ fontSize: 16, fontWeight: 700 }}>챕터 템플릿 관리</span>
+      {/* 페이지 타이틀 */}
+      <div className="page-title">
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="gradient-bar" />
+          <div>{t('mnu.master_data.chapters.chapter-template')}</div>
         </div>
-        {/* 상단: 챕터 선택(좌) / 버튼(우) */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: '#555' }}>챕터</span>
-            <Select
-              value={chapteruid}
-              onChange={(uid) => navigate(`/master/chapter-template?chapteruid=${uid}&docid=${docid || ''}`)}
-              style={{ width: 200 }}
-              size="small"
-              options={chaptersList.map(c => ({ value: c.chapteruid, label: c.chapternm }))}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div />
+      </div>
+
+      {/* 챕터 선택 + 버튼 행 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#555' }}>{t('lbl.chapternm')}</span>
+          <Select
+            value={chapteruid}
+            onChange={(uid) => navigate(`/master/chapter-template?chapteruid=${uid}&docid=${docid || ''}`)}
+            style={{ width: 200 }}
+            size="small"
+            options={chaptersList.map(c => ({ value: c.chapteruid, label: c.chapternm }))}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={extractFormats}
+            disabled={readLoading}
+          >
+            {t('btn.extract.objects')}
+          </button>
+          {editYn && (
             <button
-              onClick={extractFormats}
-              disabled={readLoading}
-              style={{
-                padding: '5px 14px', border: 'none', borderRadius: 4, cursor: readLoading ? 'wait' : 'pointer',
-                background: '#D1D1D1', color: '#000', fontSize: 13, fontWeight: 500,
-              }}
-            >항목 추출</button>
-            <button
+              type="button"
+              className="btn btn-primary"
               onClick={handleSave}
               disabled={saveLoading}
-              style={{
-                padding: '5px 14px', border: 'none', borderRadius: 4, cursor: saveLoading ? 'wait' : 'pointer',
-                background: '#2B9CFF', color: '#fff', fontSize: 13, fontWeight: 500,
-              }}
-            >저장</button>
-          </div>
+            >
+              {t('btn.save')}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1313,7 +1327,7 @@ export default function MasterChapterTemplatePage() {
           <div style={{ display: 'flex', gap: 12 }}>
             {/* 단일행 변수 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: 12, margin: '9px 0' }}>🔍 단일행 변수</h2>
+              <h2 style={{ fontSize: 12, margin: '9px 0' }}>{t('lbl.single.var')}</h2>
               {sca_params.length > 0 ? (
                 <div style={{ height: 120, overflowY: 'auto' }}>
                   {sca_params.flatMap((p) =>
@@ -1343,13 +1357,13 @@ export default function MasterChapterTemplatePage() {
                   )}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: '#777' }}>데이터 없음</div>
+                <div style={{ fontSize: 12, color: '#777' }}>{t('msg.no.data')}</div>
               )}
             </div>
 
             {/* 다중행 변수 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: 12, margin: '9px 0' }}>📦 다중행 변수</h2>
+              <h2 style={{ fontSize: 12, margin: '9px 0' }}>{t('lbl.multi.var')}</h2>
               {tbl_params.length > 0 ? (
                 <div style={{ height: 120, overflowY: 'auto' }}>
                   {tbl_params.map((p, i) => (
@@ -1372,7 +1386,7 @@ export default function MasterChapterTemplatePage() {
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: '#777' }}>데이터 없음</div>
+                <div style={{ fontSize: 12, color: '#777' }}>{t('msg.no.data')}</div>
               )}
             </div>
           </div>
@@ -1382,12 +1396,12 @@ export default function MasterChapterTemplatePage() {
             backgroundColor: '#f9fbe7', borderRadius: 6, color: '#6a7d3c',
             padding: '6px 10px', fontSize: 12,
           }}>
-            ＊반드시 저장 클릭 후 관리 페이지 이동 바랍니다.
+            {t('inf.save.before.navigate')}
           </div>
 
           {/* 항목 관리 */}
           <div>
-            <h2 style={{ fontSize: 12, margin: '9px 0' }}>항목 관리</h2>
+            <h2 style={{ fontSize: 12, margin: '9px 0' }}>{t('btn.object.manage')}</h2>
 
 
             {/* 항목 목록 */}
@@ -1408,15 +1422,14 @@ export default function MasterChapterTemplatePage() {
                     {/* 우측: 설정아이콘 | Filter 뱃지 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                       
-                      {/* 설정 아이콘 */}
+                      {/* 항목 관리 이동 버튼 */}
                       <button
-                        className="icon-btn"
-                        title="해당 변수 수정 이동"
-                        disabled={!fmt.objectUID}
-                        style={{ cursor: fmt.objectUID ? 'pointer' : 'not-allowed' }}
-                        onClick={() => editToObjects(fmt)}
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => handleObjectManage(fmt)}
+                        style={{ fontSize: 11, padding: '2px 8px' }}
                       >
-                        <img src="/icons/configuration.svg" className="icon-img" alt="항목 설정" />
+                        {t('btn.object.manage')}
                       </button>
 
                       {/* Filter 버튼 자리 (항상 고정 너비) */}
@@ -1445,8 +1458,8 @@ export default function MasterChapterTemplatePage() {
               </div>
             ) : (
               <div style={{ color: '#777', fontSize: 14, lineHeight: 1.6 }}>
-                에디터에 <code>{`{{명칭}}`}</code> 형태로 입력한 후<br />
-                <strong>읽기</strong> 버튼을 클릭하세요
+                {t('msg.tmpl.input.hint')}<br />
+                {t('msg.tmpl.click.extract')}
               </div>
             )}
           </div>
@@ -1455,12 +1468,12 @@ export default function MasterChapterTemplatePage() {
 
       {/* 필터 매핑 모달 */}
       <Modal
-        title="필터 매핑 설정"
+        title={t('ttl.filter.map.setting')}
         open={!!filterModalFmt}
         onCancel={() => setFilterModalFmt(null)}
         onOk={saveFilterMap}
-        okText="저장"
-        cancelText="취소"
+        okText={t('btn.save')}
+        cancelText={t('btn.cancel')}
         width={520}
       >
         {filterModalLoading ? (
@@ -1469,7 +1482,7 @@ export default function MasterChapterTemplatePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* 필터 변수 정보 */}
             <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>필터 변수</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{t('lbl.filter.var')}</div>
               <div style={{ fontSize: 13 }}>
                 {filterInfo.filter.dfvnm}
                 {filterInfo.filter.dfvcolnms && (
@@ -1480,7 +1493,7 @@ export default function MasterChapterTemplatePage() {
 
             {/* 데이터셋 선택 (공통) */}
             <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>매핑할 데이터셋</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{t('lbl.filter.dataset')}</div>
               <Select
                 style={{ width: '100%' }}
                 placeholder="데이터셋 선택"
@@ -1493,12 +1506,12 @@ export default function MasterChapterTemplatePage() {
             {/* 필터 컬럼별 매핑 */}
             {filterSelectedDatauid && (filterInfo.dfvcolnms || []).length > 0 && (
               <div>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>컬럼 매핑</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>{t('lbl.filter.col.map')}</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#fafafa' }}>
-                      <th style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 12, textAlign: 'left' }}>필터 컬럼</th>
-                      <th style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 12, textAlign: 'left' }}>데이터셋 컬럼</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 12, textAlign: 'left' }}>{t('thd.filter.col')}</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #e8e8e8', fontSize: 12, textAlign: 'left' }}>{t('thd.dataset.col')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1526,7 +1539,7 @@ export default function MasterChapterTemplatePage() {
             )}
           </div>
         ) : (
-          <div style={{ color: '#888' }}>필터 정보를 불러올 수 없습니다.</div>
+          <div style={{ color: '#888' }}>{t('msg.no.filter.info')}</div>
         )}
       </Modal>
 

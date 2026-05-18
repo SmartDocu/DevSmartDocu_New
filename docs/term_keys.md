@@ -176,10 +176,36 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 2. msg. (96개)
+## 2. msg. (139개)
 
 | term_key |
 |----------|
+| msg.col.mapping.required |
+| msg.chapter.unselected |
+| msg.confirm.object.apply |
+| msg.loading.doc.merging |
+| msg.loading.object.applying |
+| msg.loading.object.writing |
+| msg.loading.preparing |
+| msg.object.apply.complete |
+| msg.object.empty |
+| msg.object.write.complete |
+| msg.doc.already.writing |
+| msg.loading.chapter.count |
+| msg.doc.param.duplicate |
+| msg.doc.write.complete |
+| msg.docid.load.error |
+| msg.loading.chapter.finalizing |
+| msg.loading.chapter.preparing |
+| msg.loading.chapter.progress |
+| msg.loading.doc.writing |
+| msg.loading.gendoc |
+| msg.loading.gendoc.delete |
+| msg.loading.params |
+| msg.param.required |
+| msg.ph.gendocnm |
+| msg.ph.search |
+| msg.unset.objects |
 | msg.ai.input.required |
 | msg.chart.select.required |
 | msg.chapter.required |
@@ -229,8 +255,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.message.select.delete |
 | msg.message.select.trans |
 | msg.no.change.history |
+| msg.no.chapter |
+| msg.no.docid |
+| msg.no.filter.info |
 | msg.no.image |
 | msg.no.data |
+| msg.no.edit.permission |
+| msg.no.object.type |
 | msg.password.minlength |
 | msg.password.mismatch |
 | msg.password.required |
@@ -261,6 +292,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.save.col.warn |
 | msg.save.error |
 | msg.save.success |
+| msg.saved.name |
 | msg.saved |
 | msg.select |
 | msg.select.chapter |
@@ -285,6 +317,22 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.qna.title.required |
 | msg.qna.question.required |
 | msg.url.required |
+| msg.dataset.required |
+| msg.editor.not.ready |
+| msg.filter.map.saved |
+| msg.filter.save.error |
+| msg.objects.extracted |
+| msg.scaparams.empty |
+| msg.tblparams.empty |
+| msg.tmpl.click.extract |
+| msg.tmpl.err.else.no.if |
+| msg.tmpl.err.else.typo |
+| msg.tmpl.err.endfor.no.for |
+| msg.tmpl.err.endif.no.if |
+| msg.tmpl.err.for.typo |
+| msg.tmpl.err.if.typo |
+| msg.tmpl.err.unclosed |
+| msg.tmpl.input.hint |
 
 ---
 
@@ -339,10 +387,29 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 4. btn. (32개)
+## 4. btn. (50개)
 
 | term_key |
 |----------|
+| btn.1year |
+| btn.extract.objects |
+| btn.3months |
+| btn.back |
+| btn.object.apply |
+| btn.object.rewrite |
+| btn.chapter.read |
+| btn.chapter.rewrite |
+| btn.doc.read |
+| btn.doc.write |
+| btn.doc.write.all |
+| btn.doc.write.combine |
+| btn.download.chapter |
+| btn.download.doc |
+| btn.download.modified |
+| btn.download.modified.chapter |
+| btn.item.manage |
+| btn.upload.chapter |
+| btn.upload.modified |
 | btn.apply |
 | btn.cancel |
 | btn.close |
@@ -381,13 +448,37 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 5. lbl. (일반 레이블 100개 + chart 59개 = 159개)
+## 5. lbl. (일반 레이블 122개 + chart 59개 = 181개)
 
-### 일반 레이블 (100개)
+### 일반 레이블 (122개)
 
 | term_key |
 |----------|
 | lbl.agree.all |
+| lbl.col.select |
+| lbl.filter.col.map |
+| lbl.filter.dataset |
+| lbl.filter.var |
+| lbl.multi.var |
+| lbl.sca.params |
+| lbl.sca.params.list |
+| lbl.single.var |
+| lbl.syntax.select |
+| lbl.tblparams.list |
+| lbl.chapter.create.dts |
+| lbl.authored.chapter |
+| lbl.chapter.no |
+| lbl.chapters |
+| lbl.done |
+| lbl.items |
+| lbl.step |
+| lbl.authored.doc |
+| lbl.create.period |
+| lbl.doc.create.dts |
+| lbl.doc.final.dts |
+| lbl.doc.upload.dts |
+| lbl.uploaded.chapter |
+| lbl.uploaded.doc |
 | lbl.align |
 | lbl.address |
 | lbl.aliases |
@@ -607,11 +698,31 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 6. thd. (54개)
+## 6. thd. (74개)
 
 | term_key |
 |----------|
 | thd.align_thd |
+| thd.dataset.col |
+| thd.filter.col |
+| thd.auto.write |
+| thd.filterjson |
+| thd.new.genobject.yn |
+| thd.new.object.yn |
+| thd.obj.setting.dts |
+| thd.obj.write.dts |
+| thd.closeuser |
+| thd.closeyn |
+| thd.createfiledts |
+| thd.createuser |
+| thd.gendocnm |
+| thd.inputvalue |
+| thd.modified.upload |
+| thd.new.chapter |
+| thd.new.upload |
+| thd.params |
+| thd.updatefiledts |
+| thd.updateuser |
 | thd.bgcolor_thd |
 | thd.bold_thd |
 | thd.codegroupcd_thd |
@@ -677,10 +788,20 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 7. ttl. (39개)
+## 7. ttl. (49개)
 
 | term_key |
 |----------|
+| ttl.chapter.objects |
+| ttl.filter.map.setting |
+| ttl.tmpl.syntax.error |
+| ttl.doc.list |
+| ttl.object.detail |
+| ttl.doc.config |
+| ttl.doc.read_ttl |
+| ttl.doc.write_ttl |
+| ttl.param.input |
+| ttl.value.select |
 | ttl.ai.chart.manage |
 | ttl.ai.sentence.manage |
 | ttl.ai.table.manage |
@@ -726,10 +847,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 8. inf. (5개)
+## 8. inf. (7개)
 
 | term_key |
 |----------|
+| inf.doc.preview.notice |
+| inf.save.before.navigate |
 | inf.gensentence.default |
 | inf.iconnm_inf |
 | inf.password.hidden |
@@ -801,15 +924,48 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | prefix | 개수 |
 |--------|------|
 | cod.   | 77   |
-| msg.   | 100  |
+| msg.   | 122  |
 | mnu.   | 43   |
-| btn.   | 35   |
-| lbl.   | 169  |
-| thd.   | 62   |
-| ttl.   | 44   |
+| btn.   | 49   |
+| lbl.   | 173  |
+| thd.   | 72   |
+| ttl.   | 47   |
 | inf.   | 6    |
 | prm.   | 51   |
-| **합계** | **587** |
+| **합계** | **641+** |
+
+### 2026-05-18 변경 내역 (15차 — ReqChapterObjectsPage)
+- `ttl.chapter.objects`, `ttl.object.detail` 추가 (2개) — 챕터 항목 조회 제목·항목 내용 패널 소제목
+- `lbl.chapter.create.dts` 추가 (1개) — 챕터 작성 일시 메타 레이블
+- `thd.filterjson`, `thd.obj.setting.dts`, `thd.new.object.yn`, `thd.obj.write.dts`, `thd.new.genobject.yn` 추가 (5개) — 항목 목록 테이블 헤더
+- `btn.object.rewrite`, `btn.object.apply` 추가 (2개) — 항목 (재)작성·반영 버튼
+- `msg.loading.object.writing`, `msg.loading.object.applying`, `msg.object.write.complete`, `msg.object.apply.complete`, `msg.confirm.object.apply`, `msg.object.empty` 추가 (6개) — 로딩·완료·확인·빈 항목 메시지
+
+### 2026-05-18 변경 내역 (14차 — ReqDocWritePage)
+- `ttl.doc.write_ttl` 추가 (1개) — 문서 작성 페이지 타이틀
+- `lbl.doc.final.dts`, `lbl.step` 추가 (2개) — 최종 작성 일시 레이블, 진행 단계 표시
+- `thd.auto.write`, `thd.modified.upload` 추가 (2개) — 챕터 목록 테이블 헤더 (자동 작성/수정 업로드 라디오 컬럼)
+- `btn.doc.write` 추가 (1개) — 문서 작성 실행 버튼
+- `msg.chapter.unselected`, `msg.loading.preparing`, `msg.loading.doc.merging` 추가 (3개) — 챕터 미선택 경고, 준비 중/문서 병합 중 로딩 메시지
+
+### 2026-05-18 변경 내역 (13차 — ReqChaptersReadPage)
+- `thd.chapternm`, `thd.new.chapter`, `thd.new.upload` 추가 (3개) — 챕터 목록 테이블 헤더
+- `lbl.doc.create.dts`, `lbl.doc.upload.dts`, `lbl.authored.chapter`, `lbl.uploaded.chapter` 추가 (4개) — 요약 정보 레이블·카드 탭 제목
+- `btn.doc.write.all`, `btn.doc.write.combine`, `btn.chapter.rewrite`, `btn.item.manage`, `btn.download.chapter`, `btn.download.modified.chapter`, `btn.upload.chapter` 추가 (7개) — 액션 버튼
+- `msg.loading.chapter.preparing`, `msg.loading.chapter.progress`, `msg.loading.chapter.finalizing`, `msg.loading.doc.writing`, `msg.doc.already.writing`, `msg.doc.write.complete` 추가 (6개) — 로딩·완료·오류 메시지
+
+### 2026-05-18 변경 내역 (12차 — ReqDocReadPage)
+- `ttl.doc.read_ttl` 추가 (1개) — 문서 조회 페이지 타이틀
+- `lbl.authored.doc`, `lbl.uploaded.doc` 추가 (2개) — 카드 패널 제목
+- `inf.doc.preview.notice` 추가 (1개) — 문서 미리보기 안내 문구
+- `btn.back`, `btn.upload.modified`, `btn.download.doc`, `btn.download.modified` 추가 (4개) — 뒤로·업로드·다운로드 버튼
+
+### 2026-05-18 변경 내역 (11차 — ReqDocListPage)
+- `ttl.doc.list`, `ttl.doc.config`, `ttl.param.input`, `ttl.value.select` 추가 (4개) — 문서 목록·구성·매개변수·값선택 소제목
+- `lbl.create.period` 추가 (1개) — 날짜 필터 레이블
+- `thd.gendocnm`, `thd.params`, `thd.createuser`, `thd.updateuser`, `thd.createfiledts`, `thd.updatefiledts`, `thd.closeyn`, `thd.closeuser`, `thd.inputvalue` 추가 (9개) — 문서 목록·매개변수 테이블 헤더 (예시값은 기존 `lbl.samplevalue` 재사용)
+- `btn.doc.read`, `btn.chapter.read`, `btn.3months`, `btn.1year` 추가 (4개) — 이동·필터 버튼
+- `msg.ph.gendocnm`, `msg.ph.search`, `msg.loading.params`, `msg.loading.gendoc`, `msg.loading.gendoc.delete`, `msg.docid.load.error`, `msg.unset.objects`, `msg.doc.param.duplicate`, `msg.param.required` 추가 (9개) — 플레이스홀더·로딩·경고 메시지
 
 ### 2026-05-14 변경 내역 (10차 — AdminHelpsPage)
 - `msg.url.required` 추가 (1개) — URL 필수 입력 메시지

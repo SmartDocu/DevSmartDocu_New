@@ -1,7 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Spin } from 'antd'
 import { useGenchapters } from '@/hooks/useGendocs'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
+
+// SSE progress 이벤트 → i18n 메시지 변환
+function getProgressMessage(progress) {
+  if (!progress) return ''
+  const { type, obj, chapter_name, chapter_index, chapter_total } = progress
+  if (type === 'wait') return t('msg.loading.preparing')
+  if (obj === 'chapter') {
+    if (chapter_index != null && chapter_total != null) {
+      return t('msg.loading.chapter.count')
+        .replace('{index}', chapter_index)
+        .replace('{total}', chapter_total)
+    }
+    return chapter_name || t('msg.loading.chapter.preparing')
+  }
+  if (obj === 'chapter_done') return t('msg.loading.chapter.finalizing')
+  if (obj === 'doc') return t('msg.loading.doc.merging')
+  if (chapter_name) return chapter_name
+  return ''
+}
 
 // 라디오 초기값 계산: createfiledts vs updatefiledts 비교
 function getInitialMode(ch) {
@@ -15,6 +36,8 @@ function getInitialMode(ch) {
 }
 
 export default function ReqDocWritePage() {
+  useLangStore((s) => s.translations)
+
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const gendocuid = searchParams.get('gendocs')
@@ -47,15 +70,14 @@ export default function ReqDocWritePage() {
   }
 
   const handleGenerate = () => {
-    // 선택 안 된 챕터 확인
     const unselected = chapters.filter((ch) => !modes[ch.genchapteruid])
     if (unselected.length > 0) {
-      alert('선택 되지 않은 챕터가 있습니다.\r\n확인 후 다시 작업 부탁드립니다.')
+      alert(t('msg.chapter.unselected'))
       return
     }
 
     setGenerating(true)
-    setProgress({ step: 0, total: 1, message: '준비 중...', status: 'processing' })
+    setProgress({ step: 0, total: 1, message: t('msg.loading.preparing'), status: 'processing' })
 
     const results = chapters.map((ch) => ({
       genchapteruid: ch.genchapteruid,
@@ -71,7 +93,7 @@ export default function ReqDocWritePage() {
       body: JSON.stringify({ results }),
     })
       .then((res) => {
-        if (!res.ok) throw new Error('서버 오류 발생')
+        if (!res.ok) throw new Error(t('msg.server.error'))
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buf = ''
@@ -94,7 +116,7 @@ export default function ReqDocWritePage() {
 
                 if (data.type === 'locked') {
                   setGenerating(false)
-                  alert(data.message)
+                  alert(t('msg.doc.already.writing'))
                   return
                 }
 
@@ -103,12 +125,12 @@ export default function ReqDocWritePage() {
                 if (data.status === 'completed') {
                   setGenerating(false)
                   setTimeout(() => {
-                    alert(`문서 작성 완료: ${data.docnm || '완료'}`)
+                    alert(`${t('msg.doc.write.complete')}: ${data.docnm || ''}`)
                     navigate(`/req/doc-read?gendocs=${gendocuid}&type=auto`)
                   }, 1000)
                 } else if (data.status === 'error') {
                   setGenerating(false)
-                  alert('오류 발생: ' + data.message)
+                  alert(t('msg.server.error') + ': ' + data.message)
                 }
               } catch (_) {}
             })
@@ -119,7 +141,7 @@ export default function ReqDocWritePage() {
       })
       .catch((e) => {
         setGenerating(false)
-        alert('오류 발생: ' + e.message)
+        alert(t('msg.server.error') + ': ' + e.message)
       })
   }
 
@@ -139,10 +161,10 @@ export default function ReqDocWritePage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>문서 작성: {gendoc.gendocnm || ''}</div>
+          <div>{t('ttl.doc.write_ttl')}: {gendoc.gendocnm || ''}</div>
         </div>
-        <button type="button" className="icon-btn" onClick={handleBack}>
-          <img src="/icons/back.svg" alt="뒤로가기" className="icon-img config-icon" />
+        <button type="button" className="btn btn-link" onClick={handleBack}>
+          {t('btn.back')}
         </button>
       </div>
 
@@ -150,15 +172,15 @@ export default function ReqDocWritePage() {
       {gendoc.gendocnm && (
         <div className="form-filter-group">
           <div className="filter-item">
-            <label style={{ width: 80 }}>매개변수: </label>
+            <label style={{ width: 80 }}>{t('lbl.paramnm_lbl')}: </label>
             <label style={{ width: 312 }}>{gendoc.paramvalue || ''}</label>
           </div>
           <div className="filter-item">
-            <label style={{ width: 120 }}>최종 작성 일시: </label>
+            <label style={{ width: 120 }}>{t('lbl.doc.final.dts')}: </label>
             <label style={{ width: 120 }}>{gendoc.finaldts || ''}</label>
           </div>
           <div className="filter-item">
-            <label style={{ width: 120 }}>문서 업로드 일시:</label>
+            <label style={{ width: 120 }}>{t('lbl.doc.upload.dts')}:</label>
             <label style={{ width: 120 }}>{gendoc.updatefiledts || ''}</label>
           </div>
         </div>
@@ -167,18 +189,18 @@ export default function ReqDocWritePage() {
       {/* 챕터 목록 테이블 */}
       <div style={{ height: '80%' }}>
         {isLoading ? (
-          <div style={{ padding: 20, textAlign: 'center' }}>불러오는 중...</div>
+          <div style={{ padding: 20, textAlign: 'center' }}>{t('msg.loading')}</div>
         ) : chapters.length > 0 ? (
           <table className="table table-bordered table-sm">
             <thead>
               <tr>
-                <th style={{ width: '30%' }}>챕터명</th>
-                <th style={{ width: '6%' }}>작성자</th>
-                <th style={{ width: '6%' }}>업로더</th>
-                <th style={{ width: '9%' }}>작성 일시</th>
-                <th style={{ width: '9%' }}>업로드 일시</th>
-                <th style={{ width: '5%' }}>자동 작성</th>
-                <th style={{ width: '6%' }}>수정 업로드</th>
+                <th style={{ width: '30%' }}>{t('lbl.chapternm')}</th>
+                <th style={{ width: '6%' }}>{t('thd.createuser')}</th>
+                <th style={{ width: '6%' }}>{t('thd.updateuser')}</th>
+                <th style={{ width: '9%' }}>{t('thd.createfiledts')}</th>
+                <th style={{ width: '9%' }}>{t('thd.updatefiledts')}</th>
+                <th style={{ width: '5%' }}>{t('thd.auto.write')}</th>
+                <th style={{ width: '6%' }}>{t('thd.modified.upload')}</th>
               </tr>
             </thead>
             <tbody>
@@ -226,77 +248,55 @@ export default function ReqDocWritePage() {
         {editbuttonyn && (
           <button
             id="docWriteBtn"
-            className="btn btn-link"
+            className="btn btn-primary"
             disabled={gendoc.closeyn || generating}
             onClick={handleGenerate}
           >
-            문서 작성
+            {t('btn.doc.write')}
           </button>
         )}
       </div>
 
       {/* 로딩 오버레이 */}
       {generating && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0, left: 0,
-            width: '100%', height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              background: 'white',
-              padding: 30,
-              borderRadius: 10,
-              textAlign: 'center',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              width: 330,
-            }}
-          >
-            <div style={{ fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 10 }}>
-              문서 작성 중...
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            color: '#6c757d', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            width: 330, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+          }}>
+            <Spin />
+            <div style={{ fontSize: 16, fontWeight: 'bold' }}>
+              {t('msg.loading.doc.writing')}
             </div>
-            <div
-              style={{
-                width: '100%',
-                backgroundColor: '#f0f0f0',
+            <div style={{
+              width: '100%', backgroundColor: '#e0e0e0', borderRadius: 10, overflow: 'hidden',
+            }}>
+              <div style={{
+                height: 20,
+                background: 'linear-gradient(90deg,#007bff,#0056b3)',
                 borderRadius: 10,
-                marginBottom: 15,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  height: 20,
-                  background: 'linear-gradient(90deg,#007bff,#0056b3)',
-                  borderRadius: 10,
-                  transition: 'width 0.3s ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: 12,
-                  fontWeight: 'bold',
-                  width: `${percentage}%`,
-                  minWidth: percentage > 0 ? 30 : 0,
-                }}
-              >
+                transition: 'width 0.3s ease',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', fontSize: 12, fontWeight: 'bold',
+                width: `${percentage}%`,
+                minWidth: percentage > 0 ? 30 : 0,
+              }}>
                 {percentage > 0 ? `${percentage}%` : ''}
               </div>
             </div>
-            <div style={{ fontSize: 14, color: '#333', marginBottom: 10, fontWeight: 'bold' }}>
-              {progress ? `${progress.step} / ${progress.total} 단계` : '준비 중...'}
+            <div style={{ fontSize: 14, fontWeight: 'bold' }}>
+              {progress ? `${progress.step} / ${progress.total} ${t('lbl.step')}` : t('msg.loading.preparing')}
             </div>
-            <div style={{ fontSize: 13, color: '#666', marginBottom: 5 }}>
-              {progress?.message || ''}
+            <div style={{ fontSize: 13 }}>
+              {getProgressMessage(progress)}
             </div>
-            <div style={{ fontSize: 14, color: '#666' }}>잠시만 기다려 주세요.</div>
+            <div style={{ fontSize: 14 }}>{t('msg.loading.wait')}</div>
           </div>
         </div>
       )}

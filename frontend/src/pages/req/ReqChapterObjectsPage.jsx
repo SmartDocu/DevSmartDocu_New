@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { App } from 'antd'
+import { Spin } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 
 function useChapterObjects(genchapteruid) {
   return useQuery({
@@ -50,10 +52,20 @@ const OBJECT_TYPE_SETTING_MAP = {
     `/master/ai-sentences?chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
 }
 
+const TYPE_TAB_LABEL_KEY = {
+  TU: 'ttl.table.manage',
+  CU: 'ttl.chart.manage',
+  SU: 'ttl.sentence.manage',
+  TA: 'ttl.ai.table.manage',
+  CA: 'ttl.ai.chart.manage',
+  SA: 'ttl.ai.sentence.manage',
+}
+
 export default function ReqChapterObjectsPage() {
+  useLangStore((s) => s.translations)
+
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { message } = App.useApp()
   const { user } = useAuthStore()
   const genchapteruid = searchParams.get('genchapteruid')
 
@@ -68,12 +80,13 @@ export default function ReqChapterObjectsPage() {
   const {
     objects = [],
     chapternm = '',
-    gendocnm = '',
     gendocuid,
     docid,
     chapteruid,
     closeyn = false,
   } = data
+
+  const openInTab = useOpenInTab()
 
   const editbuttonyn = user?.editbuttonyn === 'Y'
   const roleid = user?.roleid
@@ -86,20 +99,25 @@ export default function ReqChapterObjectsPage() {
   const handleObjectSetting = (row) => {
     const fn = OBJECT_TYPE_SETTING_MAP[row.objecttypecd]
     if (fn) {
-      navigate(fn(docid, row.chapteruid || chapteruid, row.objectnm))
+      const fullPath = fn(docid, row.chapteruid || chapteruid, row.objectnm)
+      const withoutSlash = fullPath.replace(/^\//, '')
+      const sepIdx = withoutSlash.indexOf('?')
+      const routePath = sepIdx >= 0 ? withoutSlash.slice(0, sepIdx) : withoutSlash
+      const query = sepIdx >= 0 ? withoutSlash.slice(sepIdx) : undefined
+      const tabLabel = TYPE_TAB_LABEL_KEY[row.objecttypecd] ? t(TYPE_TAB_LABEL_KEY[row.objecttypecd]) : row.objectnm
+      openInTab(routePath, query, tabLabel)
     }
   }
 
   const handleRewrite = async (row) => {
-    setLoadingText('항목 작성 중')
+    setLoadingText(t('msg.loading.object.writing'))
     setShowLoading(true)
     try {
       await rewriteMutation.mutateAsync(row.objectuid)
-      alert('항목 작성이 완료 되었습니다.')
-      // refresh selected row from new data
+      alert(t('msg.object.write.complete'))
       setSelectedRow((prev) => prev)
     } catch (err) {
-      alert('오류 발생: ' + (err.response?.data?.detail || err.message))
+      alert(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
     } finally {
       setShowLoading(false)
       setLoadingText('')
@@ -107,14 +125,14 @@ export default function ReqChapterObjectsPage() {
   }
 
   const handleApply = async () => {
-    if (!window.confirm('생성된 항목들을 챕터에 반영하시겠습니까?')) return
-    setLoadingText('항목 반영 중')
+    if (!window.confirm(t('msg.confirm.object.apply'))) return
+    setLoadingText(t('msg.loading.object.applying'))
     setShowLoading(true)
     try {
       await applyMutation.mutateAsync()
-      alert('항목 반영이 완료 되었습니다.')
+      alert(t('msg.object.apply.complete'))
     } catch (err) {
-      alert('오류 발생: ' + (err.response?.data?.detail || err.message))
+      alert(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
     } finally {
       setShowLoading(false)
       setLoadingText('')
@@ -127,157 +145,149 @@ export default function ReqChapterObjectsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>챕터 항목 조회: {chapternm}</div>
+          <div>{t('ttl.chapter.objects')}: {chapternm}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <button type="button" className="icon-btn" onClick={handleBack}>
-            <img src="/icons/back.svg" title="뒤로가기" className="icon-img config-icon" alt="뒤로가기" />
-          </button>
-        </div>
+        <button type="button" className="btn btn-link" onClick={handleBack}>
+          {t('btn.back')}
+        </button>
       </div>
 
       {/* 메타 정보 */}
       {data.createfiledts !== undefined && (
         <div className="form-filter-group">
           <div className="filter-item">
-            <label style={{ width: 120 }}>챕터 작성 일시: </label>
+            <label style={{ width: 160 }}>{t('lbl.chapter.create.dts')}: </label>
             <label style={{ width: 200 }}>{data.createfiledts || ''}</label>
           </div>
         </div>
       )}
 
       {/* 본문 */}
-      <div style={{ display: 'flex', gap: 20, minHeight: '78%' }}>
+      <div style={{ display: 'flex', gap: 20 }}>
+
         {/* 좌측: 항목 목록 */}
-        <div style={{ flex: 1.5 }}>
+        <div style={{ flex: 1.5, overflowY: 'auto', maxHeight: 'calc(100vh - 264px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.chapter.objects')}</h3>
+            <div />
+          </div>
           {isLoading ? (
-            <div className="loading-content" style={{ position: 'relative', minHeight: 120 }}>
-              <div className="spinner" />
-              <div>불러오는 중...</div>
-            </div>
+            <div style={{ padding: 20, textAlign: 'center' }}>{t('msg.loading')}</div>
           ) : (
-            <div className="table-container">
-              <table className="table table-bordered table-sm">
-                <thead>
-                  <tr>
-                    <th style={{ width: '18%' }}>항목명</th>
-                    <th style={{ width: '16%' }}>항목<br />설명</th>
-                    <th style={{ width: '8%' }}>항목<br />구분</th>
-                    <th style={{ width: '18%' }}>필터</th>
-                    <th style={{ width: '10%' }}>설정<br />일시</th>
-                    <th style={{ width: '8%' }}>설정<br />미반영</th>
-                    <th style={{ width: '12%' }}>작성<br />일시</th>
-                    <th style={{ width: '10%' }}>항목<br />미반영</th>
+            <table className="table table-bordered table-sm">
+              <thead>
+                <tr>
+                  <th style={{ width: '18%' }}>{t('thd.objectnm_thd')}</th>
+                  <th style={{ width: '16%' }}>{t('thd.objectdesc_thd')}</th>
+                  <th style={{ width: '8%' }}>{t('thd.objecttypecd_thd')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.filterjson')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.obj.setting.dts')}</th>
+                  <th style={{ width: '8%' }}>{t('thd.new.object.yn')}</th>
+                  <th style={{ width: '12%' }}>{t('thd.obj.write.dts')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.new.genobject.yn')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {objects.map((obj) => (
+                  <tr
+                    key={obj.genobjectuid || obj.objectuid || obj.objectnm}
+                    className={selectedRow?.genobjectuid === obj.genobjectuid ? 'selected-row' : ''}
+                    onClick={() => setSelectedRow(obj)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td>{obj.objectnm}</td>
+                    <td className="multiline">
+                      <span className="cell-center" style={{ whiteSpace: 'pre-line' }}>
+                        {obj.objectdesc || ''}
+                      </span>
+                    </td>
+                    <td className="info">{obj.objecttypenm}</td>
+                    <td className="info" style={{ whiteSpace: 'pre-line' }}>
+                      {(() => {
+                        if (!obj.filterjson) return ''
+                        try {
+                          const parsed = typeof obj.filterjson === 'string' ? JSON.parse(obj.filterjson) : obj.filterjson
+                          return Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join('\n')
+                        } catch { return String(obj.filterjson) }
+                      })()}
+                    </td>
+                    <td className="info">{obj.objcreatedts || ''}</td>
+                    <td className="info">{obj.new_objectyn ? '√' : ''}</td>
+                    <td className="info">{obj.genobjcreatedts || ''}</td>
+                    <td className="info">{obj.new_genobjectyn ? '√' : ''}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {objects.map((obj) => (
-                    <tr
-                      key={obj.genobjectuid || obj.objectuid || obj.objectnm}
-                      className={selectedRow?.genobjectuid === obj.genobjectuid ? 'selected-row' : ''}
-                      onClick={() => setSelectedRow(obj)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>{obj.objectnm}</td>
-                      <td className="multiline">
-                        <span className="cell-center" style={{ whiteSpace: 'pre-line' }}>
-                          {obj.objectdesc || ''}
-                        </span>
-                      </td>
-                      <td className="info">{obj.objecttypenm}</td>
-                      <td className="info" style={{ whiteSpace: 'pre-line' }}>
-                        {(() => {
-                          if (!obj.filterjson) return ''
-                          try {
-                            const parsed = typeof obj.filterjson === 'string' ? JSON.parse(obj.filterjson) : obj.filterjson
-                            return Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join('\n')
-                          } catch { return String(obj.filterjson) }
-                        })()}
-                      </td>
-                      <td className="info">{obj.objcreatedts || ''}</td>
-                      <td className="info">{obj.new_objectyn ? '√' : ''}</td>
-                      <td className="info">{obj.genobjcreatedts || ''}</td>
-                      <td className="info">{obj.new_genobjectyn ? '√' : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
 
-        {/* 우측: 선택된 항목 내용 */}
-        <div style={{ flex: 1 }}>
-          <div id="htmlcode">
-            {selectedRow && (
-              <>
-                {/* 버튼 영역 */}
-                <div className="form-group-left" style={{ marginBottom: 10, justifyContent: 'center', gap: 20 }}>
-                  {editbuttonyn && (
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      disabled={closeyn || rewriteMutation.isPending}
-                      onClick={() => handleRewrite(selectedRow)}
-                    >
-                      <div className="icon-wrapper">
-                        <img src="/icons/object-write.svg" className="icon-img config-icon" alt="항목 (재)작성" />
-                        <span className="icon-label">항목 (재)작성</span>
-                      </div>
-                    </button>
-                  )}
-                  {(roleid === 7) && (
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() => handleObjectSetting(selectedRow)}
-                    >
-                      <div className="icon-wrapper">
-                        <img src="/icons/configuration.svg" className="icon-img config-icon" alt="항목 설정" />
-                        <span className="icon-label">항목 설정</span>
-                      </div>
-                    </button>
-                  )}
-                </div>
-
-                {/* 항목 내용 */}
-                <div className="contents" style={{ whiteSpace: 'pre-line' }}>
-                  {selectedRow.resulttext && selectedRow.resulttext !== 'None' ? (
-                    <div dangerouslySetInnerHTML={{ __html: selectedRow.resulttext }} />
-                  ) : (
-                    <div>만들어진 항목이 없습니다.</div>
-                  )}
-                </div>
-              </>
-            )}
+        {/* 우측: 항목 내용 */}
+        <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 264px)' }}>
+          {/* 소제목 행 + 버튼 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.object.detail')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {selectedRow && roleid === 7 && (
+                <>
+                  <button type="button" className="btn btn-primary" onClick={() => handleObjectSetting(selectedRow)}>
+                    {t('btn.objectconfig')}
+                  </button>
+                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+                </>
+              )}
+              {editbuttonyn && selectedRow && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={closeyn || rewriteMutation.isPending}
+                  onClick={() => handleRewrite(selectedRow)}
+                >
+                  {t('btn.object.rewrite')}
+                </button>
+              )}
+              {editbuttonyn && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={closeyn || applyMutation.isPending}
+                  onClick={handleApply}
+                >
+                  {t('btn.object.apply')}
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* 항목 내용 */}
+          {selectedRow && (
+            <div className="contents" style={{ whiteSpace: 'pre-line' }}>
+              {selectedRow.resulttext && selectedRow.resulttext !== 'None' ? (
+                <div dangerouslySetInnerHTML={{ __html: selectedRow.resulttext }} />
+              ) : (
+                <div>{t('msg.object.empty')}</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 하단: 항목 반영 버튼 */}
-      {editbuttonyn && (
-        <div style={{ marginTop: 10, textAlign: 'center' }}>
-          <button
-            type="button"
-            className="icon-btn"
-            disabled={closeyn || applyMutation.isPending}
-            onClick={handleApply}
-          >
-            <div className="icon-wrapper">
-              <img src="/icons/chapter-write.svg" className="icon-img config-icon" alt="항목 반영" />
-              <span className="icon-label">항목 반영</span>
-            </div>
-          </button>
-        </div>
-      )}
-
       {/* 로딩 오버레이 */}
       {showLoading && (
-        <div id="formatLoading" style={{ display: 'flex' }}>
-          <div className="loading-content">
-            <div className="spinner" />
-            <div style={{ textAlign: 'center' }}>{loadingText}</div>
-            <div>잠시만 기다려 주세요.</div>
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{loadingText || t('msg.loading.wait')}</span>
           </div>
         </div>
       )}

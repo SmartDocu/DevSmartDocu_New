@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Card, Space, Spin, Typography, Upload } from 'antd'
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
+import { Spin, Upload } from 'antd'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
-
-const { Title, Text } = Typography
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function ReqDocReadPage() {
+  useLangStore((s) => s.translations)
+
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const gendocuid = searchParams.get('gendocs')
@@ -25,7 +25,7 @@ export default function ReqDocReadPage() {
       const res = await apiClient.get(`/gendocs/${gendocuid}/doc-content`, { params: { type } })
       setContent(res.data)
     } catch (e) {
-      setContent({ contents: '조회 중 오류가 발생했습니다.', doc_info: {} })
+      setContent({ contents: t('msg.load.error'), doc_info: {} })
     } finally {
       setLoading(false)
     }
@@ -93,35 +93,35 @@ export default function ReqDocReadPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* 헤더 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Title level={4} style={{ margin: 0 }}>
-          문서 조회
-          {docInfo.gendocnm && (
-            <Text type="secondary" style={{ fontSize: 14 }}> — {docInfo.gendocnm}</Text>
-          )}
-        </Title>
-        <button className="icon-btn" onClick={() => navigate('/req/list')} title="뒤로가기">
-          <img src="/icons/back.svg" className="icon-img config-icon" alt="뒤로가기" />
+
+      {/* 페이지 타이틀 */}
+      <div className="page-title">
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="gradient-bar" />
+          <div>{t('ttl.doc.read_ttl')}{docInfo.gendocnm ? ` - ${docInfo.gendocnm}` : ''}</div>
+        </div>
+        <button className="btn btn-link" onClick={() => navigate('/req/list')}>
+          {t('btn.back')}
         </button>
       </div>
 
       {/* 안내 */}
       <div style={{ background: '#f9fbe7', padding: '4px 10px', borderRadius: 6, color: '#6a7d3c', marginBottom: 10 }}>
-        <Text style={{ color: '#6a7d3c', fontSize: 13 }}>＊ 실제 문서는 아래와 다를 수 있습니다.</Text>
+        <span style={{ color: '#6a7d3c', fontSize: 13 }}>＊ {t('inf.doc.preview.notice')}</span>
       </div>
 
       {/* 본문 */}
       <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
+
         {/* 좌측 카드 패널 */}
         <div style={{ width: 220, flexShrink: 0 }}>
           {/* 작성 문서 카드 */}
           <div style={cardStyle('auto')} onClick={() => handleCardClick('auto')}>
             <div style={{ fontSize: 13 }}>
-              <div><Text type="secondary">작성자: </Text><Text>{docInfo.createuser || '-'}</Text></div>
-              <div><Text type="secondary">작성일시: </Text><Text>{docInfo.createfiledts || '-'}</Text></div>
+              <div><span style={{ color: '#888' }}>{t('thd.createuser')}: </span><span>{docInfo.createuser || '-'}</span></div>
+              <div><span style={{ color: '#888' }}>{t('thd.createfiledts')}: </span><span>{docInfo.createfiledts || '-'}</span></div>
             </div>
-            <div style={{ fontWeight: 600, fontSize: 13, textAlign: 'right' }}>작성 문서 조회</div>
+            <div style={{ fontWeight: 600, fontSize: 13, textAlign: 'right' }}>{t('lbl.authored.doc')}</div>
           </div>
 
           <div style={{ borderTop: '1px solid #ddd', margin: '10px 0' }} />
@@ -129,10 +129,10 @@ export default function ReqDocReadPage() {
           {/* 업로드 문서 카드 */}
           <div style={cardStyle('upload')} onClick={() => handleCardClick('upload')}>
             <div style={{ fontSize: 13 }}>
-              <div><Text type="secondary">업로더: </Text><Text>{docInfo.updateuser || '-'}</Text></div>
-              <div><Text type="secondary">업로드 일시: </Text><Text>{docInfo.updatefiledts || '-'}</Text></div>
+              <div><span style={{ color: '#888' }}>{t('thd.updateuser')}: </span><span>{docInfo.updateuser || '-'}</span></div>
+              <div><span style={{ color: '#888' }}>{t('thd.updatefiledts')}: </span><span>{docInfo.updatefiledts || '-'}</span></div>
             </div>
-            <div style={{ fontWeight: 600, fontSize: 13, textAlign: 'right' }}>업로드 문서 조회</div>
+            <div style={{ fontWeight: 600, fontSize: 13, textAlign: 'right' }}>{t('lbl.uploaded.doc')}</div>
           </div>
         </div>
 
@@ -147,25 +147,17 @@ export default function ReqDocReadPage() {
                 showUploadList={false}
                 accept=".docx"
               >
-                <button className="icon-btn" title="수정 문서 업로드" disabled={uploadLoading}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/upload.svg" className="icon-img config-icon" alt="업로드" />
-                    <span className="icon-label">수정 문서 업로드</span>
-                  </div>
+                <button className="btn btn-primary" disabled={uploadLoading}>
+                  {t('btn.upload.modified')}
                 </button>
               </Upload>
             )}
             <button
-              className="icon-btn"
-              style={{ width: 110 }}
+              className="btn btn-primary"
               disabled={!canDownload}
               onClick={handleDownload}
-              title={selectedType === 'upload' ? '수정 문서 다운로드' : '문서 다운로드'}
             >
-              <div className="icon-wrapper">
-                <img src="/icons/download.svg" className="icon-img config-icon" alt="다운로드" />
-                <span className="icon-label">{selectedType === 'upload' ? '수정 문서 다운로드' : '문서 다운로드'}</span>
-              </div>
+              {selectedType === 'upload' ? t('btn.download.modified') : t('btn.download.doc')}
             </button>
           </div>
 

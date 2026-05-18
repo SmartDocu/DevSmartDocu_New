@@ -4,11 +4,12 @@
  */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { App, Button, DatePicker, Spin } from 'antd'
+import { App, DatePicker, Spin } from 'antd'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useGendocs, useDataparams, useCreateGendoc, useDeleteGendoc, useUpdateGendocParams } from '@/hooks/useGendocs'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 const { RangePicker } = DatePicker
 
@@ -49,7 +50,7 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
   }, [onClose])
 
   const handleOk = () => {
-    if (!selRow) { alert('값을 선택해주세요.'); return }
+    if (!selRow) { alert(t('msg.select')); return }
     onSelect(String(selRow[keyCol] ?? ''), String(selRow[nmCol] ?? selRow[keyCol] ?? ''))
     onClose()
   }
@@ -71,14 +72,14 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
           onClick={onClose}
         >&times;</button>
 
-        <h3 style={{ textAlign: 'center', marginBottom: 0 }}>값 선택</h3>
+        <h3 style={{ textAlign: 'center', marginBottom: 0 }}>{t('ttl.value.select')}</h3>
 
         {/* 검색 */}
         <div style={{ marginTop: 10 }}>
           <input
             autoFocus
             type="text"
-            placeholder="검색어 입력"
+            placeholder={t('msg.ph.search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: '97%', padding: 8, borderRadius: 6, border: '1px solid #ccc', fontSize: 14 }}
@@ -87,7 +88,7 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
 
         {/* 로딩/없음 메시지 */}
         {rows.length === 0 && (
-          <p style={{ marginTop: 10 }}>데이터가 없습니다.</p>
+          <p style={{ marginTop: 10 }}>{t('msg.no.data')}</p>
         )}
 
         {/* 테이블 */}
@@ -132,8 +133,8 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
 
         {/* 확인 버튼 */}
         <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center' }}>
-          <button type="button" className="icon-btn" onClick={handleOk}>
-            <img src="/icons/ok.svg" className="icon-img config-icon" alt="확인" />
+          <button type="button" className="btn btn-primary" onClick={handleOk}>
+            {t('btn.ok')}
           </button>
         </div>
       </div>
@@ -145,11 +146,12 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
    메인 페이지
 ────────────────────────────────────────────────────── */
 export default function ReqDocListPage() {
+  useLangStore((s) => s.translations)
+
   const { message } = App.useApp()
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const editbuttonyn   = user?.editbuttonyn === 'Y'
-  const projectmanager = user?.projectmanager === 'Y'
 
   const today = dayjs()
   const [dates,        setDates]        = useState(initDates)
@@ -225,7 +227,7 @@ export default function ReqDocListPage() {
 
   // 저장
   const handleSave = async () => {
-    if (!docnmInput.trim()) { message.warning('문서명을 입력해주세요.'); return }
+    if (!docnmInput.trim()) { message.warning(t('msg.doc.required')); return }
 
     const params = dataparams.map((dp) => ({
       paramuid:   dp.paramuid,
@@ -237,35 +239,35 @@ export default function ReqDocListPage() {
 
     const emptyParams = params.filter((p) => !p.paramvalue || !p.paramvalue.trim())
     if (emptyParams.length > 0) {
-      message.warning(`입력되지 않은 매개변수:\n${emptyParams.map((p) => `• ${p.paramnm}`).join('\n')}`)
+      message.warning(`${t('msg.param.required')}\n${emptyParams.map((p) => `• ${p.paramnm}`).join('\n')}`)
       return
     }
 
     if (selectedGendocuid) {
       // 기존 문서 수정
-      showLoading('파라미터 값 변경 중')
+      showLoading(t('msg.loading.params'))
       updateParams.mutate(
         { gendocuid: selectedGendocuid, gendocnm: docnmInput, params },
         { onSuccess: () => { hideLoading(); refetch() }, onError: () => hideLoading() },
       )
     } else {
       // 신규 문서 생성
-      if (!docid) { message.error('문서 ID를 불러오지 못했습니다. 페이지를 새로고침 후 다시 시도해주세요.'); return }
-      showLoading('문서 생성 중')
+      if (!docid) { message.error(t('msg.docid.load.error')); return }
+      showLoading(t('msg.loading.gendoc'))
       try {
         const objChk = await apiClient.post('/gendocs/check-objects', { docid })
         if (objChk.data.unset_objects?.length > 0) {
           const msgs = objChk.data.unset_objects.map((o) => o.text).join('\n')
           hideLoading()
-          message.warning(`미설정 항목이 있습니다:\n${msgs}`)
+          message.warning(`${t('msg.unset.objects')}:\n${msgs}`)
           return
         }
 
         const chk = await apiClient.post('/gendocs/params/check', { docid, params })
         if (chk.data.exists) {
           hideLoading()
-          if (!window.confirm('문서명 및 매개변수 값이 이미 존재하고 있습니다.\n그래도 진행하시겠습니까?')) return
-          showLoading('문서 생성 중')
+          if (!window.confirm(t('msg.doc.param.duplicate'))) return
+          showLoading(t('msg.loading.gendoc'))
         }
 
         createGendoc.mutate(
@@ -281,16 +283,16 @@ export default function ReqDocListPage() {
         )
       } catch (e) {
         hideLoading()
-        message.error(e.response?.data?.detail || '오류가 발생했습니다.')
+        message.error(e.response?.data?.detail || t('msg.server.error'))
       }
     }
   }
 
-  // 삭제 (이전앱: window.confirm 사용)
+  // 삭제
   const handleDelete = () => {
-    if (!selectedGendocuid) { message.warning('선택된 문서가 없습니다.'); return }
-    if (!window.confirm('선택하신 문서를 삭제하시겠습니까?\n삭제 후 되돌릴 수 없습니다.')) return
-    showLoading('문서 삭제 중')
+    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
+    if (!window.confirm(t('msg.confirm.delete'))) return
+    showLoading(t('msg.loading.gendoc.delete'))
     deleteGendoc.mutate(selectedGendocuid, {
       onSuccess: () => { hideLoading(); handleNew(); refetch() },
       onError:   () => hideLoading(),
@@ -306,13 +308,13 @@ export default function ReqDocListPage() {
   }
 
   const handleDocRead = () => {
-    if (!selectedGendocuid) { message.warning('선택된 문서가 없습니다.'); return }
+    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
     saveSession()
     navigate(`/req/doc-read?gendocs=${selectedGendocuid}`)
   }
 
   const handleChapterRead = () => {
-    if (!selectedGendocuid) { message.warning('선택된 문서가 없습니다.'); return }
+    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
     saveSession()
     navigate(`/req/chapters-read?gendocs=${selectedGendocuid}`)
   }
@@ -339,15 +341,20 @@ export default function ReqDocListPage() {
 
       {/* 로딩 오버레이 */}
       {loading && (
-        <div id="formatLoading" style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(255,255,255,0.6)', zIndex: 9999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
         }}>
-          <div className="loading-content">
-            <div className="spinner" />
-            <div style={{ textAlign: 'center' }}>{loadingText}</div>
-            <div>잠시만 기다려 주세요.</div>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{loadingText || t('msg.loading.wait')}</span>
           </div>
         </div>
       )}
@@ -356,7 +363,7 @@ export default function ReqDocListPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>문서: {docnm_base}</div>
+          <div>{t('lbl.doc')} - {docnm_base}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
         </div>
@@ -365,41 +372,48 @@ export default function ReqDocListPage() {
       {/* 날짜 필터 */}
       <div className="page-title" style={{ marginBottom: 20 }}>
         <div className="filter-item" style={{ gap: 12, flexWrap: 'wrap' }}>
-          <label style={{ fontWeight: 'bold' }}>생성 기간:</label>
+          <label style={{ fontWeight: 'bold', marginRight: 35 }}>{t('lbl.create.period')}:</label>
           <RangePicker value={dates} onChange={setDates} />
-          <Button size="small" className="btn btn-link" onClick={() => setDates([today.subtract(3, 'month'), today])}>3개월</Button>
-          <Button size="small" className="btn btn-link" onClick={() => setDates([today.subtract(12, 'month'), today])}>1년</Button>
-          <button type="button" className="icon-btn" onClick={() => { setAppliedDates(dates); setTimeout(refetch, 0) }} title="조회">
-            <img src="/icons/search.svg" className="icon-img config-icon" alt="조회" />
+          <button className="btn btn-link" onClick={() => setDates([today.subtract(3, 'month'), today])}>{t('btn.3months')}</button>
+          <button className="btn btn-link" onClick={() => setDates([today.subtract(12, 'month'), today])}>{t('btn.1year')}</button>
+          <button type="button" className="icon-btn" onClick={() => { setAppliedDates(dates); setTimeout(refetch, 0) }} title={t('btn.lookup')}>
+            <img src="/icons/search.svg" className="icon-img config-icon" alt={t('btn.lookup')} />
           </button>
         </div>
       </div>
 
       {/* 2패널 */}
-      <div style={{ display: 'flex', marginTop: 20, gap: 20 }}>
+      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
 
         {/* 왼쪽: 문서 목록 */}
-        <div style={{ flex: 1 }}>
-          <h3>문서 목록</h3>
+        <div style={{ flex: 1, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.doc.list')}</h3>
+            {editbuttonyn && (
+              <button className="btn btn-primary" type="button" onClick={handleNew}>
+                {t('btn.new')}
+              </button>
+            )}
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '18%' }}>작성문서명</th>
-                  <th style={{ width: '15%' }}>매개변수</th>
-                  <th style={{ width:  '7%', textAlign: 'center' }}>작성자</th>
-                  <th style={{ width:  '7%', textAlign: 'center' }}>업로더</th>
-                  <th style={{ width: '10%', textAlign: 'center' }}>작성일시</th>
-                  <th style={{ width: '10%', textAlign: 'center' }}>업로드일시</th>
-                  <th style={{ width:  '5%', textAlign: 'center' }}>마감</th>
-                  <th style={{ width:  '7%', textAlign: 'center' }}>마감자</th>
+                  <th style={{ width: '18%' }}>{t('thd.gendocnm')}</th>
+                  <th style={{ width: '15%' }}>{t('thd.params')}</th>
+                  <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.createuser')}</th>
+                  <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.updateuser')}</th>
+                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.createfiledts')}</th>
+                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.updatefiledts')}</th>
+                  <th style={{ width:  '5%', textAlign: 'center' }}>{t('thd.closeyn')}</th>
+                  <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.closeuser')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr><td colSpan={8} style={{ textAlign: 'center', padding: 16 }}><Spin /></td></tr>
                 ) : gendocs.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 16 }}>생성된 문서가 없습니다.</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 16 }}>{t('msg.no.data')}</td></tr>
                 ) : gendocs.map((row) => (
                   <tr
                     key={row.gendocuid}
@@ -422,36 +436,68 @@ export default function ReqDocListPage() {
           </div>
         </div>
 
-        {/* 오른쪽: 문서 구성 + 매개변수 + 버튼 */}
-        <div style={{ flex: 0.75 }}>
+        {/* 오른쪽: 문서 구성 + 매개변수 */}
+        <div style={{ flex: 0.75, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
 
-          {/* 문서 구성 */}
-          <h3>문서 구성</h3>
+          {/* 문서 구성 소제목 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.doc.config')}</h3>
+            <div />
+          </div>
+
           <div className="form-group-left">
-            <label style={{ width: 60 }}>문서명</label>
+            <label style={{ width: 60 }}>{t('lbl.docnm')}</label>
             <input
               id="docnm"
               value={docnmInput}
               onChange={(e) => setDocnmInput(e.target.value)}
               disabled={!editbuttonyn}
-              placeholder="문서명을 입력하시오."
+              placeholder={t('msg.ph.gendocnm')}
               style={{ height: 25 }}
             />
           </div>
 
-          {/* 매개변수 입력 */}
-          <h3>매개변수 입력</h3>
+          {/* 매개변수 입력 소제목 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.param.input')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {selectedGendocuid && (
+                <>
+                  <button className="btn btn-primary" type="button" onClick={handleDocRead}>
+                    {t('btn.doc.read')}
+                  </button>
+                  <button className="btn btn-primary" type="button" onClick={handleChapterRead}>
+                    {t('btn.chapter.read')}
+                  </button>
+                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+                </>
+              )}
+              {editbuttonyn && (
+                <>
+                  <button className="btn btn-primary" type="button" onClick={handleSave}>
+                    {t('btn.save')}
+                  </button>
+                  {selectedGendocuid && (
+                    <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteGendoc.isPending}>
+                      {t('btn.delete')}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
           <table className="table table-bordered table-sm" style={{ marginBottom: 12 }}>
             <thead>
               <tr>
-                <th style={{ width: '30%' }}>매개변수명</th>
-                <th style={{ width: '35%' }}>예시값</th>
-                <th style={{ width: '35%' }}>입력값</th>
+                <th style={{ width: '30%' }}>{t('thd.paramnm_thd')}</th>
+                <th style={{ width: '35%' }}>{t('lbl.samplevalue')}</th>
+                <th style={{ width: '35%' }}>{t('thd.inputvalue')}</th>
               </tr>
             </thead>
             <tbody>
               {dataparams.length === 0 ? (
-                <tr><td colSpan={3} style={{ textAlign: 'center', padding: 12 }}>매개변수가 없습니다.</td></tr>
+                <tr><td colSpan={3} style={{ textAlign: 'center', padding: 12 }}>{t('msg.no.data')}</td></tr>
               ) : dataparams.map((dp) => (
                 <tr key={dp.paramuid}>
                   <td>{dp.paramnm}</td>
@@ -459,7 +505,6 @@ export default function ReqDocListPage() {
                   <td>
                     {dp.datauid ? (
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                        {/* 직접 입력 가능한 input */}
                         <input
                           type="text"
                           value={paramValues[dp.paramuid]?.finalnm || ''}
@@ -470,7 +515,6 @@ export default function ReqDocListPage() {
                           disabled={!editbuttonyn}
                           style={{ flex: 1, height: 24, padding: '2px 6px', fontSize: 13 }}
                         />
-                        {/* 값 찾기 아이콘 버튼 */}
                         {editbuttonyn && (
                           <button
                             type="button"
@@ -478,8 +522,8 @@ export default function ReqDocListPage() {
                             onClick={() => openSearchModal(dp)}
                           >
                             <div className="icon-wrapper">
-                              <img src="/icons/search.svg" className="icon-img-tbl new-icon" alt="값 찾기" />
-                              <span className="icon-label">값 찾기</span>
+                              <img src="/icons/search.svg" className="icon-img-tbl new-icon" alt={t('btn.lookup')} />
+                              <span className="icon-label">{t('btn.lookup')}</span>
                             </div>
                           </button>
                         )}
@@ -501,46 +545,6 @@ export default function ReqDocListPage() {
               ))}
             </tbody>
           </table>
-
-          {/* 액션 버튼 */}
-          <div className="button-group" style={{ gap: 35 }}>
-            {editbuttonyn && (
-              <div className="button-group">
-                <button type="button" className="icon-btn" onClick={handleNew}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/new.svg" className="icon-img new-icon" alt="신규" />
-                    <span className="icon-label">신규</span>
-                  </div>
-                </button>
-                <button type="button" className="icon-btn" onClick={handleSave}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/save.svg" className="icon-img save-icon" alt="저장" />
-                    <span className="icon-label">저장</span>
-                  </div>
-                </button>
-                <button type="button" className="icon-btn" onClick={handleDelete} disabled={deleteGendoc.isPending}>
-                  <div className="icon-wrapper">
-                    <img src="/icons/delete.svg" className="icon-img del-icon" alt="삭제" />
-                    <span className="icon-label">삭제</span>
-                  </div>
-                </button>
-              </div>
-            )}
-            <div className="button-group">
-              <button type="button" className="icon-btn" onClick={handleDocRead}>
-                <div className="icon-wrapper">
-                  <img src="/icons/doc-preview.svg" className="icon-img config-icon" alt="문서 조회" />
-                  <span className="icon-label">문서 조회</span>
-                </div>
-              </button>
-              <button type="button" className="icon-btn" onClick={handleChapterRead}>
-                <div className="icon-wrapper">
-                  <img src="/icons/chapter-preview.svg" className="icon-img config-icon" alt="챕터 조회" />
-                  <span className="icon-label">챕터 조회</span>
-                </div>
-              </button>
-            </div>
-          </div>
 
         </div>
       </div>

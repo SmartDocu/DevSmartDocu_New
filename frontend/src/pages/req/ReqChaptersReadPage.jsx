@@ -8,8 +8,11 @@ import { App, Spin } from 'antd'
 import { useGenchapters } from '@/hooks/useGendocs'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 export default function ReqChaptersReadPage() {
+  useLangStore((s) => s.translations)
+
   const { message } = App.useApp()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -47,7 +50,7 @@ export default function ReqChaptersReadPage() {
       const res = await apiClient.get(`/gendocs/genchapters/${genchapteruid}/content`, { params: { type } })
       setContent(res.data)
     } catch {
-      setContent({ contents: '조회 중 오류가 발생했습니다.' })
+      setContent({ contents: t('msg.load.error') })
     } finally {
       setContentLoading(false)
     }
@@ -72,7 +75,7 @@ export default function ReqChaptersReadPage() {
   const handleRewrite = () => {
     if (!selectedChap) return
     setRewriting(true)
-    setRewriteProgress('챕터 작성 준비 중...')
+    setRewriteProgress(t('msg.loading.chapter.preparing'))
 
     fetch(`/api/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`, {
       method: 'POST',
@@ -95,12 +98,12 @@ export default function ReqChaptersReadPage() {
               const data = JSON.parse(line)
               if (data.type === 'progress') {
                 const pct = data.total ? Math.round((data.current / data.total) * 100) : 0
-                setRewriteProgress(`챕터 작성 중: ${data.current}/${data.total} (${pct}%)`)
+                setRewriteProgress(`${t('msg.loading.chapter.progress')} ${data.current}/${data.total} (${pct}%)`)
               } else if (data.type === 'complete') {
                 setRewriting(false); setRewriteProgress('')
                 refetch(); loadContent(selectedChap.genchapteruid, viewType)
               } else if (data.type === 'error') {
-                message.error(data.message || '오류가 발생했습니다.')
+                message.error(data.message || t('msg.server.error'))
                 setRewriting(false); setRewriteProgress('')
               }
             } catch (_) {}
@@ -126,10 +129,10 @@ export default function ReqChaptersReadPage() {
       await apiClient.post(`/gendocs/genchapters/${selectedChap.genchapteruid}/upload`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      message.success('업로드 완료')
+      message.success(t('msg.save.success'))
       refetch()
       if (viewType === 'upload') loadContent(selectedChap.genchapteruid, 'upload')
-    } catch { message.error('업로드 실패') }
+    } catch { message.error(t('msg.save.error')) }
     finally {
       setUploadLoading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -187,7 +190,7 @@ export default function ReqChaptersReadPage() {
 
             if (data.type === 'locked') {
               setLoading(false)
-              alert(data.message || '이 문서가 이미 작성 중입니다.')
+              alert(data.message || t('msg.doc.already.writing'))
               return
             }
 
@@ -203,14 +206,14 @@ export default function ReqChaptersReadPage() {
                 })
               } else if (data.chapter_index === data.chapter_total) {
                 setChapProgress({
-                  chapterName:  '모든 챕터 작성을 완료했습니다. 마지막 정리 중입니다.',
+                  chapterName:  t('msg.loading.chapter.finalizing'),
                   chapterIndex: data.chapter_index,
                   chapterTotal: data.chapter_total,
                   current: null, total: null,
                 })
               } else {
                 setChapProgress({
-                  chapterName:  `챕터 ${data.chapter_total}개 중 ${data.chapter_index + 1}번째 챕터를 준비하고 있습니다.`,
+                  chapterName:  t('msg.loading.chapter.count').replace('{index}', data.chapter_index + 1).replace('{total}', data.chapter_total),
                   chapterIndex: data.chapter_index,
                   chapterTotal: data.chapter_total,
                   current: null, total: null,
@@ -222,14 +225,14 @@ export default function ReqChaptersReadPage() {
               setTimeout(() => {
                 setLoading(false)
                 setChapProgress(null)
-                alert(`문서 작성 완료!`)
+                alert(t('msg.doc.write.complete'))
                 refetch()
               }, 1000)
               return
             } else if (data.status === 'error') {
               setLoading(false)
               setChapProgress(null)
-              alert('오류 발생: ' + (data.message || ''))
+              alert(t('msg.server.error') + ': ' + (data.message || ''))
               return
             }
           } catch (_) {}
@@ -239,15 +242,13 @@ export default function ReqChaptersReadPage() {
     }).catch((e) => {
       setLoading(false)
       setChapProgress(null)
-      alert('요청 중 오류 발생: ' + e.message)
+      alert(t('msg.server.error') + ': ' + e.message)
     })
   }
 
   // ── 뒤로가기 ─────────────────────────────────────────────────────────────────
   const handleBack = () => {
-    const path = sessionStorage.getItem('path')
-    const docList = sessionStorage.getItem('doc_list_gendocuid')
-    if (path === 'req_doc_status' || sessionStorage.getItem('doc_status_gendocuid')) {
+    if (sessionStorage.getItem('path') === 'req_doc_status' || sessionStorage.getItem('doc_status_gendocuid')) {
       navigate(`/req/doc-status?gendocs=${sessionStorage.getItem('doc_status_gendocuid')}`)
     } else {
       navigate('/req/list')
@@ -261,15 +262,19 @@ export default function ReqChaptersReadPage() {
       {/* 로딩 오버레이 (문서 일괄 작성 / 챕터 재작성) */}
       {(loading || rewriting) && (
         <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', zIndex: 9999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
         }}>
-          <div className="loading-content">
-            <div className="spinner" />
-            {/* 문서 일괄 작성: 구버전과 동일한 챕터 진행 텍스트 */}
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            color: '#6c757d', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, minWidth: 320,
+          }}>
+            <Spin />
             {loading && chapProgress ? (
-              <div id="loading-text" style={{ textAlign: 'left', whiteSpace: 'pre-line' }}>
+              <div style={{ textAlign: 'left', whiteSpace: 'pre-line', fontSize: 14, fontWeight: 'bold' }}>
                 {(() => {
                   const { chapterName, chapterIndex, chapterTotal, current, total } = chapProgress
                   if (current && total) {
@@ -278,8 +283,8 @@ export default function ReqChaptersReadPage() {
                     return (
                       <>
                         <strong>{chapterName}</strong><br />
-                        &nbsp;&nbsp;완료: {chapterIndex - 1}/{chapterTotal} 챕터 ({chapterPct}%)<br />
-                        &nbsp;&nbsp;챕터 {chapterIndex} 진행: {current}/{total} 항목 ({itemPct}%)
+                        &nbsp;&nbsp;{t('lbl.done')}: {chapterIndex - 1}/{chapterTotal} {t('lbl.chapters')} ({chapterPct}%)<br />
+                        &nbsp;&nbsp;{t('lbl.chapter.no')} {chapterIndex}: {current}/{total} {t('lbl.items')} ({itemPct}%)
                       </>
                     )
                   }
@@ -287,11 +292,11 @@ export default function ReqChaptersReadPage() {
                 })()}
               </div>
             ) : (
-              <div id="loading-text" style={{ textAlign: 'left', whiteSpace: 'pre-line' }}>
-                {loading ? '문서 작업 중' : rewriteProgress}
+              <div style={{ fontSize: 16, fontWeight: 'bold' }}>
+                {loading ? t('msg.loading.doc.writing') : rewriteProgress}
               </div>
             )}
-            <div style={{ textAlign: 'left' }}>잠시만 기다려 주세요.</div>
+            <span>{t('msg.loading.wait')}</span>
           </div>
         </div>
       )}
@@ -300,27 +305,25 @@ export default function ReqChaptersReadPage() {
       <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>챕터 목록: {gendoc.gendocnm || ''}</div>
+          <div>{t('ttl.chapter.list')} - {gendoc.gendocnm || ''}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <button type="button" className="icon-btn" onClick={handleBack} title="뒤로가기">
-            <img src="/icons/back.svg" className="icon-img config-icon" alt="뒤로가기" />
-          </button>
-        </div>
+        <button type="button" className="btn btn-link" onClick={handleBack}>
+          {t('btn.back')}
+        </button>
       </div>
 
       {/* gendocs 요약 정보 */}
       <div className="form-filter-group" style={{ flexShrink: 0, marginBottom: 10 }}>
         <div className="filter-item">
-          <label style={{ width: 80 }}>매개변수: </label>
+          <label style={{ width: 80 }}>{t('lbl.paramnm_lbl')}: </label>
           <label>{gendoc.finalnm_joined || ''}</label>
         </div>
         <div className="filter-item">
-          <label style={{ width: 120 }}>문서 작성 일시: </label>
+          <label style={{ width: 120 }}>{t('lbl.doc.create.dts')}: </label>
           <label style={{ width: 140 }}>{gendoc.createfiledts || ''}</label>
         </div>
         <div className="filter-item">
-          <label style={{ width: 120 }}>문서 업로드 일시: </label>
+          <label style={{ width: 120 }}>{t('lbl.doc.upload.dts')}: </label>
           <label style={{ width: 140 }}>{gendoc.updatefiledts || ''}</label>
         </div>
       </div>
@@ -336,20 +339,20 @@ export default function ReqChaptersReadPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '22%' }}>챕터명</th>
-                  <th style={{ width:  '8%', textAlign: 'center' }}>작성자</th>
-                  <th style={{ width: '12%', textAlign: 'center' }}>작성일시</th>
-                  <th style={{ width:  '8%', textAlign: 'center' }}>신규작성</th>
-                  <th style={{ width:  '8%', textAlign: 'center' }}>업로더</th>
-                  <th style={{ width: '12%', textAlign: 'center' }}>업로드일시</th>
-                  <th style={{ width:  '8%', textAlign: 'center' }}>신규업로드</th>
+                  <th style={{ width: '22%' }}>{t('lbl.chapternm')}</th>
+                  <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.createuser')}</th>
+                  <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.createfiledts')}</th>
+                  <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.new.chapter')}</th>
+                  <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.updateuser')}</th>
+                  <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.updatefiledts')}</th>
+                  <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.new.upload')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr><td colSpan={7} style={{ textAlign: 'center', padding: 16 }}><Spin /></td></tr>
                 ) : chapters.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 16, color: '#888' }}>챕터가 없습니다.</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 16, color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : chapters.map((row) => (
                   <tr
                     key={row.genchapteruid}
@@ -371,31 +374,23 @@ export default function ReqChaptersReadPage() {
           </div>
 
           {/* 하단 버튼: 문서 일괄 작성 / 문서 조합 작성 */}
-          <div className="form-group-left" style={{ justifyContent: 'center', marginTop: 10, flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10, flexShrink: 0 }}>
             {editbuttonyn && (
               <button
-                type="button" className="icon-btn"
+                type="button"
+                className="btn btn-primary"
                 disabled={closeyn}
                 onClick={handleDocRewrite}
               >
-                <div className="icon-wrapper">
-                  <img
-                    src="/icons/doc-write.svg"
-                    className={`icon-img config-icon${closeyn ? ' disable-icon' : ''}`}
-                    alt="문서 일괄 작성"
-                  />
-                  <span className="icon-label">문서 일괄 작성</span>
-                </div>
+                {t('btn.doc.write.all')}
               </button>
             )}
             <button
-              type="button" className="icon-btn"
+              type="button"
+              className="btn btn-primary"
               onClick={() => navigate(`/req/write?gendocs=${gendocuid}`)}
             >
-              <div className="icon-wrapper">
-                <img src="/icons/doc-merge-write.svg" className="icon-img config-icon" alt="문서 조합 작성" />
-                <span className="icon-label">문서 조합 작성</span>
-              </div>
+              {t('btn.doc.write.combine')}
             </button>
           </div>
         </div>
@@ -411,7 +406,7 @@ export default function ReqChaptersReadPage() {
                   className={`chapter-card${viewType === 'auto' ? ' selected' : ''}`}
                   onClick={() => handleViewTypeChange('auto')}
                 >
-                  작성 챕터 조회
+                  {t('lbl.authored.chapter')}
                 </div>
               </div>
               <div style={{ width: '48%', textAlign: 'center' }}>
@@ -419,57 +414,45 @@ export default function ReqChaptersReadPage() {
                   className={`chapter-card${viewType === 'upload' ? ' selected' : ''}`}
                   onClick={() => handleViewTypeChange('upload')}
                 >
-                  업로드 챕터 조회
+                  {t('lbl.uploaded.chapter')}
                 </div>
               </div>
             </div>
 
             {/* 액션 버튼 */}
-            <div className="form-group-left" style={{ justifyContent: 'center', marginBottom: 10, gap: 0, flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10, gap: 8, flexShrink: 0 }}>
               {/* 왼쪽: 재작성 + 항목관리 */}
-              <div style={{ width: '48%', display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, flex: 1 }}>
                 {editbuttonyn && (
                   <button
-                    type="button" className="icon-btn"
+                    type="button"
+                    className="btn btn-primary"
                     disabled={closeyn || rewriting}
                     onClick={handleRewrite}
                   >
-                    <div className="icon-wrapper">
-                      <img
-                        src="/icons/chapter-write.svg"
-                        className={`icon-img config-icon${closeyn ? ' disable-icon' : ''}`}
-                        alt="챕터 (재)작성"
-                      />
-                      <span className="icon-label">챕터 (재)작성</span>
-                    </div>
+                    {t('btn.chapter.rewrite')}
                   </button>
                 )}
                 <button
-                  type="button" className="icon-btn"
+                  type="button"
+                  className="btn btn-primary"
                   onClick={() => navigate(`/req/chapter-objects?genchapteruid=${selectedChap.genchapteruid}`)}
                 >
-                  <div className="icon-wrapper">
-                    <img src="/icons/configuration.svg" className="icon-img config-icon" alt="항목 관리" />
-                    <span className="icon-label">항목 관리</span>
-                  </div>
+                  {t('btn.item.manage')}
                 </button>
               </div>
 
+              <span style={{ color: '#d9d9d9', margin: '0 4px', alignSelf: 'center' }}>|</span>
+
               {/* 오른쪽: 다운로드 + 업로드 */}
-              <div style={{ width: '48%', display: 'flex', justifyContent: 'flex-start', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 4, flex: 1 }}>
                 <button
-                  type="button" className="icon-btn"
+                  type="button"
+                  className="btn btn-primary"
                   disabled={!content?.file_path}
                   onClick={handleDownload}
                 >
-                  <div className="icon-wrapper">
-                    <img
-                      src="/icons/download.svg"
-                      className={`icon-img config-icon${!content?.file_path ? ' disable-icon' : ''}`}
-                      alt={viewType === 'auto' ? '작성 챕터 다운로드' : '수정 챕터 다운로드'}
-                    />
-                    <span className="icon-label">다운로드</span>
-                  </div>
+                  {viewType === 'upload' ? t('btn.download.modified.chapter') : t('btn.download.chapter')}
                 </button>
                 {editbuttonyn && (
                   <>
@@ -478,14 +461,12 @@ export default function ReqChaptersReadPage() {
                       accept=".docx" onChange={handleFileChange}
                     />
                     <button
-                      type="button" className="icon-btn"
+                      type="button"
+                      className="btn btn-primary"
                       disabled={uploadLoading}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <div className="icon-wrapper">
-                        <img src="/icons/upload.svg" className="icon-img config-icon" alt="수정 챕터 업로드" />
-                        <span className="icon-label">수정 챕터 업로드</span>
-                      </div>
+                      {t('btn.upload.chapter')}
                     </button>
                   </>
                 )}
