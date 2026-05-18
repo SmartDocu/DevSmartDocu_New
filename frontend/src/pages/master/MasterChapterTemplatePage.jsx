@@ -1177,7 +1177,7 @@ export default function MasterChapterTemplatePage() {
       openInTab(routePath, query, tabLabel)
     } else {
       const uid = fmt?.objectUID ? `&objectuid=${fmt.objectUID}` : ''
-      openInTab('master/object', `?chapteruid=${chapteruid}${uid}`, t('btn.object.manage'))
+      openInTab('master/object', `?chapteruid=${chapteruid}${uid}`)
     }
   }, [chapteruid, message, openInTab])
 
