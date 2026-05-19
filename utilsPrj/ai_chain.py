@@ -1267,6 +1267,21 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 "code": code,
             }
 
+        def _fix_nans(obj):
+            """NaN/Infinity → None 변환 (JSON 직렬화 안전)"""
+            if isinstance(obj, dict):
+                return {k: _fix_nans(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_fix_nans(item) for item in obj]
+            if isinstance(obj, float) and not (obj == obj):  # NaN
+                return None
+            if isinstance(obj, float) and obj in (float('inf'), float('-inf')):
+                return None
+            if isinstance(obj, (np.floating,)) and np.isnan(obj):
+                return None
+            return obj
+        result_obj = _fix_nans(result_obj)
+
         try:
             # json 익명화
             result_obj_anonymized = anonymize_json(result_obj, anonymization_mapping)

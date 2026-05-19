@@ -13,7 +13,6 @@ import urllib
 import oracledb
 
 def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
-    # print(f"jeff 201 process_data_db : docid_{docid} / datauid_{datauid}")
     Datas_resp = (
         supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
@@ -21,7 +20,6 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         .eq("datauid", datauid)
         .execute()
     )
-    # print(f"jeff 501")
 
     connectid = Datas_resp.data[0]['connectid']
     query = Datas_resp.data[0]['query']
@@ -34,11 +32,9 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         .execute()
     )
     connecttype = dbconnectors_resp.data[0]['connecttype']
-    # print(f"jeff 502")
 
     # 마스터 팝업용, 전체 데이터 필요
     if all:
-        # print(f"jeff 510")
         if connecttype == "MSSQL":
             return process_data_db_mssql(request, query, connectid)
 
@@ -59,7 +55,6 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
     
     # docid, gendoc_uid 둘다 None ==> db 데이터(master/datas_db/)화면
     if docid is None and gendoc_uid is None:
-        # print(f"jeff 511")
         if connecttype == "MSSQL":
             pattern = re.compile(r"^\s*SELECT\s+(TOP\s+\d+)?", re.IGNORECASE)
             match = pattern.match(query)
@@ -106,12 +101,9 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
-        # print(f"jeff 512")
-        # print(f"jeff 202 process_data_db : docid_{docid} / datauid_{datauid}")
         dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(dataparamdtls_resp.data)
-        # print(f"jeff 203 df_dtls: {df_dtls}")
     
         dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
             .select("paramuid, samplevalue, operator").eq("docid", docid).execute()
@@ -127,7 +119,6 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 None, gendoc_uid만 있음 ==> 실제 문서 실행 화면
     elif docid is None and gendoc_uid is not None:
-        # print(f"jeff 513")
         # 1. gendoc_uid → docid
         gendocs_resp = supabase.schema(SUPABASE_SCHEMA).table("gendocs") \
             .select("docid").eq("gendocuid", gendoc_uid).single().execute()
@@ -135,11 +126,9 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         docid = gendocs_resp.data["docid"]
 
         # 2. dataparamdtls
-        # print(f"jeff 503 docid: {docid}\tdatauid: {datauid}")
         dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(dataparamdtls_resp.data)   # jeff
-        # print(f"jeff 504 df_dtls: {df_dtls}")
 
         # 3. gendoc_params (value)
         gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \

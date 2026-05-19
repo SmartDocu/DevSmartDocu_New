@@ -149,7 +149,7 @@ export default function AdminSamplePromptPage() {
         objecttypecd: form.tag1 || null,
         datauid: form.datauid || null,
         displaytype: form.tag2 || null,
-      })
+      }, { timeout: 180000 })
       setPreviewResult(resp.data)
     } catch (e) {
       setPreviewResult({ message_type: 'error', message: e?.response?.data?.detail || '미리보기 오류가 발생했습니다.' })

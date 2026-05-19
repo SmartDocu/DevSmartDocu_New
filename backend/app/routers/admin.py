@@ -231,15 +231,11 @@ class SamplePromptPreviewRequest(BaseModel):
 @router.post("/sample-prompts/preview")
 def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends(get_token)):
     """샘플 프롬프트 미리보기 — chapteruid/objectnm 없이 datauid+prompt 만으로 실행"""
-    print(f"jeff 001 prompt: {body.prompt}")
     _require_admin(token)
-    print(f"jeff 002 datauid: {body.datauid}")
 
     if not body.prompt.strip():
-        print(f"jeff 003")
         raise HTTPException(status_code=400, detail="프롬프트를 입력해주세요.")
     if not body.datauid:
-        print(f"jeff 004")
         raise HTTPException(status_code=400, detail="데이터를 선택해주세요.")
 
     from utilsPrj.process_data import process_data
@@ -257,12 +253,10 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
     data_rows = sb_svc.schema(SUPABASE_SCHEMA).table("datas").select(
         "projectid, datasourcecd, sourcedatauid"
     ).eq("datauid", body.datauid).execute().data or []
-    print(f"jeff 005 data: {data_rows}")
 
     projectid = data_rows[0].get("projectid") if data_rows else None
     tenantid = None
     if projectid:
-        print(f"jeff 006 projectid: {projectid}")
         proj_rows = sb_svc.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq(
             "projectid", projectid
         ).execute().data or []
@@ -326,7 +320,8 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
                 "table_header_json": response.get("table_header_json", ""),
                 "table_data_json": response.get("table_data_json", "")}
     else:
-        return {"message_type": "error", "message": "알 수 없는 응답 형식입니다."}
+        error_msg = response.get("error", "알 수 없는 응답 형식입니다.")
+        return {"message_type": "error", "message": error_msg}
 
 
 # ══════════════════════════════════════════════════════
