@@ -60,8 +60,8 @@ export default function SettingsServersPage() {
   const handleSave = () => {
     const pw = form.password.trim()
     const pwConfirm = form.password_confirm.trim()
-    if (pw && pw !== pwConfirm) { message.warning('비밀번호가 일치하지 않습니다. 다시 입력해주세요.'); return }
-    if (!form.connectnm.trim()) { message.warning('서버명을 입력하세요.'); return }
+    if (pw && pw !== pwConfirm) { message.warning(t('msg.password.mismatch')); return }
+    if (!form.connectnm.trim()) { message.warning(t('msg.connectnm.required')); return }
 
     const body = {
       connectid:       form.connectid || null,
@@ -75,18 +75,18 @@ export default function SettingsServersPage() {
     }
     if (pw) body.password = pw
     saveServer.mutate(body, {
-      onSuccess: () => { message.success('저장되었습니다.'); handleNew() },
-      onError: (err) => message.error(err.response?.data?.detail || '저장 실패'),
+      onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
+      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
     })
   }
 
   const handleDelete = () => {
-    if (!selectedId) { message.warning('삭제할 서버를 먼저 선택하세요.'); return }
+    if (!selectedId) { message.warning(t('msg.select.server')); return }
     Modal.confirm({
-      title: '삭제 확인', content: '정말 삭제하시겠습니까?',
-      okText: '삭제', cancelText: '취소', okButtonProps: { danger: true },
+      title: t('ttl.confirm.delete'), content: t('msg.confirm.delete'),
+      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteServer.mutate(selectedId, {
-        onSuccess: () => { message.success('삭제되었습니다.'); handleNew() },
+        onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
         onError: (err) => message.error(err.response?.data?.detail || '삭제 실패'),
       }),
     })

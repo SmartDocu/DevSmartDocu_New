@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { message } from 'antd'
+import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
 // ─── Servers ──────────────────────────────────────────────────────────────────
@@ -104,9 +106,9 @@ export function useUpdateUsername() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/myinfo/username', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('사용자명이 저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }

@@ -4,6 +4,8 @@ import { Spin, Upload } from 'antd'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { useGendocStatus } from '@/hooks/useGendocs'
 
 export default function ReqDocReadPage() {
   useLangStore((s) => s.translations)
@@ -75,6 +77,14 @@ export default function ReqDocReadPage() {
       .catch(() => window.open(url, '_blank'))
   }
 
+  const openInTab = useOpenInTab()
+
+  const { data: statusData = {} } = useGendocStatus(gendocuid)
+  const statusRows = statusData.status || []
+  const totalChapters = statusRows.length
+  const unreflectedChapters = statusRows.filter((r) => r.new_chapteryn).length
+  const unreflectedObjects = statusRows.reduce((sum, r) => sum + (r.new_object_cnt || 0), 0)
+
   const docInfo = content?.doc_info || {}
   const isEditYn = user?.editbuttonyn === 'Y'
   const canDownload = !!content?.file_path
@@ -100,14 +110,36 @@ export default function ReqDocReadPage() {
           <div className="gradient-bar" />
           <div>{t('ttl.doc.read_ttl')}{docInfo.gendocnm ? ` - ${docInfo.gendocnm}` : ''}</div>
         </div>
-        <button className="btn btn-link" onClick={() => navigate('/req/list')}>
-          {t('btn.back')}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary" type="button"
+            onClick={() => openInTab('req/doc-status', `?gendocs=${gendocuid}`, t('btn.doc.status'))}>
+            {t('btn.doc.status')}
+          </button>
+          <button className="btn btn-back" onClick={() => navigate('/req/list')}>
+            {t('btn.back')}
+          </button>
+        </div>
       </div>
 
       {/* 안내 */}
       <div style={{ background: '#f9fbe7', padding: '4px 10px', borderRadius: 6, color: '#6a7d3c', marginBottom: 10 }}>
         <span style={{ color: '#6a7d3c', fontSize: 13 }}>＊ {t('inf.doc.preview.notice')}</span>
+      </div>
+
+      {/* 요약 통계 */}
+      <div style={{ display: 'flex', gap: 24, padding: '6px 10px', background: '#f5f5f5', borderRadius: 6, marginBottom: 10, fontSize: 13 }}>
+        <span>
+          <span style={{ color: '#888' }}>{t('lbl.total.chapters')}: </span>
+          <strong>{totalChapters}</strong>
+        </span>
+        <span>
+          <span style={{ color: '#888' }}>{t('lbl.unreflected.chapters')}: </span>
+          <strong style={{ color: unreflectedChapters > 0 ? 'orange' : undefined }}>{unreflectedChapters}</strong>
+        </span>
+        <span>
+          <span style={{ color: '#888' }}>{t('lbl.unreflected.objects')}: </span>
+          <strong style={{ color: unreflectedObjects > 0 ? 'red' : undefined }}>{unreflectedObjects}</strong>
+        </span>
       </div>
 
       {/* 본문 */}
@@ -147,7 +179,7 @@ export default function ReqDocReadPage() {
                 showUploadList={false}
                 accept=".docx"
               >
-                <button className="btn btn-primary" disabled={uploadLoading}>
+                <button className="btn btn-primary" disabled={docInfo?.closeyn || uploadLoading}>
                   {t('btn.upload.modified')}
                 </button>
               </Upload>

@@ -178,7 +178,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 2. msg. (139개)
+## 2. msg. (161개)
 
 | term_key |
 |----------|
@@ -218,11 +218,17 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.code.select.trans |
 | msg.code.value.required |
 | msg.col.empty |
+| msg.coming.soon |
 | msg.confirm.delete |
-| msg.contact.error |
+| msg.confirm.doc.close |
+| msg.confirm.doc.open |
+| msg.loading.doc.close |
+| msg.loading.doc.open |
 | msg.contact.required |
 | msg.contact.success |
 | msg.confirm.file.overwrite |
+| msg.confirm.objecttype.change |
+| msg.connectnm.required |
 | msg.datanm.required |
 | msg.dataset.filter.readonly |
 | msg.db.required |
@@ -242,7 +248,11 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.docselect.tabs.close |
 | msg.email.required |
 | msg.favorite.error |
+| msg.file.required |
+| msg.gendoc.closed |
+| msg.gendoc.opened |
 | msg.init.load.error |
+| msg.invalid.objecttype |
 | msg.load.error |
 | msg.llmmodel.required |
 | msg.llmmodelnm.required |
@@ -262,8 +272,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.no.filter.info |
 | msg.no.image |
 | msg.no.data |
+| msg.no.data.to.save |
+| msg.no.file.selected |
 | msg.no.edit.permission |
 | msg.no.object.type |
+| msg.notification.coming.soon |
+| msg.objectnm.required |
 | msg.password.minlength |
 | msg.password.mismatch |
 | msg.password.required |
@@ -299,6 +313,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.select |
 | msg.select.chapter |
 | msg.select.data |
+| msg.select.object |
+| msg.select.server |
 | msg.select.delete |
 | msg.select.placeholder |
 | msg.select.project |
@@ -335,6 +351,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.tmpl.err.if.typo |
 | msg.tmpl.err.unclosed |
 | msg.tmpl.input.hint |
+| msg.ph.dataset |
+| msg.ph.column |
 
 ---
 
@@ -389,7 +407,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 4. btn. (50개)
+## 4. btn. (60개)
 
 | term_key |
 |----------|
@@ -401,7 +419,10 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.object.rewrite |
 | btn.chapter.read |
 | btn.chapter.rewrite |
+| btn.doc.close |
+| btn.doc.open |
 | btn.doc.read |
+| btn.doc.status |
 | btn.doc.write |
 | btn.doc.write.all |
 | btn.doc.write.combine |
@@ -409,6 +430,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.download.doc |
 | btn.download.modified |
 | btn.download.modified.chapter |
+| btn.insert.to.editor |
 | btn.item.manage |
 | btn.upload.chapter |
 | btn.upload.modified |
@@ -447,6 +469,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.template.edit |
 | btn.upgrade |
 | btn.upload_btn |
+| btn.password.change |
+| btn.go.login |
+| btn.back.to.login |
 
 ---
 
@@ -802,6 +827,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.doc.config |
 | ttl.doc.read_ttl |
 | ttl.doc.write_ttl |
+| ttl.doc.select |
 | ttl.param.input |
 | ttl.value.select |
 | ttl.ai.chart.manage |
@@ -813,6 +839,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.chart.type |
 | ttl.col.info |
 | ttl.condition |
+| ttl.confirm.delete |
 | ttl.data.list |
 | ttl.data.preview |
 | ttl.datacols |
@@ -822,6 +849,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.docselect |
 | ttl.docselect.change |
 | ttl.header.settings |
+| ttl.help |
 | ttl.list |
 | ttl.llm.detail |
 | ttl.login_ttl |
@@ -849,7 +877,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 8. inf. (7개)
+## 8. inf. (9개)
 
 | term_key |
 |----------|
@@ -860,64 +888,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | inf.password.hidden |
 | inf.preview.empty |
 | inf.preview.rows |
-
----
-
-## 9. prm. (51개)
-
-| term_key |
-|----------|
-| prm.chart_bar_99_text1 |
-| prm.chart_bar_99_text2 |
-| prm.chart_bar_99_title |
-| prm.chart_bar_text1 |
-| prm.chart_bar_text2 |
-| prm.chart_bar_title |
-| prm.chart_boxplot_text1 |
-| prm.chart_boxplot_text2 |
-| prm.chart_boxplot_title |
-| prm.chart_dual_axis_text1 |
-| prm.chart_dual_axis_text2 |
-| prm.chart_dual_axis_title |
-| prm.chart_heatmap_text1 |
-| prm.chart_heatmap_text2 |
-| prm.chart_heatmap_title |
-| prm.chart_histogram_text1 |
-| prm.chart_histogram_text2 |
-| prm.chart_histogram_title |
-| prm.chart_line_text1 |
-| prm.chart_line_text2 |
-| prm.chart_line_title |
-| prm.chart_pie_text1 |
-| prm.chart_pie_text2 |
-| prm.chart_pie_title |
-| prm.chart_samplt_scatter_text1 |
-| prm.chart_samplt_scatter_text2 |
-| prm.chart_samplt_scatter_title |
-| prm.chart_subplot_different_type_text1 |
-| prm.chart_subplot_different_type_text2 |
-| prm.chart_subplot_different_type_title |
-| prm.chart_subplot_same_type_text1 |
-| prm.chart_subplot_same_type_text2 |
-| prm.chart_subplot_same_type_title |
-| prm.sentence_predict_01_text1 |
-| prm.sentence_predict_01_text2 |
-| prm.sentence_predict_01_title |
-| prm.sentence_predict_text1 |
-| prm.sentence_predict_text2 |
-| prm.sentence_predict_title |
-| prm.sentence_report_text1 |
-| prm.sentence_report_text2 |
-| prm.sentence_report_title |
-| prm.sentence_simple_text1 |
-| prm.sentence_simple_text2 |
-| prm.sentence_simple_title |
-| prm.sentence_summary_text1 |
-| prm.sentence_summary_text2 |
-| prm.sentence_summary_title |
-| prm.table_apqr_summary_text1 |
-| prm.table_apqr_summary_text2 |
-| prm.table_apqr_summary_title |
+| inf.tmpl.default |
+| inf.tmpl.insert |
 
 ---
 
@@ -925,112 +897,50 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 | prefix | 개수 |
 |--------|------|
-| cod.   | 77   |
-| msg.   | 122  |
+| cod.   | 65   |
+| msg.   | 161  |
 | mnu.   | 43   |
-| btn.   | 49   |
-| lbl.   | 173  |
-| thd.   | 72   |
-| ttl.   | 47   |
-| inf.   | 6    |
-| prm.   | 51   |
+| btn.   | 61   |
+| lbl.   | 181  |
+| thd.   | 74   |
+| ttl.   | 52   |
+| inf.   | 9    |
 | **합계** | **641+** |
 
-### 2026-05-18 변경 내역 (15차 — ReqChapterObjectsPage)
-- `ttl.chapter.objects`, `ttl.object.detail` 추가 (2개) — 챕터 항목 조회 제목·항목 내용 패널 소제목
-- `lbl.chapter.create.dts` 추가 (1개) — 챕터 작성 일시 메타 레이블
-- `thd.filterjson`, `thd.obj.setting.dts`, `thd.new.object.yn`, `thd.obj.write.dts`, `thd.new.genobject.yn` 추가 (5개) — 항목 목록 테이블 헤더
-- `btn.object.rewrite`, `btn.object.apply` 추가 (2개) — 항목 (재)작성·반영 버튼
-- `msg.loading.object.writing`, `msg.loading.object.applying`, `msg.object.write.complete`, `msg.object.apply.complete`, `msg.confirm.object.apply`, `msg.object.empty` 추가 (6개) — 로딩·완료·확인·빈 항목 메시지
 
-### 2026-05-18 변경 내역 (14차 — ReqDocWritePage)
-- `ttl.doc.write_ttl` 추가 (1개) — 문서 작성 페이지 타이틀
-- `lbl.doc.final.dts`, `lbl.step` 추가 (2개) — 최종 작성 일시 레이블, 진행 단계 표시
-- `thd.auto.write`, `thd.modified.upload` 추가 (2개) — 챕터 목록 테이블 헤더 (자동 작성/수정 업로드 라디오 컬럼)
-- `btn.doc.write` 추가 (1개) — 문서 작성 실행 버튼
-- `msg.chapter.unselected`, `msg.loading.preparing`, `msg.loading.doc.merging` 추가 (3개) — 챕터 미선택 경고, 준비 중/문서 병합 중 로딩 메시지
+---
 
-### 2026-05-18 변경 내역 (13차 — ReqChaptersReadPage)
-- `thd.chapternm`, `thd.new.chapter`, `thd.new.upload` 추가 (3개) — 챕터 목록 테이블 헤더
-- `lbl.doc.create.dts`, `lbl.doc.upload.dts`, `lbl.authored.chapter`, `lbl.uploaded.chapter` 추가 (4개) — 요약 정보 레이블·카드 탭 제목
-- `btn.doc.write.all`, `btn.doc.write.combine`, `btn.chapter.rewrite`, `btn.item.manage`, `btn.download.chapter`, `btn.download.modified.chapter`, `btn.upload.chapter` 추가 (7개) — 액션 버튼
-- `msg.loading.chapter.preparing`, `msg.loading.chapter.progress`, `msg.loading.chapter.finalizing`, `msg.loading.doc.writing`, `msg.doc.already.writing`, `msg.doc.write.complete` 추가 (6개) — 로딩·완료·오류 메시지
+## 번역 코드 미적용 항목 (2026-05-18 조사)
 
-### 2026-05-18 변경 내역 (12차 — ReqDocReadPage)
-- `ttl.doc.read_ttl` 추가 (1개) — 문서 조회 페이지 타이틀
-- `lbl.authored.doc`, `lbl.uploaded.doc` 추가 (2개) — 카드 패널 제목
-- `inf.doc.preview.notice` 추가 (1개) — 문서 미리보기 안내 문구
-- `btn.back`, `btn.upload.modified`, `btn.download.doc`, `btn.download.modified` 추가 (4개) — 뒤로·업로드·다운로드 버튼
+> 다음 번역 작업 시 아래 파일/위치부터 적용할 것.  
+> 조사 기준: JSX 내 하드코딩된 한국어·영어 문자열 (t() 미사용)
 
-### 2026-05-18 변경 내역 (11차 — ReqDocListPage)
-- `ttl.doc.list`, `ttl.doc.config`, `ttl.param.input`, `ttl.value.select` 추가 (4개) — 문서 목록·구성·매개변수·값선택 소제목
-- `lbl.create.period` 추가 (1개) — 날짜 필터 레이블
-- `thd.gendocnm`, `thd.params`, `thd.createuser`, `thd.updateuser`, `thd.createfiledts`, `thd.updatefiledts`, `thd.closeyn`, `thd.closeuser`, `thd.inputvalue` 추가 (9개) — 문서 목록·매개변수 테이블 헤더 (예시값은 기존 `lbl.samplevalue` 재사용)
-- `btn.doc.read`, `btn.chapter.read`, `btn.3months`, `btn.1year` 추가 (4개) — 이동·필터 버튼
-- `msg.ph.gendocnm`, `msg.ph.search`, `msg.loading.params`, `msg.loading.gendoc`, `msg.loading.gendoc.delete`, `msg.docid.load.error`, `msg.unset.objects`, `msg.doc.param.duplicate`, `msg.param.required` 추가 (9개) — 플레이스홀더·로딩·경고 메시지
+---
 
-### 2026-05-14 변경 내역 (10차 — AdminHelpsPage)
-- `msg.url.required` 추가 (1개) — URL 필수 입력 메시지
+> **2026-05-19 기준**: 미작업 목록 완료·삭제 항목 전부 제거 완료.  
+> 이제 남은 항목은 아래 "한국어/영어 버전 분리 방식" 9개와 "System Admin 전용" 1개뿐이며, 모두 `t()` 적용 제외 대상이므로 추가 작업 없음.
 
-### 2026-05-13 변경 내역 (9차 — QnaPage)
-- `cod.qna_answered`, `cod.qna_pending` 추가 (2개) — Q&A 상태 코드값
-- `lbl.question`, `lbl.isprivate`, `lbl.answer`, `lbl.answernm`, `lbl.answerdts` 추가 (5개) — Q&A 폼 라벨
-- `btn.answer_btn` 추가 (1개) — 답변 작성 버튼
-- `ttl.qna.answer` 추가 (1개) — 답변 모달 제목
-- `msg.qna.private`, `msg.qna.title.required`, `msg.qna.question.required` 추가 (3개) — Q&A 경고 메시지
+---
 
-### 2026-05-13 변경 내역 (8차 — ContactPage)
-- `lbl.address`, `lbl.name`, `lbl.subject`, `lbl.message_lbl` 추가 (4개) — 문의 폼 라벨/플레이스홀더
-- `btn.send` 추가 (1개) — 메세지 보내기 버튼
-- `msg.contact.required`, `msg.contact.success`, `msg.contact.error` 추가 (3개) — 문의 폼 메시지
+### ⚠️ t() 미적용 대상 제외 — 한국어/영어 버전 분리 방식으로 처리 예정
 
-### 2026-05-13 변경 내역 (7차 — AdminLlmApisPage)
-- `thd.usetypecd_thd`, `thd.desc_thd` 추가 (2개) — LLM API 목록 테이블 헤더
-- `lbl.usetypecd` 추가 (1개) — 사용 유형 폼 라벨
-- `ttl.llmapi.detail` 추가 (1개) — LLM API 상세 제목
-- `msg.llmmodel.required`, `msg.usetypecd.required` 추가 (2개) — 필수 입력 경고 메시지
+아래 페이지는 `t()` 번역 코드 적용 대상이 아님.  
+**한국어 버전 · 영어 버전 파일을 각각 별도로 작성하고 언어 설정에 따라 스위칭**하는 방식으로 다국어 대응 예정.
 
-### 2026-05-13 변경 내역 (6차 — AdminLlmsPage)
-- `thd.llmvendornm_thd`, `thd.llmmodelnicknm_thd` 추가 (2개) — LLM 목록 테이블 헤더
-- `lbl.llmvendornm`, `lbl.llmmodelnicknm`, `lbl.isdefault` 추가 (3개) — LLM 상세 폼 라벨
-- `msg.llmmodelnm.required` 추가 (1개) — LLM 모델명 필수 입력 메시지
+| 파일 | 비고 |
+|------|------|
+| `frontend/src/pages/HomePage.jsx` | 서비스 소개 랜딩 페이지 |
+| `frontend/src/pages/public/ServicePage.jsx` | 서비스 안내 페이지 |
+| `frontend/src/pages/public/ExperiencePage.jsx` | AI 체험하기 페이지 |
+| `frontend/src/pages/public/FollowPage.jsx` | 따라하기 페이지 |
+| `frontend/src/pages/public/AboutPage.jsx` | 기능 소개 페이지 |
+| `frontend/src/pages/public/TermsPage.jsx` | 약관 페이지 |
+| `frontend/src/pages/public/UsagePage.jsx` | 서비스 이용 요금 페이지 |
+| `frontend/src/components/TenantRequestModal/TenantRequestModal.jsx` | 기업 등록/등록 요청 모달 |
+| `frontend/src/pages/admin/AdminTenantRequestsPage.jsx` | 기업 등록 요청 관리 페이지 |
 
-### 2026-05-13 변경 내역 (5차 — SettingsTenantsPage)
-- `cod.billing_Fr/Pr/Te/En` 추가 (4개)
-- `msg.tenantnm.required`, `msg.no.image` 추가 (2개)
-- `lbl.tenant.icon/billingusercnt/llmlimityn/telno/languagecd/timezone/issystemtenant` 추가 (7개)
-- `thd.billingmodelcd_thd` 추가 (1개)
+### ⚠️ t() 미적용 대상 제외 — System Admin 대상 페이지, 언어코드 적용 불필요
 
-### 2026-05-13 변경 내역 (4차 — OrgProjectUsersPage)
-- `btn.close/btn.lookup` 추가 (2개)
-- `inf.email.or.search` 추가 (1개)
-- `ttl.user.select` 추가 (1개)
-
-### 2026-05-13 변경 내역 (3차 — OrgProjectsPage)
-- `btn.project.users` 추가 (1개) — 사용자 설정 이동 버튼
-- `msg.projectnm.required` 추가 (1개) — 프로젝트명 필수 입력 메시지
-
-### 2026-05-13 변경 내역 (2차 — OrgTenantLlmsPage)
-- `cod.llmmodeluseyn_C/S` 추가 (2개)
-- `lbl.jobnm/apikey/llmmodelnm` 추가 (3개)
-- `thd.activeyn_thd/llmmodelnm_thd/llmmodeluseyn_thd/projectdesc_thd/tenantnm_thd` 추가 (5개)
-- `ttl.tenant.llm/project.llm/llm.detail` 추가 (3개)
-
-### 2026-05-13 변경 내역
-- `cod.filter_all/status_active/status_inactive/sep_newusers/rolecd_M/rolecd_U` 추가 (6개) — OrgTenantUsersPage 필터·역할 코드값
-- `lbl.creatornm/createdts/newuser` 추가 (3개)
-- `thd.usernm_thd` 추가 (1개)
-- `ttl.tenant.user.reject` 추가 (1개)
-- `msg.reject.reason.required/msg.tenant.user.reject.reason` 추가 (2개)
-
-### 2026-05-12 변경 내역
-- `cod.keycoldatatypecd_C/D/I` 삭제 (구버전)
-- `cod.keycoldatatypecd_boolean/currency/date/datetime/identifier/number/string/text` 추가 (8개)
-- `cod.databasiscd_dbq/dbs/dbt` 추가 (3개)
-- `cod.ui_chart.*` 추가 (9개)
-- `lbl.aliases/child_column/databasiscd/default_time_column/grain/parent_column/parent_schema/parent_table/primary_key/purpose/query_examples/chart.size` 추가 (12개)
-- `msg.deleted/saved/chat.tables.required/doc.empty/chart.select.required/sentence.preview.required/select.col` 추가 (7개)
-- `thd.aliases_thd/email_thd/logical_name_thd/value_count_thd/value_thd` 추가 (5개)
-- `ttl.chart.settings/chart.type/col.detail/colvalue.info/sample.prompt_ttl` 추가 (5개)
-- `mnu.*` 전체 재정리 (6→43개)
-- `prm.*` 섹션 신규 추가 (51개)
+| 파일 | 비고 |
+|------|------|
+| `frontend/src/pages/admin/AdminHelpsPage.jsx` | 시스템 관리자 전용, 다국어 불필요 |

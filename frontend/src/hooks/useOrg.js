@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
+import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
 // ─── Tenant LLMs ──────────────────────────────────────────────────────────────
@@ -16,10 +17,10 @@ export function useSaveTenantLlm() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/tenant-llms', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['org-tenant-llms'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -29,10 +30,10 @@ export function useDeleteTenantLlm() {
     mutationFn: (body) =>
       apiClient.delete('/org/tenant-llms', { data: body }).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['org-tenant-llms'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -53,11 +54,11 @@ export function useSaveOrgProject() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/projects', body).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['org-projects', vars.tenantid] })
       qc.invalidateQueries({ queryKey: ['org-projects'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -67,10 +68,10 @@ export function useDeleteOrgProject() {
     mutationFn: ({ projectid }) =>
       apiClient.delete(`/org/projects/${projectid}`).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['org-projects'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -124,11 +125,11 @@ export function useSaveTenantUser() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/tenant-users', body).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['org-tenant-users', vars.tenantid] })
       qc.invalidateQueries({ queryKey: ['org-tenant-users'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -138,10 +139,10 @@ export function useDeleteTenantUser() {
     mutationFn: (body) =>
       apiClient.delete('/org/tenant-users', { data: body }).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['org-tenant-users', vars.tenantid] })
       qc.invalidateQueries({ queryKey: ['org-tenant-users'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }

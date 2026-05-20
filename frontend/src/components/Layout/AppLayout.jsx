@@ -124,7 +124,7 @@ export default function AppLayout() {
             {user?.tenanticonurl && (
               <img
                 src={user.tenanticonurl}
-                alt="로고"
+                alt=""
                 style={{ height: 28, width: 'auto', flexShrink: 0 }}
               />
             )}
@@ -194,7 +194,7 @@ export default function AppLayout() {
             onClick={() => { clearTabs(); navigate('/') }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
           >
-            <img src="/D2Doc.svg" alt="로고" style={{ height: 32, width: 'auto' }} />
+            <img src="/D2Doc.svg" alt="" style={{ height: 32, width: 'auto' }} />
             <Text strong style={{ color: '#fff', fontSize: 18 }}>D2Doc</Text>
           </div>
 
@@ -236,7 +236,7 @@ export default function AppLayout() {
                 <img
                   src="/doc-select.svg"
                   alt="문서 선택"
-                  title="문서 선택"
+                  title={t('ttl.doc.select')}
                   onClick={() => setDocModalOpen(true)}
                   style={{ width: 20, height: 20, cursor: 'pointer', filter: 'invert(100%) brightness(250%) contrast(150%)' }}
                 />
@@ -270,7 +270,7 @@ export default function AppLayout() {
                   <Badge count={3} size="small">
                     <BellOutlined
                       style={{ color: '#fff', fontSize: 18, cursor: 'pointer' }}
-                      onClick={() => message.info('알림 기능은 추후 제공될 예정입니다.')}
+                      onClick={() => message.info(t('msg.notification.coming.soon'))}
                     />
                   </Badge>
                 </div>
@@ -280,7 +280,7 @@ export default function AppLayout() {
                     items: [
                       {
                         key: 'myinfo',
-                        label: user?.email ?? '사용자',
+                        label: user?.email,
                         onClick: openMyInfoInTab,
                       },
                       { type: 'divider' },
@@ -473,7 +473,7 @@ export default function AppLayout() {
                 <QuestionCircleOutlined
                   style={{ fontSize: 20, cursor: 'pointer', color: '#8c8c8c' }}
                   onClick={() => setHelpModalOpen(true)}
-                  title="도움말"
+                  title={t('ttl.help')}
                 />
               </div>
             )}

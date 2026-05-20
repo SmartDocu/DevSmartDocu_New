@@ -186,7 +186,7 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
     if (!menu) return
     if (!menu.route_path) {
       const isLeaf = !visibleMenus.some((m) => m.menucd.startsWith(key + '.'))
-      if (isLeaf) message.info('작업 예정')
+      if (isLeaf) message.info(t('msg.coming.soon'))
       return
     }
     if (menu.route_path.startsWith('http')) {

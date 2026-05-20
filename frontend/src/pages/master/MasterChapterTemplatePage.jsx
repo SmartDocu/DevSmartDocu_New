@@ -1065,7 +1065,7 @@ export default function MasterChapterTemplatePage() {
       editorInstanceRef.current = editor
       isEditorReadyRef.current  = true
 
-      editor.setData(data.chapter?.texttemplate || '<p>자유롭게 양식을 설정 하십시요.</p>')
+      editor.setData(data.chapter?.texttemplate || `<p>${t('inf.tmpl.default')}</p>`)
     }).catch(e => console.error('CKEditor 초기화 실패:', e))
 
     return () => {
@@ -1345,7 +1345,7 @@ export default function MasterChapterTemplatePage() {
                           <label style={{ fontSize: 12, wordBreak: 'break-all' }}>{varName}</label>
                           <button
                             className="var-insert-btn"
-                            title="에디터에 삽입"
+                            title={t('inf.tmpl.insert')}
                             onMouseDown={(e) => {
                               e.preventDefault()
                               insertAtCursor(`{{@${varName}}}`, 'hsl(120, 60%, 80%)')
@@ -1379,7 +1379,7 @@ export default function MasterChapterTemplatePage() {
                       <label style={{ fontSize: 12, wordBreak: 'break-all' }}>{p.paramnm}</label>
                       <button
                         className="var-insert-btn"
-                        title="에디터에 삽입"
+                        title={t('btn.insert.to.editor')}
                         onMouseDown={(e) => { e.preventDefault(); insertAtCursor(`{{@${p.paramnm}}}`, 'hsl(25, 90%, 85%)') }}
                       >⚡</button>
                     </div>
@@ -1496,7 +1496,7 @@ export default function MasterChapterTemplatePage() {
               <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{t('lbl.filter.dataset')}</div>
               <Select
                 style={{ width: '100%' }}
-                placeholder="데이터셋 선택"
+                placeholder={t('msg.ph.dataset')}
                 value={filterSelectedDatauid}
                 onChange={(v) => { setFilterSelectedDatauid(v); setFilterColMappings({}) }}
                 options={docDatas.map(d => ({ value: d.datauid, label: d.datanm }))}
@@ -1522,7 +1522,7 @@ export default function MasterChapterTemplatePage() {
                           <Select
                             style={{ width: '100%' }}
                             size="small"
-                            placeholder="컬럼 선택"
+                            placeholder={t('msg.ph.column')}
                             value={filterColMappings[col] || null}
                             onChange={v => setFilterColMappings(prev => ({ ...prev, [col]: v }))}
                             options={(docColMap[filterSelectedDatauid] || []).map(c => ({

@@ -163,7 +163,7 @@ export default function ReqDocWritePage() {
           <div className="gradient-bar" />
           <div>{t('ttl.doc.write_ttl')}: {gendoc.gendocnm || ''}</div>
         </div>
-        <button type="button" className="btn btn-link" onClick={handleBack}>
+        <button type="button" className="btn btn-back" onClick={handleBack}>
           {t('btn.back')}
         </button>
       </div>

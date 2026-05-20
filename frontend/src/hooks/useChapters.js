@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
+import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
 export function useChapters(docid) {
@@ -17,12 +18,12 @@ export function useSaveChapter() {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data),
     onSuccess: (_data, formData) => {
-      message.success('챕터가 저장되었습니다.')
+      message.success(t('msg.save.success'))
       const docid = formData.get('docid')
       qc.invalidateQueries({ queryKey: ['chapters', Number(docid)] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || '저장에 실패했습니다.')
+      message.error(err.response?.data?.detail || t('msg.save.error'))
     },
   })
 }
@@ -33,11 +34,11 @@ export function useDeleteChapter() {
     mutationFn: ({ chapteruid, docid }) =>
       apiClient.delete(`/chapters/${chapteruid}`).then((r) => r.data),
     onSuccess: (_data, { docid }) => {
-      message.success('챕터가 삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['chapters', docid] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || '삭제에 실패했습니다.')
+      message.error(err.response?.data?.detail || t('msg.delete.error'))
     },
   })
 }

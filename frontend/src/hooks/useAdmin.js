@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
+import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
 // ─── Help Search ──────────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ export function useSaveSamplePrompt() {
         qc.invalidateQueries({ queryKey: ['admin-sample-prompts'] })
       }
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -49,10 +50,10 @@ export function useDeleteSamplePrompt() {
     mutationFn: (promptuid) =>
       apiClient.delete(`/admin/sample-prompts/${promptuid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-sample-prompts'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -70,10 +71,10 @@ export function useSaveLlmApi() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/llmapis', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-llmapis'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -83,10 +84,10 @@ export function useDeleteLlmApi() {
     mutationFn: (llmapiuid) =>
       apiClient.delete(`/admin/llmapis/${llmapiuid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-llmapis'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -104,10 +105,10 @@ export function useSaveLlm() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/llms', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-llms'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -117,10 +118,10 @@ export function useDeleteLlm() {
     mutationFn: (llmmodelnm) =>
       apiClient.delete(`/admin/llms/${encodeURIComponent(llmmodelnm)}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-llms'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -147,10 +148,10 @@ export function useSaveUserRole() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/user-role', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('권한이 변경되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-user-roles'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '변경에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -184,10 +185,10 @@ export function useSavePrompt() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/prompts', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-prompts'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -197,10 +198,10 @@ export function useDeletePrompt() {
     mutationFn: (promptkey) =>
       apiClient.delete(`/admin/prompts/${encodeURIComponent(promptkey)}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-prompts'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -214,7 +215,7 @@ export function useSavePromptTranslation() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['admin-prompt-translations', vars.promptkey] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '번역 저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -228,6 +229,6 @@ export function useDeletePromptTranslation() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['admin-prompt-translations', vars.promptkey] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '번역 삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }

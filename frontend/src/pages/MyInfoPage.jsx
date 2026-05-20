@@ -44,7 +44,7 @@ export default function MyInfoPage() {
       dataIndex: 'rolecd',
       key: 'rolecd',
       width: 100,
-      render: (v) => v === 'M' ? 'Manager' : v === 'U' ? 'User' : v || '-',
+      render: (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-',
     },
   ]
 
@@ -61,7 +61,7 @@ export default function MyInfoPage() {
         <Col span={12}>
           <Card size="small" title={t('ttl.myinfo.personal')} loading={isLoading} style={{ marginBottom: 16 }}>
             <Descriptions column={1} size="small" bordered>
-              <Descriptions.Item label="Email">{userInfo.email || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('lbl.email')}>{userInfo.email || '-'}</Descriptions.Item>
               <Descriptions.Item label={t('lbl.usernm')}>
                 {editingName ? (
                   <Form form={form} layout="inline" size="small">
@@ -104,7 +104,7 @@ export default function MyInfoPage() {
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={t('lbl.tenantnm')}>{tenant.tenantnm || '-'}</Descriptions.Item>
               <Descriptions.Item label={t('lbl.myrole')}>
-                {tenantuser.rolecd === 'M' ? 'Manager' : tenantuser.rolecd === 'U' ? 'User' : tenantuser.rolecd || '-'}
+                {tenantuser.rolecd === 'M' ? t('cod.rolecd_M') : tenantuser.rolecd === 'U' ? t('cod.rolecd_U') : tenantuser.rolecd || '-'}
               </Descriptions.Item>
               <Descriptions.Item label={t('lbl.joindt')}>{createdts}</Descriptions.Item>
             </Descriptions>

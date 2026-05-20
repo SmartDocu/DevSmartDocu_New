@@ -307,7 +307,7 @@ export default function ReqChaptersReadPage() {
           <div className="gradient-bar" />
           <div>{t('ttl.chapter.list')} - {gendoc.gendocnm || ''}</div>
         </div>
-        <button type="button" className="btn btn-link" onClick={handleBack}>
+        <button type="button" className="btn btn-back" onClick={handleBack}>
           {t('btn.back')}
         </button>
       </div>
@@ -463,7 +463,7 @@ export default function ReqChaptersReadPage() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={uploadLoading}
+                      disabled={closeyn || uploadLoading}
                       onClick={() => fileInputRef.current?.click()}
                     >
                       {t('btn.upload.chapter')}

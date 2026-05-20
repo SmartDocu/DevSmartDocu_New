@@ -2,7 +2,7 @@ import io
 import json
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -286,6 +286,51 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
     sb.schema(SUPABASE_SCHEMA).table("genchapters").delete().eq("gendocuid", gendocuid).execute()
     sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gendocuid).execute()
     return {"message": "삭제되었습니다."}
+
+
+# ── Gendoc Close / Open ─────────────────────────────────────────────────────────
+
+@router.post("/{gendocuid}/close")
+def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    user_id = str(user.id)
+    now = datetime.now(timezone.utc).isoformat()
+
+    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    if not row:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    docid = row[0]["docid"]
+
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
+        "closeyn": True,
+        "closeuseruid": user_id,
+        "closedts": now,
+    }).eq("gendocuid", gendocuid).execute()
+
+    sb.schema(SUPABASE_SCHEMA).table("loggendoccloses").upsert({
+        "gendocuid": gendocuid,
+        "docid": docid,
+        "closeyn": True,
+        "closeuseruid": user_id,
+        "closedts": now,
+    }).execute()
+
+    return {"message": "마감 처리되었습니다."}
+
+
+@router.post("/{gendocuid}/open")
+def open_gendoc(gendocuid: str, token: str = Depends(get_token)):
+    _get_user(token)
+    sb = _sb(token)
+
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
+        "closeyn": False,
+        "closeuseruid": None,
+        "closedts": None,
+    }).eq("gendocuid", gendocuid).execute()
+
+    return {"message": "마감 해제되었습니다."}
 
 
 # ── Params Update ────────────────────────────────────────────────────────────────

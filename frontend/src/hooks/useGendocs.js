@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
+import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
 export function useGendocs(startDate, endDate, docid) {
@@ -46,10 +47,10 @@ export function useCreateGendoc() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/gendocs', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('문서가 생성되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '생성에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -59,10 +60,10 @@ export function useDeleteGendoc() {
   return useMutation({
     mutationFn: (gendocuid) => apiClient.delete(`/gendocs/${gendocuid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -72,9 +73,35 @@ export function useUpdateGendocParams() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/gendocs/params/update', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('파라미터가 변경되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '변경에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+  })
+}
+
+export function useCloseGendoc() {
+  const qc = useQueryClient()
+  const { message } = App.useApp()
+  return useMutation({
+    mutationFn: (gendocuid) => apiClient.post(`/gendocs/${gendocuid}/close`).then((r) => r.data),
+    onSuccess: () => {
+      message.success(t('msg.gendoc.closed'))
+      qc.invalidateQueries({ queryKey: ['gendocs'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+  })
+}
+
+export function useOpenGendoc() {
+  const qc = useQueryClient()
+  const { message } = App.useApp()
+  return useMutation({
+    mutationFn: (gendocuid) => apiClient.post(`/gendocs/${gendocuid}/open`).then((r) => r.data),
+    onSuccess: () => {
+      message.success(t('msg.gendoc.opened'))
+      qc.invalidateQueries({ queryKey: ['gendocs'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }

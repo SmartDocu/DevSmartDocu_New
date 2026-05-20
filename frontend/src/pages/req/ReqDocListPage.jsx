@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { App, DatePicker, Spin } from 'antd'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
-import { useGendocs, useDataparams, useCreateGendoc, useDeleteGendoc, useUpdateGendocParams } from '@/hooks/useGendocs'
+import { useGendocs, useDataparams, useCreateGendoc, useDeleteGendoc, useUpdateGendocParams, useCloseGendoc, useOpenGendoc } from '@/hooks/useGendocs'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 
@@ -151,7 +151,7 @@ export default function ReqDocListPage() {
   const { message } = App.useApp()
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const editbuttonyn   = user?.editbuttonyn === 'Y'
+  const editbuttonyn = user?.editbuttonyn === 'Y'
 
   const today = dayjs()
   const [dates,        setDates]        = useState(initDates)
@@ -174,6 +174,8 @@ export default function ReqDocListPage() {
   const createGendoc = useCreateGendoc()
   const deleteGendoc = useDeleteGendoc()
   const updateParams = useUpdateGendocParams()
+  const closeGendoc  = useCloseGendoc()
+  const openGendoc   = useOpenGendoc()
 
   // 우측 패널 상태
   const [selectedGendocuid, setSelectedGendocuid] = useState(
@@ -295,6 +297,26 @@ export default function ReqDocListPage() {
     showLoading(t('msg.loading.gendoc.delete'))
     deleteGendoc.mutate(selectedGendocuid, {
       onSuccess: () => { hideLoading(); handleNew(); refetch() },
+      onError:   () => hideLoading(),
+    })
+  }
+
+  // 마감
+  const handleClose = () => {
+    if (!window.confirm(t('msg.confirm.doc.close'))) return
+    showLoading(t('msg.loading.doc.close'))
+    closeGendoc.mutate(selectedGendocuid, {
+      onSuccess: () => { hideLoading(); refetch() },
+      onError:   () => hideLoading(),
+    })
+  }
+
+  // 마감 해제
+  const handleOpen = () => {
+    if (!window.confirm(t('msg.confirm.doc.open'))) return
+    showLoading(t('msg.loading.doc.open'))
+    openGendoc.mutate(selectedGendocuid, {
+      onSuccess: () => { hideLoading(); refetch() },
       onError:   () => hideLoading(),
     })
   }
@@ -480,6 +502,20 @@ export default function ReqDocListPage() {
                   {selectedGendocuid && (
                     <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteGendoc.isPending}>
                       {t('btn.delete')}
+                    </button>
+                  )}
+                </>
+              )}
+              {editbuttonyn && selectedGendocuid && (
+                <>
+                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
+                  {selectedRow?.closeyn ? (
+                    <button className="btn btn-secondary" type="button" onClick={handleOpen} disabled={openGendoc.isPending}>
+                      {t('btn.doc.open')}
+                    </button>
+                  ) : (
+                    <button className="btn btn-secondary" type="button" onClick={handleClose} disabled={closeGendoc.isPending}>
+                      {t('btn.doc.close')}
                     </button>
                   )}
                 </>

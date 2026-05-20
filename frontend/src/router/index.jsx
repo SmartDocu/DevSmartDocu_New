@@ -2,8 +2,6 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/Layout/AppLayout'
 import RequireAuth from '@/components/Auth/RequireAuth'
 import HomePage from '@/pages/HomePage'
-import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
 import PasswordResetPage from '@/pages/auth/PasswordResetPage'
 import ServicePage from '@/pages/public/ServicePage'
 import AboutPage from '@/pages/public/AboutPage'
@@ -23,7 +21,6 @@ import MasterTablesPage from '@/pages/master/MasterTablesPage'
 import MasterChartsPage from '@/pages/master/MasterChartsPage'
 import MasterSentencesPage from '@/pages/master/MasterSentencesPage'
 import ReqDocListPage from '@/pages/req/ReqDocListPage'
-import ReqDocSettingPage from '@/pages/req/ReqDocSettingPage'
 import ReqDocStatusPage from '@/pages/req/ReqDocStatusPage'
 import ReqChaptersReadPage from '@/pages/req/ReqChaptersReadPage'
 import ReqChapterObjectsPage from '@/pages/req/ReqChapterObjectsPage'
@@ -62,8 +59,6 @@ export const router = createBrowserRouter([
   { path: '/popup/sample-event', element: <SampleEventPopup /> },
 
   // ── 인증 불필요 ───────────────────────────────────────────────────────────
-  { path: '/login', element: <LoginPage /> },
-  { path: '/register', element: <RegisterPage /> },
   { path: '/password-reset', element: <PasswordResetPage /> },
   {
     path: '/',
@@ -111,7 +106,6 @@ export const router = createBrowserRouter([
 
       // Stage 5: 문서 요청/생성
       { path: 'req/list', element: <ReqDocListPage /> },
-      { path: 'req/doc-setting', element: <ReqDocSettingPage /> },
       { path: 'req/doc-status', element: <ReqDocStatusPage /> },
       { path: 'req/chapters-read', element: <ReqChaptersReadPage /> },
       { path: 'req/chapter-objects', element: <ReqChapterObjectsPage /> },

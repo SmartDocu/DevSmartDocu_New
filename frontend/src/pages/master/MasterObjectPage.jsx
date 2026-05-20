@@ -100,15 +100,15 @@ export default function MasterObjectPage() {
   }
 
   const handleNew = () => {
-    if (!selectedChapteruid) { alert('챕터를 선택해주세요.'); return }
+    if (!selectedChapteruid) { alert(t('msg.select.chapter')); return }
     resetForm()
   }
 
   const handleSave = () => {
-    if (!selectedChapteruid) { alert('챕터를 선택해주세요.'); return }
-    if (!form.objectuid && !form.objectnm.trim()) { alert('항목명을 입력해주세요.'); return }
+    if (!selectedChapteruid) { alert(t('msg.select.chapter')); return }
+    if (!form.objectuid && !form.objectnm.trim()) { alert(t('msg.objectnm.required')); return }
     if (form.objecttypecd !== form.objecttypecd_orig && form.objecttypecd_orig) {
-      if (!window.confirm('항목 구분 변경 시 기존 설정은 초기화 됩니다.\n그래도 하시겠습니까?')) return
+      if (!window.confirm(t('msg.confirm.objecttype.change'))) return
     }
     saveObject.mutate({
       chapteruid: selectedChapteruid,
@@ -123,18 +123,18 @@ export default function MasterObjectPage() {
   }
 
   const handleDelete = () => {
-    if (!form.objectuid) { alert('삭제할 항목을 선택하세요.'); return }
-    if (!window.confirm('정말 삭제하시겠습니까?')) return
+    if (!form.objectuid) { alert(t('msg.select.object')); return }
+    if (!window.confirm(t('msg.confirm.delete'))) return
     deleteObject.mutate({ objectuid: form.objectuid, chapteruid: selectedChapteruid }, {
       onSuccess: resetForm,
     })
   }
 
   const handleConfig = () => {
-    if (!form.objectuid || !selectedObj) { alert('항목 목록에서 항목을 선택하세요.'); return }
-    if (!selectedChapteruid) { alert('챕터를 선택해주세요.'); return }
+    if (!form.objectuid || !selectedObj) { alert(t('msg.select.object')); return }
+    if (!selectedChapteruid) { alert(t('msg.select.chapter')); return }
     const route = TYPE_CONFIG_ROUTE[form.objecttypecd]
-    if (!route) { alert('설정 가능한 항목 구분이 아닙니다.'); return }
+    if (!route) { alert(t('msg.invalid.objecttype')); return }
     const selectedChapter = chapters.find(c => c.chapteruid === selectedChapteruid)
     const chapternm = selectedChapter?.chapternm || ''
     const tabLabel = TYPE_TAB_LABEL_KEY[form.objecttypecd] ? t(TYPE_TAB_LABEL_KEY[form.objecttypecd]) : form.objectnm
@@ -261,7 +261,7 @@ export default function MasterObjectPage() {
                 type="text"
                 value={form.objectnm}
                 onChange={(e) => setForm((f) => ({ ...f, objectnm: e.target.value }))}
-                placeholder="항목명 입력 (예: Ch02_원형차트)"
+                // placeholder="항목명 입력 (예: Ch02_원형차트)"
                 style={{ width: '100%' }}
               />
             )}

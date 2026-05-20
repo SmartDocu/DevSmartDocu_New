@@ -52,29 +52,6 @@ export function useSendResetEmail() {
   })
 }
 
-export function useSendSms() {
-  return useMutation({
-    mutationFn: (phone_number) =>
-      apiClient.post('/auth/send-sms', { phone_number }).then((r) => r.data),
-    onSuccess: () => alert('인증번호를 발송했습니다.'),
-    onError: (err) => {
-      const detail = err.response?.data?.detail || 'SMS 발송에 실패했습니다.'
-      alert(detail)
-    },
-  })
-}
-
-export function useVerifySms() {
-  return useMutation({
-    mutationFn: ({ phone_number, code }) =>
-      apiClient.post('/auth/verify-sms', { phone_number, code }).then((r) => r.data),
-    onError: (err) => {
-      const detail = err.response?.data?.detail || '인증에 실패했습니다.'
-      alert(detail)
-    },
-  })
-}
-
 export function useRegister() {
   const navigate = useNavigate()
 
@@ -82,7 +59,7 @@ export function useRegister() {
     mutationFn: (data) => apiClient.post('/auth/register', data).then((r) => r.data),
     onSuccess: () => {
       alert('회원가입이 완료되었습니다. 로그인해주세요.')
-      navigate('/login')
+      navigate('/')
     },
     onError: (err) => {
       const detail = err.response?.data?.detail || '회원가입에 실패했습니다.'

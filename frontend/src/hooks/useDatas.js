@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
+import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
 export function useAllDatas() {
@@ -77,10 +78,10 @@ export function useSaveDbData() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/db', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'db'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -90,10 +91,10 @@ export function useSaveExData() {
     mutationFn: (formData) =>
       apiClient.post('/datas/ex', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'ex'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -102,10 +103,10 @@ export function useSaveAiData() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/ai', body).then((r) => r.data),
     onSuccess: () => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -114,10 +115,10 @@ export function useDeleteData(datasourcecd) {
   return useMutation({
     mutationFn: (datauid) => apiClient.delete(`/datas/${datauid}`).then((r) => r.data),
     onSuccess: () => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       if (datasourcecd) qc.invalidateQueries({ queryKey: ['datas', datasourcecd] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }
 
@@ -126,10 +127,10 @@ export function useCreateDatacols() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/datacols/create', body).then((r) => r.data),
     onSuccess: (_data, body) => {
-      message.success('컬럼이 생성되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datacols', body.datauid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '컬럼 생성에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -138,10 +139,10 @@ export function useSaveDatacols() {
   return useMutation({
     mutationFn: (cols) => apiClient.post('/datas/datacols', cols).then((r) => r.data),
     onSuccess: (_data, cols) => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       if (cols.length > 0) qc.invalidateQueries({ queryKey: ['datacols', cols[0].datauid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -158,10 +159,10 @@ export function useSaveDfData() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/df', body).then((r) => r.data),
     onSuccess: (_, body) => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.docid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
@@ -170,17 +171,17 @@ export function useSaveDfvData() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/dfv', body).then((r) => r.data),
     onSuccess: (_, body) => {
-      message.success('저장되었습니다.')
+      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.dfv_docid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '저장에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 
 export function useAiDataPreview() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/ai-preview', body).then((r) => r.data),
-    onError: (err) => message.error(err.response?.data?.detail || '미리보기에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.preview.error')),
   })
 }
 
@@ -189,9 +190,9 @@ export function useDeleteDfData() {
   return useMutation({
     mutationFn: ({ datauid }) => apiClient.delete(`/datas/${datauid}`).then((r) => r.data),
     onSuccess: (_, { docid }) => {
-      message.success('삭제되었습니다.')
+      message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', docid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || '삭제에 실패했습니다.'),
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
   })
 }

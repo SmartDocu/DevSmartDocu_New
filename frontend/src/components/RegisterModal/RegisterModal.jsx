@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
 
@@ -25,7 +25,6 @@ export default function RegisterModal({ open, onClose }) {
   })
   const tenants = tenantsData?.tenants || []
 
-  // 모달 열릴 때 초기화
   useEffect(() => {
     if (!open) return
     setBillingmodelcd('single')
@@ -41,7 +40,6 @@ export default function RegisterModal({ open, onClose }) {
     setAgreeAll(false)
   }, [open])
 
-  // ESC 닫기
   useEffect(() => {
     if (!open) return
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -110,7 +108,6 @@ export default function RegisterModal({ open, onClose }) {
         width: 360, boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
         textAlign: 'center', position: 'relative',
       }}>
-        {/* 닫기 버튼 */}
         <button
           onClick={onClose}
           style={{ position: 'absolute', top: 10, right: 10, background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}

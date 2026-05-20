@@ -4,10 +4,12 @@ import { App, Button, Card, Form, Input, Typography } from 'antd'
 import { LockOutlined } from '@ant-design/icons'
 import { useMutation } from '@tanstack/react-query'
 import apiClient from '@/api/client'
+import { useLangStore, t } from '@/stores/langStore'
 
 const { Title, Text } = Typography
 
 export default function PasswordResetPage() {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const navigate = useNavigate()
   const [form] = Form.useForm()
@@ -39,18 +41,18 @@ export default function PasswordResetPage() {
         new_password: newPassword,
       }).then((r) => r.data),
     onSuccess: () => {
-      message.success('비밀번호가 변경되었습니다.')
-      setTimeout(() => navigate('/login', { replace: true }), 1500)
+      message.success(t('msg.password.changed'))
+      setTimeout(() => navigate('/', { replace: true }), 1500)
     },
     onError: (err) => {
-      const detail = err.response?.data?.detail || '비밀번호 변경에 실패했습니다.'
+      const detail = err.response?.data?.detail || t('msg.password.change.failed')
       message.error(detail)
     },
   })
 
   const handleSubmit = (values) => {
     if (values.password !== values.confirm) {
-      message.error('비밀번호가 일치하지 않습니다.')
+      message.error(t('msg.password.mismatch'))
       return
     }
     updateMutation.mutate({ newPassword: values.password })
@@ -69,38 +71,37 @@ export default function PasswordResetPage() {
       <Card style={{ width: 400, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <Title level={3} style={{ margin: 0 }}>Smart Document</Title>
-          <Text type="secondary">비밀번호 재설정</Text>
+          <Text type="secondary">{t('ttl.password.reset')}</Text>
         </div>
 
         {tokenError ? (
           <div style={{ textAlign: 'center' }}>
             <Text type="danger" style={{ display: 'block', marginBottom: 16 }}>
-              유효하지 않은 재설정 링크입니다.<br />
-              이메일 링크를 다시 요청해주세요.
+              {t('msg.password.reset.invalid')}
             </Text>
-            <Button type="link" onClick={() => navigate('/login')}>
-              로그인 페이지로 이동
+            <Button type="link" onClick={() => navigate('/')}>
+              {t('btn.go.login')}
             </Button>
           </div>
         ) : (
           <Form form={form} onFinish={handleSubmit} layout="vertical" size="large">
             <Form.Item
               name="password"
-              label="새 비밀번호"
+              label={t('lbl.new.password')}
               rules={[
-                { required: true, message: '새 비밀번호를 입력해주세요.' },
-                { min: 6, message: '비밀번호는 6자 이상이어야 합니다.' },
+                { required: true, message: t('msg.new.password.required') },
+                { min: 6, message: t('msg.password.min6') },
               ]}
             >
-              <Input.Password prefix={<LockOutlined />} placeholder="새 비밀번호" />
+              <Input.Password prefix={<LockOutlined />} placeholder={t('lbl.new.password')} />
             </Form.Item>
 
             <Form.Item
               name="confirm"
-              label="비밀번호 확인"
-              rules={[{ required: true, message: '비밀번호를 다시 입력해주세요.' }]}
+              label={t('lbl.password.confirm')}
+              rules={[{ required: true, message: t('msg.password.confirm.required') }]}
             >
-              <Input.Password prefix={<LockOutlined />} placeholder="비밀번호 확인" />
+              <Input.Password prefix={<LockOutlined />} placeholder={t('lbl.password.confirm')} />
             </Form.Item>
 
             <Form.Item style={{ marginBottom: 8 }}>
@@ -110,13 +111,13 @@ export default function PasswordResetPage() {
                 block
                 loading={updateMutation.isPending}
               >
-                비밀번호 변경
+                {t('btn.password.change')}
               </Button>
             </Form.Item>
 
             <div style={{ textAlign: 'center' }}>
-              <Button type="link" onClick={() => navigate('/login')}>
-                로그인으로 돌아가기
+              <Button type="link" onClick={() => navigate('/')}>
+                {t('btn.back.to.login')}
               </Button>
             </div>
           </Form>

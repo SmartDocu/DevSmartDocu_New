@@ -45,7 +45,7 @@ export default function MasterDatasExPage() {
   const [selectedData, setSelectedData] = useState(null)
   const [form, setForm] = useState({ datauid: '', datanm: '', projectid: '', projectnm: '', excelnm: '', excelurl: '' })
   const [excelFile, setExcelFile] = useState(null)
-  const [fileName, setFileName] = useState('선택된 파일 없음')
+  const [fileName, setFileName] = useState(null)
   const [saving, setSaving] = useState(false)
 
   // Columns state (editable in-place)
@@ -70,7 +70,7 @@ export default function MasterDatasExPage() {
       excelnm: d.excelnm || '', excelurl: d.excelurl || '',
     })
     setExcelFile(null)
-    setFileName(d.excelnm || '선택된 파일 없음')
+    setFileName(d.excelnm || null)
     setSelectedColDatauid(d.datauid)
   }
 
@@ -78,14 +78,14 @@ export default function MasterDatasExPage() {
     setSelectedData(null)
     setForm({ datauid: '', datanm: '', projectid: projects[0]?.projectid || '', projectnm: '', excelnm: '', excelurl: '' })
     setExcelFile(null)
-    setFileName('선택된 파일 없음')
+    setFileName(null)
     setSelectedColDatauid(null)
     setEditCols([])
   }
 
   const handleSave = () => {
-    if (!form.datanm) { alert('데이터명은 필수입니다.'); return }
-    if (!excelFile && !form.datauid) { alert('첨부 파일을 선택해주세요.'); return }
+    if (!form.datanm) { alert(t('msg.datanm.required')); return }
+    if (!excelFile && !form.datauid) { alert(t('msg.file.required')); return }
     if (excelFile && form.datauid && !window.confirm(t('msg.confirm.file.overwrite'))) return
     setSaving(true)
     const fd = new FormData()
@@ -106,13 +106,13 @@ export default function MasterDatasExPage() {
   }
 
   const handleDelete = () => {
-    if (!form.datauid) { alert('삭제할 데이터를 선택해주세요.'); return }
-    if (!window.confirm('삭제하시겠습니까?')) return
+    if (!form.datauid) { alert(t('msg.select.data')); return }
+    if (!window.confirm(t('msg.confirm.delete'))) return
     deleteData.mutate(form.datauid, { onSuccess: handleNew })
   }
 
   const handleSaveCols = () => {
-    if (editCols.length === 0) { alert('저장할 데이터가 없습니다.'); return }
+    if (editCols.length === 0) { alert(t('msg.no.data.to.save')); return }
     saveCols.mutate(editCols.map((c) => ({ ...c, datauid: selectedColDatauid })))
   }
 
@@ -248,10 +248,10 @@ export default function MasterDatasExPage() {
                     } catch { window.open(form.excelurl, '_blank') }
                   }}
                 >
-                  {fileName}
+                  {fileName || t('msg.no.file.selected')}
                 </a>
               ) : (
-                <span>{fileName}</span>
+                <span>{fileName || t('msg.no.file.selected')}</span>
               )}
             </div>
           </div>
