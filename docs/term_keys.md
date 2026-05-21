@@ -353,6 +353,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.tmpl.input.hint |
 | msg.ph.dataset |
 | msg.ph.column |
+| msg.password.changed |
+| msg.password.change.failed |
+| msg.password.reset.invalid |
+| msg.new.password.required |
+| msg.password.min6 |
+| msg.password.confirm.required |
+| msg.ph.sentence.template |
 
 ---
 
@@ -631,6 +638,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.answer |
 | lbl.answernm |
 | lbl.answerdts |
+| lbl.terms.service |
+| lbl.doc.createfiledts |
+| lbl.total.chapters |
+| lbl.unreflected.chapters |
+| lbl.unreflected.objects |
+| lbl.new.password |
+| lbl.description |
 
 ### lbl.chart.legendpos.* (11개)
 
@@ -812,6 +826,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.value_count_thd |
 | thd.value_thd |
 | thd.width_px |
+| thd.new_chapteryn |
+| thd.object_cnt |
+| thd.new_object_cnt |
 
 ---
 
@@ -874,6 +891,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.translations |
 | ttl.value.settings |
 | ttl.qna.answer |
+| ttl.doc.status_ttl |
+| ttl.chapter.status |
+| ttl.password.reset |
 
 ---
 
