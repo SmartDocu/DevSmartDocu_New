@@ -116,9 +116,9 @@ def list_gendocs(
         item["params"] = params
         item["finalnm_joined"] = " / ".join(p.get("finalnm") or p.get("paramvalue") or "" for p in params if p.get("paramvalue"))
 
-    dataparams = sb.schema(SUPABASE_SCHEMA).table("dataparams").select("*").eq("docid", docid).order("orderno").execute().data or []
+    docparams = sb.schema(SUPABASE_SCHEMA).table("docparams").select("*").eq("docid", docid).order("orderno").execute().data or []
 
-    return {"gendocs": rows, "docnm": docnm, "dataparams": dataparams, "docid": docid}
+    return {"gendocs": rows, "docnm": docnm, "dataparams": docparams, "docid": docid}
 
 
 # ── Gendoc Detail ───────────────────────────────────────────────────────────────
@@ -132,8 +132,8 @@ def get_dataparams(token: str = Depends(get_token)):
     if not docid:
         return {"dataparams": [], "params_value": []}
 
-    dataparams = sb.schema(SUPABASE_SCHEMA).table("dataparams").select("*").eq("docid", docid).order("orderno").execute().data or []
-    data_ids = [d["datauid"] for d in dataparams if d.get("datauid")]
+    docparams = sb.schema(SUPABASE_SCHEMA).table("docparams").select("*").eq("docid", docid).order("orderno").execute().data or []
+    data_ids = [d["datauid"] for d in docparams if d.get("datauid")]
     datas = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").in_("datauid", data_ids).execute().data or [] if data_ids else []
 
     # Run each data source to get options
@@ -167,7 +167,7 @@ def get_dataparams(token: str = Depends(get_token)):
             rows = []
         params_value.append({"datauid": data_item["datauid"], "value": rows})
 
-    return {"dataparams": dataparams, "params_value": params_value}
+    return {"dataparams": docparams, "params_value": params_value}
 
 
 @router.get("/{gendocuid}/status")

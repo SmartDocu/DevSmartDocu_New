@@ -36,20 +36,20 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
-        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA) \
-            .table("dataparamdtls") \
+        docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA) \
+            .table("docparamdtls") \
             .select("*") \
             .eq("docid", docid).eq("datauid", datauid) \
             .execute()
 
-        dataparams_resp = supabase.schema(SUPABASE_SCHEMA) \
-            .table("dataparams") \
+        docparams_resp = supabase.schema(SUPABASE_SCHEMA) \
+            .table("docparams") \
             .select("*") \
             .eq("docid", docid) \
             .execute()
 
-        df_dtls = pd.DataFrame(dataparamdtls_resp.data)
-        df_params = pd.DataFrame(dataparams_resp.data)
+        df_dtls = pd.DataFrame(docparamdtls_resp.data)
+        df_params = pd.DataFrame(docparams_resp.data)
 
         # operator 포함
         df_params = df_params[["paramuid", "samplevalue", "operator"]]
@@ -76,10 +76,10 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
 
         docid = gendocs_resp.data["docid"]
 
-        # 2. dataparamdtls
-        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
+        # 2. docparamdtls
+        docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
-        df_dtls = pd.DataFrame(dataparamdtls_resp.data)
+        df_dtls = pd.DataFrame(docparamdtls_resp.data)
 
         # 3. gendoc_params (value)
         gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \

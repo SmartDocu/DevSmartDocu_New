@@ -101,14 +101,14 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
-        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
+        docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
-        df_dtls = pd.DataFrame(dataparamdtls_resp.data)
+        df_dtls = pd.DataFrame(docparamdtls_resp.data)
     
-        dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
+        docparams_resp = supabase.schema(SUPABASE_SCHEMA).table("docparams") \
             .select("paramuid, samplevalue, operator").eq("docid", docid).execute()
 
-        df_params = pd.DataFrame(dataparams_resp.data)
+        df_params = pd.DataFrame(docparams_resp.data)
 
         if not df_dtls.empty and 'paramuid' in df_dtls.columns and not df_params.empty:
             df_dtls = df_dtls.merge(df_params, on="paramuid", how="left")
@@ -125,10 +125,10 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
         docid = gendocs_resp.data["docid"]
 
-        # 2. dataparamdtls
-        dataparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparamdtls") \
+        # 2. docparamdtls
+        docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
-        df_dtls = pd.DataFrame(dataparamdtls_resp.data)   # jeff
+        df_dtls = pd.DataFrame(docparamdtls_resp.data)   # jeff
 
         # 3. gendoc_params (value)
         gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
@@ -142,10 +142,10 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         else:
             df_dtls["value"] = None
 
-        # 4. dataparams (operator)
-        dataparams_resp = supabase.schema(SUPABASE_SCHEMA).table("dataparams") \
+        # 4. docparams (operator)
+        docparams_resp = supabase.schema(SUPABASE_SCHEMA).table("docparams") \
             .select("paramuid, operator").eq("docid", docid).execute()
-        df_params = pd.DataFrame(dataparams_resp.data)
+        df_params = pd.DataFrame(docparams_resp.data)
 
         if (not df_dtls.empty and 'paramuid' in df_dtls.columns
                 and not df_params.empty and 'paramuid' in df_params.columns):

@@ -291,9 +291,6 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
     for idx, f in enumerate(body.formats):
         objectuid = f.get("objectUID") or str(uuid.uuid4())
         filters_raw = f.get("filters") or {}
-        params = filters_raw.get("params", []) if filters_raw else []
-        # print(params)
-        filters_json = _json.dumps(params, ensure_ascii=False) if params else None
         is_filter = False
         if filters_raw.get("params") != []:
             is_filter = True
@@ -307,7 +304,6 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
             "useyn": True,
             "orderno": f.get("orderno", idx + 1),
             "creator": user_id,
-            "filters": filters_json,
             "is_filter": is_filter
         }).execute()
 

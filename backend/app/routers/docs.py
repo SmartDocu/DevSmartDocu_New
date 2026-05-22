@@ -366,7 +366,7 @@ def delete_doc(docid: int, token: str = Depends(get_token)):
     for gd in gendocs:
         sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gd["gendocuid"]).execute()
 
-    sb.schema(SUPABASE_SCHEMA).table("dataparams").delete().eq("docid", docid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("docparams").delete().eq("docid", docid).execute()
     res = sb.schema(SUPABASE_SCHEMA).table("docs").delete().eq("docid", docid).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="msg.delete.error")
@@ -374,7 +374,7 @@ def delete_doc(docid: int, token: str = Depends(get_token)):
     return MessageResponse(ok=True, message="msg.delete.success")
 
 
-# ─── 매개변수(dataparams) CRUD ────────────────────────────────────────────────
+# ─── 매개변수(docparams) CRUD ────────────────────────────────────────────────
 
 class ParamSaveRequest(BaseModel):
     paramuid: Optional[str] = None
@@ -394,7 +394,7 @@ class ParamSaveRequest(BaseModel):
 def list_params(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
     rows = (
-        sb.schema(SUPABASE_SCHEMA).table("dataparams")
+        sb.schema(SUPABASE_SCHEMA).table("docparams")
         .select("*").eq("docid", docid).order("orderno")
         .execute().data or []
     )
@@ -427,12 +427,12 @@ def save_param(body: ParamSaveRequest, token: str = Depends(get_token)):
     }
     if body.paramuid:
         res = (
-            sb.schema(SUPABASE_SCHEMA).table("dataparams")
+            sb.schema(SUPABASE_SCHEMA).table("docparams")
             .update(payload).eq("paramuid", body.paramuid).execute()
         )
     else:
         payload["creator"] = str(_get_user(token).id)
-        res = sb.schema(SUPABASE_SCHEMA).table("dataparams").insert(payload).execute()
+        res = sb.schema(SUPABASE_SCHEMA).table("docparams").insert(payload).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="msg.save.error")
     return {"ok": True, "param": res.data[0]}
@@ -441,7 +441,7 @@ def save_param(body: ParamSaveRequest, token: str = Depends(get_token)):
 @router.delete("/params/{paramuid}")
 def delete_param(paramuid: str, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("dataparams").delete().eq("paramuid", paramuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("docparams").delete().eq("paramuid", paramuid).execute()
     return {"ok": True}
 
 
@@ -477,11 +477,11 @@ def list_condition_datas(docid: int, token: str = Depends(get_token)):
     return {"datas": datas, "col_map": col_map}
 
 
-# ─── 매개변수 설정(dataparamdtls) ─────────────────────────────────────────────
+# ─── 매개변수 설정(docparamdtls) ─────────────────────────────────────────────
 
 @router.get("/{docid}/doc-params")
 def get_doc_params(docid: int, token: str = Depends(get_token)):
-    """문서 데이터셋 관리 초기 데이터 (datas, datacols, dataparams, doc_datas, dataparamdtls)"""
+    """문서 데이터셋 관리 초기 데이터 (datas, datacols, docparams, doc_datas, docparamdtls)"""
     from utilsPrj.supabase_client import get_service_client
     sb_svc = get_service_client()
 
@@ -521,7 +521,7 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
             col_map.setdefault(col["datauid"], []).append(col)
 
     # 문서 매개변수
-    dataparams = sb_svc.schema(SUPABASE_SCHEMA).table("dataparams").select("*") \
+    docparams = sb_svc.schema(SUPABASE_SCHEMA).table("docparams").select("*") \
         .eq("docid", docid).order("orderno").execute().data or []
 
     # 선택된 데이터 목록 (doc_datas)
@@ -530,16 +530,16 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
     selected_datauids = [d["datauid"] for d in doc_datas]
 
     # 기존 매핑: { datauid: { paramuid: querycolnm } }
-    dataparamdtls = sb_svc.schema(SUPABASE_SCHEMA).table("dataparamdtls").select("*") \
+    docparamdtls = sb_svc.schema(SUPABASE_SCHEMA).table("docparamdtls").select("*") \
         .eq("docid", docid).execute().data or []
     dataparam_map: dict = {}
-    for d in dataparamdtls:
+    for d in docparamdtls:
         dataparam_map.setdefault(d["datauid"], {})[d["paramuid"]] = d["querycolnm"]
 
     return {
         "datas": datas,
         "col_map": col_map,
-        "dataparams": dataparams,
+        "dataparams": docparams,
         "selected_datauids": selected_datauids,
         "dataparam_map": dataparam_map,
     }
@@ -552,7 +552,7 @@ class DocParamSaveRequest(BaseModel):
 
 @router.post("/{docid}/doc-params")
 def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(get_token)):
-    """doc_datas 선택 및 dataparamdtls 매핑 저장"""
+    """doc_datas 선택 및 docparamdtls 매핑 저장"""
     sb = _sb(token)
     user_id = str(_get_user(token).id)
 
@@ -564,10 +564,10 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(
             for uid in body.selected_datauids
         ]).execute()
 
-    # dataparamdtls: 전체 교체
-    sb.schema(SUPABASE_SCHEMA).table("dataparamdtls").delete().eq("docid", docid).execute()
+    # docparamdtls: 전체 교체
+    sb.schema(SUPABASE_SCHEMA).table("docparamdtls").delete().eq("docid", docid).execute()
     if body.records:
-        sb.schema(SUPABASE_SCHEMA).table("dataparamdtls").insert([
+        sb.schema(SUPABASE_SCHEMA).table("docparamdtls").insert([
             {
                 "paramuid": r["paramuid"],
                 "datauid": r["datauid"],
