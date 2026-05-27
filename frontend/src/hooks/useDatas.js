@@ -185,6 +185,39 @@ export function useAiDataPreview() {
   })
 }
 
+export function useDatasApi() {
+  return useQuery({
+    queryKey: ['datas', 'api'],
+    queryFn: () => apiClient.get('/datas', { params: { datasourcecd: 'api' } }).then((r) => r.data.datas),
+  })
+}
+
+export function useApiConnectors() {
+  return useQuery({
+    queryKey: ['datas-apiconnectors'],
+    queryFn: () => apiClient.get('/datas/api-connectors').then((r) => r.data.connectors),
+  })
+}
+
+export function useSaveApiData() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/datas/api', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['datas', 'api'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+  })
+}
+
+export function useApiParams(datauid) {
+  return useQuery({
+    queryKey: ['apiparams', datauid],
+    queryFn: () => apiClient.get('/datas/apiparams', { params: { datauid } }).then((r) => r.data.params),
+    enabled: !!datauid,
+  })
+}
+
 export function useDeleteDfData() {
   const qc = useQueryClient()
   return useMutation({

@@ -17,6 +17,7 @@ import MasterObjectPage from '@/pages/master/MasterObjectPage'
 import MasterDatasDbPage from '@/pages/master/MasterDatasDbPage'
 import MasterDatasExPage from '@/pages/master/MasterDatasExPage'
 import MasterDatasAiPage from '@/pages/master/MasterDatasAiPage'
+import MasterDatasApiPage from '@/pages/master/MasterDatasApiPage'
 import MasterTablesPage from '@/pages/master/MasterTablesPage'
 import MasterChartsPage from '@/pages/master/MasterChartsPage'
 import MasterSentencesPage from '@/pages/master/MasterSentencesPage'
@@ -28,6 +29,7 @@ import ReqDocWritePage from '@/pages/req/ReqDocWritePage'
 import ReqDocReadPage from '@/pages/req/ReqDocReadPage'
 import SettingsServersPage from '@/pages/settings/SettingsServersPage'
 import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
+import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
 import MyInfoPage from '@/pages/MyInfoPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
 import OrgTenantLlmsPage from '@/pages/org/OrgTenantLlmsPage'
@@ -100,6 +102,7 @@ export const router = createBrowserRouter([
       { path: 'master/datas/db', element: <MasterDatasDbPage /> },
       { path: 'master/datas/ex', element: <MasterDatasExPage /> },
       { path: 'master/datas/ai', element: <MasterDatasAiPage /> },
+      { path: 'master/datas/api', element: <MasterDatasApiPage /> },
       { path: 'master/tables', element: <MasterTablesPage /> },
       { path: 'master/charts', element: <MasterChartsPage /> },
       { path: 'master/sentences', element: <MasterSentencesPage /> },
@@ -115,6 +118,7 @@ export const router = createBrowserRouter([
       // Stage 6: 설정 / 내 정보
       { path: 'settings/servers', element: <SettingsServersPage /> },
       { path: 'settings/tenants', element: <SettingsTenantsPage /> },
+      { path: 'settings/connectors', element: <SettingsConnectorsPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
       { path: 'qna', element: <QnaPage /> },
 

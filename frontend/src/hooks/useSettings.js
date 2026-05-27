@@ -112,3 +112,44 @@ export function useUpdateUsername() {
     onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
+
+// ─── Connectors ───────────────────────────────────────────────────────────────
+
+export function useConnectors() {
+  return useQuery({
+    queryKey: ['settings-connectors'],
+    queryFn: () => apiClient.get('/connectors').then((r) => r.data),
+  })
+}
+
+export function useSaveConnector() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/connectors', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings-connectors'] })
+    },
+  })
+}
+
+export function useDeleteConnector() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (connuid) => apiClient.delete(`/connectors/${connuid}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings-connectors'] })
+    },
+  })
+}
+
+export function useTestConnectorHealth() {
+  return useMutation({
+    mutationFn: (connuid) => apiClient.post(`/connectors/${connuid}/test-health`).then((r) => r.data),
+  })
+}
+
+export function useTestConnectorAuth() {
+  return useMutation({
+    mutationFn: (connuid) => apiClient.post(`/connectors/${connuid}/test-auth`).then((r) => r.data),
+  })
+}

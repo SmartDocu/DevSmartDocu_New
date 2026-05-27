@@ -83,3 +83,65 @@ docid = useAuthStore의 user.docid (Number 변환), null이면 조회 skip
 - chapterno 없으면 저장 불가
 - selectedDocid 없으면 저장 불가
 ```
+
+### 실제 작성 요청 구문 : 아래 구문으로 일단 생성 후 다국어 적용(기본적으로 적용해주는데 혹시 안 되어 있을 경우) + 세세한 부분은 수정 요청
+
+```
+SettingsServersPage.jsx 를 표준으로 삼아
+아래 정보를 바탕으로 backend + frontend 를 모두 작성해주세요.
+
+### DB 테이블
+create table sdoc.connectors (
+  connuid uuid not null default gen_random_uuid (),
+  tenantid integer null,
+  connnm character varying null,
+  conntype character varying null,  -- db, api
+  "desc" character varying null,
+  useyn boolean null default true,
+  creator uuid null,
+  createdts timestamp with time zone null default now(),
+  constraint connectors_pkey primary key (connuid)
+) TABLESPACE pg_default;
+
+create table sdoc.conn_apis (
+  connuid uuid not null default gen_random_uuid (),
+  tenantid integer null,
+  apitype character varying null,
+  baseurl character varying null,
+  authtype character varying null,
+  health character varying null,
+  health_method character varying null,
+  authtest character varying null,
+  authtest_method character varying null,
+  creator uuid null,
+  createdts timestamp with time zone null default now(),
+  constraint conn_apis_pkey primary key (connuid)
+) TABLESPACE pg_default;
+
+create table sdoc.conn_api_credentials (
+  credentialuid uuid not null default gen_random_uuid (),
+  connuid uuid not null,
+  apitype character varying null,
+  secret_path character varying null,
+  api_key_name character varying null,
+  api_key_locationcd character varying null,
+  oauth_client_id character varying null,
+  token_endpoint character varying null,
+  authorization_type character varying null,
+  redirect_url character varying null,
+  scope character varying null,
+  access_token_end character varying null,
+  expires_at timestamp with time zone null default now(),
+  refresh_expires_at timestamp with time zone null default now(),
+  auth_statuscd character varying null,
+  last_refresh_at timestamp with time zone null default now(),
+  last_error_message character varying null,
+  last_error_at timestamp with time zone null default now(),
+  grant_type character varying null,
+  is_active boolean null default true,
+  creator uuid null,
+  createdts timestamp with time zone null default now(),
+  constraint conn_api_credentials_pkey primary key (credentialuid)
+) TABLESPACE pg_default;
+
+`

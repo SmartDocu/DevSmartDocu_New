@@ -40,6 +40,39 @@ class DataColItem(BaseModel):
     measureyn: Optional[bool] = False
     useyn: Optional[bool] = True
     orderno: Optional[int] = None
+    field_path: Optional[str] = None
+
+
+class ApiConnectorItem(BaseModel):
+    connuid: str
+    connnm: str
+
+
+class ApiConnectorsResponse(BaseModel):
+    connectors: list[ApiConnectorItem]
+
+
+class ApiParamItem(BaseModel):
+    paramnm: str
+    param_locationcd: Optional[str] = 'query'
+    datatypecd: Optional[str] = 'string'
+    is_required: bool = False
+    testvalue: Optional[str] = None
+    is_fixed: bool = False
+    fixed_value: Optional[str] = None
+    desc: Optional[str] = None
+    orderno: Optional[int] = None
+
+
+class ApiDataSaveRequest(BaseModel):
+    datauid: Optional[str] = None
+    projectid: int
+    datanm: str
+    connuid: Optional[str] = None
+    endpoint: Optional[str] = None
+    desc: Optional[str] = None
+    useyn: bool = True
+    params: Optional[list[ApiParamItem]] = None
 
 
 class DataColsResponse(BaseModel):

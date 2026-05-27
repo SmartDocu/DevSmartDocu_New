@@ -12,6 +12,7 @@ from backend.app.schemas.datas import (
     AiDataSaveRequest, AiPreviewRequest, DataColItem, DataColsResponse,
     DbConnectorsResponse, DbDataSaveRequest, DatasListResponse,
     DfDataSaveRequest, DfvDataSaveRequest,
+    ApiConnectorsResponse, ApiDataSaveRequest,
 )
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
@@ -139,6 +140,24 @@ def list_dbconnectors(token: str = Depends(get_token)):
         sb.schema(SUPABASE_SCHEMA).table("dbconnectors")
         .select("connectid, connectnm")
         .eq("useyn", True).eq("tenantid", tenantid)
+        .execute().data or []
+    )
+    return {"connectors": rows}
+
+
+# ── API Connectors ─────────────────────────────────────────────────────────────
+
+@router.get("/api-connectors", response_model=ApiConnectorsResponse)
+def list_apiconnectors(token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("connectors")
+        .select("connuid, connnm")
+        .eq("tenantid", tenantid).eq("conntype", "api").eq("useyn", True)
+        .order("connnm")
         .execute().data or []
     )
     return {"connectors": rows}
@@ -338,6 +357,66 @@ def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
+# ── API Data Save ───────────────────────────────────────────────────────────────
+
+@router.post("/api")
+def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    record = {
+        "projectid": body.projectid,
+        "datanm":    body.datanm,
+        "desc":      body.desc,
+        "connuid":   body.connuid,
+        "endpoint":  body.endpoint,
+        "useyn":     body.useyn,
+    }
+    if body.datauid:
+        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        datauid = body.datauid
+    else:
+        record["creator"]      = str(user.id)
+        record["datasourcecd"] = "api"
+        resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+        datauid = resp.data[0]["datauid"]
+
+    # params: 기존 전체 삭제 후 재삽입
+    sb.schema(SUPABASE_SCHEMA).table("data_api_params").delete().eq("datauid", datauid).execute()
+    if body.params:
+        sb.schema(SUPABASE_SCHEMA).table("data_api_params").insert([
+            {
+                "datauid":          datauid,
+                "paramnm":          p.paramnm,
+                "param_locationcd": p.param_locationcd,
+                "datatypecd":       p.datatypecd,
+                "is_required":      p.is_required,
+                "testvalue":        p.testvalue,
+                "is_fixed":         p.is_fixed,
+                "fixed_value":      p.fixed_value,
+                "desc":             p.desc,
+                "orderno":          p.orderno if p.orderno is not None else i,
+                "creator":          str(user.id),
+            }
+            for i, p in enumerate(body.params, 1)
+        ]).execute()
+
+    return {"datauid": datauid, "message": "저장되었습니다."}
+
+
+# ── API Params Get ──────────────────────────────────────────────────────────────
+
+@router.get("/apiparams")
+def get_apiparams(datauid: str, token: str = Depends(get_token)):
+    _get_user(token)
+    sb = _sb(token)
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("data_api_params")
+        .select("*").eq("datauid", datauid).order("orderno")
+        .execute().data or []
+    )
+    return {"params": rows}
+
+
 # ── DF/DFV List ────────────────────────────────────────────────────────────────
 
 @router.get("/df-list")
@@ -461,6 +540,7 @@ def delete_data(datauid: str, token: str = Depends(get_token)):
         _delete_storage(sb, res.data[0].get("excelurl"))
         if res.data[0].get("datasourcecd") == "df":
             sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("data_api_params").delete().eq("datauid", datauid).execute()
     sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     resp = sb.schema(SUPABASE_SCHEMA).table("datas").delete().eq("datauid", datauid).execute()
     if not resp.data:
@@ -480,6 +560,37 @@ def get_datacols(datauid: str, token: str = Depends(get_token)):
         .execute().data or []
     )
     return {"columns": rows}
+
+
+def _infer_col_type(v) -> tuple:
+    if isinstance(v, bool):
+        return "boolean", False
+    if isinstance(v, (int, float)):
+        return "number", True
+    return "string", False
+
+
+def _extract_json_columns(data) -> list:
+    """JSON 응답에서 컬럼 목록 추출. list[dict] 또는 dict 처리."""
+    target = None
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict):
+            target = data[0]
+    elif isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                target = v[0]
+                break
+        if target is None:
+            target = data
+    if not target:
+        return []
+    result = []
+    for i, (k, v) in enumerate(target.items(), 1):
+        dtype, measure = _infer_col_type(v)
+        result.append({"querycolnm": str(k), "dispcolnm": str(k),
+                        "datatypecd": dtype, "measureyn": measure, "orderno": i})
+    return result
 
 
 @router.post("/datacols/create")
@@ -527,6 +638,84 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
             for c in parsed
         ]
         sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
+        return {"message": "컬럼이 생성되었습니다.", "columns": [c["querycolnm"] for c in parsed]}
+
+    # ── api 모드: 실제 API 호출 → 응답 파싱 → 컬럼 생성 ────────────────
+    if data_row.get("datasourcecd") == "api":
+        import json as _json
+        connuid  = data_row.get("connuid")
+        endpoint = data_row.get("endpoint") or ""
+        if not connuid:
+            raise HTTPException(status_code=400, detail="API 커넥터가 설정되지 않았습니다.")
+
+        api_row = (
+            sb.schema(SUPABASE_SCHEMA).table("conn_apis")
+            .select("baseurl, authtype, health_method").eq("connuid", connuid).execute().data
+        )
+        if not api_row:
+            raise HTTPException(status_code=400, detail="커넥터 API 설정이 없습니다.")
+        conn_api = api_row[0]
+        baseurl  = conn_api.get("baseurl") or ""
+        authtype = conn_api.get("authtype") or "NONE"
+        method   = conn_api.get("health_method") or "GET"
+
+        if not baseurl:
+            raise HTTPException(status_code=400, detail="커넥터 Base URL이 설정되지 않았습니다.")
+
+        cred_rows = (
+            sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials")
+            .select("*").eq("connuid", connuid).execute().data
+        )
+        cred = cred_rows[0] if cred_rows else {}
+        secret_path = cred.get("secret_path")
+        secrets: dict = {}
+        if secret_path:
+            try:
+                secrets = _json.loads(secret_path)
+            except Exception:
+                secrets = {}
+
+        param_rows = (
+            sb.schema(SUPABASE_SCHEMA).table("data_api_params")
+            .select("*").eq("datauid", datauid).order("orderno").execute().data or []
+        )
+
+        full_url = baseurl.rstrip("/") + ("" if endpoint.startswith("/") else "/") + endpoint
+
+        from utilsPrj.api_helper import call_api_for_data
+        result = call_api_for_data(
+            url=full_url,
+            method=method,
+            authtype=authtype,
+            api_params=param_rows,
+            auth_cred=cred,
+            secrets=secrets,
+        )
+
+        if not result.get("ok"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"API 호출 실패 ({result.get('status_code', 0)}): {result.get('detail', '')}",
+            )
+
+        parsed = _extract_json_columns(result.get("data"))
+        if not parsed:
+            raise HTTPException(status_code=400, detail="API 응답에서 컬럼을 추출할 수 없습니다.")
+
+        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("datacols").insert([
+            {
+                "datauid":    datauid,
+                "querycolnm": c["querycolnm"],
+                "dispcolnm":  c["dispcolnm"],
+                "datatypecd": c["datatypecd"],
+                "measureyn":  c["measureyn"],
+                "orderno":    c["orderno"],
+                "useyn":      True,
+                "creator":    str(user.id),
+            }
+            for c in parsed
+        ]).execute()
         return {"message": "컬럼이 생성되었습니다.", "columns": [c["querycolnm"] for c in parsed]}
     # ────────────────────────────────────────────────────────────────────
 
@@ -654,6 +843,7 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
                 "useyn":      c.useyn if c.useyn is not None else True,
                 "creator":    str(user.id),
                 "orderno":    i,
+                "field_path": c.field_path,
             }
             for i, c in enumerate(cols, 1)
             if c.querycolnm in to_insert
@@ -671,6 +861,7 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
             "measureyn":  c.measureyn or False,
             "useyn":      c.useyn if c.useyn is not None else True,
             "orderno":    i,
+            "field_path": c.field_path,
         }).eq("datauid", datauid).eq("querycolnm", c.querycolnm).execute()
 
     return {"message": "저장되었습니다."}
