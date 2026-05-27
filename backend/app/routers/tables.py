@@ -22,7 +22,7 @@ class TableSaveRequest(BaseModel):
 
 class TablePreviewRequest(BaseModel):
     selected_datauid: str
-    docid: Optional[str] = None
+    docid: Optional[Any] = None
     tablejson: Optional[dict] = None
     coljson: Optional[dict] = None
 

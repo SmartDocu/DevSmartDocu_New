@@ -374,12 +374,11 @@ export default function MasterDatasApiPage() {
                   <th style={{ width: '9%' }}>{t('thd.measureyn')}</th>
                   <th style={{ width: '9%' }}>{t('thd.useyn_thd')}</th>
                   <th>{t('thd.field_path_thd')}</th>
-                  {isEditYn && <th style={{ width: 28 }} />}
                 </tr>
               </thead>
               <tbody>
                 {colsLocal.length === 0 ? (
-                  <tr><td colSpan={isEditYn ? 7 : 6} style={{ textAlign: 'center', color: '#888' }}>{t('msg.select.data')}</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#888' }}>{t('msg.select.data')}</td></tr>
                 ) : colsLocal.map((col, i) => (
                   <tr key={i}>
                     <td style={tdStyle}>
@@ -411,12 +410,6 @@ export default function MasterDatasApiPage() {
                         placeholder="data.items"
                         onChange={(e) => updateCol(i, 'field_path', e.target.value)} />
                     </td>
-                    {isEditYn && (
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ff4d4f', padding: 0 }}
-                          onClick={() => removeCol(i)}>✕</button>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>

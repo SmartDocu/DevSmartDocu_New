@@ -81,6 +81,7 @@ def create_code(body: CodeSaveRequest, token: str = Depends(get_token)):
         "default_name": body.default_name,
         "orderno": body.orderno,
         "useyn": body.useyn,
+        "is_default": body.is_default,
         "creator": user_id,
     }
     try:
@@ -110,6 +111,7 @@ def update_code(codegroupcd: str, codevalue: str, body: CodeSaveRequest, token: 
         "default_name": body.default_name,
         "orderno": body.orderno,
         "useyn": body.useyn,
+        "is_default": body.is_default,
     }
     try:
         sb.schema(SUPABASE_SCHEMA).table("codes").update(record).eq("codegroupcd", codegroupcd).eq("codevalue", codevalue).execute()

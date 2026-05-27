@@ -9,7 +9,7 @@ from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from utilsPrj.ai_chain import get_tables_prompt, create_python_code, get_full_chain, get_llm_model
 from utilsPrj.process_data_db import process_data_db
 from utilsPrj.process_data_excel import process_data_excel
-
+from utilsPrj.process_data_api import process_data_api
 
 def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_mode, docid=None, gendoc_uid=None, all=None):
     """원본 데이터 조회 → column_dict 구성 → AI 체인 실행의 공통 로직"""
@@ -31,6 +31,10 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
     # 원본 가져오기 (DB)
     if sourcedatasourcecd == "db":
         df = process_data_db(supabase, request, sourcedatauid, docid, gendoc_uid, all)
+   
+    # 원본이 api 데이터 화면일 경우
+    if sourcedatasourcecd == "api":
+        df = process_data_api(supabase, sourcedatauid, gendoc_uid)
 
     # AI 재집계
     result_datacols = (

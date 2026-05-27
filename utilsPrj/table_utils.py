@@ -54,6 +54,8 @@ def draw_table(request, columns, dict_rows, tablejson, coljson):
             [col for col, conf in coljson.items() if conf.get('enabled', 'y') == 'y'],
             key=lambda col: coljson[col].get('order', 0)
         )
+        if not enabled_cols:
+            enabled_cols = list(columns)
 
         # ✅ 2. 총 너비 계산
         total_width = sum(coljson.get(col, {}).get("width", 100) for col in enabled_cols)
@@ -66,7 +68,8 @@ def draw_table(request, columns, dict_rows, tablejson, coljson):
                     f'width: {total_width}px;">')
         
         # ✅ 3. Header 출력
-        if tablejson.get('row_visible', 'y') == 'y':
+        _rv = tablejson.get('row_visible', 'y')
+        if _rv not in ('n', False, 0):
             html.append("<thead><tr>")
             for col in enabled_cols:
                 header_style = {

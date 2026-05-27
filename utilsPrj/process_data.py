@@ -32,6 +32,11 @@ def process_data(request, datauid, docid=None, gendoc_uid=None, all = None):
     if datasourcecd in ("df", "dfv"):
         return process_data_ai(supabase, request, datauid, docid, gendoc_uid, all)
 
+    # 원본이 api 데이터 화면일 경우
+    if datasourcecd == "api":
+        from utilsPrj.process_data_api import process_data_api
+        return process_data_api(supabase, datauid, gendoc_uid)
+
     raise ValueError(f"지원하지 않는 원본입니다: {datasourcecd}")
 
 

@@ -8,6 +8,7 @@ class CodeAdminItem(BaseModel):
     default_name: Optional[str] = None
     orderno: Optional[int] = None
     useyn: Optional[bool] = True
+    is_default: Optional[bool] = False
 
 
 class CodesAdminListResponse(BaseModel):
@@ -20,6 +21,7 @@ class CodeSaveRequest(BaseModel):
     default_name: Optional[str] = None
     orderno: Optional[int] = None
     useyn: Optional[bool] = True
+    is_default: Optional[bool] = False
 
 
 class CodeSaveResponse(BaseModel):

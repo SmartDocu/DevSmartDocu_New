@@ -20,12 +20,15 @@ export default function MasterDatasetPage() {
   const { data } = useDocDatasets(String(docid))
   const saveMutation = useSaveDocDatasets(String(docid))
 
-  const datas = data?.datas || []
-  const colMap = data?.col_map || {}
-  const dataparams = data?.dataparams || []
+  const datas      = data?.datas        || []
+  const colMap     = data?.col_map      || {}
+  const dataparams = data?.dataparams   || []
+  const apiParamsMap = data?.api_params_map || {}   // { datauid: [paramnm, ...] }
 
   const [checkedDatauids, setCheckedDatauids] = useState([])
-  const [mapping, setMapping] = useState({})
+  const [mapping, setMapping]       = useState({})  // { datauid: { paramuid: querycolnm } }
+  const [apiMapping, setApiMapping] = useState({})  // { datauid: { paramnm: paramuid } }
+  const [apiPopupDatauid, setApiPopupDatauid] = useState(null)
 
   useEffect(() => {
     if (!data) return
@@ -33,6 +36,7 @@ export default function MasterDatasetPage() {
     const allChecked = [...new Set([...(data.selected_datauids || []), ...mappedDatauids])]
     setCheckedDatauids(allChecked)
     setMapping(data.dataparam_map || {})
+    setApiMapping(data.apiparam_map || {})
   }, [data])
 
   const handleCheck = (datauid) => {
@@ -48,17 +52,44 @@ export default function MasterDatasetPage() {
     }))
   }
 
+  const handleApiMappingChange = (datauid, paramnm, paramuid) => {
+    setApiMapping((prev) => ({
+      ...prev,
+      [datauid]: { ...(prev[datauid] || {}), [paramnm]: paramuid },
+    }))
+  }
+
   const handleSave = () => {
     if (!docid) { alert(t('msg.doc.select')); return }
+
+    // API param 매핑 완료 여부 검증
+    for (const datauid of checkedDatauids) {
+      const paramnms = apiParamsMap[datauid] || []
+      for (const paramnm of paramnms) {
+        if (!apiMapping[datauid]?.[paramnm]) {
+          const datanm = datas.find((d) => d.datauid === datauid)?.datanm || datauid
+          alert(`[${datanm}] ${t('msg.api.param.required')}: ${paramnm}`)
+          return
+        }
+      }
+    }
+
     const records = checkedDatauids.flatMap((datauid) =>
       Object.entries(mapping[datauid] || {})
         .filter(([, colnm]) => colnm)
         .map(([paramuid, querycolnm]) => ({ datauid, paramuid, querycolnm }))
     )
-    saveMutation.mutate({ selected_datauids: checkedDatauids, records })
+    const apiRecords = checkedDatauids.flatMap((datauid) =>
+      Object.entries(apiMapping[datauid] || {})
+        .filter(([, paramuid]) => paramuid)
+        .map(([paramnm, paramuid]) => ({ datauid, paramuid, paramnm }))
+    )
+
+    saveMutation.mutate({ selected_datauids: checkedDatauids, records: [...records, ...apiRecords] })
   }
 
   const checkedDatas = datas.filter((d) => checkedDatauids.includes(d.datauid))
+  const popupData = apiPopupDatauid ? datas.find((d) => d.datauid === apiPopupDatauid) : null
 
   if (!docid) {
     return <div style={{ padding: 24, color: '#888' }}>{t('msg.doc.select')}</div>
@@ -141,7 +172,7 @@ export default function MasterDatasetPage() {
                       {p.paramnm}
                     </th>
                   ))}
-                  <th style={{ width: 50 }}></th>
+                  <th style={{ width: 80 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -177,7 +208,17 @@ export default function MasterDatasetPage() {
                         </td>
                       )
                     })}
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {(apiParamsMap[d.datauid] || []).length > 0 && (
+                        <button
+                          className="btn btn-primary"
+                          type="button"
+                          style={{ padding: '1px 6px', fontSize: 12, marginRight: 4 }}
+                          onClick={() => setApiPopupDatauid(d.datauid)}
+                        >
+                          {t('btn.api.setting')}
+                        </button>
+                      )}
                       <button
                         className="btn btn-danger"
                         type="button"
@@ -194,6 +235,65 @@ export default function MasterDatasetPage() {
           </div>
         </div>
       </div>
+
+      {/* API 파라미터 설정 팝업 */}
+      {apiPopupDatauid && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)', display: 'flex',
+          justifyContent: 'center', alignItems: 'center', zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fff', padding: 24, borderRadius: 8,
+            minWidth: 440, boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>{t('ttl.api.param.setting')}{popupData ? ` - ${popupData.datanm}` : ''}</h3>
+              <button
+                type="button"
+                onClick={() => setApiPopupDatauid(null)}
+                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}
+              >×</button>
+            </div>
+            <table className="table table-bordered table-sm">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 160 }}>{t('thd.paramnm_thd')}</th>
+                  <th style={{ minWidth: 200 }}>{t('thd.docparam_thd')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(apiParamsMap[apiPopupDatauid] || []).map((paramnm) => (
+                  <tr key={paramnm}>
+                    <td>{paramnm}</td>
+                    <td>
+                      <select
+                        value={apiMapping[apiPopupDatauid]?.[paramnm] || ''}
+                        onChange={(e) => handleApiMappingChange(apiPopupDatauid, paramnm, e.target.value)}
+                        style={{ width: '100%' }}
+                      >
+                        <option value=""></option>
+                        {dataparams.map((p) => (
+                          <option key={p.paramuid} value={p.paramuid}>{p.paramnm}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => setApiPopupDatauid(null)}
+              >
+                {t('btn.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

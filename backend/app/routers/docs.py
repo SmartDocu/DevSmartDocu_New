@@ -495,7 +495,7 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
     # 프로젝트의 데이터 목록 (db/ex)
     base_datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas") \
         .select("datauid, datanm, datasourcecd") \
-        .eq("projectid", projectid).in_("datasourcecd", ["db", "ex"]) \
+        .eq("projectid", projectid).in_("datasourcecd", ["db", "ex", "api"]) \
         .order("datanm").execute().data or []
 
     # base_datas의 datauid를 sourcedatauid로 갖는 df만 추가
@@ -534,7 +534,26 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         .eq("docid", docid).execute().data or []
     dataparam_map: dict = {}
     for d in docparamdtls:
-        dataparam_map.setdefault(d["datauid"], {})[d["paramuid"]] = d["querycolnm"]
+        if not d.get("paramnm"):
+            dataparam_map.setdefault(d["datauid"], {})[d["paramuid"]] = d["querycolnm"]
+
+    # API non-fixed params: { datauid: [paramnm, ...] }
+    api_datauids = [d["datauid"] for d in datas if d["datasourcecd"] == "api"]
+    api_params_map: dict = {}
+    if api_datauids:
+        api_param_rows_all = sb_svc.schema(SUPABASE_SCHEMA).table("data_api_params") \
+            .select("datauid, paramnm, is_fixed, orderno") \
+            .in_("datauid", api_datauids) \
+            .order("orderno").execute().data or []
+        for p in api_param_rows_all:
+            if not p.get("is_fixed"):
+                api_params_map.setdefault(p["datauid"], []).append(p["paramnm"])
+
+    # API param 기존 매핑: { datauid: { paramnm: paramuid } }
+    apiparam_map: dict = {}
+    for d in docparamdtls:
+        if d.get("paramnm"):
+            apiparam_map.setdefault(d["datauid"], {})[d["paramnm"]] = d["paramuid"]
 
     return {
         "datas": datas,
@@ -542,6 +561,8 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         "dataparams": docparams,
         "selected_datauids": selected_datauids,
         "dataparam_map": dataparam_map,
+        "api_params_map": api_params_map,
+        "apiparam_map": apiparam_map,
     }
 
 
@@ -571,7 +592,8 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(
             {
                 "paramuid": r["paramuid"],
                 "datauid": r["datauid"],
-                "querycolnm": r["querycolnm"],
+                "querycolnm": r.get("querycolnm"),
+                "paramnm": r.get("paramnm"),
                 "docid": docid,
                 "creator": user_id,
             }

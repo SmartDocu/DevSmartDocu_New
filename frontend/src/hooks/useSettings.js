@@ -153,3 +153,15 @@ export function useTestConnectorAuth() {
     mutationFn: (connuid) => apiClient.post(`/connectors/${connuid}/test-auth`).then((r) => r.data),
   })
 }
+
+export function useTestConnectorHealthInline() {
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/connectors/test-health-inline', payload).then((r) => r.data),
+  })
+}
+
+export function useTestConnectorAuthInline() {
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/connectors/test-auth-inline', payload).then((r) => r.data),
+  })
+}

@@ -6,6 +6,7 @@ import { useMenus } from '@/hooks/useMenus'
 import {
   useConnectors, useSaveConnector, useDeleteConnector,
   useTestConnectorHealth, useTestConnectorAuth,
+  useTestConnectorHealthInline, useTestConnectorAuthInline,
 } from '@/hooks/useSettings'
 
 const EMPTY_FORM = {
@@ -39,7 +40,7 @@ function TestResult({ result }) {
   )
 }
 
-function MethodRow({ pathKey, methodKey, testFn, testPending, result, label, form, setForm, httpmethods, selectedId }) {
+function MethodRow({ pathKey, methodKey, testFn, testPending, result, label, form, setForm, httpmethods }) {
   return (
     <div className="form-group">
       <label>{label}:</label>
@@ -64,7 +65,7 @@ function MethodRow({ pathKey, methodKey, testFn, testPending, result, label, for
           className="btn btn-primary"
           type="button"
           style={{ flexShrink: 0, padding: '4px 10px' }}
-          disabled={!selectedId || testPending}
+          disabled={!form.baseurl || !form[pathKey] || testPending}
           onClick={testFn}
         >
           {t('btn.test')}
@@ -92,8 +93,10 @@ export default function SettingsConnectorsPage() {
   const { data = {}, isLoading } = useConnectors()
   const saveConnector   = useSaveConnector()
   const deleteConnector = useDeleteConnector()
-  const testHealth      = useTestConnectorHealth()
-  const testAuth        = useTestConnectorAuth()
+  const testHealth       = useTestConnectorHealth()
+  const testAuth         = useTestConnectorAuth()
+  const testHealthInline = useTestConnectorHealthInline()
+  const testAuthInline   = useTestConnectorAuthInline()
 
   const [form, setForm]               = useState(EMPTY_FORM)
   const [selectedId, setSelectedId]   = useState(null)
@@ -200,18 +203,46 @@ export default function SettingsConnectorsPage() {
 
   const handleTestHealth = () => {
     setHealthResult(null)
-    testHealth.mutate(selectedId, {
-      onSuccess: (res) => setHealthResult(res),
-      onError: (err) => setHealthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
-    })
+    testHealthInline.mutate(
+      { baseurl: form.baseurl, health: form.health, health_method: form.health_method },
+      {
+        onSuccess: (res) => setHealthResult(res),
+        onError: (err) => setHealthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
+      }
+    )
+  }
+
+  const _hasFormSecret = () => {
+    if (form.authtype === 'API_KEY') return !!form.api_key_value
+    if (form.authtype === 'BASIC')   return !!form.password
+    if (form.authtype === 'OAUTH2')  return !!form.oauth_client_secret
+    return true
   }
 
   const handleTestAuth = () => {
     setAuthResult(null)
-    testAuth.mutate(selectedId, {
-      onSuccess: (res) => setAuthResult(res),
-      onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
-    })
+    if (selectedId && !_hasFormSecret()) {
+      testAuth.mutate(selectedId, {
+        onSuccess: (res) => setAuthResult(res),
+        onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
+      })
+    } else {
+      testAuthInline.mutate(
+        {
+          baseurl: form.baseurl, authtest: form.authtest, authtest_method: form.authtest_method,
+          authtype: form.authtype,
+          api_key_name: form.api_key_name, api_key_locationcd: form.api_key_locationcd, api_key_value: form.api_key_value,
+          username: form.username, password: form.password,
+          oauth_client_id: form.oauth_client_id, oauth_client_secret: form.oauth_client_secret,
+          token_endpoint: form.token_endpoint, grant_type: form.grant_type,
+          scope: form.scope, authorization_type: form.authorization_type,
+        },
+        {
+          onSuccess: (res) => setAuthResult(res),
+          onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
+        }
+      )
+    }
   }
 
   const showCredentials = form.authtype && form.authtype !== 'NONE'
@@ -318,16 +349,16 @@ export default function SettingsConnectorsPage() {
 
           <MethodRow
             pathKey="health" methodKey="health_method"
-            testFn={handleTestHealth} testPending={testHealth.isPending}
+            testFn={handleTestHealth} testPending={testHealth.isPending || testHealthInline.isPending}
             result={healthResult} label={t('lbl.health_lbl')}
-            form={form} setForm={setForm} httpmethods={httpmethods} selectedId={selectedId}
+            form={form} setForm={setForm} httpmethods={httpmethods}
           />
 
           <MethodRow
             pathKey="authtest" methodKey="authtest_method"
-            testFn={handleTestAuth} testPending={testAuth.isPending}
+            testFn={handleTestAuth} testPending={testAuth.isPending || testAuthInline.isPending}
             result={authResult} label={t('lbl.authtest_lbl')}
-            form={form} setForm={setForm} httpmethods={httpmethods} selectedId={selectedId}
+            form={form} setForm={setForm} httpmethods={httpmethods}
           />
 
           {/* ── 인증 정보 ── */}

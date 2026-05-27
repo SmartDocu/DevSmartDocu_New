@@ -235,6 +235,18 @@ def list_datas(
             for r in rows:
                 r["connectnm"] = cmap.get(r.get("connectid"), "")
 
+    if datasourcecd == "api" and rows:
+        conn_uids = list({r["connuid"] for r in rows if r.get("connuid")})
+        if conn_uids:
+            api_conns = (
+                sb.schema(SUPABASE_SCHEMA).table("connectors")
+                .select("connuid, connnm").in_("connuid", conn_uids)
+                .execute().data or []
+            )
+            cmap = {c["connuid"]: c["connnm"] for c in api_conns}
+            for r in rows:
+                r["connnm"] = cmap.get(r.get("connuid"), "")
+
     rows.sort(key=lambda r: (
         (r.get("projectnm") or "").lower(),
         (r.get("connectnm") or "").lower(),
@@ -363,6 +375,8 @@ def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
 def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
     record = {
         "projectid": body.projectid,
         "datanm":    body.datanm,
@@ -370,6 +384,7 @@ def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token)):
         "connuid":   body.connuid,
         "endpoint":  body.endpoint,
         "useyn":     body.useyn,
+        "tenantid":  tenantid,
     }
     if body.datauid:
         sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
@@ -681,6 +696,18 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
         )
 
         full_url = baseurl.rstrip("/") + ("" if endpoint.startswith("/") else "/") + endpoint
+
+        import sys
+        print(f"[datacols/create] authtype={authtype}, cred_keys={list(cred.keys())}, secret_keys={list(secrets.keys())}, full_url={full_url}", file=sys.stderr)
+
+        if authtype == "OAUTH2":
+            print(f"[datacols/create] OAuth2 token_endpoint={cred.get('token_endpoint')}, client_id={cred.get('oauth_client_id')}, has_secret={bool(secrets.get('oauth_client_secret'))}", file=sys.stderr)
+            if not cred.get("token_endpoint"):
+                raise HTTPException(status_code=400, detail="OAuth2 Token Endpoint가 설정되지 않았습니다. 커넥터 설정을 확인하세요.")
+            if not cred.get("oauth_client_id"):
+                raise HTTPException(status_code=400, detail="OAuth2 Client ID가 설정되지 않았습니다.")
+            if not secrets.get("oauth_client_secret"):
+                raise HTTPException(status_code=400, detail="OAuth2 Client Secret이 설정되지 않았습니다. 커넥터 저장 시 Secret을 다시 입력하세요.")
 
         from utilsPrj.api_helper import call_api_for_data
         result = call_api_for_data(

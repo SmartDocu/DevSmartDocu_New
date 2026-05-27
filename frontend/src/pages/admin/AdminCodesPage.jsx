@@ -17,6 +17,7 @@ const EMPTY_CODE = {
   default_name: '',
   orderno: '',
   useyn: true,
+  is_default: false,
 }
 
 export default function AdminCodesPage() {
@@ -63,6 +64,7 @@ export default function AdminCodesPage() {
       default_name: code.default_name || '',
       orderno: code.orderno ?? '',
       useyn: code.useyn ?? true,
+      is_default: code.is_default ?? false,
     })
   }
 
@@ -143,6 +145,7 @@ export default function AdminCodesPage() {
                   <th>{t('thd.default_name_thd')}</th>
                   <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
                   <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: 60, textAlign: 'center' }}>{t('lbl.is_default_lbl')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,6 +165,7 @@ export default function AdminCodesPage() {
                     <td>{code.default_name}</td>
                     <td style={{ textAlign: 'center' }}>{code.orderno}</td>
                     <td style={{ textAlign: 'center' }}>{code.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{code.is_default ? '✔' : ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -227,6 +231,15 @@ export default function AdminCodesPage() {
               type="checkbox"
               checked={!!form.useyn}
               onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="code-is-default">{t('lbl.is_default_lbl')}:</label>
+            <input
+              id="code-is-default"
+              type="checkbox"
+              checked={!!form.is_default}
+              onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))}
             />
           </div>
         </div>

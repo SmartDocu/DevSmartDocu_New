@@ -292,6 +292,62 @@ def _verify_connector(sb, connuid: str, tenantid) -> None:
         raise HTTPException(status_code=404, detail="커넥터를 찾을 수 없습니다.")
 
 
+class InlineHealthRequest(BaseModel):
+    baseurl: str
+    health: str
+    health_method: str = "GET"
+
+@router.post("/test-health-inline")
+def test_health_inline(body: InlineHealthRequest, token: str = Depends(get_token)):
+    from utilsPrj.api_helper import call_no_auth
+    return call_no_auth(_build_url(body.baseurl, body.health), body.health_method)
+
+
+class InlineAuthRequest(BaseModel):
+    baseurl: str
+    authtest: str
+    authtest_method: str = "GET"
+    authtype: str = "NONE"
+    api_key_name: Optional[str] = None
+    api_key_locationcd: Optional[str] = "header"
+    api_key_value: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    oauth_client_id: Optional[str] = None
+    oauth_client_secret: Optional[str] = None
+    token_endpoint: Optional[str] = None
+    grant_type: Optional[str] = "client_credentials"
+    scope: Optional[str] = None
+    authorization_type: Optional[str] = "Bearer"
+
+@router.post("/test-auth-inline")
+def test_auth_inline(body: InlineAuthRequest, token: str = Depends(get_token)):
+    url = _build_url(body.baseurl, body.authtest)
+    method = body.authtest_method
+    from utilsPrj import api_helper as ah
+
+    if body.authtype == "NONE":
+        return ah.call_no_auth(url, method)
+    if body.authtype == "API_KEY":
+        if not body.api_key_value:
+            raise HTTPException(status_code=400, detail="API Key가 설정되지 않았습니다.")
+        return ah.call_api_key(url, method, body.api_key_name or "", body.api_key_value, body.api_key_locationcd or "header")
+    if body.authtype == "BASIC":
+        if not body.username or not body.password:
+            raise HTTPException(status_code=400, detail="Username 또는 Password가 설정되지 않았습니다.")
+        return ah.call_basic_auth(url, method, body.username, body.password)
+    if body.authtype == "OAUTH2":
+        if not body.oauth_client_id or not body.oauth_client_secret:
+            raise HTTPException(status_code=400, detail="OAuth2 Client ID/Secret이 설정되지 않았습니다.")
+        if not body.token_endpoint:
+            raise HTTPException(status_code=400, detail="Token Endpoint가 설정되지 않았습니다.")
+        return ah.call_oauth2(url, method, body.token_endpoint, body.oauth_client_id, body.oauth_client_secret,
+                              grant_type=body.grant_type or "client_credentials",
+                              scope=body.scope,
+                              authorization_type=body.authorization_type or "Bearer")
+    raise HTTPException(status_code=400, detail=f"지원하지 않는 인증 방식: {body.authtype}")
+
+
 @router.post("/{connuid}/test-health")
 def test_health(connuid: str, token: str = Depends(get_token)):
     sb   = _sb(token)
