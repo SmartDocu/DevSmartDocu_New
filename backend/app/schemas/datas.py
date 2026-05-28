@@ -3,8 +3,8 @@ from pydantic import BaseModel
 
 
 class DbConnectorItem(BaseModel):
-    connectid: int
-    connectnm: str
+    connuid: str
+    connnm: str
 
 
 class DbConnectorsResponse(BaseModel):
@@ -17,7 +17,7 @@ class DataItem(BaseModel):
     projectnm: Optional[str] = None
     datanm: Optional[str] = None
     datasourcecd: Optional[str] = None
-    connectid: Optional[str] = None
+    connuid: Optional[str] = None
     connectnm: Optional[str] = None
     query: Optional[str] = None
     querybasis: Optional[str] = None
@@ -84,7 +84,7 @@ class DbDataSaveRequest(BaseModel):
     projectid: int
     datanm: str
     desc: Optional[str] = None
-    connectid: Optional[int] = None
+    connuid: Optional[str] = None
     query: Optional[str] = None
     databasiscd: Optional[str] = None
     querybasis: Optional[str] = None

@@ -90,7 +90,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       if (ex.displaytype !== undefined) setSelectedDisplayType(ex.displaytype || '')
       if (ex.gptq !== undefined)        setPromptText(ex.gptq || '')
     }).catch((e) => {
-      const detail = e.response?.data?.detail || e.message || '알 수 없는 오류'
+      const detail = e.response?.data?.detail || e.message || t('msg.unknown.error')
       message.error(`${t('msg.init.load.error')}: ${detail}`)
     })
       .finally(() => setInitLoading(false))

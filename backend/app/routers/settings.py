@@ -13,7 +13,7 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
-DB_TYPES = ["MSSQL", "SUPABASE", "ORACLE"]
+DB_TYPES = ["Oracle", "Oracle(TNS)", "mssql", "postgres", "supabase"]
 BILLING_MODELS = ["Fr", "Pr", "Te", "En"]
 
 
@@ -77,8 +77,26 @@ def _save_iconfile(sb, file: UploadFile, folder: str, existing_url: Optional[str
 
 
 # ══════════════════════════════════════════════════════
-#  SERVERS (dbconnectors)
+#  SERVERS (connectors, conntype='db')
 # ══════════════════════════════════════════════════════
+
+def _parse_secret(secret_json: Optional[str]) -> dict:
+    if not secret_json:
+        return {}
+    try:
+        return json.loads(secret_json) or {}
+    except Exception:
+        return {}
+
+
+def _build_db_secret(body, existing_json: Optional[str]) -> Optional[str]:
+    existing = _parse_secret(existing_json)
+    if body.username is not None:
+        existing["username"] = body.username
+    if body.password:
+        existing["password"] = body.password
+    return json.dumps(existing) if existing else None
+
 
 @router.get("/servers")
 def list_servers(token: str = Depends(get_token)):
@@ -86,24 +104,35 @@ def list_servers(token: str = Depends(get_token)):
     sb = _sb(token)
     tenantid = _get_tenantid(sb, user.id)
 
-    rows = sb.schema(SUPABASE_SCHEMA).table("dbconnectors").select("*").eq("tenantid", tenantid).order("orderno").execute().data or []
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("connectors")
+        .select("*").eq("tenantid", tenantid).eq("conntype", "db")
+        .order("createdts").execute().data or []
+    )
     for row in rows:
-        row["decendpoint"] = _decrypt(row.get("encendpoint", ""))
-        row["decdatabase"] = _decrypt(row.get("encaccessdb", ""))
-        row["decuserid"] = _decrypt(row.get("encaccessuserid", ""))
+        s = _parse_secret(row.get("secret_path"))
+        row["username"] = s.get("username", "")
+        row.pop("secret_path", None)
 
     return {"connectors": rows, "dbtypes": DB_TYPES}
 
 
 class ServerSaveRequest(BaseModel):
-    connectid: Optional[int] = None
-    connectnm: str
-    connecttype: str
-    orderno: Optional[int] = None
+    connuid: Optional[str] = None
+    connnm: str
+    dbtype: str
+    server: Optional[str] = None
+    port: Optional[str] = None
+    db: Optional[str] = None
+    ssl_mode: bool = False
+    service_name: Optional[str] = None
+    sid: Optional[str] = None
+    tns: Optional[str] = None
+    timeout: Optional[int] = None
+    retry_count: Optional[int] = None
+    desc: Optional[str] = None
     useyn: bool = True
-    encendpoint: str = ""
-    encdatabase: str = ""
-    encaccessuserid: str = ""
+    username: Optional[str] = None
     password: Optional[str] = None
 
 
@@ -113,36 +142,59 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
     sb = _sb(token)
     tenantid = _get_tenantid(sb, user.id)
 
-    update_fields = {
-        "connectnm": body.connectnm,
-        "connecttype": body.connecttype,
-        "orderno": body.orderno,
-        "useyn": body.useyn,
-        "encendpoint": _encrypt(body.encendpoint),
-    }
-    if body.encdatabase:
-        update_fields["encaccessdb"] = _encrypt(body.encdatabase)
-    if body.encaccessuserid:
-        update_fields["encaccessuserid"] = _encrypt(body.encaccessuserid)
-    if body.password:
-        update_fields["encaccesspassword"] = _encrypt(body.password)
-
-    if body.connectid:
-        existing = sb.schema(SUPABASE_SCHEMA).table("dbconnectors").select("connectid").eq("connectid", body.connectid).execute().data
+    if body.connuid:
+        existing = (
+            sb.schema(SUPABASE_SCHEMA).table("connectors")
+            .select("connuid, secret_path").eq("connuid", body.connuid).execute().data
+        )
         if existing:
-            sb.schema(SUPABASE_SCHEMA).table("dbconnectors").update(update_fields).eq("connectid", body.connectid).execute()
+            existing_secret = existing[0].get("secret_path")
+            update_fields = {
+                "connnm": body.connnm,
+                "dbtype": body.dbtype,
+                "server": body.server,
+                "port": body.port,
+                "db": body.db,
+                "ssl_mode": body.ssl_mode,
+                "service_name": body.service_name,
+                "sid": body.sid,
+                "tns": body.tns,
+                "timeout": body.timeout,
+                "retry_count": body.retry_count,
+                "desc": body.desc,
+                "useyn": body.useyn,
+                "secret_path": _build_db_secret(body, existing_secret),
+            }
+            sb.schema(SUPABASE_SCHEMA).table("connectors").update(update_fields).eq("connuid", body.connuid).execute()
             return {"status": "updated"}
 
-    update_fields["tenantid"] = tenantid
-    update_fields["creator"] = user.id
-    sb.schema(SUPABASE_SCHEMA).table("dbconnectors").insert(update_fields).execute()
+    insert_fields = {
+        "connnm": body.connnm,
+        "conntype": "db",
+        "dbtype": body.dbtype,
+        "server": body.server,
+        "port": body.port,
+        "db": body.db,
+        "ssl_mode": body.ssl_mode,
+        "service_name": body.service_name,
+        "sid": body.sid,
+        "tns": body.tns,
+        "timeout": body.timeout,
+        "retry_count": body.retry_count,
+        "desc": body.desc,
+        "useyn": body.useyn,
+        "secret_path": _build_db_secret(body, None),
+        "tenantid": tenantid,
+        "creator": str(user.id),
+    }
+    sb.schema(SUPABASE_SCHEMA).table("connectors").insert(insert_fields).execute()
     return {"status": "inserted"}
 
 
-@router.delete("/servers/{connectid}")
-def delete_server(connectid: int, token: str = Depends(get_token)):
+@router.delete("/servers/{connuid}")
+def delete_server(connuid: str, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("dbconnectors").delete().eq("connectid", connectid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("connectors").delete().eq("connuid", connuid).execute()
     return {"status": "ok"}
 
 

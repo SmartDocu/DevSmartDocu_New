@@ -1,18 +1,39 @@
+import json
 import os
+import time
 import pyodbc
 from supabase import create_client
 from decimal import Decimal
 import pandas as pd
 
-# from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 from utilsPrj.supabase_client import get_supabase, SUPABASE_SCHEMA
-from utilsPrj.crypto_helper import decrypt_value, encrypt_value
 import re
 from sqlalchemy import create_engine
 import urllib
 import oracledb
 
-def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
+
+def _get_connector(supabase, connuid):
+    resp = (
+        supabase.schema(SUPABASE_SCHEMA)
+        .table("connectors").select("*")
+        .eq("connuid", connuid).execute()
+    )
+    if not resp.data:
+        raise ValueError(f"커넥터를 찾을 수 없습니다: {connuid}")
+    connector = resp.data[0]
+    secret = {}
+    if connector.get("secret_path"):
+        try:
+            secret = json.loads(connector["secret_path"])
+        except Exception:
+            pass
+    connector["_username"] = secret.get("username", "")
+    connector["_password"] = secret.get("password", "")
+    return connector
+
+
+def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all=None):
     Datas_resp = (
         supabase.schema(SUPABASE_SCHEMA)
         .table("datas")
@@ -21,41 +42,45 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         .execute()
     )
 
-    connectid = Datas_resp.data[0]['connectid']
+    connuid = Datas_resp.data[0]['connuid']
     query = Datas_resp.data[0]['query']
 
-    dbconnectors_resp = (
+    connectors_resp = (
         supabase.schema(SUPABASE_SCHEMA)
-        .table("dbconnectors")
-        .select("*")
-        .eq("connectid", connectid)
+        .table("connectors")
+        .select("dbtype")
+        .eq("connuid", connuid)
         .execute()
     )
-    connecttype = dbconnectors_resp.data[0]['connecttype']
+    dbtype = connectors_resp.data[0]['dbtype']
+
+    is_oracle = dbtype in ("Oracle", "Oracle(TNS)")
 
     # 마스터 팝업용, 전체 데이터 필요
     if all:
-        if connecttype == "MSSQL":
-            return process_data_db_mssql(request, query, connectid)
+        if dbtype == "mssql":
+            return process_data_db_mssql(request, query, connuid)
 
-        elif connecttype == "SUPABASE":
+        elif dbtype == "supabase":
             query_str = str(query)
             is_rpc = ".rpc(" in query_str
 
             if is_rpc:
-                # 🔑 RPC: @변수는 더미값으로 치환
                 if "@" in query_str:
                     query_str = replace_rpc_vars_with_dummy(query_str)
 
             query = query_str
-            return process_data_db_supabase(request, query, connectid)
-        
-        elif connecttype == "ORACLE":
-            return process_data_db_oracle(request, query, connectid)
-    
+            return process_data_db_supabase(request, query, connuid)
+
+        elif is_oracle:
+            return process_data_db_oracle(request, query, connuid)
+
+        elif dbtype == "postgres":
+            return process_data_db_postgres(request, query, connuid)
+
     # docid, gendoc_uid 둘다 None ==> db 데이터(master/datas_db/)화면
     if docid is None and gendoc_uid is None:
-        if connecttype == "MSSQL":
+        if dbtype == "mssql":
             pattern = re.compile(r"^\s*SELECT\s+(TOP\s+\d+)?", re.IGNORECASE)
             match = pattern.match(query)
 
@@ -67,14 +92,13 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
                     flags=re.IGNORECASE
                 )
 
-            return process_data_db_mssql(request, query, connectid, sampleyn=True)
+            return process_data_db_mssql(request, query, connuid, sampleyn=True)
 
-        elif connecttype == "SUPABASE":
+        elif dbtype == "supabase":
             query_str = str(query)
             is_rpc = ".rpc(" in query_str
 
             if is_rpc:
-                # 🔑 RPC: @변수는 더미값으로 치환
                 if "@" in query_str:
                     query_str = replace_rpc_vars_with_dummy(query_str)
 
@@ -86,9 +110,9 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
                         query_str += ".limit(5)"
 
             query = query_str
-            return process_data_db_supabase(request, query, connectid, sampleyn=True)
-        
-        elif connecttype == "ORACLE":
+            return process_data_db_supabase(request, query, connuid, sampleyn=True)
+
+        elif is_oracle:
             if "fetch first" not in query.lower():
                 query = f"""
                 SELECT *
@@ -97,14 +121,17 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
                 )
                 FETCH FIRST 5 ROWS ONLY
                 """
-            return process_data_db_oracle(request, query, connectid, sampleyn=True)
+            return process_data_db_oracle(request, query, connuid, sampleyn=True)
+
+        elif dbtype == "postgres":
+            return process_data_db_postgres(request, query, connuid, sampleyn=True)
 
     # docid는 있고 gendoc_uid만 None ==> 마스터 셋팅 화면
     if docid is not None and gendoc_uid is None:
         docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
         df_dtls = pd.DataFrame(docparamdtls_resp.data)
-    
+
         docparams_resp = supabase.schema(SUPABASE_SCHEMA).table("docparams") \
             .select("paramuid, samplevalue, operator").eq("docid", docid).execute()
 
@@ -119,18 +146,15 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # docid는 None, gendoc_uid만 있음 ==> 실제 문서 실행 화면
     elif docid is None and gendoc_uid is not None:
-        # 1. gendoc_uid → docid
         gendocs_resp = supabase.schema(SUPABASE_SCHEMA).table("gendocs") \
             .select("docid").eq("gendocuid", gendoc_uid).single().execute()
 
         docid = gendocs_resp.data["docid"]
 
-        # 2. docparamdtls
         docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
-        df_dtls = pd.DataFrame(docparamdtls_resp.data)   # jeff
+        df_dtls = pd.DataFrame(docparamdtls_resp.data)
 
-        # 3. gendoc_params (value)
         gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
             .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
         df_gendoc = pd.DataFrame(gendoc_params_resp.data)
@@ -142,7 +166,6 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         else:
             df_dtls["value"] = None
 
-        # 4. docparams (operator)
         docparams_resp = supabase.schema(SUPABASE_SCHEMA).table("docparams") \
             .select("paramuid, operator").eq("docid", docid).execute()
         df_params = pd.DataFrame(docparams_resp.data)
@@ -153,7 +176,6 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         else:
             df_dtls["operator"] = "="
 
-        # 5. 최종 컬럼 (파라미터가 없으면 빈 DataFrame 유지)
         if not df_dtls.empty and "querycolnm" in df_dtls.columns:
             df_dtls = df_dtls[["querycolnm", "value", "operator"]].dropna(subset=["value"])
         else:
@@ -164,8 +186,7 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
 
     # ===== DB 타입별 실행 =====
 
-    # 🔹 MSSQL
-    if connecttype == "MSSQL":
+    if dbtype == "mssql":
         where_clauses = []
 
         for _, row in df_dtls.iterrows():
@@ -184,37 +205,30 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         else:
             final_query = f"SELECT * FROM ({query}) x"
 
-        return process_data_db_mssql(request, final_query, connectid)
+        return process_data_db_mssql(request, final_query, connuid)
 
-    # 🔹 SUPABASE
-    elif connecttype == "SUPABASE":
+    elif dbtype == "supabase":
         query_str = str(query)
         is_rpc = ".rpc(" in query_str
 
         if is_rpc:
-            # 🔹 RPC 호출 시 df_dtls → 파라미터 매핑
             rpc_params = {}
             for _, row in df_dtls.iterrows():
                 col = row["querycolnm"]
                 val = row["value"]
                 rpc_params[col] = val
 
-            # @변수 치환이 필요하면 더미값 적용
             if "@" in query_str:
                 query_str = replace_rpc_vars_with_dummy(query_str)
 
-            # eval에서 실행
-            query_to_execute = query_str
-            return process_data_db_supabase(request, query_to_execute, connectid, sampleyn=False)
+            return process_data_db_supabase(request, query_str, connuid, sampleyn=False)
 
         else:
             query_str = str(query)
-            
-            # ✅ execute 제거
+
             if ".execute()" in query_str:
                 query_str = query_str.replace(".execute()", "")
 
-            # ✅ select "*" 보장
             if ".select(" not in query_str:
                 query_str += '.select("*")'
             elif '.select("' in query_str and '*' not in query_str:
@@ -239,12 +253,11 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
                 elif op == "<=":
                     query_str += f".lte('{col}', {val})"
 
-            # ✅ 마지막에 실행
             query_str += ".execute()"
 
-            return process_data_db_supabase(request, query_str, connectid, sampleyn=False)
+            return process_data_db_supabase(request, query_str, connuid, sampleyn=False)
 
-    elif connecttype == "ORACLE":
+    elif is_oracle:
         where_clauses = []
 
         for _, row in df_dtls.iterrows():
@@ -263,61 +276,77 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         else:
             final_query = f"SELECT * FROM ({query}) x"
 
-        return process_data_db_oracle(request, final_query, connectid)
+        return process_data_db_oracle(request, final_query, connuid)
+
+    elif dbtype == "postgres":
+        where_clauses = []
+
+        for _, row in df_dtls.iterrows():
+            col = row["querycolnm"]
+            val = row["value"]
+            op = row.get("operator", "=")
+
+            if isinstance(val, str):
+                val = f"'{val}'"
+
+            where_clauses.append(f"x.{col} {op} {val}")
+
+        if where_clauses:
+            where_sql = " AND ".join(where_clauses)
+            final_query = f"SELECT * FROM ({query}) x WHERE {where_sql}"
+        else:
+            final_query = f"SELECT * FROM ({query}) x"
+
+        return process_data_db_postgres(request, final_query, connuid)
 
     else:
-        raise ValueError(f"지원하지 않는 DB 타입입니다: {connecttype}")
+        raise ValueError(f"지원하지 않는 DB 타입입니다: {dbtype}")
 
 
-def process_data_db_mssql(request, query, connectid, sampleyn = None):
-    config = process_data_connect_mssql(request, connectid)
+def process_data_db_mssql(request, query, connuid, sampleyn=None):
+    config, retry_count = process_data_connect_mssql(request, connuid)
     conn_str = ";".join([f"{k}={v}" for k, v in config.items()])
 
-    conn = pyodbc.connect(conn_str)
-
-    df = pd.read_sql_query(query, conn)
-
-    conn.close()
-
-    # sampleyn이 True이면 반환되는 DataFrame 상위 5개만
-    if sampleyn:
-        df = df.head(5)
-    
-    return df
-
-
-def process_data_connect_mssql(request, connectid):
-    supabase = get_supabase(request)
-
-    dbconnectors_resp = supabase.schema(SUPABASE_SCHEMA).table("dbconnectors").select("*").eq("connectid", connectid).execute()
-    dbconnectors = dbconnectors_resp.data if dbconnectors_resp.data else []
-
-    for connector in dbconnectors:
+    last_err = None
+    for attempt in range(max(retry_count, 1)):
         try:
-            # 복호화 처리 (값이 존재할 경우에만)
-            connector["decendpoint"] = decrypt_value(connector.get("encendpoint", "")) if connector.get("encendpoint") else ""
-            connector["decdatabase"] = decrypt_value(connector.get("encaccessdb", "")) if connector.get("encaccessdb") else ""
-            connector["decuserid"] = decrypt_value(connector.get("encaccessuserid", "")) if connector.get("encaccessuserid") else ""
-            connector["decpassword"] = decrypt_value(connector.get("encaccesspassword", "")) if connector.get("encaccesspassword") else ""
+            conn = pyodbc.connect(conn_str)
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            if sampleyn:
+                df = df.head(5)
+            return df
         except Exception as e:
-            connector["decendpoint"] = connector["decdatabase"] = connector["decuserid"] = connector["decpassword"] = ""
+            last_err = e
+            if attempt < retry_count - 1:
+                time.sleep(1)
+    raise last_err
 
-    return {
+
+def process_data_connect_mssql(request, connuid):
+    connector = _get_connector(get_supabase(request), connuid)
+    timeout = int(connector.get("timeout") or 15)
+    retry_count = int(connector.get("retry_count") or 1)
+
+    params = {
         "DRIVER": "ODBC Driver 17 for SQL Server",
-        "SERVER": connector["decendpoint"],
-        "DATABASE": connector["decdatabase"],
-        "UID": connector["decuserid"],
-        "PWD": connector["decpassword"],
+        "SERVER": connector.get("server") or "",
+        "DATABASE": connector.get("db") or "",
+        "UID": connector["_username"],
+        "PWD": connector["_password"],
+        "Connection Timeout": str(timeout),
     }
+    if connector.get("ssl_mode"):
+        params["Encrypt"] = "yes"
+        params["TrustServerCertificate"] = "yes"
+
+    return params, retry_count
 
 
-def process_data_db_supabase(request, query, connectid, sampleyn = None):
-    # supabase = get_supabase(request)
-    config = process_data_connect_supabase(request, connectid)
+def process_data_db_supabase(request, query, connuid, sampleyn=None):
+    config = process_data_connect_supabase(request, connuid)
     supabase = create_client(config["url"], config["key"])
-    
-    # 안전하게 supabase 객체만 노출
-    # eval할 때 supabase만 사용할 수 있도록 locals 제한
+
     try:
         response = eval(query, {"supabase": supabase})
     except Exception as e:
@@ -333,71 +362,47 @@ def process_data_db_supabase(request, query, connectid, sampleyn = None):
 
     df = pd.DataFrame(data)
 
-    # sampleyn이 True이면 상위 5개만 반환
     if sampleyn:
         df = df.head(5)
 
     return df
 
-def process_data_connect_supabase(request, connectid):
-    supabase = get_supabase(request)
 
-    dbconnectors_resp = supabase.schema(SUPABASE_SCHEMA).table("dbconnectors").select("*").eq("connectid", connectid).execute()
-    dbconnectors = dbconnectors_resp.data if dbconnectors_resp.data else []
-
-    for connector in dbconnectors:
-        try:
-            # 복호화 처리 (값이 존재할 경우에만)
-            connector["decendpoint"] = decrypt_value(connector.get("encendpoint", "")) if connector.get("encendpoint") else ""
-            connector["decpassword"] = decrypt_value(connector.get("encaccesspassword", "")) if connector.get("encaccesspassword") else ""
-        except Exception as e:
-            connector["decendpoint"] = connector["decpassword"] = ""
-
+def process_data_connect_supabase(request, connuid):
+    connector = _get_connector(get_supabase(request), connuid)
     return {
-        "url": connector["decendpoint"],
-        "key": connector["decpassword"]
+        "url": connector.get("server") or "",
+        "key": connector["_password"],
     }
 
-def extract_query_vars(query_str):
-    """
-    query 문자열에서 @변수명 목록 추출
-    """
-    return set(re.findall(r'@(\w+)', query_str))
 
-def replace_rpc_vars_with_dummy(query_str, dummy_value="'ALL'"):
-    """
-    RPC 쿼리에서 @변수들을 전부 더미 값으로 치환
-    """
-    vars_found = extract_query_vars(query_str)
+def process_data_db_oracle(request, query, connuid, sampleyn=None):
+    config = process_data_connect_oracle(request, connuid)
 
-    for var in vars_found:
-        query_str = re.sub(
-            rf'@{var}\b',
-            dummy_value,
-            query_str
-        )
-
-    return query_str
-
-def process_data_db_oracle(request, query, connectid, sampleyn=None):
-    config = process_data_connect_oracle(request, connectid)
-    
     user = config["USER"]
     pwd = config["PWD"]
-    dsn = config["DSN"]   # 예: localhost:1521/XEPDB1
+    dsn = config["DSN"]
+    timeout = config["timeout"]
+    retry_count = config["retry_count"]
 
-    try:
-        # 🔹 raw connection 사용
+    is_tns_descriptor = dsn.strip().startswith("(")
+    if is_tns_descriptor:
+        # full TNS descriptor: ConnectParams 없이 직접 연결
         conn = oracledb.connect(user=user, password=pwd, dsn=dsn)
-        cur = conn.cursor()
-        cur.execute(query)
-        rows = cur.fetchall()
-        cols = [col[0] for col in cur.description]
-        df = pd.DataFrame(rows, columns=cols)
-        cur.close()
-        conn.close()
-    except Exception as e:
-        return None
+    else:
+        params = oracledb.ConnectParams(
+            tcp_connect_timeout=timeout,
+            retry_count=retry_count,
+            retry_delay=1,
+        )
+        conn = oracledb.connect(user=user, password=pwd, dsn=dsn, params=params)
+    cur = conn.cursor()
+    cur.execute(query)
+    rows = cur.fetchall()
+    cols = [col[0] for col in cur.description]
+    df = pd.DataFrame(rows, columns=cols)
+    cur.close()
+    conn.close()
 
     if sampleyn:
         df = df.head(5)
@@ -405,29 +410,79 @@ def process_data_db_oracle(request, query, connectid, sampleyn=None):
     return df
 
 
-def process_data_connect_oracle(request, connectid):
-    supabase = get_supabase(request)
+def process_data_connect_oracle(request, connuid):
+    connector = _get_connector(get_supabase(request), connuid)
+    dbtype = connector.get("dbtype", "Oracle")
 
-    resp = (
-        supabase.schema(SUPABASE_SCHEMA)
-        .table("dbconnectors")
-        .select("*")
-        .eq("connectid", connectid)
-        .execute()
-    )
-
-    connector = resp.data[0]
-
-    try:
-        endpoint = decrypt_value(connector.get("encendpoint", ""))
-        user = decrypt_value(connector.get("encaccessuserid", ""))
-        password = decrypt_value(connector.get("encaccesspassword", ""))
-    except Exception:
-        endpoint = user = password = ""
+    if dbtype == "Oracle(TNS)":
+        dsn = connector.get("tns") or ""
+    else:
+        server  = connector.get("server") or ""
+        port    = connector.get("port") or "1521"
+        service = connector.get("service_name") or connector.get("sid") or ""
+        dsn = f"{server}:{port}/{service}"
 
     return {
-        "DSN": endpoint,   # 예: host:1521/ORCLPDB1
-        "USER": user,
-        "PWD": password
+        "DSN":      dsn,
+        "USER":     connector["_username"],
+        "PWD":      connector["_password"],
+        "timeout":  int(connector.get("timeout") or 15),
+        "retry_count": int(connector.get("retry_count") or 1),
     }
 
+
+def process_data_db_postgres(request, query, connuid, sampleyn=None):
+    config = process_data_connect_postgres(request, connuid)
+    retry_count = config["retry_count"]
+
+    last_err = None
+    for attempt in range(max(retry_count, 1)):
+        engine = None
+        try:
+            engine = create_engine(config["url"], connect_args=config["connect_args"])
+            df = pd.read_sql_query(query, engine)
+            engine.dispose()
+            if sampleyn:
+                df = df.head(5)
+            return df
+        except Exception as e:
+            last_err = e
+            if engine:
+                engine.dispose()
+            if attempt < retry_count - 1:
+                time.sleep(1)
+    raise last_err
+
+
+def process_data_connect_postgres(request, connuid):
+    connector = _get_connector(get_supabase(request), connuid)
+    user        = connector["_username"]
+    pwd         = connector["_password"]
+    server      = connector.get("server") or "localhost"
+    port        = connector.get("port") or "5432"
+    db          = connector.get("db") or ""
+    ssl_mode    = connector.get("ssl_mode")
+    timeout     = int(connector.get("timeout") or 15)
+    retry_count = int(connector.get("retry_count") or 1)
+
+    ssl_param   = "?sslmode=require" if ssl_mode else ""
+    connect_args = {"connect_timeout": timeout}
+    if ssl_mode:
+        connect_args["sslmode"] = "require"
+
+    return {
+        "url":          f"postgresql+psycopg2://{user}:{pwd}@{server}:{port}/{db}{ssl_param}",
+        "connect_args": connect_args,
+        "retry_count":  retry_count,
+    }
+
+
+def extract_query_vars(query_str):
+    return set(re.findall(r'@(\w+)', query_str))
+
+
+def replace_rpc_vars_with_dummy(query_str, dummy_value="'ALL'"):
+    vars_found = extract_query_vars(query_str)
+    for var in vars_found:
+        query_str = re.sub(rf'@{var}\b', dummy_value, query_str)
+    return query_str

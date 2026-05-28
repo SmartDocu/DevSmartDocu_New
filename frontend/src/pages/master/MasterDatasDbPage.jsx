@@ -9,7 +9,7 @@ import {
   useDatacols, useCreateDatacols, useSaveDatacols,
 } from '@/hooks/useDatas'
 
-const EMPTY_FORM = { datauid: '', projectid: '', connectid: '', datanm: '', desc: '', databasiscd: 'dbq', querybasis: '' }
+const EMPTY_FORM = { datauid: '', projectid: '', connuid: '', datanm: '', desc: '', databasiscd: 'dbq', querybasis: '' }
 
 export default function MasterDatasDbPage() {
   const { message } = App.useApp()
@@ -38,7 +38,7 @@ export default function MasterDatasDbPage() {
 
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
-  const menuNm = currentMenu ? (currentMenu.default_text || '') : 'DB 데이터'
+  const menuNm = currentMenu ? (currentMenu.default_text || '') : t('mnu.master_data.data.db')
 
   const { data: datas = [], isLoading } = useDatasDb()
   const { data: projects = [] } = useDatasProjects()
@@ -73,7 +73,7 @@ export default function MasterDatasDbPage() {
     setForm({
       datauid:     row.datauid     || '',
       projectid:   row.projectid   || '',
-      connectid:   row.connectid   || '',
+      connuid:     row.connuid     || '',
       datanm:      row.datanm      || '',
       desc:        row.desc        || '',
       databasiscd: row.databasiscd || 'dbq',
@@ -90,7 +90,7 @@ export default function MasterDatasDbPage() {
   }
 
   const handleSave = () => {
-    if (!form.datanm.trim() || !form.connectid || !form.projectid) {
+    if (!form.datanm.trim() || !form.connuid || !form.projectid) {
       message.warning(t('msg.db.required'))
       return
     }
@@ -98,7 +98,7 @@ export default function MasterDatasDbPage() {
       datauid:     form.datauid || null,
       datanm:      form.datanm,
       desc:        form.desc || null,
-      connectid:   form.connectid ? Number(form.connectid) : null,
+      connuid:     form.connuid || null,
       projectid:   Number(form.projectid),
       databasiscd: form.databasiscd,
       querybasis:  form.querybasis || null,
@@ -230,12 +230,12 @@ export default function MasterDatasDbPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="data-connectid">{t('lbl.connectnm_lbl')}</label>
-            <select id="data-connectid" value={form.connectid}
-              onChange={(e) => setForm(f => ({ ...f, connectid: e.target.value }))}>
+            <label htmlFor="data-connuid">{t('lbl.connectnm_lbl')}</label>
+            <select id="data-connuid" value={form.connuid}
+              onChange={(e) => setForm(f => ({ ...f, connuid: e.target.value }))}>
               <option value="">{t('msg.select.placeholder')}</option>
               {connectors.map((c) => (
-                <option key={c.connectid} value={c.connectid}>{c.connectnm}</option>
+                <option key={c.connuid} value={c.connuid}>{c.connnm}</option>
               ))}
             </select>
           </div>

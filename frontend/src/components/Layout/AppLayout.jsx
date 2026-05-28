@@ -201,9 +201,9 @@ export default function AppLayout() {
           {/* 공개 메뉴 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {[
-                { path: 'service', label: '서비스 소개', icon: <HomeOutlined /> },
-                { path: 'about',   label: '기능 소개',   icon: <InfoCircleOutlined /> },
-                { path: 'usage',   label: '서비스 이용', icon: <ReadOutlined /> },
+                { path: 'service', label: t('mnu.service'), icon: <HomeOutlined /> },
+                { path: 'about',   label: t('mnu.about'),   icon: <InfoCircleOutlined /> },
+                { path: 'usage',   label: t('mnu.usage'),   icon: <ReadOutlined /> },
               ].map(({ path, label, icon }) => (
                 <button
                   key={path}
@@ -235,7 +235,7 @@ export default function AppLayout() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <img
                   src="/doc-select.svg"
-                  alt="문서 선택"
+                  alt={t('ttl.doc.select')}
                   title={t('ttl.doc.select')}
                   onClick={() => setDocModalOpen(true)}
                   style={{ width: 20, height: 20, cursor: 'pointer', filter: 'invert(100%) brightness(250%) contrast(150%)' }}

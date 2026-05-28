@@ -3,18 +3,18 @@ import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAdminUserRoles, useSaveUserRole } from '@/hooks/useAdmin'
 
-const ROLE_OPTIONS = [
-  { value: 1, label: '일반유저' },
-  { value: 5, label: 'Power User' },
-  { value: 7, label: '관리자' },
-]
-
 export default function AdminUserRolePage() {
   const { message } = App.useApp()
   const { data = {}, isLoading, refetch } = useAdminUserRoles()
   const saveMutation = useSaveUserRole()
 
   useLangStore((s) => s.translations)
+
+  const ROLE_OPTIONS = [
+    { value: 1, label: t('cod.rolecd_U') },
+    { value: 5, label: 'Power User' },
+    { value: 7, label: t('cod.rolecd_M') },
+  ]
 
   const [pendingRoles, setPendingRoles] = useState({})
   const [savingUid, setSavingUid] = useState(null)

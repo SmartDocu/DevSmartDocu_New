@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { t } from '@/stores/langStore'
 
 export function useLogin() {
   const navigate = useNavigate()
@@ -16,12 +17,12 @@ export function useLogin() {
         refreshToken: data.refresh_token,
         user: data.user,
       })
-      alert('로그인이 완료되었습니다.')
+      alert(t('msg.login.success'))
       const from = location.state?.from?.pathname || '/'
       navigate(from, { replace: true })
     },
     onError: (err) => {
-      const detail = err.response?.data?.detail || '로그인에 실패했습니다.'
+      const detail = err.response?.data?.detail || t('msg.login.failed')
       alert(detail)
     },
   })
@@ -44,9 +45,9 @@ export function useSendResetEmail() {
   return useMutation({
     mutationFn: (email) =>
       apiClient.post('/auth/send-reset-email', { email }).then((r) => r.data),
-    onSuccess: () => alert('비밀번호 재설정 이메일을 발송했습니다.'),
+    onSuccess: () => alert(t('msg.reset.sent')),
     onError: (err) => {
-      const detail = err.response?.data?.detail || '이메일 발송에 실패했습니다.'
+      const detail = err.response?.data?.detail || t('msg.reset.failed')
       alert(detail)
     },
   })
@@ -58,11 +59,11 @@ export function useRegister() {
   return useMutation({
     mutationFn: (data) => apiClient.post('/auth/register', data).then((r) => r.data),
     onSuccess: () => {
-      alert('회원가입이 완료되었습니다. 로그인해주세요.')
+      alert(t('msg.register.success'))
       navigate('/')
     },
     onError: (err) => {
-      const detail = err.response?.data?.detail || '회원가입에 실패했습니다.'
+      const detail = err.response?.data?.detail || t('msg.register.failed')
       alert(detail)
     },
   })

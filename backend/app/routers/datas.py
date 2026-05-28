@@ -137,9 +137,9 @@ def list_dbconnectors(token: str = Depends(get_token)):
     row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
     tenantid = row[0]["tenantid"] if row else None
     rows = (
-        sb.schema(SUPABASE_SCHEMA).table("dbconnectors")
-        .select("connectid, connectnm")
-        .eq("useyn", True).eq("tenantid", tenantid)
+        sb.schema(SUPABASE_SCHEMA).table("connectors")
+        .select("connuid, connnm")
+        .eq("useyn", True).eq("conntype", "db").eq("tenantid", tenantid)
         .execute().data or []
     )
     return {"connectors": rows}
@@ -224,16 +224,16 @@ def list_datas(
         r["projectnm"] = pmap.get(pid)
 
     if datasourcecd == "db" and rows:
-        cids = list({r["connectid"] for r in rows if r.get("connectid")})
+        cids = list({r["connuid"] for r in rows if r.get("connuid")})
         if cids:
             connectors = (
-                sb.schema(SUPABASE_SCHEMA).table("dbconnectors")
-                .select("connectid, connectnm").in_("connectid", cids)
+                sb.schema(SUPABASE_SCHEMA).table("connectors")
+                .select("connuid, connnm").in_("connuid", cids)
                 .execute().data or []
             )
-            cmap = {c["connectid"]: c["connectnm"] for c in connectors}
+            cmap = {c["connuid"]: c["connnm"] for c in connectors}
             for r in rows:
-                r["connectnm"] = cmap.get(r.get("connectid"), "")
+                r["connectnm"] = cmap.get(r.get("connuid"), "")
 
     if datasourcecd == "api" and rows:
         conn_uids = list({r["connuid"] for r in rows if r.get("connuid")})
@@ -294,7 +294,7 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
         "projectid":   body.projectid,
         "datanm":      body.datanm,
         "desc":        body.desc,
-        "connectid":   body.connectid,
+        "connuid":     body.connuid,
         "databasiscd": body.databasiscd,
         "querybasis":  body.querybasis,
         "query":       query_val,

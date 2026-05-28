@@ -18,7 +18,7 @@ export function useSaveServer() {
     mutationFn: (body) => apiClient.post('/settings/servers', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['settings-servers'] })
-      qc.invalidateQueries({ queryKey: ['datas-dbconnectors'] })
+      qc.invalidateQueries({ queryKey: ['dbconnectors'] })
     },
   })
 }
@@ -26,10 +26,10 @@ export function useSaveServer() {
 export function useDeleteServer() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (connectid) => apiClient.delete(`/settings/servers/${connectid}`).then((r) => r.data),
+    mutationFn: (connuid) => apiClient.delete(`/settings/servers/${connuid}`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['settings-servers'] })
-      qc.invalidateQueries({ queryKey: ['datas-dbconnectors'] })
+      qc.invalidateQueries({ queryKey: ['dbconnectors'] })
     },
   })
 }

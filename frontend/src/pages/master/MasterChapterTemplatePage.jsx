@@ -1031,11 +1031,11 @@ export default function MasterChapterTemplatePage() {
       table: { contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells'] },
       heading: {
         options: [
-          { model: 'paragraph', title: '본문',   class: 'ck-heading_paragraph' },
-          { model: 'heading1',  view: 'h1', title: '제목 1', class: 'ck-heading_heading1' },
-          { model: 'heading2',  view: 'h2', title: '제목 2', class: 'ck-heading_heading2' },
-          { model: 'heading3',  view: 'h3', title: '제목 3', class: 'ck-heading_heading3' },
-          { model: 'heading4',  view: 'h4', title: '제목 4', class: 'ck-heading_heading4' },
+          { model: 'paragraph', title: t('lbl.ckeditor.body_text'),  class: 'ck-heading_paragraph' },
+          { model: 'heading1',  view: 'h1', title: t('lbl.ckeditor.heading1'), class: 'ck-heading_heading1' },
+          { model: 'heading2',  view: 'h2', title: t('lbl.ckeditor.heading2'), class: 'ck-heading_heading2' },
+          { model: 'heading3',  view: 'h3', title: t('lbl.ckeditor.heading3'), class: 'ck-heading_heading3' },
+          { model: 'heading4',  view: 'h4', title: t('lbl.ckeditor.heading4'), class: 'ck-heading_heading4' },
         ],
       },
       fontSize: { options: [9, 10, 11, 13, 14, 16, 20, 24, 28], supportAllValues: true },

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLangStore } from '@/stores/langStore'
+import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useDeactivatePopup } from '@/hooks/usePopups'
 
@@ -99,14 +99,14 @@ export default function PopupManager({ popups = [] }) {
               onClick={() => handleDeactivate(popup)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#999' }}
             >
-              {popup.deactivateday ?? 7}일간 보지 않기
+              {popup.deactivateday ?? 7}{t('lbl.popup.days_hide_suffix')}
             </button>
             <span style={{ color: '#e0e0e0' }}>|</span>
             <button
               onClick={() => handleClose(popup.popupid)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#999' }}
             >
-              닫기
+              {t('btn.close')}
             </button>
           </div>
         </div>

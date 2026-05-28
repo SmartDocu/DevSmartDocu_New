@@ -198,7 +198,7 @@ export default function ReqChaptersReadPage() {
             if (data.type === 'progress' && data.chapter_index && data.chapter_total) {
               if (data.current && data.total) {
                 setChapProgress({
-                  chapterName:  data.chapter_name || `챕터 ${data.chapter_index}`,
+                  chapterName:  data.chapter_name || `${t('lbl.chapter')} ${data.chapter_index}`,
                   chapterIndex: data.chapter_index,
                   chapterTotal: data.chapter_total,
                   current:      data.current,

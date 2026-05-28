@@ -36,7 +36,7 @@ export function useSaveSamplePrompt() {
     mutationFn: (body) => apiClient.post('/admin/sample-prompts', body).then((r) => r.data),
     onSuccess: (data, vars) => {
       if (data.success) {
-        message.success(data.message || '저장되었습니다.')
+        message.success(data.message || t('msg.save.success'))
         qc.invalidateQueries({ queryKey: ['admin-sample-prompts'] })
       }
     },
