@@ -34,12 +34,24 @@ def get_translations(lang_cd: str):
 
     프론트 우선순위: translations[key] → defaults[key] → key 그대로
     """
+    def _fetch_all(query_fn):
+        rows, offset, batch = [], 0, 1000
+        while True:
+            r = query_fn(offset, offset + batch - 1).execute()
+            rows.extend(r.data or [])
+            if len(r.data or []) < batch:
+                break
+            offset += batch
+        return rows
+
     try:
         sb = get_service_client()
         sd = sb.schema(SUPABASE_SCHEMA)
 
         # ui_terms → defaults dict (언어 무관)
-        terms_rows = sd.table("ui_terms").select("term_key,default_text").execute().data or []
+        terms_rows = _fetch_all(
+            lambda s, e: sd.table("ui_terms").select("term_key,default_text").range(s, e)
+        )
         defaults = {
             row["term_key"]: row["default_text"]
             for row in terms_rows
@@ -47,13 +59,12 @@ def get_translations(lang_cd: str):
         }
 
         # ui_term_translations[lang_cd] → translations dict (언어 전용만)
-        trans_rows = (
-            sd.table("ui_term_translations")
+        trans_rows = _fetch_all(
+            lambda s, e: sd.table("ui_term_translations")
             .select("term_key,translated_text")
             .eq("language_cd", lang_cd)
-            .execute()
-            .data
-        ) or []
+            .range(s, e)
+        )
         translations = {
             row["term_key"]: row["translated_text"]
             for row in trans_rows
