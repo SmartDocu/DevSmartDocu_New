@@ -141,7 +141,7 @@ export default function MasterSentencesPage() {
         </div>
       </div>
       <div style={{ marginBottom: 16, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)' }}>
-        {chapternm && <span>{t('lbl.chapternm')}: {chapternm}</span>}
+        {chapternm && <span>{t('thd.chapternm')}: {chapternm}</span>}
         {chapternm && objectnm && <span style={{ margin: '0 14px', color: '#d9d9d9' }}>|</span>}
         {objectnm && <span>{t('lbl.objectnm_lbl')}: {objectnm}</span>}
       </div>

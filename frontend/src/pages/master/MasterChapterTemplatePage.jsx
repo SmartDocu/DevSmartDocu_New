@@ -1257,7 +1257,7 @@ export default function MasterChapterTemplatePage() {
       {/* 챕터 선택 + 버튼 행 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13, color: '#555' }}>{t('lbl.chapternm')}</span>
+          <span style={{ fontSize: 13, color: '#555' }}>{t('thd.chapternm')}</span>
           <Select
             value={chapteruid}
             onChange={(uid) => navigate(`/master/chapter-template?chapteruid=${uid}&docid=${docid || ''}`)}

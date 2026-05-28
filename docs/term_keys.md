@@ -95,7 +95,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 2. msg. (184개)
+## 2. msg. (190개)
 
 | term_key |
 |----------|
@@ -283,6 +283,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.password.confirm.required |
 | msg.ph.sentence.template |
 | msg.no.docid |
+| msg.doc.name.duplicate |
+| msg.doc.no.permission |
+| msg.doc.not.found |
+| msg.ph.tenant.select |
+| msg.project.not.found |
+| msg.required.docid |
 
 ---
 
@@ -359,9 +365,9 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 4. lbl. (197개)
+## 4. lbl. (261개)
 
-### 일반 레이블 (195개)
+### 일반 레이블 (200개)
 
 | term_key |
 |----------|
@@ -394,7 +400,6 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.chapter |
 | lbl.chapter.create.dts |
 | lbl.chapter.no |
-| lbl.chapternm |
 | lbl.chapterno |
 | lbl.chapters |
 | lbl.child_column |
@@ -560,6 +565,12 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.username_lbl |
 | lbl.usernm |
 | lbl.useyn_lbl |
+| lbl.connecttype_lbl |
+| lbl.description |
+| lbl.encaccessuserid |
+| lbl.encdatabase |
+| lbl.encendpoint |
+| lbl.query |
 
 ### lbl.chart 기타 (2개)
 
@@ -568,9 +579,93 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.chart.size |
 | lbl.chart.type_lbl |
 
+### lbl.chart.legendpos (11개)
+
+| term_key |
+|----------|
+| lbl.chart.legendpos.best |
+| lbl.chart.legendpos.center |
+| lbl.chart.legendpos.center_left |
+| lbl.chart.legendpos.center_right |
+| lbl.chart.legendpos.lower_center |
+| lbl.chart.legendpos.lower_left |
+| lbl.chart.legendpos.lower_right |
+| lbl.chart.legendpos.right |
+| lbl.chart.legendpos.upper_center |
+| lbl.chart.legendpos.upper_left |
+| lbl.chart.legendpos.upper_right |
+
+### lbl.chart.linestyle (4개)
+
+| term_key |
+|----------|
+| lbl.chart.linestyle.dash_dot |
+| lbl.chart.linestyle.dashed |
+| lbl.chart.linestyle.dotted |
+| lbl.chart.linestyle.solid |
+
+### lbl.chart.marker (4개)
+
+| term_key |
+|----------|
+| lbl.chart.marker.circle |
+| lbl.chart.marker.diamond |
+| lbl.chart.marker.square |
+| lbl.chart.marker.triangle |
+
+### lbl.chart.prop (37개)
+
+| term_key |
+|----------|
+| lbl.chart.prop.barGap |
+| lbl.chart.prop.barWidth |
+| lbl.chart.prop.bins |
+| lbl.chart.prop.box.categoryField |
+| lbl.chart.prop.box.valueField |
+| lbl.chart.prop.categoryField |
+| lbl.chart.prop.colorPalette |
+| lbl.chart.prop.cutout |
+| lbl.chart.prop.hbar.xField |
+| lbl.chart.prop.hbar.xLabel |
+| lbl.chart.prop.hbar.yField |
+| lbl.chart.prop.hbar.yLabel |
+| lbl.chart.prop.labelField |
+| lbl.chart.prop.legendPosition |
+| lbl.chart.prop.lineStyle |
+| lbl.chart.prop.lineWidth |
+| lbl.chart.prop.marker |
+| lbl.chart.prop.markerSize |
+| lbl.chart.prop.notch |
+| lbl.chart.prop.pareto.labelField |
+| lbl.chart.prop.pareto.yField |
+| lbl.chart.prop.rwidth |
+| lbl.chart.prop.showDataLabels |
+| lbl.chart.prop.showFliers |
+| lbl.chart.prop.showGroupLabels |
+| lbl.chart.prop.showMarkers |
+| lbl.chart.prop.showMeans |
+| lbl.chart.prop.sizeField |
+| lbl.chart.prop.title |
+| lbl.chart.prop.valueField |
+| lbl.chart.prop.valueFormat |
+| lbl.chart.prop.whis |
+| lbl.chart.prop.widths |
+| lbl.chart.prop.xField |
+| lbl.chart.prop.xLabel |
+| lbl.chart.prop.yField |
+| lbl.chart.prop.yLabel |
+
+### lbl.chart.valueformat (3개)
+
+| term_key |
+|----------|
+| lbl.chart.valueformat.percent |
+| lbl.chart.valueformat.value |
+| lbl.chart.valueformat.value_percent |
+
 ---
 
-## 5. thd. (97개)
+## 5. thd. (98개)
 
 | term_key |
 |----------|
@@ -590,6 +685,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.comma |
 | thd.configured_thd |
 | thd.connectnm_thd |
+| thd.connecttype_thd |
 | thd.connnm_thd |
 | thd.createfiledts |
 | thd.createuser |
@@ -763,13 +859,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | prefix | 개수 |
 |--------|------|
 | cod.   | 36   |
-| msg.   | 184  |
+| msg.   | 190  |
 | btn.   | 66   |
-| lbl.   | 197  |
-| thd.   | 97   |
+| lbl.   | 262  |
+| thd.   | 98   |
 | ttl.   | 60   |
 | inf.   | 10   |
-| **합계** | **650** |
+| **합계** | **721** |
 
 
 ---

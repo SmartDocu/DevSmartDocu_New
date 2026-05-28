@@ -339,7 +339,7 @@ export default function ReqChaptersReadPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th style={{ width: '22%' }}>{t('lbl.chapternm')}</th>
+                  <th style={{ width: '22%' }}>{t('thd.chapternm')}</th>
                   <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.createuser')}</th>
                   <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.createfiledts')}</th>
                   <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.new.chapter')}</th>

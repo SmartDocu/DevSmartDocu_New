@@ -159,7 +159,7 @@ export default function MasterChaptersPage() {
           </div>
 
           <div className="form-group">
-            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.chapternm')}:</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('thd.chapternm')}:</label>
             <input
               type="text"
               value={form.chapternm}
