@@ -1,11 +1,15 @@
-import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Spin } from 'antd'
+import { useState, useEffect } from 'react'
+import { App, Select, Spin } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { useReqStore } from '@/stores/reqStore'
+import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
+
+const TODAY = dayjs().format('YYYY-MM-DD')
+const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
 
 function useChapterObjects(genchapteruid) {
   return useQuery({
@@ -37,41 +41,49 @@ function useApplyObjects(genchapteruid) {
   })
 }
 
-const OBJECT_TYPE_SETTING_MAP = {
-  TU: (docid, chapteruid, objectnm) =>
-    `/master/tables?docid=${docid}&chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
-  CU: (docid, chapteruid, objectnm) =>
-    `/master/charts?docid=${docid}&chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
-  SU: (docid, chapteruid, objectnm) =>
-    `/master/sentences?docid=${docid}&chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
-  TA: (docid, chapteruid, objectnm) =>
-    `/master/ai-tables?chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
-  CA: (docid, chapteruid, objectnm) =>
-    `/master/ai-charts?chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
-  SA: (docid, chapteruid, objectnm) =>
-    `/master/ai-sentences?chapteruid=${chapteruid}&objectnm=${encodeURIComponent(objectnm)}`,
-}
-
-const TYPE_TAB_LABEL_KEY = {
-  TU: 'ttl.table.manage',
-  CU: 'ttl.chart.manage',
-  SU: 'ttl.sentence.manage',
-  TA: 'ttl.ai.table.manage',
-  CA: 'ttl.ai.chart.manage',
-  SA: 'ttl.ai.sentence.manage',
-}
-
 export default function ReqChapterObjectsPage() {
   useLangStore((s) => s.translations)
 
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
-  const genchapteruid = searchParams.get('genchapteruid')
+  const editbuttonyn = user?.editbuttonyn === 'Y'
 
-  const { data = {}, isLoading } = useChapterObjects(genchapteruid)
-  const rewriteMutation = useRewriteObject(genchapteruid)
-  const applyMutation = useApplyObjects(genchapteruid)
+  const { activeGendocuid, activeGenchapteruid } = useReqStore()
+
+  // gendoc 목록
+  const { data: gendocsData = {} } = useGendocs(ONE_YEAR_AGO, TODAY, user?.docid)
+  const gendocs = gendocsData.gendocs || []
+
+  // 선택된 gendocuid — mount 시점의 activeGendocuid로 초기화
+  const [selectedGendocuid, setSelectedGendocuid] = useState(activeGendocuid)
+
+  // gendocs 로드 후 선택값 없으면 첫 항목 자동 선택
+  useEffect(() => {
+    if (!gendocs.length || selectedGendocuid) return
+    setSelectedGendocuid(gendocs[0]?.gendocuid)
+  }, [gendocs.length]) // eslint-disable-line
+
+  // req/list에서 gendoc 변경 시 동기화
+  useEffect(() => {
+    if (!activeGendocuid) return
+    setSelectedGendocuid(activeGendocuid)
+  }, [activeGendocuid]) // eslint-disable-line
+
+  // 챕터 목록
+  const { data: chapData = {} } = useGenchapters(selectedGendocuid)
+  const chapters = chapData.chapters || []
+
+  // 선택된 챕터 (로컬)
+  const [selectedGenchapteruid, setSelectedGenchapteruid] = useState(null)
+
+  // gendoc 변경 시 챕터 첫 항목 자동 선택
+  useEffect(() => {
+    if (!chapters.length) { setSelectedGenchapteruid(null); return }
+    setSelectedGenchapteruid(chapters[0]?.genchapteruid)
+  }, [selectedGendocuid, chapters.length]) // eslint-disable-line
+
+  const { data = {}, isLoading } = useChapterObjects(selectedGenchapteruid)
+  const rewriteMutation = useRewriteObject(selectedGenchapteruid)
+  const applyMutation = useApplyObjects(selectedGenchapteruid)
 
   const [selectedRow, setSelectedRow] = useState(null)
   const [loadingText, setLoadingText] = useState('')
@@ -80,34 +92,19 @@ export default function ReqChapterObjectsPage() {
   const {
     objects = [],
     chapternm = '',
-    gendocuid,
-    docid,
-    chapteruid,
     closeyn = false,
   } = data
 
-  const openInTab = useOpenInTab()
+  // chapters-read에서 챕터 선택 시 동기화
+  useEffect(() => {
+    if (!activeGenchapteruid) return
+    setSelectedGenchapteruid(activeGenchapteruid)
+  }, [activeGenchapteruid]) // eslint-disable-line
 
-  const editbuttonyn = user?.editbuttonyn === 'Y'
-  const roleid = user?.roleid
-
-  const handleBack = () => {
-    if (gendocuid) navigate(`/req/chapters-read?gendocs=${gendocuid}`)
-    else navigate('/req/list')
-  }
-
-  const handleObjectSetting = (row) => {
-    const fn = OBJECT_TYPE_SETTING_MAP[row.objecttypecd]
-    if (fn) {
-      const fullPath = fn(docid, row.chapteruid || chapteruid, row.objectnm)
-      const withoutSlash = fullPath.replace(/^\//, '')
-      const sepIdx = withoutSlash.indexOf('?')
-      const routePath = sepIdx >= 0 ? withoutSlash.slice(0, sepIdx) : withoutSlash
-      const query = sepIdx >= 0 ? withoutSlash.slice(sepIdx) : undefined
-      const tabLabel = TYPE_TAB_LABEL_KEY[row.objecttypecd] ? t(TYPE_TAB_LABEL_KEY[row.objecttypecd]) : row.objectnm
-      openInTab(routePath, query, tabLabel)
-    }
-  }
+  // 챕터 변경 시 선택 초기화
+  useEffect(() => {
+    setSelectedRow(null)
+  }, [selectedGenchapteruid])
 
   const handleRewrite = async (row) => {
     setLoadingText(t('msg.loading.object.writing'))
@@ -141,15 +138,28 @@ export default function ReqChapterObjectsPage() {
 
   return (
     <div>
-      {/* 페이지 타이틀 */}
+      {/* 페이지 타이틀 + 셀렉트박스 */}
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('ttl.chapter.objects')}: {chapternm}</div>
+          <div>{t('ttl.chapter.objects')}{chapternm ? `: ${chapternm}` : ''}</div>
         </div>
-        <button type="button" className="btn btn-back" onClick={handleBack}>
-          {t('btn.back')}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Select
+            style={{ width: 240 }}
+            value={selectedGendocuid}
+            onChange={(val) => setSelectedGendocuid(val)}
+            options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
+            placeholder={t('msg.select')}
+          />
+          <Select
+            style={{ width: 200 }}
+            value={selectedGenchapteruid}
+            onChange={(val) => setSelectedGenchapteruid(val)}
+            options={chapters.map((c) => ({ value: c.genchapteruid, label: c.chapternm }))}
+            placeholder={t('msg.select.chapter')}
+          />
+        </div>
       </div>
 
       {/* 메타 정보 */}
@@ -224,18 +234,9 @@ export default function ReqChapterObjectsPage() {
 
         {/* 우측: 항목 내용 */}
         <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 264px)' }}>
-          {/* 소제목 행 + 버튼 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.object.detail')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {selectedRow && roleid === 7 && (
-                <>
-                  <button type="button" className="btn btn-primary" onClick={() => handleObjectSetting(selectedRow)}>
-                    {t('btn.objectconfig')}
-                  </button>
-                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
-                </>
-              )}
               {editbuttonyn && selectedRow && (
                 <button
                   type="button"
@@ -259,7 +260,6 @@ export default function ReqChapterObjectsPage() {
             </div>
           </div>
 
-          {/* 항목 내용 */}
           {selectedRow && (
             <div className="contents" style={{ whiteSpace: 'pre-line' }}>
               {selectedRow.resulttext && selectedRow.resulttext !== 'None' ? (

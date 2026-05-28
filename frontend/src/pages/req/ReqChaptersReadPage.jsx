@@ -1,31 +1,54 @@
 /**
  * ReqChaptersReadPage — 챕터 목록
- * _old_ref/pages/templates/pages/req_chapters_read.html 구조 그대로 반영
  */
-import { useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { App, Spin } from 'antd'
-import { useGenchapters } from '@/hooks/useGendocs'
+import { useRef, useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { App, Select, Spin } from 'antd'
+import dayjs from 'dayjs'
+import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
+import { useReqStore } from '@/stores/reqStore'
+
+const TODAY = dayjs().format('YYYY-MM-DD')
+const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
 
 export default function ReqChaptersReadPage() {
   useLangStore((s) => s.translations)
 
   const { message } = App.useApp()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const gendocuid = searchParams.get('gendocs')
   const { accessToken, user } = useAuthStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
 
-  const { data: chapData = {}, isLoading, refetch } = useGenchapters(gendocuid)
+  const { activeGendocuid, setActiveGenchapteruid } = useReqStore()
+
+  // gendoc 목록
+  const { data: gendocsData = {} } = useGendocs(ONE_YEAR_AGO, TODAY, user?.docid)
+  const gendocs = gendocsData.gendocs || []
+
+  // 선택된 gendocuid — mount 시점의 activeGendocuid로 초기화
+  const [selectedGendocuid, setSelectedGendocuid] = useState(activeGendocuid)
+
+  // gendocs 로드 후 선택값 없으면 첫 항목 자동 선택
+  useEffect(() => {
+    if (!gendocs.length || selectedGendocuid) return
+    setSelectedGendocuid(gendocs[0]?.gendocuid)
+  }, [gendocs.length]) // eslint-disable-line
+
+  // req/list에서 gendoc 변경 시 동기화
+  useEffect(() => {
+    if (!activeGendocuid) return
+    setSelectedGendocuid(activeGendocuid)
+  }, [activeGendocuid]) // eslint-disable-line
+
+  const { data: chapData = {}, isLoading, refetch } = useGenchapters(selectedGendocuid)
   const chapters = chapData.chapters || []
   const gendoc   = chapData.gendoc   || {}
 
   const [selectedChap,    setSelectedChap]    = useState(null)
-  const [viewType,        setViewType]        = useState('auto')   // 'auto' | 'upload'
+  const [viewType,        setViewType]        = useState('auto')
   const [content,         setContent]         = useState(null)
   const [contentLoading,  setContentLoading]  = useState(false)
 
@@ -33,14 +56,18 @@ export default function ReqChaptersReadPage() {
   const [rewriteProgress, setRewriteProgress] = useState('')
   const [uploadLoading,   setUploadLoading]   = useState(false)
 
-  // 전체 로딩 오버레이 (문서 일괄 작성)
   const [loading,       setLoading]       = useState(false)
   const [chapProgress,  setChapProgress]  = useState(null)
-  // chapProgress: { chapterName, chapterIndex, chapterTotal, current, total }
 
   const fileInputRef = useRef(null)
 
   const closeyn = gendoc?.closeyn ?? false
+
+  // gendoc 변경 시 챕터 선택 초기화
+  useEffect(() => {
+    setSelectedChap(null)
+    setContent(null)
+  }, [selectedGendocuid])
 
   // ── 콘텐츠 로드 ─────────────────────────────────────────────────────────────
   const loadContent = async (genchapteruid, type) => {
@@ -63,6 +90,7 @@ export default function ReqChaptersReadPage() {
     setRewriteProgress('')
     loadContent(row.genchapteruid, 'auto')
     sessionStorage.setItem('chapters_read_genchapteruid', row.genchapteruid)
+    setActiveGenchapteruid(row.genchapteruid)
   }
 
   // ── 조회 유형 전환 ───────────────────────────────────────────────────────────
@@ -153,15 +181,15 @@ export default function ReqChaptersReadPage() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
 
-  // ── 문서 일괄 작성 (SSE 인라인) ──────────────────────────────────────────────
+  // ── 문서 일괄 작성 (SSE) ─────────────────────────────────────────────────────
   const handleDocRewrite = () => {
-    if (!gendocuid) return
+    if (!selectedGendocuid) return
     setLoading(true)
     setChapProgress(null)
 
     const results = chapters.map((c) => ({ genchapteruid: c.genchapteruid, mode: 'all' }))
 
-    fetch(`/api/gendocs/${gendocuid}/generate`, {
+    fetch(`/api/gendocs/${selectedGendocuid}/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -194,7 +222,6 @@ export default function ReqChaptersReadPage() {
               return
             }
 
-            // type:'progress' + chapter_index/total/current 있을 때 → 상세 진행 표시
             if (data.type === 'progress' && data.chapter_index && data.chapter_total) {
               if (data.current && data.total) {
                 setChapProgress({
@@ -246,20 +273,11 @@ export default function ReqChaptersReadPage() {
     })
   }
 
-  // ── 뒤로가기 ─────────────────────────────────────────────────────────────────
-  const handleBack = () => {
-    if (sessionStorage.getItem('path') === 'req_doc_status' || sessionStorage.getItem('doc_status_gendocuid')) {
-      navigate(`/req/doc-status?gendocs=${sessionStorage.getItem('doc_status_gendocuid')}`)
-    } else {
-      navigate('/req/list')
-    }
-  }
-
   // ── 렌더 ─────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', overflow: 'hidden' }}>
 
-      {/* 로딩 오버레이 (문서 일괄 작성 / 챕터 재작성) */}
+      {/* 로딩 오버레이 */}
       {(loading || rewriting) && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
@@ -305,11 +323,16 @@ export default function ReqChaptersReadPage() {
       <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('ttl.chapter.list')} - {gendoc.gendocnm || ''}</div>
+          <div>{t('ttl.chapter.list')}</div>
         </div>
-        <button type="button" className="btn btn-back" onClick={handleBack}>
-          {t('btn.back')}
-        </button>
+        {/* 문서 셀렉트박스 */}
+        <Select
+          style={{ width: 280 }}
+          value={selectedGendocuid}
+          onChange={(val) => setSelectedGendocuid(val)}
+          options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
+          placeholder={t('msg.select')}
+        />
       </div>
 
       {/* gendocs 요약 정보 */}
@@ -334,7 +357,6 @@ export default function ReqChaptersReadPage() {
         {/* 좌측: 챕터 목록 + 하단 버튼 */}
         <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
 
-          {/* 테이블 */}
           <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
@@ -373,7 +395,7 @@ export default function ReqChaptersReadPage() {
             </table>
           </div>
 
-          {/* 하단 버튼: 문서 일괄 작성 / 문서 조합 작성 */}
+          {/* 하단 버튼 */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10, flexShrink: 0 }}>
             {editbuttonyn && (
               <button
@@ -388,18 +410,18 @@ export default function ReqChaptersReadPage() {
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => navigate(`/req/write?gendocs=${gendocuid}`)}
+              onClick={() => navigate(`/req/write?gendocs=${selectedGendocuid}`)}
             >
               {t('btn.doc.write.combine')}
             </button>
           </div>
         </div>
 
-        {/* 우측: 챕터 내용 — 행 선택 전에는 내용 숨김 (div는 항상 렌더링) */}
+        {/* 우측: 챕터 내용 */}
         <div style={{ flex: 1, marginLeft: 10, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
           {selectedChap ? (
             <>
-            {/* 조회 유형 카드 2개 */}
+            {/* 조회 유형 카드 */}
             <div className="form-group-left" style={{ justifyContent: 'center', marginBottom: 10, gap: 25, flexShrink: 0 }}>
               <div style={{ width: '48%', textAlign: 'center' }}>
                 <div
@@ -421,7 +443,6 @@ export default function ReqChaptersReadPage() {
 
             {/* 액션 버튼 */}
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10, gap: 8, flexShrink: 0 }}>
-              {/* 왼쪽: 재작성 + 항목관리 */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, flex: 1 }}>
                 {editbuttonyn && (
                   <button
@@ -433,18 +454,10 @@ export default function ReqChaptersReadPage() {
                     {t('btn.chapter.rewrite')}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => navigate(`/req/chapter-objects?genchapteruid=${selectedChap.genchapteruid}`)}
-                >
-                  {t('btn.item.manage')}
-                </button>
               </div>
 
               <span style={{ color: '#d9d9d9', margin: '0 4px', alignSelf: 'center' }}>|</span>
 
-              {/* 오른쪽: 다운로드 + 업로드 */}
               <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 4, flex: 1 }}>
                 <button
                   type="button"

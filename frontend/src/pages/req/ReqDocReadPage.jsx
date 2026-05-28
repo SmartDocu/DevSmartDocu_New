@@ -1,32 +1,52 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Spin, Upload } from 'antd'
+import { Select, Spin, Upload } from 'antd'
+import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useOpenInTab } from '@/hooks/useOpenInTab'
-import { useGendocStatus } from '@/hooks/useGendocs'
+import { useGendocs, useGendocStatus } from '@/hooks/useGendocs'
+import { useReqStore } from '@/stores/reqStore'
+
+const TODAY = dayjs().format('YYYY-MM-DD')
+const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
 
 export default function ReqDocReadPage() {
   useLangStore((s) => s.translations)
 
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const gendocuid = searchParams.get('gendocs')
   const { user } = useAuthStore()
+  const { activeGendocuid } = useReqStore()
+
+  // gendoc 목록
+  const { data: gendocsData = {} } = useGendocs(ONE_YEAR_AGO, TODAY, user?.docid)
+  const gendocs = gendocsData.gendocs || []
+
+  // 선택된 gendocuid — mount 시점의 activeGendocuid로 초기화
+  const [selectedGendocuid, setSelectedGendocuid] = useState(activeGendocuid)
+
+  // gendocs 로드 후 선택값 없으면 첫 항목 자동 선택
+  useEffect(() => {
+    if (!gendocs.length || selectedGendocuid) return
+    setSelectedGendocuid(gendocs[0]?.gendocuid)
+  }, [gendocs.length]) // eslint-disable-line
+
+  // req/list에서 gendoc 변경 시 동기화
+  useEffect(() => {
+    if (!activeGendocuid) return
+    setSelectedGendocuid(activeGendocuid)
+  }, [activeGendocuid]) // eslint-disable-line
 
   const [selectedType, setSelectedType] = useState('auto')
-  const [content, setContent] = useState(null)   // { contents, file_path, file_name, doc_info }
+  const [content, setContent] = useState(null)
   const [loading, setLoading] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
 
-  const loadContent = async (type) => {
+  const loadContent = async (gendocuid, type) => {
     if (!gendocuid) return
     setLoading(true)
     try {
       const res = await apiClient.get(`/gendocs/${gendocuid}/doc-content`, { params: { type } })
       setContent(res.data)
-    } catch (e) {
+    } catch {
       setContent({ contents: t('msg.load.error'), doc_info: {} })
     } finally {
       setLoading(false)
@@ -34,12 +54,14 @@ export default function ReqDocReadPage() {
   }
 
   useEffect(() => {
-    loadContent('auto')
-  }, [gendocuid])
+    setContent(null)
+    setSelectedType('auto')
+    loadContent(selectedGendocuid, 'auto')
+  }, [selectedGendocuid]) // eslint-disable-line
 
   const handleCardClick = (type) => {
     setSelectedType(type)
-    loadContent(type)
+    loadContent(selectedGendocuid, type)
   }
 
   const handleUpload = async ({ file }) => {
@@ -47,10 +69,10 @@ export default function ReqDocReadPage() {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      await apiClient.post(`/gendocs/${gendocuid}/upload`, fd, {
+      await apiClient.post(`/gendocs/${selectedGendocuid}/upload`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      loadContent(selectedType)
+      loadContent(selectedGendocuid, selectedType)
     } catch (e) {
       console.error(e)
     } finally {
@@ -77,9 +99,7 @@ export default function ReqDocReadPage() {
       .catch(() => window.open(url, '_blank'))
   }
 
-  const openInTab = useOpenInTab()
-
-  const { data: statusData = {} } = useGendocStatus(gendocuid)
+  const { data: statusData = {} } = useGendocStatus(selectedGendocuid)
   const statusRows = statusData.status || []
   const totalChapters = statusRows.length
   const unreflectedChapters = statusRows.filter((r) => r.new_chapteryn).length
@@ -108,17 +128,15 @@ export default function ReqDocReadPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('ttl.doc.read_ttl')}{docInfo.gendocnm ? ` - ${docInfo.gendocnm}` : ''}</div>
+          <div>{t('ttl.doc.read_ttl')}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary" type="button"
-            onClick={() => openInTab('req/doc-status', `?gendocs=${gendocuid}`, t('btn.doc.status'))}>
-            {t('btn.doc.status')}
-          </button>
-          <button className="btn btn-back" onClick={() => navigate('/req/list')}>
-            {t('btn.back')}
-          </button>
-        </div>
+        <Select
+          style={{ width: 280 }}
+          value={selectedGendocuid}
+          onChange={(val) => setSelectedGendocuid(val)}
+          options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
+          placeholder={t('msg.select')}
+        />
       </div>
 
       {/* 안내 */}
@@ -147,7 +165,6 @@ export default function ReqDocReadPage() {
 
         {/* 좌측 카드 패널 */}
         <div style={{ width: 220, flexShrink: 0 }}>
-          {/* 작성 문서 카드 */}
           <div style={cardStyle('auto')} onClick={() => handleCardClick('auto')}>
             <div style={{ fontSize: 13 }}>
               <div><span style={{ color: '#888' }}>{t('thd.createuser')}: </span><span>{docInfo.createuser || '-'}</span></div>
@@ -158,7 +175,6 @@ export default function ReqDocReadPage() {
 
           <div style={{ borderTop: '1px solid #ddd', margin: '10px 0' }} />
 
-          {/* 업로드 문서 카드 */}
           <div style={cardStyle('upload')} onClick={() => handleCardClick('upload')}>
             <div style={{ fontSize: 13 }}>
               <div><span style={{ color: '#888' }}>{t('thd.updateuser')}: </span><span>{docInfo.updateuser || '-'}</span></div>
@@ -170,7 +186,6 @@ export default function ReqDocReadPage() {
 
         {/* 우측 콘텐츠 */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {/* 버튼 영역 */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
             {isEditYn && (
               <Upload
@@ -193,7 +208,6 @@ export default function ReqDocReadPage() {
             </button>
           </div>
 
-          {/* 문서 내용 (.a4-frame) */}
           <div className="a4-frame" style={{ flex: 1 }}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: 48 }}>

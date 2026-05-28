@@ -1,19 +1,40 @@
-import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Spin, Tag } from 'antd'
-import { useGendocStatus } from '@/hooks/useGendocs'
+import { useState, useEffect } from 'react'
+import { Select, Spin, Tag } from 'antd'
+import dayjs from 'dayjs'
+import { useGendocs, useGendocStatus } from '@/hooks/useGendocs'
+import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { useReqStore } from '@/stores/reqStore'
+
+const TODAY = dayjs().format('YYYY-MM-DD')
+const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
 
 export default function ReqDocStatusPage() {
   useLangStore((s) => s.translations)
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const gendocuid = searchParams.get('gendocs')
-  const openInTab = useOpenInTab()
 
-  const { data = {}, isLoading } = useGendocStatus(gendocuid)
-  const [selectedRow, setSelectedRow] = useState(null)
+  const { user } = useAuthStore()
+  const { activeGendocuid } = useReqStore()
+
+  // gendoc 목록
+  const { data: gendocsData = {} } = useGendocs(ONE_YEAR_AGO, TODAY, user?.docid)
+  const gendocs = gendocsData.gendocs || []
+
+  // 선택된 gendocuid — mount 시점의 activeGendocuid로 초기화
+  const [selectedGendocuid, setSelectedGendocuid] = useState(activeGendocuid)
+
+  // gendocs 로드 후 선택값 없으면 첫 항목 자동 선택
+  useEffect(() => {
+    if (!gendocs.length || selectedGendocuid) return
+    setSelectedGendocuid(gendocs[0]?.gendocuid)
+  }, [gendocs.length]) // eslint-disable-line
+
+  // req/list에서 gendoc 변경 시 동기화
+  useEffect(() => {
+    if (!activeGendocuid) return
+    setSelectedGendocuid(activeGendocuid)
+  }, [activeGendocuid]) // eslint-disable-line
+
+  const { data = {}, isLoading } = useGendocStatus(selectedGendocuid)
 
   const { status: rows = [], gendocnm = '', createfiledts = '' } = data
 
@@ -27,11 +48,15 @@ export default function ReqDocStatusPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('ttl.doc.status_ttl')}{gendocnm && ` - ${gendocnm}`}</div>
+          <div>{t('ttl.doc.status_ttl')}</div>
         </div>
-        <button className="btn btn-back" type="button" onClick={() => navigate(-1)}>
-          {t('btn.back')}
-        </button>
+        <Select
+          style={{ width: 280 }}
+          value={selectedGendocuid}
+          onChange={(val) => setSelectedGendocuid(val)}
+          options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
+          placeholder={t('msg.select')}
+        />
       </div>
 
       {/* 요약 통계 */}
@@ -57,18 +82,7 @@ export default function ReqDocStatusPage() {
       {/* 챕터 상태 테이블 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>{t('ttl.chapter.status')}</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="btn btn-primary" type="button"
-            onClick={() => openInTab('req/chapters-read', `?gendocs=${gendocuid}`, t('btn.chapter.read'))}>
-            {t('btn.chapter.read')}
-          </button>
-          {selectedRow && (
-            <button className="btn btn-primary" type="button"
-              onClick={() => openInTab('req/chapter-objects', `?genchapteruid=${selectedRow.genchapteruid}`, t('btn.item.manage'))}>
-              {t('btn.item.manage')}
-            </button>
-          )}
-        </div>
+        <div />
       </div>
 
       <div style={{ overflowX: 'auto' }}>
@@ -91,12 +105,7 @@ export default function ReqDocStatusPage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 16 }}>{t('msg.no.data')}</td></tr>
             ) : rows.map((row) => (
-              <tr
-                key={row.genchapteruid || row.chapternm}
-                onClick={() => setSelectedRow(row)}
-                className={selectedRow?.genchapteruid === row.genchapteruid ? 'selected-row' : ''}
-                style={{ cursor: 'pointer' }}
-              >
+              <tr key={row.genchapteruid || row.chapternm}>
                 <td>{row.chapternm}</td>
                 <td style={{ textAlign: 'center' }}>{row.createuser || ''}</td>
                 <td style={{ textAlign: 'center' }}>{row.createfiledts || '-'}</td>

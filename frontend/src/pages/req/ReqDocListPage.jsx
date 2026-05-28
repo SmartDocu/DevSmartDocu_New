@@ -3,13 +3,14 @@
  * _old_ref/pages/templates/pages/req_doc_list.html 구조 그대로 반영
  */
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { App, DatePicker, Spin } from 'antd'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useGendocs, useDataparams, useCreateGendoc, useDeleteGendoc, useUpdateGendocParams, useCloseGendoc, useOpenGendoc } from '@/hooks/useGendocs'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
+import { useTabStore } from '@/stores/tabStore'
+import { useReqStore } from '@/stores/reqStore'
 
 const { RangePicker } = DatePicker
 
@@ -148,9 +149,10 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
 export default function ReqDocListPage() {
   useLangStore((s) => s.translations)
 
-  const { message } = App.useApp()
-  const navigate = useNavigate()
+  const { message, modal } = App.useApp()
   const { user } = useAuthStore()
+  const tabs = useTabStore((s) => s.tabs)
+  const { activeGendocuid, setActiveGendocuid } = useReqStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
 
   const today = dayjs()
@@ -188,14 +190,6 @@ export default function ReqDocListPage() {
   // 값 찾기 모달 상태
   const [searchModal, setSearchModal] = useState(null)  // null | { dp, rows, columns }
 
-  // gendocs 로드 후 저장된 행 복원
-  useEffect(() => {
-    const saved = sessionStorage.getItem(SS_GENDOCUID)
-    if (!saved || !gendocs.length) return
-    const row = gendocs.find((r) => String(r.gendocuid) === saved)
-    if (row && !selectedRow) handleRowClick(row)
-  }, [gendocs]) // eslint-disable-line
-
   const showLoading = (txt) => { setLoading(true);  setLoadingText(txt) }
   const hideLoading = ()     => { setLoading(false); setLoadingText('') }
 
@@ -207,8 +201,8 @@ export default function ReqDocListPage() {
     setSearchModal({ dp, rows, columns })
   }
 
-  // 행 클릭
-  const handleRowClick = (row) => {
+  // UI 상태만 업데이트 (store 동기화 없음 — 자동 복원용)
+  const selectRowUi = (row) => {
     setSelectedGendocuid(row.gendocuid)
     setSelectedRow(row)
     setDocnmInput(row.gendocnm || '')
@@ -217,7 +211,33 @@ export default function ReqDocListPage() {
       newVals[p.paramuid] = { value: p.paramvalue || '', finalnm: p.finalnm || p.paramvalue || '' }
     })
     setParamValues(newVals)
+    sessionStorage.setItem(SS_GENDOCUID, row.gendocuid)
   }
+
+  // 사용자 클릭 — UI 업데이트 + 관련 탭 동기화
+  const handleRowClick = (row) => {
+    selectRowUi(row)
+    if (row.gendocuid === activeGendocuid) return
+    const hasRelatedTabs = tabs.some(
+      (tab) => tab.path?.startsWith('req/chapters-read') || tab.path?.startsWith('req/chapter-objects')
+    )
+    if (hasRelatedTabs) {
+      modal.confirm({
+        content: t('msg.confirm.gendoc.change'),
+        onOk: () => setActiveGendocuid(row.gendocuid),
+      })
+    } else {
+      setActiveGendocuid(row.gendocuid)
+    }
+  }
+
+  // gendocs 로드 후 저장된 행 복원 (store 동기화 없음)
+  useEffect(() => {
+    const saved = sessionStorage.getItem(SS_GENDOCUID)
+    if (!saved || !gendocs.length) return
+    const row = gendocs.find((r) => String(r.gendocuid) === saved)
+    if (row && !selectedRow) selectRowUi(row)
+  }, [gendocs]) // eslint-disable-line
 
   // 신규
   const handleNew = () => {
@@ -278,7 +298,8 @@ export default function ReqDocListPage() {
             onSuccess: (data) => {
               hideLoading()
               saveSession(data.gendocuid)
-              navigate(`/req/chapters-read?gendocs=${data.gendocuid}`)
+              setActiveGendocuid(data.gendocuid)
+              refetch()
             },
             onError: () => hideLoading(),
           },
@@ -327,18 +348,6 @@ export default function ReqDocListPage() {
     sessionStorage.setItem(SS_START, appliedDates[0]?.format('YYYY-MM-DD') || '')
     sessionStorage.setItem(SS_END,   appliedDates[1]?.format('YYYY-MM-DD') || '')
     sessionStorage.setItem('path', 'req_doc_list')
-  }
-
-  const handleDocRead = () => {
-    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
-    saveSession()
-    navigate(`/req/doc-read?gendocs=${selectedGendocuid}`)
-  }
-
-  const handleChapterRead = () => {
-    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
-    saveSession()
-    navigate(`/req/chapters-read?gendocs=${selectedGendocuid}`)
   }
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────────
@@ -483,17 +492,6 @@ export default function ReqDocListPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.param.input')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {selectedGendocuid && (
-                <>
-                  <button className="btn btn-primary" type="button" onClick={handleDocRead}>
-                    {t('btn.doc.read')}
-                  </button>
-                  <button className="btn btn-primary" type="button" onClick={handleChapterRead}>
-                    {t('btn.chapter.read')}
-                  </button>
-                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
-                </>
-              )}
               {editbuttonyn && (
                 <>
                   <button className="btn btn-primary" type="button" onClick={handleSave}>
