@@ -22,12 +22,22 @@ def _get_connector(supabase, connuid):
     if not resp.data:
         raise ValueError(f"커넥터를 찾을 수 없습니다: {connuid}")
     connector = resp.data[0]
+    secret_path = connector.get("secret_path") or ""
     secret = {}
-    if connector.get("secret_path"):
+
+    if secret_path == "aws-sm":
+        from utilsPrj.secrets_cache import get_connector_secret
         try:
-            secret = json.loads(connector["secret_path"])
+            secret = get_connector_secret(connector.get("tenantid"), connuid)
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).warning("커넥터 시크릿 조회 실패 %s: %s", connuid, exc)
+    elif secret_path:
+        try:
+            secret = json.loads(secret_path)
         except Exception:
             pass
+
     connector["_username"] = secret.get("username", "")
     connector["_password"] = secret.get("password", "")
     return connector

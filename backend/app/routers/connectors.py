@@ -39,27 +39,36 @@ def _parse_secret(secret_json: Optional[str]) -> dict:
         return {}
 
 
-def _build_secret_json(authtype: str, body, existing_json: Optional[str] = None) -> Optional[str]:
-    """authtype에 맞는 시크릿 필드를 JSON으로 조합. 비밀번호 계열은 기존 값과 병합."""
-    existing = _parse_secret(existing_json)
-    secret: dict = {}
+def _fetch_api_secret(secret_path: Optional[str], tenantid, connuid: Optional[str] = None) -> dict:
+    """aws-sm 마커이면 AWS SM 조회, 아니면 레거시 JSON 파싱."""
+    if not secret_path:
+        return {}
+    if secret_path == "aws-sm":
+        from utilsPrj.secrets_cache import get_connector_secret
+        try:
+            return get_connector_secret(tenantid, connuid)
+        except Exception:
+            return {}
+    return _parse_secret(secret_path)
 
+
+def _merge_api_secret(authtype: str, body, existing: dict) -> dict:
+    """authtype에 맞게 신규 값을 기존 dict에 병합."""
+    merged = dict(existing)
     if authtype == "API_KEY":
-        # api_key_value: 빈 문자열이면 기존 값 유지
-        secret["api_key_value"] = body.api_key_value if body.api_key_value else existing.get("api_key_value")
-
+        if body.api_key_value:
+            merged["api_key_value"] = body.api_key_value
     elif authtype == "BASIC":
-        secret["username"] = body.username if body.username is not None else existing.get("username")
-        # password: 빈 값이면 기존 값 유지
-        secret["password"] = body.password if body.password else existing.get("password")
-
+        if body.username is not None:
+            merged["username"] = body.username
+        if body.password:
+            merged["password"] = body.password
     elif authtype == "OAUTH2":
-        # oauth_client_secret: 빈 값이면 기존 값 유지
-        secret["oauth_client_secret"] = body.oauth_client_secret if body.oauth_client_secret else existing.get("oauth_client_secret")
-        secret["refresh_token"] = body.refresh_token if body.refresh_token is not None else existing.get("refresh_token")
-
-    secret = {k: v for k, v in secret.items() if v is not None}
-    return json.dumps(secret, ensure_ascii=False) if secret else None
+        if body.oauth_client_secret:
+            merged["oauth_client_secret"] = body.oauth_client_secret
+        if body.refresh_token is not None:
+            merged["refresh_token"] = body.refresh_token
+    return {k: v for k, v in merged.items() if v is not None}
 
 
 class ConnectorSaveRequest(BaseModel):
@@ -157,8 +166,8 @@ def list_connectors(token: str = Depends(get_token)):
         for k in NON_SECRET_CRED_FIELDS:
             row[k] = cred.get(k)
 
-        # secret_path JSON → 개별 필드로 분해
-        secrets = _parse_secret(cred.get("secret_path"))
+        # secret_path aws-sm or JSON → 개별 필드로 분해
+        secrets = _fetch_api_secret(cred.get("secret_path"), tenantid, uid)
         row["api_key_value"]       = secrets.get("api_key_value")
         row["username"]            = secrets.get("username")
         row["password"]            = secrets.get("password")
@@ -219,7 +228,8 @@ def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token)):
 
     # ── conn_api_credentials ─────────────────────────────────────────────────
     if body.authtype and body.authtype != "NONE":
-        # 기존 secret_path 조회 (비밀번호 계열 병합용)
+        from utilsPrj.secrets_cache import save_connector_secret
+
         existing_cred_rows = (
             sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials")
             .select("credentialuid, secret_path")
@@ -228,9 +238,14 @@ def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token)):
             .data
         )
         existing_cred = existing_cred_rows[0] if existing_cred_rows else None
-        existing_secret_json = existing_cred["secret_path"] if existing_cred else None
+        existing_sp = existing_cred["secret_path"] if existing_cred else None
 
-        secret_path = _build_secret_json(body.authtype, body, existing_secret_json)
+        existing_data = _fetch_api_secret(existing_sp, tenantid, connuid)
+        merged = _merge_api_secret(body.authtype, body, existing_data)
+
+        if merged:
+            save_connector_secret(tenantid, connuid, merged)
+        secret_path = "aws-sm" if merged else existing_sp
 
         cred_payload = {
             "connuid":            connuid,
@@ -261,6 +276,8 @@ def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token)):
 
 @router.delete("/{connuid}")
 def delete_connector(connuid: str, token: str = Depends(get_token)):
+    from utilsPrj.secrets_cache import delete_secret, invalidate_tenant
+
     sb   = _sb(token)
     user = _get_user(token)
     tenantid = _get_tenantid(sb, user.id)
@@ -271,6 +288,14 @@ def delete_connector(connuid: str, token: str = Depends(get_token)):
     )
     if not exists:
         raise HTTPException(status_code=404, detail="커넥터를 찾을 수 없습니다.")
+
+    cred_rows = (
+        sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials")
+        .select("secret_path").eq("connuid", connuid).execute().data
+    )
+    if cred_rows and (cred_rows[0].get("secret_path") or "") == "aws-sm":
+        from utilsPrj.secrets_cache import delete_connector_secret
+        delete_connector_secret(tenantid, connuid)
 
     sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials").delete().eq("connuid", connuid).execute()
     sb.schema(SUPABASE_SCHEMA).table("conn_apis").delete().eq("connuid", connuid).execute()

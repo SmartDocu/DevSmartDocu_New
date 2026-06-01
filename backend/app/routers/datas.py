@@ -682,9 +682,20 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
             .select("*").eq("connuid", connuid).execute().data
         )
         cred = cred_rows[0] if cred_rows else {}
-        secret_path = cred.get("secret_path")
+        secret_path = cred.get("secret_path") or ""
         secrets: dict = {}
-        if secret_path:
+        if secret_path == "aws-sm":
+            from utilsPrj.secrets_cache import get_connector_secret
+            conn_row = (
+                sb.schema(SUPABASE_SCHEMA).table("connectors")
+                .select("tenantid").eq("connuid", connuid).execute().data
+            )
+            _tenantid = conn_row[0]["tenantid"] if conn_row else None
+            try:
+                secrets = get_connector_secret(_tenantid, connuid)
+            except Exception:
+                secrets = {}
+        elif secret_path:
             try:
                 secrets = _json.loads(secret_path)
             except Exception:
@@ -697,11 +708,7 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
 
         full_url = baseurl.rstrip("/") + ("" if endpoint.startswith("/") else "/") + endpoint
 
-        import sys
-        print(f"[datacols/create] authtype={authtype}, cred_keys={list(cred.keys())}, secret_keys={list(secrets.keys())}, full_url={full_url}", file=sys.stderr)
-
         if authtype == "OAUTH2":
-            print(f"[datacols/create] OAuth2 token_endpoint={cred.get('token_endpoint')}, client_id={cred.get('oauth_client_id')}, has_secret={bool(secrets.get('oauth_client_secret'))}", file=sys.stderr)
             if not cred.get("token_endpoint"):
                 raise HTTPException(status_code=400, detail="OAuth2 Token Endpoint가 설정되지 않았습니다. 커넥터 설정을 확인하세요.")
             if not cred.get("oauth_client_id"):

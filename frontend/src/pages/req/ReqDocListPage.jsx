@@ -24,7 +24,7 @@ function initDates() {
   const e = sessionStorage.getItem(SS_END)
   if (s && e) return [dayjs(s), dayjs(e)]
   const today = dayjs()
-  return [today.subtract(10, 'day'), today]
+  return [today.subtract(1, 'month'), today]
 }
 
 /* ──────────────────────────────────────────────────────

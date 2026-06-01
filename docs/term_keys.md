@@ -95,7 +95,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 2. msg. (190개)
+## 2. msg. (191개)
 
 | term_key |
 |----------|
@@ -289,6 +289,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.ph.tenant.select |
 | msg.project.not.found |
 | msg.required.docid |
+| msg.confirm.gendoc.change |
 
 ---
 
@@ -859,13 +860,13 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | prefix | 개수 |
 |--------|------|
 | cod.   | 36   |
-| msg.   | 190  |
+| msg.   | 191  |
 | btn.   | 66   |
-| lbl.   | 262  |
+| lbl.   | 261  |
 | thd.   | 98   |
 | ttl.   | 60   |
 | inf.   | 10   |
-| **합계** | **721** |
+| **합계** | **722** |
 
 
 ---

@@ -34,10 +34,24 @@ def process_data_api(supabase, datauid, gendoc_uid=None):
     )
     cred = cred_rows[0] if cred_rows else {}
     secrets: dict = {}
-    try:
-        secrets = _json.loads(cred.get("secret_path") or "{}")
-    except Exception:
-        secrets = {}
+    secret_path = cred.get("secret_path") or ""
+
+    if secret_path == "aws-sm":
+        from utilsPrj.secrets_cache import get_connector_secret
+        conn_row = (
+            supabase.schema(SUPABASE_SCHEMA).table("connectors")
+            .select("tenantid").eq("connuid", connuid).execute().data
+        )
+        tenantid = conn_row[0]["tenantid"] if conn_row else None
+        try:
+            secrets = get_connector_secret(tenantid, connuid)
+        except Exception:
+            secrets = {}
+    elif secret_path:
+        try:
+            secrets = _json.loads(secret_path)
+        except Exception:
+            secrets = {}
 
     param_rows = (
         supabase.schema(SUPABASE_SCHEMA).table("data_api_params")

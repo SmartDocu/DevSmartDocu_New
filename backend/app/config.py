@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # 암호화
     ENCRYPTION_KEY: str = ""
 
+    # AWS Secrets Manager
+    AWS_REGION: str = "ap-northeast-2"
+    SECRETS_TTL_SECONDS: int = 86400
+
     # 이메일
     EMAIL_HOST_USER: str = ""
     EMAIL_HOST_PASSWORD: str = ""

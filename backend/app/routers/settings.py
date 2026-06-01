@@ -89,13 +89,17 @@ def _parse_secret(secret_json: Optional[str]) -> dict:
         return {}
 
 
-def _build_db_secret(body, existing_json: Optional[str]) -> Optional[str]:
-    existing = _parse_secret(existing_json)
-    if body.username is not None:
-        existing["username"] = body.username
-    if body.password:
-        existing["password"] = body.password
-    return json.dumps(existing) if existing else None
+def _fetch_db_secret(secret_path: Optional[str], tenantid: Optional[str], connuid: Optional[str] = None) -> dict:
+    """aws-sm 마커이면 AWS SM 조회, 아니면 레거시 JSON 파싱."""
+    if not secret_path:
+        return {}
+    if secret_path == "aws-sm":
+        from utilsPrj.secrets_cache import get_connector_secret
+        try:
+            return get_connector_secret(tenantid, connuid)
+        except Exception:
+            return {}
+    return _parse_secret(secret_path)
 
 
 @router.get("/servers")
@@ -110,7 +114,7 @@ def list_servers(token: str = Depends(get_token)):
         .order("createdts").execute().data or []
     )
     for row in rows:
-        s = _parse_secret(row.get("secret_path"))
+        s = _fetch_db_secret(row.get("secret_path"), tenantid, row.get("connuid"))
         row["username"] = s.get("username", "")
         row.pop("secret_path", None)
 
@@ -138,6 +142,8 @@ class ServerSaveRequest(BaseModel):
 
 @router.post("/servers")
 def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
+    from utilsPrj.secrets_cache import save_connector_secret
+
     user = _get_user(token)
     sb = _sb(token)
     tenantid = _get_tenantid(sb, user.id)
@@ -148,7 +154,18 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
             .select("connuid, secret_path").eq("connuid", body.connuid).execute().data
         )
         if existing:
-            existing_secret = existing[0].get("secret_path")
+            existing_sp = existing[0].get("secret_path") or ""
+
+            # 기존 자격증명 조회 후 신규 값 병합
+            merged = _fetch_db_secret(existing_sp, tenantid, body.connuid)
+            if body.username is not None:
+                merged["username"] = body.username
+            if body.password:
+                merged["password"] = body.password
+
+            if merged:
+                save_connector_secret(tenantid, body.connuid, merged)
+
             update_fields = {
                 "connnm": body.connnm,
                 "dbtype": body.dbtype,
@@ -163,12 +180,24 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
                 "retry_count": body.retry_count,
                 "desc": body.desc,
                 "useyn": body.useyn,
-                "secret_path": _build_db_secret(body, existing_secret),
+                "secret_path": "aws-sm",
             }
             sb.schema(SUPABASE_SCHEMA).table("connectors").update(update_fields).eq("connuid", body.connuid).execute()
             return {"status": "updated"}
 
+    # INSERT — Python에서 UUID 생성
+    connuid = str(uuid.uuid4())
+    creds: dict = {}
+    if body.username is not None:
+        creds["username"] = body.username
+    if body.password:
+        creds["password"] = body.password
+
+    if creds:
+        save_connector_secret(tenantid, connuid, creds)
+
     insert_fields = {
+        "connuid": connuid,
         "connnm": body.connnm,
         "conntype": "db",
         "dbtype": body.dbtype,
@@ -183,7 +212,7 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
         "retry_count": body.retry_count,
         "desc": body.desc,
         "useyn": body.useyn,
-        "secret_path": _build_db_secret(body, None),
+        "secret_path": "aws-sm" if creds else None,
         "tenantid": tenantid,
         "creator": str(user.id),
     }
@@ -193,7 +222,19 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
 
 @router.delete("/servers/{connuid}")
 def delete_server(connuid: str, token: str = Depends(get_token)):
+    from utilsPrj.secrets_cache import delete_connector_secret
+
+    user = _get_user(token)
     sb = _sb(token)
+    tenantid = _get_tenantid(sb, user.id)
+
+    existing = (
+        sb.schema(SUPABASE_SCHEMA).table("connectors")
+        .select("secret_path").eq("connuid", connuid).execute().data
+    )
+    if existing and (existing[0].get("secret_path") or "") == "aws-sm":
+        delete_connector_secret(tenantid, connuid)
+
     sb.schema(SUPABASE_SCHEMA).table("connectors").delete().eq("connuid", connuid).execute()
     return {"status": "ok"}
 
