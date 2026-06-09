@@ -64,6 +64,8 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
         return response
 
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("AI chain 실패 (sourcedatauid=%s): %s", sourcedatauid, e, exc_info=True)
         return {"status": "error", "result": pd.DataFrame(), "cols_info": None}
 
 

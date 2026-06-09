@@ -84,17 +84,53 @@ SQS 큐 → ECS Fargate 워커 (자동 확장)
 
 ---
 
-## Step 2 — AWS 인프라 설정
+## Step 2 — AWS 인프라 설정 ✅ 완료
 
 > Step 3(워커 코드 작성)과 병렬로 진행 가능.
 
-| 리소스 | 설정 요점 |
-|--------|-----------|
-| **SQS Queue** | Standard Queue, ap-northeast-2, Visibility Timeout 15분 이상 |
-| **ECR Repository** | 워커 Docker 이미지 저장소 |
-| **ECS Fargate 클러스터** | Fargate launch type |
-| **IAM Task Role** | SQS ReceiveMessage/DeleteMessage, ECR pull, Secrets Manager read |
-| **CloudWatch Log Group** | 워커 로그 수집용 |
+### ① SQS 큐
+| 항목 | 값 |
+|------|-----|
+| 큐 이름 | `smartdocu-gendocs-queue` |
+| 유형 | Standard |
+| Visibility Timeout | 900초 (15분) |
+| **Queue URL** | `https://sqs.ap-northeast-2.amazonaws.com/189993504048/smartdocu-gendocs-queue` |
+
+### ② ECR 리포지토리
+| 항목 | 값 |
+|------|-----|
+| 리포지토리 이름 | `smartdocu-worker` |
+| 표시 여부 | 프라이빗 |
+| **Repository URI** | `189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker` |
+
+### ③ IAM Task Role
+| 항목 | 값 |
+|------|-----|
+| 역할 이름 | `smartdocu-worker-task-role` |
+| 신뢰 엔터티 | Elastic Container Service Task |
+| 연결 정책 | AmazonSQSFullAccess, AmazonEC2ContainerRegistryReadOnly, SecretsManagerReadWrite |
+| **Role ARN** | `arn:aws:iam::189993504048:role/smartdocu-worker-task-role` |
+
+### ④ IAM Task Execution Role (Step 5에서 추가 생성)
+| 항목 | 값 |
+|------|-----|
+| 역할 이름 | `ecsTaskExecutionRole` |
+| 연결 정책 | AmazonECSTaskExecutionRolePolicy |
+
+### ⑤ ECS Fargate 클러스터
+| 항목 | 값 |
+|------|-----|
+| 클러스터 이름 | `smartdocu-cluster` |
+| 인프라 | AWS Fargate (서버리스) |
+
+### ⑥ CloudWatch 로그 그룹
+| 항목 | 값 |
+|------|-----|
+| 로그 그룹 이름 | `/ecs/smartdocu-worker` |
+| 보존 기간 | 30일 |
+| **ARN** | `arn:aws:logs:ap-northeast-2:189993504048:log-group:smartdocu-worker:*` |
+
+> **참고:** Task Definition(Step 5)에서 `awslogs-group`은 `smartdocu-worker`로 설정됨 (`awslogs-create-group: true`로 자동 생성).
 
 ---
 
@@ -136,24 +172,92 @@ SQS long polling (20초 대기)
 
 ---
 
-## Step 4 — Docker 이미지 + ECR 푸시
+## Step 4 — Docker 이미지 + ECR 푸시 ✅ 완료
 
 워커용 Dockerfile 작성 후 ECR에 이미지 업로드.
 
 - 포함 대상: `backend/`, `utilsPrj/`, `worker/` 폴더
-- 로컬 docker-compose로 환경변수 주입 및 동작 확인 후 ECR 푸시
+- 이미지: `189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest`
+- Digest: `sha256:a2a7712047669f20663e55e99cea4cb6904b9b49fd9a2bcda4dfcfb085d83a13`
+
+### ECR 재푸시 명령어 (이미지 업데이트 시)
+```bash
+aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com
+docker build -f worker/Dockerfile -t smartdocu-worker .
+docker tag smartdocu-worker:latest 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest
+docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest
+```
 
 ---
 
-## Step 5 — ECS Task Definition + Service + Auto Scaling
+## Step 5 — ECS Task Definition + Service + Auto Scaling ✅ 완료
 
-| 항목 | 설정 |
+### Task Definition
+| 항목 | 실제 값 |
+|------|---------|
+| Task Definition 이름 | `smartdocu-worker` (revision 1) |
+| 시작 유형 | AWS Fargate |
+| CPU / 메모리 | 2 vCPU / 8 GB |
+| Task Role | `smartdocu-worker-task-role` |
+| Task Execution Role | `ecsTaskExecutionRole` |
+| 컨테이너 이름 | `smartdocu-worker` |
+| 이미지 URI | `189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest` |
+| 로그 그룹 | `smartdocu-worker` |
+| 로그 스트림 prefix | `ecs` |
+| 로그 리전 | `ap-northeast-2` |
+
+### ECS Service
+| 항목 | 실제 값 |
+|------|---------|
+| 서비스 이름 | `smartdocu-worker-service` |
+| 클러스터 | `smartdocu-cluster` |
+| 원하는 태스크 수 | 1 |
+| VPC | `vpc-041f22aeb124f2e1f` (기본 VPC) |
+| 서브넷 | ap-northeast-2a/b/c/d 전체 |
+| 보안 그룹 | `sg-0d5b18bffb219b178` (default) |
+| 퍼블릭 IP | 켜짐 |
+
+### Auto Scaling
+| 항목 | 실제 값 |
+|------|---------|
+| 최소 태스크 | 0 |
+| 최대 태스크 | 5 |
+| Scale Out 정책 | `scaleout-policy` — 경보: `smartdocu-worker-scaleout` (ApproximateNumberOfMessagesVisible ≥ 1) → 태스크 +1 |
+| Scale In 정책 | `scalein-policy` — 경보: `smartdocu-worker-scalein` (ApproximateNumberOfMessagesVisible < 1) → 태스크 -1 |
+
+### 스케일링 동작 요약 (보고용)
+
+**Worker 사양 (1개 기준)**
+| 항목 | 값 |
+|------|-----|
+| CPU | 2 vCPU |
+| 메모리 | 8 GB |
+| 처리 방식 | SQS 메시지 1건씩 순차 처리 (Long Polling 20초) |
+| 최대 처리 시간 | 15분 (Visibility Timeout 900초) |
+
+**Auto Scaling 규칙**
+| 조건 | 동작 |
 |------|------|
-| Task 사양 | 2 vCPU / 8 GB (LLM 병렬 처리 고려) |
-| 환경변수 | AWS Secrets Manager 참조 |
-| ECS Service | minimum 0 / desired 1 |
-| Scale Out 조건 | `SQS ApproximateNumberOfMessagesVisible ≥ 1` → 태스크 +1 |
-| Scale In 조건 | 큐 메시지 0 → 쿨다운 후 태스크 0 |
+| SQS 메시지 **1개 이상** 감지 | Worker **+1** 추가 (Scale Out) |
+| SQS 메시지 **0개** 감지 | Worker **-1** 제거 (Scale In) |
+| 최솟값 | Worker **0개** (메시지 없으면 비용 없음) |
+| 최댓값 | Worker **5개** (동시 5건까지 병렬 처리) |
+
+**처리 능력**
+| 항목 | 값 |
+|------|-----|
+| 동시 처리 가능 문서 | 최대 **5건** |
+| 대기 중 메시지가 있으면 | 메시지 수에 비례해 Worker 자동 증가 |
+| 작업 완료 후 유휴 상태 | Worker 자동 0개로 감소 → **유휴 비용 없음** |
+
+**SQS 큐 설정**
+| 항목 | 값 |
+|------|-----|
+| 큐 유형 | Standard (순서 보장 없음, 최소 1회 전달 보장) |
+| Visibility Timeout | **900초 (15분)** — Worker 처리 중 다른 Worker가 같은 메시지를 가져가지 않도록 잠금 |
+
+> **핵심:** 평소엔 Worker 0개 → 요청 들어오면 자동 생성 → 완료 후 자동 종료. 최대 5개 문서를 동시에 병렬 생성 가능.
+> 수정 요청 시 위 표의 수치(최대 태스크 수, Visibility Timeout, Scale Out/In 임계값)를 기준으로 변경 범위를 협의할 것.
 
 ---
 
@@ -199,17 +303,42 @@ SQS long polling (20초 대기)
 
 ---
 
-## Step 8 — E2E 테스트 및 배포
+## Step 8 — E2E 테스트 및 배포 ✅ 완료
 
 ### 테스트 체크리스트
-- [ ] 버튼 클릭 → 토스트 표시 후 다른 화면으로 이동 가능 확인 (오버레이 없음)
-- [ ] 작업 enqueue → SQS 메시지 적재 확인
-- [ ] 워커가 메시지 수신 후 처리 시작 확인
-- [ ] 챕터 화면 재진입 시 "생성 중..." 상태 표시 확인
-- [ ] 챕터 화면 재진입 시 완료 상태 표시 및 DOCX URL 접근 확인
+- [x] 버튼 클릭 → 토스트 표시 후 다른 화면으로 이동 가능 확인 (오버레이 없음)
+- [x] 작업 enqueue → SQS 메시지 적재 확인
+- [x] 워커가 메시지 수신 후 처리 시작 확인
+- [x] 챕터 화면 재진입 시 "생성 중..." 상태 표시 확인
+- [x] 챕터 화면 재진입 시 완료 상태 표시 및 DOCX URL 접근 확인
+- [x] 문서 전체 작성 (Phase 1 LLM → Phase 2 DOCX 병합 → Phase 3 Storage 업로드) 정상 동작 확인
 - [ ] 워커 오류 시 챕터 화면 재진입 시 오류 배너 표시 확인
 - [ ] 동시 요청 시 Fargate 태스크 Scale Out 확인
 - [ ] 큐 비었을 때 태스크 Scale In 확인
+
+---
+
+## 워커 코드 수정 후 재배포 절차
+
+`worker/` 또는 `utilsPrj/`, `backend/` 코드를 수정했을 때 ECS Fargate 워커에 반영하려면 아래 순서를 반복한다.
+
+### 1단계 — ECR 로그인 (세션당 1회)
+```powershell
+aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com
+```
+
+### 2단계 — Docker 빌드 + 태그 + 푸시
+```powershell
+docker build -f worker/Dockerfile -t smartdocu-worker .
+docker tag smartdocu-worker:latest 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest
+docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest
+```
+
+### 3단계 — ECS 서비스 업데이트
+AWS 콘솔 → ECS → 클러스터 `smartdocu-cluster` → 서비스 `smartdocu-worker-service`
+→ **서비스 업데이트** 버튼 → **새 배포 강제 실행** 체크 → **업데이트**
+
+> **참고:** `backend/app/routers/gendocs.py` 등 FastAPI 코드만 수정한 경우 백엔드 서버 재시작만으로 충분하며 Docker 빌드는 불필요.
 
 ---
 

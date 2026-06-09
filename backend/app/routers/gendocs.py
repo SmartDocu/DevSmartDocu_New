@@ -1,3 +1,4 @@
+import boto3
 import io
 import json
 import time
@@ -11,8 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from backend.app.config import settings
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 
 router = APIRouter()
 
@@ -765,7 +767,7 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
 
             # 2. @변수 추출 및 context 빌드
             result = extract_at_variables(texttemplate)
-            context = _build_context(sb, result["unique"], token, docid)  # ← 아래 헬퍼 함수 필요
+            context = _build_context(sb, result["unique"], req, docid)
 
             # 3. 템플릿 처리 → flattexttemplate
             registry = FunctionRegistry()
@@ -921,7 +923,7 @@ async def upload_file(
     return {"message": "업로드되었습니다.", "url": public_url}
 
 
-# ── Generate (SSE) ───────────────────────────────────────────────────────────────
+# ── Generate (SQS) ───────────────────────────────────────────────────────────────
 
 class GenerateRequest(BaseModel):
     results: list[dict]
@@ -936,281 +938,147 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     docid = ctx["docid"]
     results = body.results
 
-    def event_stream():
-        total_steps = len(results) + 3
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    timeout = timedelta(hours=2)
 
+    # 스테일 락 해제
+    genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
+    for lock in genlocks:
+        upd = {}
+        if lock.get("doclocked") and lock.get("docstartdts"):
+            start = datetime.fromisoformat(lock["docstartdts"])
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if user_id == lock.get("useruid") or now_dt - start > timeout:
+                upd["doclocked"] = False
+                upd["docenddts"] = now_iso
+        if lock.get("chapterlocked") and lock.get("chapterstartdts"):
+            start = datetime.fromisoformat(lock["chapterstartdts"])
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if user_id == lock.get("useruid") or now_dt - start > timeout:
+                upd["chapterlocked"] = False
+                upd["chapterenddts"] = now_iso
+        if upd:
+            sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
+
+    # 남은 락 확인
+    genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
+    if any(r.get("doclocked") or r.get("chapterlocked") for r in genlocks):
+        return {"locked": True, "message": "이 문서가 이미 작성 중입니다."}
+
+    # 문서 락 설정
+    sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
+        "gendocuid": gendocuid,
+        "genchapteruid": "",
+        "doclocked": True,
+        "chapterlocked": False,
+        "docstartdts": now_iso,
+        "docenddts": None,
+        "chapterstartdts": None,
+        "chapterenddts": None,
+        "useruid": user_id,
+    }, on_conflict="gendocuid,genchapteruid").execute()
+
+    # gendocnm 조회
+    gendocnm_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
+    gendocnm = gendocnm_row[0]["gendocnm"] if gendocnm_row else ""
+
+    # gendocs_queue upsert (처리 시작 상태)
+    sb_svc = get_service_client()
+    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").upsert({
+        "gendocuid": gendocuid,
+        "docid": docid,
+        "gendocnm": gendocnm,
+        "jobstatuscd": "S",
+        "startdts": now_iso,
+        "errorcd": None,
+        "errormessage": None,
+        "creator": user_id,
+    }, on_conflict="gendocuid").execute()
+
+    # SQS 메시지 전송
+    sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+    sqs.send_message(
+        QueueUrl=settings.SQS_QUEUE_URL,
+        MessageBody=json.dumps({
+            "gendocuid": gendocuid,
+            "user_id": user_id,
+            "access_token": token,
+            "results": results,
+            "docid": docid,
+            "tenantid": ctx.get("tenantid"),
+            "projectid": ctx.get("projectid"),
+            "gendocnm": gendocnm,
+        }, ensure_ascii=False),
+    )
+
+    return {"gendocuid": gendocuid}
+
+
+@router.get("/{gendocuid}/generate/status")
+def generate_status(gendocuid: str, token: str = Depends(get_token)):
+    _get_user(token)
+    sb_svc = get_service_client()
+    row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").select(
+        "jobstatuscd,errorcd,errormessage,startdts"
+    ).eq("gendocuid", gendocuid).execute().data
+    if not row:
+        return {"JobStatusCD": None, "ErrorCD": None, "ErrorMessage": None}
+
+    status = row[0]["jobstatuscd"]
+
+    # S 상태가 30분 이상 지속되면 워커 비정상 종료로 판단 → E 자동 리셋 + 잠금 해제
+    if status == "S" and row[0].get("startdts"):
         try:
-            from utilsPrj.chapter_making import replace_doc
-            from utilsPrj.html_to_docx import html_to_docx_merge
-            from docx import Document
+            start = datetime.fromisoformat(row[0]["startdts"].replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) - start > timedelta(minutes=30):
+                now_iso = datetime.now(timezone.utc).isoformat()
+                sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").upsert({
+                    "gendocuid": gendocuid,
+                    "jobstatuscd": "E",
+                    "errorcd": "CRASH",
+                    "errormessage": "Worker process terminated unexpectedly",
+                    "enddts": now_iso,
+                }, on_conflict="gendocuid").execute()
+                sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
+                    "doclocked": False,
+                    "docenddts": now_iso,
+                }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
+                return {"JobStatusCD": "E", "ErrorCD": "CRASH", "ErrorMessage": "Worker process terminated unexpectedly"}
+        except Exception:
+            pass
 
-            now_dt = datetime.now()
-            now_iso = now_dt.isoformat()
-            timeout = timedelta(hours=2)
-
-            # 스테일 락 해제
-            genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
-            for lock in genlocks:
-                upd = {}
-                if lock.get("doclocked") and lock.get("docstartdts"):
-                    start = datetime.fromisoformat(lock["docstartdts"])
-                    if user_id == lock.get("useruid") or now_dt - start > timeout:
-                        upd["doclocked"] = False
-                        upd["docenddts"] = now_iso
-                if lock.get("chapterlocked") and lock.get("chapterstartdts"):
-                    start = datetime.fromisoformat(lock["chapterstartdts"])
-                    if user_id == lock.get("useruid") or now_dt - start > timeout:
-                        upd["chapterlocked"] = False
-                        upd["chapterenddts"] = now_iso
-                if upd:
-                    sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
-
-            # 남은 락 확인
-            genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
-            if any(r.get("doclocked") or r.get("chapterlocked") for r in genlocks):
-                yield f"data: {json.dumps({'type':'locked','message':'이 문서가 이미 작성 중입니다.'}, ensure_ascii=False)}\n\n"
-                return
-
-            # 문서 락 설정
-            sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
-                "gendocuid": gendocuid,
-                "genchapteruid": "",
-                "doclocked": True,
-                "chapterlocked": False,
-                "docstartdts": now_iso,
-                "docenddts": None,
-                "chapterstartdts": None,
-                "chapterenddts": None,
-                "useruid": user_id,
-            }, on_conflict="gendocuid,genchapteruid").execute()
-
-            req = FakeRequest(token, user_id, docid, tenantid=ctx["tenantid"], projectid=ctx["projectid"])
-            total = len(results)
-
-            def _get_chap_name(genchapteruid, fallback):
-                try:
-                    chapteruid = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("chapteruid").eq("genchapteruid", genchapteruid).execute().data[0]["chapteruid"]
-                    resp = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
-                    return resp[0]["chapternm"] if resp else fallback
-                except Exception:
-                    return fallback
-
-            def _add_page_number(paragraph):
-                from docx.oxml import OxmlElement
-                from docx.oxml.ns import qn
-                fld = OxmlElement('w:fldSimple')
-                fld.set(qn('w:instr'), 'PAGE')
-                run = OxmlElement('w:r')
-                fld.append(run)
-                t = OxmlElement('w:t')
-                t.text = " "
-                run.append(t)
-                paragraph._element.append(fld)
-
-            def _add_total_pages(paragraph):
-                from docx.oxml import OxmlElement
-                from docx.oxml.ns import qn
-                fld = OxmlElement('w:fldSimple')
-                fld.set(qn('w:instr'), 'NUMPAGES')
-                run = OxmlElement('w:r')
-                fld.append(run)
-                t = OxmlElement('w:t')
-                t.text = " "
-                run.append(t)
-                paragraph._element.append(fld)
-
-            # ── Phase 1: 챕터별 LLM 재작성 (순차, 항목은 멀티스레드) ──────────────
-            completed_chapters = []
-
-            for idx, chapter in enumerate(results, 1):
-                genchapteruid = chapter["genchapteruid"]
-                chapternm = _get_chap_name(genchapteruid, f"챕터 {idx}")
-
-                if idx > 1:
-                    yield f"data: {json.dumps({'type':'wait','message':'다음 챕터 준비 중...'}, ensure_ascii=False)}\n\n"
-
-                yield f"data: {json.dumps({'type':'progress','obj':'chapter','current':idx,'total':total,'chapter_index':idx,'chapter_total':total,'chapter_name':chapternm,'message':f'챕터: {chapternm} 처리 시작 {idx}/{total}','status':'processing'}, ensure_ascii=False)}\n\n"
-
-                chapter_done = False
-                try:
-                    # FOR 루프 → flattexttemplate → genobjects 전처리
-                    from utilsPrj.template_parser import process_template, FunctionRegistry, extract_at_variables
-                    from utilsPrj.template_extracter import extract_from_processed_html
-                    _gc = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("chapteruid,docid").eq("genchapteruid", genchapteruid).execute().data
-                    if _gc:
-                        _chapteruid = _gc[0]["chapteruid"]
-                        _chap = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", _chapteruid).execute().data
-                        _tt = _chap[0]["texttemplate"] if _chap else ""
-                        _atv = extract_at_variables(_tt)
-                        _ctx = _build_context(sb, _atv["unique"], token, docid)
-                        _reg = FunctionRegistry()
-                        _reg.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
-                        _flat = process_template(_tt, _ctx, _reg, True)
-                        sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
-                        _upsert_genobjects(sb, extract_from_processed_html(_flat), genchapteruid, _chapteruid, user_id)
-
-                    for progress_data in replace_doc(req, sb, user_id, genchapteruid, 'create', 'rewrite', 'Not',
-                                                     genChapterDirectYn=False, divide="Chapter", doc_write=True):
-                        if 'chapter_index' not in progress_data:
-                            progress_data['chapter_index'] = idx
-                            progress_data['chapter_total'] = total
-                            progress_data['chapter_name'] = chapternm
-
-                        return_message = progress_data.get('message', '')
-                        progress_data['message'] = f"챕터: {chapternm}\n" + return_message
-                        progress_data['texttemplate'] = ''
-
-                        yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
-
-                        if progress_data.get('type') == 'progress' and progress_data.get('explain') == '현재 챕터 생성 완료':
-                            chapter_done = True
-                            completed_chapters.append(chapternm)
-
-                except Exception as e:
-                    yield f"data: {json.dumps({'type':'error','obj':'chapter','message':f'챕터 {chapternm} 처리 오류: {str(e)}'}, ensure_ascii=False)}\n\n"
-                    continue
-
-                if not chapter_done:
-                    yield f"data: {json.dumps({'type':'error','message':f'챕터 {chapternm} 완료 신호 누락'}, ensure_ascii=False)}\n\n"
-                    continue
-
-                time.sleep(1)
-
-            if len(completed_chapters) != total:
-                yield f"data: {json.dumps({'type':'error','obj':'chapter','message':f'일부 챕터 처리 실패 ({len(completed_chapters)}/{total})','status':'error'}, ensure_ascii=False)}\n\n"
-                return
-
-            # ── Phase 2: DOCX 조합 ────────────────────────────────────────────────
-            yield f"data: {json.dumps({'type':'progress','obj':'chapter_done','message':'모든 챕터 완료. 문서 조합 시작...'}, ensure_ascii=False)}\n\n"
-            time.sleep(1)
-
-            comp_doc = Document()
-            previous_yn = False
-            current_yn = False
-
-            yield f"data: {json.dumps({'type':'progress','obj':'doc','step':0,'message':'문서 병합 준비 중...'}, ensure_ascii=False)}\n\n"
-
-            for i, chapter in enumerate(results, 1):
-                genchapteruid = chapter["genchapteruid"]
-                chapter_name = _get_chap_name(genchapteruid, f"챕터 {i}")
-
-                yield f"data: {json.dumps({'type':'progress','obj':'doc','step':i,'total':total,'message':f'챕터 [{chapter_name}] 병합 중...'}, ensure_ascii=False)}\n\n"
-
-                response = None
-                for result in replace_doc(req, sb, user_id, genchapteruid, 'create', 'write', 'Not',
-                                          genChapterDirectYn=False, divide="Doc"):
-                    if result.get('type') == 'complete':
-                        response = result.get('texttemplate')
-                        break
-
-                if not response:
-                    yield f"data: {json.dumps({'type':'error','obj':'doc','message':f'챕터 {chapter_name} 데이터 로드 실패'}, ensure_ascii=False)}\n\n"
-                    continue
-
-                previous_yn, current_yn = html_to_docx_merge(sb, comp_doc, genchapteruid, response, i, previous_yn, current_yn)
-
-            # 페이지 번호 추가
-            yield f"data: {json.dumps({'type':'progress','obj':'doc','step':total+1,'message':'페이지 번호 추가 중...'}, ensure_ascii=False)}\n\n"
-            for section in comp_doc.sections:
-                footer = section.footer
-                if not footer.paragraphs:
-                    p = footer.add_paragraph("Page ")
-                else:
-                    p = footer.paragraphs[0]
-                    p.add_run(" | Page ")
-                _add_page_number(p)
-                p.add_run(" / ")
-                _add_total_pages(p)
-
-            # Storage 업로드
-            yield f"data: {json.dumps({'type':'progress','obj':'doc','step':total+2,'message':'파일 업로드 중...'}, ensure_ascii=False)}\n\n"
-
-            filenm = f"{uuid.uuid4()}.docx"
-            path = f"result/{gendocuid}/{filenm}"
-
-            from utilsPrj.supabase_client import get_service_client
-            sb_svc = get_service_client()
-
-            try:
-                old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
-                if old and old[0].get("createfileurl"):
-                    old_url = old[0]["createfileurl"]
-                    parsed = urlparse(old_url)
-                    prefix = "/storage/v1/object/public/sdoc/"
-                    if prefix in parsed.path:
-                        sb_svc.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
-            except Exception:
-                pass
-
-            buf = io.BytesIO()
-            comp_doc.save(buf)
-            buf.seek(0)
-
-            try:
-                sb_svc.storage.from_("sdoc").upload(path, buf.read(), {"cacheControl": "3600", "upsert": "true"})
-            except Exception as e:
-                raise Exception(f"[Storage 업로드 오류] {e}")
-
-            public_url = sb_svc.storage.from_("sdoc").get_public_url(path)
-
-            try:
-                sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
-                    "createfileurl": public_url,
-                    "createfiledts": datetime.now().isoformat(),
-                    "createuserid": user_id,
-                }).eq("gendocuid", gendocuid).execute()
-            except Exception as e:
-                raise Exception(f"[DB 업데이트 오류] {e}")
-
-            gendocnm_resp = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
-            gendocnm = gendocnm_resp[0]["gendocnm"] if gendocnm_resp else ""
-
-            yield f"data: {json.dumps({'step':total_steps,'total':total_steps,'message':'문서 작성 완료!','status':'completed','path':path,'docnm':gendocnm}, ensure_ascii=False)}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'step':0,'total':total_steps,'message':str(e),'status':'error'}, ensure_ascii=False)}\n\n"
-
-        finally:
-            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
-                "doclocked": False,
-                "docenddts": datetime.now().isoformat(),
-            }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return {
+        "JobStatusCD": status,
+        "ErrorCD": row[0].get("errorcd"),
+        "ErrorMessage": row[0].get("errormessage"),
+    }
 
 
 # 2026-05-06 Min 헬퍼 함수 수정 >> 실제 데이터를 동작시켜서 내용 작성
-def _build_context(sb, variables: list, token, docid) -> dict:
+def _build_context(sb, variables: list, req, docid) -> dict:
     """req_chapters_read.py의 _build_context와 동일"""
+    from utilsPrj.process_data_ai import process_data_ai_preview
     context = {}
-    # print(f'변수 목록: {variables}')
     for v in variables:
-        class _FakeRequest:
-            def __init__(self, t):
-                self.session = {"access_token": t, "refresh_token": None}
-                self.method = "GET"
-
-        from utilsPrj.process_data_ai import process_data_ai_preview
-
         find = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datanm", v).eq("dfv_docid", docid).eq("datasourcecd", "dfv").execute().data
         if not find:
             continue
-        datas = process_data_ai_preview(sb, _FakeRequest(token), find[0]['sourcedatauid'], find[0]['gensentence'], docid=docid)
+        sourcedatauid = find[0]['sourcedatauid']
+        datas = process_data_ai_preview(sb, req, sourcedatauid, find[0]['gensentence'], docid=docid)
         df = datas.get("result")
-        # print(f'V: {v} //// \nDF: {df}')
-
-        if not df.empty:
-            context[f"@{v}"] = df.to_dict('records')
-            continue
-
-    # print(f'[build_context Complete]')
+        if df is not None and not df.empty:
+            datacols = sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm,dispcolnm").eq("datauid", sourcedatauid).execute().data
+            disp_to_query = {item["dispcolnm"]: item["querycolnm"] for item in datacols}
+            context[f"@{v}"] = df.rename(columns=disp_to_query).to_dict('records')
     return context
 
 
 def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str):
     """req_chapters_read.py의 _upsert_genobjects와 동일"""
     now_iso = datetime.now().isoformat()
-    sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
 
     rows = []
     for item in extracted:
@@ -1230,4 +1098,5 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
         })
 
     if rows:
+        sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
         sb.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()

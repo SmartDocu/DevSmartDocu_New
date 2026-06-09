@@ -56,8 +56,8 @@ export default function ReqChaptersReadPage() {
   const [rewriteProgress, setRewriteProgress] = useState('')
   const [uploadLoading,   setUploadLoading]   = useState(false)
 
-  const [loading,       setLoading]       = useState(false)
-  const [chapProgress,  setChapProgress]  = useState(null)
+  const [generating,    setGenerating]    = useState(false)
+  const pollingRef = useRef(null)
 
   const fileInputRef = useRef(null)
 
@@ -68,6 +68,34 @@ export default function ReqChaptersReadPage() {
     setSelectedChap(null)
     setContent(null)
   }, [selectedGendocuid])
+
+  // 탭 재진입 시 생성 상태 자동 조회
+  useEffect(() => {
+    if (!selectedGendocuid) return
+    apiClient.get(`/gendocs/${selectedGendocuid}/generate/status`)
+      .then((res) => { if (res.data.JobStatusCD === 'S') setGenerating(true) })
+      .catch(() => {})
+  }, [selectedGendocuid]) // eslint-disable-line
+
+  // 생성 중일 때 5초 폴링
+  useEffect(() => {
+    if (!generating || !selectedGendocuid) return
+    pollingRef.current = setInterval(() => {
+      apiClient.get(`/gendocs/${selectedGendocuid}/generate/status`)
+        .then((res) => {
+          if (res.data.JobStatusCD !== 'S') {
+            setGenerating(false)
+            clearInterval(pollingRef.current)
+            pollingRef.current = null
+            refetch()
+          }
+        })
+        .catch(() => {})
+    }, 5000)
+    return () => {
+      if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
+    }
+  }, [generating, selectedGendocuid]) // eslint-disable-line
 
   // ── 콘텐츠 로드 ─────────────────────────────────────────────────────────────
   const loadContent = async (genchapteruid, type) => {
@@ -181,104 +209,29 @@ export default function ReqChaptersReadPage() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
 
-  // ── 문서 일괄 작성 (SSE) ─────────────────────────────────────────────────────
-  const handleDocRewrite = () => {
+  // ── 문서 일괄 작성 (SQS 비동기) ─────────────────────────────────────────────
+  const handleDocRewrite = async () => {
     if (!selectedGendocuid) return
-    setLoading(true)
-    setChapProgress(null)
-
     const results = chapters.map((c) => ({ genchapteruid: c.genchapteruid, mode: 'all' }))
-
-    fetch(`/api/gendocs/${selectedGendocuid}/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ results }),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.message || `HTTP ${res.status}`)
+    try {
+      const res = await apiClient.post(`/gendocs/${selectedGendocuid}/generate`, { results })
+      if (res.data.locked) {
+        message.warning(res.data.message || t('msg.doc.already.writing'))
+        return
       }
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        const parts = buf.split('\n\n')
-        buf = parts.pop() || ''
-        for (const part of parts) {
-          const line = part.replace(/^data:\s*/, '')
-          if (!line) continue
-          try {
-            const data = JSON.parse(line)
-
-            if (data.type === 'locked') {
-              setLoading(false)
-              alert(data.message || t('msg.doc.already.writing'))
-              return
-            }
-
-            if (data.type === 'progress' && data.chapter_index && data.chapter_total) {
-              if (data.current && data.total) {
-                setChapProgress({
-                  chapterName:  data.chapter_name || `${t('lbl.chapter')} ${data.chapter_index}`,
-                  chapterIndex: data.chapter_index,
-                  chapterTotal: data.chapter_total,
-                  current:      data.current,
-                  total:        data.total,
-                })
-              } else if (data.chapter_index === data.chapter_total) {
-                setChapProgress({
-                  chapterName:  t('msg.loading.chapter.finalizing'),
-                  chapterIndex: data.chapter_index,
-                  chapterTotal: data.chapter_total,
-                  current: null, total: null,
-                })
-              } else {
-                setChapProgress({
-                  chapterName:  t('msg.loading.chapter.count').replace('{index}', data.chapter_index + 1).replace('{total}', data.chapter_total),
-                  chapterIndex: data.chapter_index,
-                  chapterTotal: data.chapter_total,
-                  current: null, total: null,
-                })
-              }
-            }
-
-            if (data.status === 'completed') {
-              setTimeout(() => {
-                setLoading(false)
-                setChapProgress(null)
-                alert(t('msg.doc.write.complete'))
-                refetch()
-              }, 1000)
-              return
-            } else if (data.status === 'error') {
-              setLoading(false)
-              setChapProgress(null)
-              alert(t('msg.server.error') + ': ' + (data.message || ''))
-              return
-            }
-          } catch (_) {}
-        }
-      }
-      setLoading(false)
-    }).catch((e) => {
-      setLoading(false)
-      setChapProgress(null)
-      alert(t('msg.server.error') + ': ' + e.message)
-    })
+      setGenerating(true)
+      message.success(t('msg.doc.write.started'))
+    } catch (e) {
+      message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+    }
   }
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', overflow: 'hidden' }}>
 
-      {/* 로딩 오버레이 */}
-      {(loading || rewriting) && (
+      {/* 로딩 오버레이 — 단일 챕터 재작성 시 */}
+      {rewriting && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
           background: 'rgba(0,0,0,0.5)',
@@ -288,32 +241,10 @@ export default function ReqChaptersReadPage() {
           <div style={{
             background: '#fafae5', padding: '20px 30px', borderRadius: 8,
             color: '#6c757d', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, minWidth: 320,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
           }}>
             <Spin />
-            {loading && chapProgress ? (
-              <div style={{ textAlign: 'left', whiteSpace: 'pre-line', fontSize: 14, fontWeight: 'bold' }}>
-                {(() => {
-                  const { chapterName, chapterIndex, chapterTotal, current, total } = chapProgress
-                  if (current && total) {
-                    const chapterPct = Math.round(((chapterIndex - 1) / chapterTotal) * 100)
-                    const itemPct    = Math.round(((current - 1) / total) * 100)
-                    return (
-                      <>
-                        <strong>{chapterName}</strong><br />
-                        &nbsp;&nbsp;{t('lbl.done')}: {chapterIndex - 1}/{chapterTotal} {t('lbl.chapters')} ({chapterPct}%)<br />
-                        &nbsp;&nbsp;{t('lbl.chapter.no')} {chapterIndex}: {current}/{total} {t('lbl.items')} ({itemPct}%)
-                      </>
-                    )
-                  }
-                  return <span>{chapterName}</span>
-                })()}
-              </div>
-            ) : (
-              <div style={{ fontSize: 16, fontWeight: 'bold' }}>
-                {loading ? t('msg.loading.doc.writing') : rewriteProgress}
-              </div>
-            )}
+            <div style={{ fontSize: 16, fontWeight: 'bold' }}>{rewriteProgress}</div>
             <span>{t('msg.loading.wait')}</span>
           </div>
         </div>
@@ -401,10 +332,10 @@ export default function ReqChaptersReadPage() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={closeyn}
+                disabled={closeyn || generating}
                 onClick={handleDocRewrite}
               >
-                {t('btn.doc.write.all')}
+                {generating ? t('msg.doc.writing') : t('btn.doc.write.all')}
               </button>
             )}
             <button

@@ -1220,6 +1220,16 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
         # (재)작성 기준
         if obj == 'rewrite':
             if sep == 'Not':
+                if not isinstance(genchapters, dict):
+                    genchapters = {
+                        'docid': docid,
+                        'genchapteruid': gen_chapter_uid,
+                        'chapteruid': chapter_uid,
+                        'texttemplate': text_template,
+                        'gentexttemplate': text_template,
+                        'createuserid': user_id,
+                        'createfiledts': datetime.now().isoformat()
+                    }
                 update_genchapters(supabase, genchapters, gen_chapter_uid)
 
                 gendoc_genchapters = {

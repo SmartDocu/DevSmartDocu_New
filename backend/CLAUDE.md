@@ -162,6 +162,33 @@ const { data: roleCodes = [] } = useMenuCodes('menu_rolecd')
 
 ---
 
+## 문서 전체 작성 — SQS + ECS Fargate 워커 구조
+
+`POST /gendocs/{id}/generate` 는 SSE가 아닌 SQS 비동기 구조로 동작한다.
+
+| 파일 | 역할 | 코드 수정 후 반영 방법 |
+|------|------|----------------------|
+| `backend/app/routers/gendocs.py` | 잠금 체크, SQS 전송, 상태 조회 API (`/generate/status`) | 백엔드 재시작만으로 반영 |
+| `worker/main.py` | Phase 1(LLM 챕터 생성) / Phase 2(DOCX 병합) / Phase 3(Storage 업로드) 실제 처리 | Docker 재빌드 + ECR 푸시 + ECS 서비스 업데이트 필요 |
+
+### 워커 재배포 명령어 (worker/ 코드 수정 시 필수)
+
+```powershell
+aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com
+docker build -f worker/Dockerfile -t smartdocu-worker .
+docker tag smartdocu-worker:latest 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest
+docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest
+```
+
+푸시 완료 후: ECS 콘솔 → `smartdocu-cluster` → `smartdocu-worker-service` → **서비스 업데이트** → **새 배포 강제 실행** 체크 → 업데이트.
+
+### 주의 — 중복 함수
+
+`worker/main.py`에 `_build_context`, `_upsert_genobjects` 함수가 `gendocs.py`에서 복사된 상태로 존재한다.
+`gendocs.py`의 해당 함수를 수정하면 `worker/main.py`도 동일하게 수정해야 한다.
+
+---
+
 ## 구현 현황
 
 | 영역 | 라우터 |
@@ -169,7 +196,7 @@ const { data: roleCodes = [] } = useMenuCodes('menu_rolecd')
 | 인증 | auth |
 | 마스터 데이터 | docs, chapters |
 | 항목/데이터/콘텐츠 | objects, datas, tables, charts, sentences |
-| 문서 생성 | gendocs (SSE 스트리밍, DOCX 업로드) |
+| 문서 생성 | gendocs (SQS 비동기 + ECS Fargate 워커) |
 | 설정 | settings, configs |
 | 조직 | org |
 | 관리 | admin, llm |
