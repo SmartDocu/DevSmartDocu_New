@@ -39,18 +39,19 @@ def _build_context(sb, variables: list, req, docid) -> dict:
             continue
         sourcedatauid = find[0]["sourcedatauid"]
         datas = process_data_ai_preview(sb, req, sourcedatauid, find[0]["gensentence"], docid=docid)
-        logger.info("[DEBUG] _build_context: v=%s, datas status=%s", v, datas.get("status") if isinstance(datas, dict) else type(datas))
         df = datas.get("result")
         if df is not None and not df.empty:
-            logger.info("[DEBUG] _build_context AI result df: columns=%s, shape=%s", list(df.columns), df.shape)
-            logger.info("[DEBUG] _build_context AI result df head:\n%s", df.head(3).to_string())
             datacols = sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm,dispcolnm").eq("datauid", sourcedatauid).execute().data
             disp_to_query = {item["dispcolnm"]: item["querycolnm"] for item in datacols}
-            logger.info("[DEBUG] _build_context: disp_to_query=%s", disp_to_query)
-            df_renamed = df.rename(columns=disp_to_query)
-            records = df_renamed.to_dict("records")
-            context[f"@{v}"] = records
-            logger.info("_build_context: @%s %d건, 컬럼=%s, 샘플=%s", v, len(records), list(df_renamed.columns), records[0] if records else {})
+            enriched = []
+            for rec in df.to_dict("records"):
+                row = dict(rec)
+                for disp, query in disp_to_query.items():
+                    if disp in rec:
+                        row[query] = rec[disp]
+                enriched.append(row)
+            context[f"@{v}"] = enriched
+            logger.info("_build_context: @%s %d건, 컬럼=%s, 샘플=%s", v, len(enriched), list(enriched[0].keys()) if enriched else [], enriched[0] if enriched else {})
         else:
             logger.warning("_build_context: @%s 데이터 비어있음 (sourcedatauid=%s)", v, sourcedatauid)
     return context

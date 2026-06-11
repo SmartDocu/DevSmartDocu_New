@@ -39,10 +39,6 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
     if sourcedatasourcecd == "api":
         df = process_data_api(supabase, sourcedatauid, gendoc_uid)
 
-    _logger.info("[DEBUG] _process_data_ai_core: sourcedatauid=%s, docid=%s, gendoc_uid=%s", sourcedatauid, docid, gendoc_uid)
-    _logger.info("[DEBUG] df.columns=%s, df.shape=%s", list(df.columns), df.shape)
-    _logger.info("[DEBUG] df.head(3):\n%s", df.head(3).to_string())
-
     # AI 재집계
     result_datacols = (
         supabase.schema(SUPABASE_SCHEMA)

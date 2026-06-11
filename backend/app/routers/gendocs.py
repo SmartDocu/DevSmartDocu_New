@@ -1078,7 +1078,14 @@ def _build_context(sb, variables: list, req, docid) -> dict:
         if df is not None and not df.empty:
             datacols = sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm,dispcolnm").eq("datauid", sourcedatauid).execute().data
             disp_to_query = {item["dispcolnm"]: item["querycolnm"] for item in datacols}
-            context[f"@{v}"] = df.rename(columns=disp_to_query).to_dict('records')
+            enriched = []
+            for rec in df.to_dict("records"):
+                row = dict(rec)
+                for disp, query in disp_to_query.items():
+                    if disp in rec:
+                        row[query] = rec[disp]
+                enriched.append(row)
+            context[f"@{v}"] = enriched
     return context
 
 

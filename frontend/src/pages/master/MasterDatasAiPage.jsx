@@ -54,7 +54,7 @@ export default function MasterDatasAiPage() {
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
   const { data: datas = [] } = useDfDatas(docid)
-  const { data: sourceDatas = [] } = useDatasSource()
+  const { data: sourceDatas = [] } = useDatasSource(projectid)
   const saveDf = useSaveDfData()
   const saveDfv = useSaveDfvData()
   const deleteDf = useDeleteDfData()

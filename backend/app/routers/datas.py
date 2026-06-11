@@ -259,21 +259,23 @@ def list_datas(
 # ── Source datas list (for AI page) ────────────────────────────────────────────
 
 @router.get("/source")
-def list_source_datas(token: str = Depends(get_token)):
+def list_source_datas(projectid: int = None, token: str = Depends(get_token)):
     """DB / Excel 데이터소스 목록 (AI 데이터 연결용)"""
     user = _get_user(token)
     sb = _sb(token)
-    active_ids, _ = _active_projects(sb, str(user.id))
-    if not active_ids:
-        return {"datas": []}
-    rows = (
+    query = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd, projectid")
-        .in_("projectid", active_ids)
         .not_.in_("datasourcecd", ["df", "dfv"])
-        .order("datanm")
-        .execute().data or []
     )
+    if projectid:
+        query = query.eq("projectid", projectid)
+    else:
+        active_ids, _ = _active_projects(sb, str(user.id))
+        if not active_ids:
+            return {"datas": []}
+        query = query.in_("projectid", active_ids)
+    rows = query.order("datanm").execute().data or []
     return {"datas": rows}
 
 

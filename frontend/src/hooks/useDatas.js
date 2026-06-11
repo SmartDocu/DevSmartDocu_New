@@ -51,10 +51,11 @@ export function useDatasAi() {
   })
 }
 
-export function useDatasSource() {
+export function useDatasSource(projectid) {
   return useQuery({
-    queryKey: ['datas', 'source'],
-    queryFn: () => apiClient.get('/datas/source').then((r) => r.data.datas),
+    queryKey: ['datas', 'source', projectid],
+    queryFn: () => apiClient.get('/datas/source', { params: { projectid } }).then((r) => r.data.datas),
+    enabled: !!projectid,
   })
 }
 

@@ -1270,12 +1270,12 @@ def call_params_ui(request, supabase, docid, gendoc_uid, data_uid, params, query
     try:
 
         df = process_data(request, data_uid, None, gendoc_uid)
-        
+
         raw_columns = df.columns.tolist()
         raw_rows = df.values.tolist()
-        
+
         columns, dict_rows = apply_column_display_mapping(data_uid, raw_columns, raw_rows, supabase)
-        
+
         return columns, dict_rows
     except Exception as e:
         raise e

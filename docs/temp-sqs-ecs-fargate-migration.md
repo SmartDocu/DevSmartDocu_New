@@ -250,8 +250,9 @@ docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:l
 |------|---------|
 | 최소 태스크 | 0 |
 | 최대 태스크 | 5 |
-| Scale Out 정책 | `scaleout-policy` — 경보: `smartdocu-worker-scaleout` (ApproximateNumberOfMessagesVisible ≥ 1) → 태스크 +1 |
-| Scale In 정책 | `scalein-policy` — 경보: `smartdocu-worker-scalein` (ApproximateNumberOfMessagesVisible < 1) → 태스크 -1 |
+| Scale Out 정책 | `scaleout-policy` — 경보: `smartdocu-worker-scaleout` (ApproximateNumberOfMessagesVisible ≥ 1, **평가 기간 10초**) → 태스크 +1 |
+| Scale In 정책 | `scalein-policy` — 경보: `smartdocu-worker-scalein` (TotalMessages < 1, 평가 기간 5분) → 태스크 -1 |
+| Chapter Scale Out | 경보: `smartdocu-worker-scaleout-chapter` (ApproximateNumberOfMessagesVisible ≥ 1, **평가 기간 10초**) → 태스크 +1 |
 
 ### 스케일링 동작 요약 (보고용)
 
