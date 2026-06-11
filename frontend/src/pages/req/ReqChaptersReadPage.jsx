@@ -53,8 +53,8 @@ export default function ReqChaptersReadPage() {
   const [contentLoading,  setContentLoading]  = useState(false)
 
   const [rewriting,       setRewriting]       = useState(false)
-  const [rewriteProgress, setRewriteProgress] = useState('')
   const [uploadLoading,   setUploadLoading]   = useState(false)
+  const chapterPollingRef = useRef(null)
 
   const [generating,    setGenerating]    = useState(false)
   const pollingRef = useRef(null)
@@ -67,6 +67,7 @@ export default function ReqChaptersReadPage() {
   useEffect(() => {
     setSelectedChap(null)
     setContent(null)
+    setRewriting(false)
   }, [selectedGendocuid])
 
   // 탭 재진입 시 생성 상태 자동 조회
@@ -77,7 +78,36 @@ export default function ReqChaptersReadPage() {
       .catch(() => {})
   }, [selectedGendocuid]) // eslint-disable-line
 
-  // 생성 중일 때 5초 폴링
+  // 챕터 선택 시 재작성 상태 자동 조회
+  useEffect(() => {
+    if (!selectedChap) { setRewriting(false); return }
+    apiClient.get(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite/status`)
+      .then((res) => { if (res.data.JobStatusCD === 'S') setRewriting(true) })
+      .catch(() => {})
+  }, [selectedChap?.genchapteruid]) // eslint-disable-line
+
+  // 챕터 재작성 중 5초 폴링
+  useEffect(() => {
+    if (!rewriting || !selectedChap) return
+    chapterPollingRef.current = setInterval(() => {
+      apiClient.get(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite/status`)
+        .then((res) => {
+          if (res.data.JobStatusCD !== 'S') {
+            setRewriting(false)
+            clearInterval(chapterPollingRef.current)
+            chapterPollingRef.current = null
+            if (res.data.ErrorCD) message.error(res.data.ErrorMessage || t('msg.server.error'))
+            else { refetch(); loadContent(selectedChap.genchapteruid, viewType) }
+          }
+        })
+        .catch(() => {})
+    }, 5000)
+    return () => {
+      if (chapterPollingRef.current) { clearInterval(chapterPollingRef.current); chapterPollingRef.current = null }
+    }
+  }, [rewriting, selectedChap?.genchapteruid]) // eslint-disable-line
+
+  // 문서 전체 생성 중 5초 폴링
   useEffect(() => {
     if (!generating || !selectedGendocuid) return
     pollingRef.current = setInterval(() => {
@@ -115,7 +145,6 @@ export default function ReqChaptersReadPage() {
   const handleRowSelect = (row) => {
     setSelectedChap(row)
     setViewType('auto')
-    setRewriteProgress('')
     loadContent(row.genchapteruid, 'auto')
     sessionStorage.setItem('chapters_read_genchapteruid', row.genchapteruid)
     setActiveGenchapteruid(row.genchapteruid)
@@ -127,51 +156,20 @@ export default function ReqChaptersReadPage() {
     if (selectedChap) loadContent(selectedChap.genchapteruid, type)
   }
 
-  // ── 챕터 재작성 (SSE) ────────────────────────────────────────────────────────
-  const handleRewrite = () => {
+  // ── 챕터 재작성 (SQS 비동기) ─────────────────────────────────────────────────
+  const handleRewrite = async () => {
     if (!selectedChap) return
-    setRewriting(true)
-    setRewriteProgress(t('msg.loading.chapter.preparing'))
-
-    fetch(`/api/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }).then((res) => {
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-
-      const read = () => {
-        reader.read().then(({ done, value }) => {
-          if (done) { setRewriting(false); refetch(); loadContent(selectedChap.genchapteruid, viewType); return }
-          buf += decoder.decode(value, { stream: true })
-          const parts = buf.split('\n\n')
-          buf = parts.pop() || ''
-          parts.forEach((part) => {
-            const line = part.replace(/^data:\s*/, '')
-            if (!line) return
-            try {
-              const data = JSON.parse(line)
-              if (data.type === 'progress') {
-                const pct = data.total ? Math.round((data.current / data.total) * 100) : 0
-                setRewriteProgress(`${t('msg.loading.chapter.progress')} ${data.current}/${data.total} (${pct}%)`)
-              } else if (data.type === 'complete') {
-                setRewriting(false); setRewriteProgress('')
-                refetch(); loadContent(selectedChap.genchapteruid, viewType)
-              } else if (data.type === 'error') {
-                message.error(data.message || t('msg.server.error'))
-                setRewriting(false); setRewriteProgress('')
-              }
-            } catch (_) {}
-          })
-          read()
-        })
+    try {
+      const res = await apiClient.post(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`)
+      if (res.data.locked) {
+        message.warning(res.data.message || t('msg.chapter.already.writing'))
+        return
       }
-      read()
-    }).catch((e) => {
-      message.error(String(e))
-      setRewriting(false); setRewriteProgress('')
-    })
+      setRewriting(true)
+      message.success(t('msg.chapter.write.started'))
+    } catch (e) {
+      message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+    }
   }
 
   // ── 파일 업로드 ─────────────────────────────────────────────────────────────
@@ -229,26 +227,6 @@ export default function ReqChaptersReadPage() {
   // ── 렌더 ─────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', overflow: 'hidden' }}>
-
-      {/* 로딩 오버레이 — 단일 챕터 재작성 시 */}
-      {rewriting && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          zIndex: 9999,
-        }}>
-          <div style={{
-            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
-            color: '#6c757d', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-          }}>
-            <Spin />
-            <div style={{ fontSize: 16, fontWeight: 'bold' }}>{rewriteProgress}</div>
-            <span>{t('msg.loading.wait')}</span>
-          </div>
-        </div>
-      )}
 
       {/* 페이지 타이틀 */}
       <div className="page-title" style={{ flexShrink: 0 }}>
@@ -382,7 +360,7 @@ export default function ReqChaptersReadPage() {
                     disabled={closeyn || rewriting}
                     onClick={handleRewrite}
                   >
-                    {t('btn.chapter.rewrite')}
+                    {rewriting ? t('msg.chapter.writing') : t('btn.chapter.rewrite')}
                   </button>
                 )}
               </div>

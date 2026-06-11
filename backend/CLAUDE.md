@@ -7,20 +7,21 @@ FastAPI 백엔드. Django 마이그레이션 완료, 현재 FastAPI 단독 운�
 ## 폴더 구조
 
 ```
-backend/
-├── app/
-│   ├── main.py           # FastAPI 앱, CORS, 라우터 등록
-│   ├── config.py         # pydantic-settings 환경변수
-│   ├── dependencies.py   # 공통 의존성 (토큰 추출)
-│   ├── routers/          # 도메인별 라우터
-│   │   ├── auth.py       # 인증
-│   │   └── __init__.py
-│   ├── schemas/          # Pydantic 스키마
-│   │   ├── auth.py
-│   │   └── __init__.py
-│   └── middleware/
-│       └── __init__.py
-└── requirements.txt
+(루트)/
+├── requirements.txt      # 패키지 목록 (루트에 위치)
+└── backend/
+    └── app/
+        ├── main.py           # FastAPI 앱, CORS, 라우터 등록
+        ├── config.py         # pydantic-settings 환경변수
+        ├── dependencies.py   # 공통 의존성 (토큰 추출)
+        ├── routers/          # 도메인별 라우터
+        │   ├── auth.py       # 인증
+        │   └── __init__.py
+        ├── schemas/          # Pydantic 스키마
+        │   ├── auth.py
+        │   └── __init__.py
+        └── middleware/
+            └── __init__.py
 ```
 
 ---

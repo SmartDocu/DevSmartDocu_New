@@ -691,7 +691,7 @@ def get_chapter_content(
     }
 
 
-# ── Chapter Rewrite (SSE) ────────────────────────────────────────────────────────
+# ── Chapter Rewrite (SQS 비동기) ─────────────────────────────────────────────────
 
 @router.post("/genchapters/{genchapteruid}/rewrite")
 def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
@@ -699,7 +699,6 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
     sb = _sb(token)
     user_id = str(user.id)
     ctx = _get_user_context(sb, user_id)
-    docid = ctx["docid"]
 
     genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
@@ -708,111 +707,118 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
     chapteruid = genchap[0]["chapteruid"]
 
     docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
-    if docid_row:
-        docid = docid_row[0]["docid"]
+    docid = docid_row[0]["docid"] if docid_row else ctx.get("docid")
 
-    def event_stream():
-        from utilsPrj.chapter_making import replace_doc
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    timeout = timedelta(hours=2)
 
-        now_dt = datetime.now()
-        now_iso = now_dt.isoformat()
-        timeout = timedelta(hours=2)
+    # Stale 잠금 해제
+    genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
+    for lock in genlocks:
+        upd = {}
+        if lock.get("doclocked") and lock.get("docstartdts"):
+            start = datetime.fromisoformat(lock["docstartdts"].replace("Z", "+00:00"))
+            if user_id == lock.get("useruid") or now_dt - start > timeout:
+                upd["doclocked"] = False
+                upd["docenddts"] = now_iso
+        if lock.get("chapterlocked") and lock.get("chapterstartdts"):
+            start = datetime.fromisoformat(lock["chapterstartdts"].replace("Z", "+00:00"))
+            if user_id == lock.get("useruid") or now_dt - start > timeout:
+                upd["chapterlocked"] = False
+                upd["chapterenddts"] = now_iso
+        if upd:
+            sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
 
-        # Unlock stale locks
-        genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
-        for lock in genlocks:
-            upd = {}
-            if lock.get("doclocked") and lock.get("docstartdts"):
-                start = datetime.fromisoformat(lock["docstartdts"])
-                if user_id == lock.get("useruid") or now_dt - start > timeout:
-                    upd["doclocked"] = False
-                    upd["docenddts"] = now_iso
-            if lock.get("chapterlocked") and lock.get("chapterstartdts"):
-                start = datetime.fromisoformat(lock["chapterstartdts"])
-                if user_id == lock.get("useruid") or now_dt - start > timeout:
-                    upd["chapterlocked"] = False
-                    upd["chapterenddts"] = now_iso
-            if upd:
-                sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
+    # 잠금 중복 확인
+    remaining = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
+    if any(r.get("doclocked") or r.get("chapterlocked") for r in remaining):
+        return {"locked": True, "message": "이 문서 혹은 해당 챕터가 이미 작성 중입니다."}
 
-        # Check remaining locks
-        remaining = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
-        if any(r.get("doclocked") or r.get("chapterlocked") for r in remaining):
-            yield f"data: {json.dumps({'type':'error','message':'이 문서 혹은 해당 챕터가 이미 작성 중입니다.'}, ensure_ascii=False)}\n\n"
-            return
+    # 챕터 잠금 선점
+    sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
+        "gendocuid": gendocuid,
+        "genchapteruid": genchapteruid,
+        "doclocked": False,
+        "chapterlocked": True,
+        "docstartdts": None,
+        "docenddts": None,
+        "chapterstartdts": now_iso,
+        "chapterenddts": None,
+        "useruid": user_id,
+    }, on_conflict="gendocuid,genchapteruid").execute()
 
-        # Set chapter lock
-        sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
-            "gendocuid": gendocuid,
+    # genchapters_realtimes upsert (처리 시작 상태)
+    sb_svc = get_service_client()
+    sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").upsert({
+        "genchapteruid": genchapteruid,
+        "docid": docid,
+        "chapteruid": chapteruid,
+        "jobstatuscd": "S",
+        "startdts": now_iso,
+        "errorcd": None,
+        "errormessage": None,
+        "creator": user_id,
+    }, on_conflict="genchapteruid").execute()
+
+    # SQS 메시지 전송
+    sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+    sqs.send_message(
+        QueueUrl=settings.SQS_CHAPTER_QUEUE_URL,
+        MessageBody=json.dumps({
             "genchapteruid": genchapteruid,
-            "doclocked": False,
-            "chapterlocked": True,
-            "docstartdts": None,
-            "docenddts": None,
-            "chapterstartdts": now_iso,
-            "chapterenddts": None,
-            "useruid": user_id,
-        }, on_conflict="gendocuid,genchapteruid").execute()
+            "gendocuid": gendocuid,
+            "chapteruid": chapteruid,
+            "docid": docid,
+            "tenantid": ctx.get("tenantid"),
+            "projectid": ctx.get("projectid"),
+            "user_id": user_id,
+            "access_token": token,
+        }, ensure_ascii=False),
+    )
 
-        req = FakeRequest(token, user_id, docid, tenantid=ctx["tenantid"], projectid=ctx["projectid"])
+    return {"genchapteruid": genchapteruid}
 
+
+@router.get("/genchapters/{genchapteruid}/rewrite/status")
+def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
+    _get_user(token)
+    sb_svc = get_service_client()
+    row = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").select(
+        "jobstatuscd,errorcd,errormessage,startdts,chapteruid"
+    ).eq("genchapteruid", genchapteruid).execute().data
+    if not row:
+        return {"JobStatusCD": None, "ErrorCD": None, "ErrorMessage": None}
+
+    job_status = row[0]["jobstatuscd"]
+
+    # S 상태 30분 초과 시 CRASH 자동 처리
+    if job_status == "S" and row[0].get("startdts"):
         try:
-            # ▼▼▼ 여기가 핵심 추가 부분 ▼▼▼
-            from utilsPrj.template_parser import process_template, FunctionRegistry, extract_at_variables
-            from utilsPrj.template_extracter import extract_from_processed_html
-
-            # 1. 마스터 texttemplate 조회
-            chapter_row = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
-            texttemplate = chapter_row[0]["texttemplate"] if chapter_row else ""
-
-            # 2. @변수 추출 및 context 빌드
-            result = extract_at_variables(texttemplate)
-            context = _build_context(sb, result["unique"], req, docid)
-
-            # 3. 템플릿 처리 → flattexttemplate
-            registry = FunctionRegistry()
-            registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
-            flattexttemplate = process_template(texttemplate, context, registry, True)
-
-            # 4. genchapters에 flattexttemplate 저장
-            sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({
-                "genchapteruid": genchapteruid,
-                "flattexttemplate": flattexttemplate,
-            }).execute()
-
-            # 5. genobjects 전체 갱신
-            extracted = extract_from_processed_html(flattexttemplate)
-            _upsert_genobjects(sb, extracted, genchapteruid, chapteruid, user_id)
-
-            
-            # 6. 각 genobject 콘텐츠 생성 (resulttext 저장 + gentexttemplate 컴파일)
-            for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
-                                             genChapterDirectYn=True, divide="Chapter"):
-                if progress_data.get("type") == "error":
-                    raise Exception(progress_data.get("message", "오류가 발생했습니다."))
-                elif progress_data.get("type") == "progress":
-                    yield f"data: {json.dumps(progress_data, ensure_ascii=False)}\n\n"
-
-            try:
-                sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
-                    "gendocuid": gendocuid,
+            start = datetime.fromisoformat(row[0]["startdts"].replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) - start > timedelta(minutes=30):
+                now_iso = datetime.now(timezone.utc).isoformat()
+                sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").upsert({
                     "genchapteruid": genchapteruid,
-                    "creator": user_id,
-                    "createdts": datetime.now().isoformat(),
-                }).execute()
-            except Exception:
-                pass
+                    "chapteruid": row[0]["chapteruid"],
+                    "jobstatuscd": "E",
+                    "errorcd": "CRASH",
+                    "errormessage": "Worker process terminated unexpectedly",
+                    "enddts": now_iso,
+                }, on_conflict="genchapteruid").execute()
+                sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
+                    "chapterlocked": False,
+                    "chapterenddts": now_iso,
+                }).eq("genchapteruid", genchapteruid).execute()
+                return {"JobStatusCD": "E", "ErrorCD": "CRASH", "ErrorMessage": "Worker process terminated unexpectedly"}
+        except Exception:
+            pass
 
-            yield f"data: {json.dumps({'type':'complete','success':True}, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type':'error','message':str(e)}, ensure_ascii=False)}\n\n"
-        finally:
-            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
-                "chapterlocked": False,
-                "chapterenddts": datetime.now().isoformat(),
-            }).eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute()
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return {
+        "JobStatusCD": row[0]["jobstatuscd"],
+        "ErrorCD": row[0]["errorcd"],
+        "ErrorMessage": row[0]["errormessage"],
+    }
 
 
 # ── Chapter File Upload ───────────────────────────────────────────────────────────
@@ -985,9 +991,9 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     gendocnm_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
     gendocnm = gendocnm_row[0]["gendocnm"] if gendocnm_row else ""
 
-    # gendocs_queue upsert (처리 시작 상태)
+    # gendocs_realtimes upsert (처리 시작 상태)
     sb_svc = get_service_client()
-    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").upsert({
+    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").upsert({
         "gendocuid": gendocuid,
         "docid": docid,
         "gendocnm": gendocnm,
@@ -1021,7 +1027,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
 def generate_status(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb_svc = get_service_client()
-    row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").select(
+    row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").select(
         "jobstatuscd,errorcd,errormessage,startdts"
     ).eq("gendocuid", gendocuid).execute().data
     if not row:
@@ -1035,7 +1041,7 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
             start = datetime.fromisoformat(row[0]["startdts"].replace("Z", "+00:00"))
             if datetime.now(timezone.utc) - start > timedelta(minutes=30):
                 now_iso = datetime.now(timezone.utc).isoformat()
-                sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").upsert({
+                sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").upsert({
                     "gendocuid": gendocuid,
                     "jobstatuscd": "E",
                     "errorcd": "CRASH",

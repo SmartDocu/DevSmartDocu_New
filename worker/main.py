@@ -2,6 +2,7 @@ import boto3
 import io
 import json
 import logging
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -38,10 +39,14 @@ def _build_context(sb, variables: list, req, docid) -> dict:
             continue
         sourcedatauid = find[0]["sourcedatauid"]
         datas = process_data_ai_preview(sb, req, sourcedatauid, find[0]["gensentence"], docid=docid)
+        logger.info("[DEBUG] _build_context: v=%s, datas status=%s", v, datas.get("status") if isinstance(datas, dict) else type(datas))
         df = datas.get("result")
         if df is not None and not df.empty:
+            logger.info("[DEBUG] _build_context AI result df: columns=%s, shape=%s", list(df.columns), df.shape)
+            logger.info("[DEBUG] _build_context AI result df head:\n%s", df.head(3).to_string())
             datacols = sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm,dispcolnm").eq("datauid", sourcedatauid).execute().data
             disp_to_query = {item["dispcolnm"]: item["querycolnm"] for item in datacols}
+            logger.info("[DEBUG] _build_context: disp_to_query=%s", disp_to_query)
             df_renamed = df.rename(columns=disp_to_query)
             records = df_renamed.to_dict("records")
             context[f"@{v}"] = records
@@ -81,6 +86,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SQS_QUEUE_URL = settings.SQS_QUEUE_URL
+SQS_CHAPTER_QUEUE_URL = settings.SQS_CHAPTER_QUEUE_URL
 AWS_REGION = settings.AWS_REGION
 
 
@@ -102,7 +108,28 @@ def _upsert_queue(sb_svc, gendocuid, docid, gendocnm, job_status_cd, *,
         row["enddts"] = end_dts
     if creator is not None:
         row["creator"] = creator
-    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_queue").upsert(row, on_conflict="gendocuid").execute()
+    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").upsert(row, on_conflict="gendocuid").execute()
+
+
+def _upsert_chapter_queue(sb_svc, genchapteruid, docid, chapteruid, job_status_cd, *,
+                          error_cd=None, error_msg=None, start_dts=None, end_dts=None, creator=None):
+    row = {
+        "genchapteruid": genchapteruid,
+        "docid": docid,
+        "chapteruid": chapteruid,
+        "jobstatuscd": job_status_cd,
+    }
+    if error_cd is not None:
+        row["errorcd"] = error_cd
+    if error_msg is not None:
+        row["errormessage"] = str(error_msg)[:2000]
+    if start_dts is not None:
+        row["startdts"] = start_dts
+    if end_dts is not None:
+        row["enddts"] = end_dts
+    if creator is not None:
+        row["creator"] = creator
+    sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").upsert(row, on_conflict="genchapteruid").execute()
 
 
 def _add_page_number(paragraph):
@@ -270,21 +297,123 @@ def process_message(msg):
             logger.exception("SQS 메시지 삭제 실패: %s", gendocuid)
 
 
-def main():
-    sqs = boto3.client("sqs", region_name=AWS_REGION)
-    logger.info("SmartDocu Worker 시작 — %s", SQS_QUEUE_URL)
+def process_chapter_message(msg):
+    body = json.loads(msg["Body"])
+    genchapteruid = body["genchapteruid"]
+    gendocuid = body["gendocuid"]
+    chapteruid = body["chapteruid"]
+    docid = body.get("docid")
+    tenantid = body.get("tenantid")
+    projectid = body.get("projectid")
+    user_id = body["user_id"]
+    access_token = body["access_token"]
+    receipt_handle = msg["ReceiptHandle"]
 
+    sb = get_thread_supabase(access_token=access_token)
+    sb_svc = get_service_client()
+    sqs = boto3.client("sqs", region_name=AWS_REGION)
+
+    start_iso = datetime.now(timezone.utc).isoformat()
+    _upsert_chapter_queue(sb_svc, genchapteruid, docid, chapteruid, "S", start_dts=start_iso, creator=user_id)
+    logger.info("챕터 처리 시작: %s", genchapteruid)
+
+    try:
+        from utilsPrj.template_parser import process_template, FunctionRegistry, extract_at_variables
+        from utilsPrj.template_extracter import extract_from_processed_html
+
+        req = FakeRequest(access_token, user_id, docid, tenantid=tenantid, projectid=projectid)
+
+        # 템플릿 처리 → flattexttemplate → genobjects
+        _chap = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
+        _tt = _chap[0]["texttemplate"] if _chap else ""
+        _atv = extract_at_variables(_tt)
+        _ctx = _build_context(sb, _atv["unique"], req, docid)
+        _reg = FunctionRegistry()
+        _reg.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
+        _flat = process_template(_tt, _ctx, _reg, True)
+        sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
+        _extracted = extract_from_processed_html(_flat)
+        _upsert_genobjects(sb, _extracted, genchapteruid, chapteruid, user_id)
+
+        # LLM 콘텐츠 생성
+        for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
+                                          genChapterDirectYn=True, divide="Chapter"):
+            if progress_data.get("type") == "error":
+                raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
+
+        try:
+            sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
+                "gendocuid": gendocuid,
+                "genchapteruid": genchapteruid,
+                "creator": user_id,
+                "createdts": datetime.now(timezone.utc).isoformat(),
+            }).execute()
+        except Exception:
+            pass
+
+        end_iso = datetime.now(timezone.utc).isoformat()
+        _upsert_chapter_queue(sb_svc, genchapteruid, docid, chapteruid, "E", end_dts=end_iso)
+        logger.info("챕터 완료: %s", genchapteruid)
+
+    except Exception:
+        logger.exception("챕터 오류: %s", genchapteruid)
+        try:
+            import traceback
+            end_iso = datetime.now(timezone.utc).isoformat()
+            _upsert_chapter_queue(sb_svc, genchapteruid, docid, chapteruid, "E",
+                                  error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+        except Exception:
+            logger.exception("챕터 큐 상태 업데이트 실패: %s", genchapteruid)
+
+    finally:
+        try:
+            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
+                "chapterlocked": False,
+                "chapterenddts": datetime.now(timezone.utc).isoformat(),
+            }).eq("genchapteruid", genchapteruid).execute()
+        except Exception:
+            logger.exception("챕터 잠금 해제 실패: %s", genchapteruid)
+        try:
+            sqs.delete_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, ReceiptHandle=receipt_handle)
+        except Exception:
+            logger.exception("SQS 챕터 메시지 삭제 실패: %s", genchapteruid)
+
+
+def poll_queue(queue_url, handler_fn):
+    sqs = boto3.client("sqs", region_name=AWS_REGION)
+    logger.info("큐 폴링 시작 — %s", queue_url)
     while True:
         resp = sqs.receive_message(
-            QueueUrl=SQS_QUEUE_URL,
+            QueueUrl=queue_url,
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
         )
         for msg in resp.get("Messages", []):
             try:
-                process_message(msg)
+                handler_fn(msg)
             except Exception:
-                logger.exception("메시지 처리 중 예외")
+                logger.exception("메시지 처리 중 예외 [%s]", queue_url)
+
+
+def main():
+    # 큐 URL이 설정된 핸들러만 스레드 시작 (미설정 큐는 건너뜀)
+    queue_handlers = {
+        SQS_QUEUE_URL:         process_message,
+        SQS_CHAPTER_QUEUE_URL: process_chapter_message,
+    }
+    threads = [
+        threading.Thread(target=poll_queue, args=(url, fn), daemon=True, name=f"worker-{url.split('/')[-1]}")
+        for url, fn in queue_handlers.items()
+        if url
+    ]
+    if not threads:
+        logger.error("활성 SQS 큐 URL이 없습니다. 환경변수를 확인하세요.")
+        return
+    for t in threads:
+        t.start()
+    logger.info("SmartDocu Worker 시작 — %d개 큐 폴링 중", len(threads))
+    for t in threads:
+        t.join()
 
 
 if __name__ == "__main__":

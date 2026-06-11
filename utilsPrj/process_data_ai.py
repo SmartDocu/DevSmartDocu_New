@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import requests
 from io import BytesIO
@@ -10,6 +11,8 @@ from utilsPrj.ai_chain import get_tables_prompt, create_python_code, get_full_ch
 from utilsPrj.process_data_db import process_data_db
 from utilsPrj.process_data_excel import process_data_excel
 from utilsPrj.process_data_api import process_data_api
+
+_logger = logging.getLogger(__name__)
 
 def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_mode, docid=None, gendoc_uid=None, all=None):
     """원본 데이터 조회 → column_dict 구성 → AI 체인 실행의 공통 로직"""
@@ -31,10 +34,14 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
     # 원본 가져오기 (DB)
     if sourcedatasourcecd == "db":
         df = process_data_db(supabase, request, sourcedatauid, docid, gendoc_uid, all)
-   
+
     # 원본이 api 데이터 화면일 경우
     if sourcedatasourcecd == "api":
         df = process_data_api(supabase, sourcedatauid, gendoc_uid)
+
+    _logger.info("[DEBUG] _process_data_ai_core: sourcedatauid=%s, docid=%s, gendoc_uid=%s", sourcedatauid, docid, gendoc_uid)
+    _logger.info("[DEBUG] df.columns=%s, df.shape=%s", list(df.columns), df.shape)
+    _logger.info("[DEBUG] df.head(3):\n%s", df.head(3).to_string())
 
     # AI 재집계
     result_datacols = (

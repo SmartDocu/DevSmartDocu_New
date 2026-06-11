@@ -1,100 +1,109 @@
-# Write All Chapters — SQS + ECS Fargate 전환 계획
+# Write All Chapters + Rewrite Chapter — SQS + ECS Fargate 전환 계획
 
 ## 배경
 
-현재 [Write All Chapters] 기능은 FastAPI 안에서 SSE(Server-Sent Events) 스트리밍으로 처리된다.
+**1차:** [Write All Chapters] 기능을 SSE → SQS 비동기로 전환 ✅ 완료  
+**2차:** [Rewrite Chapter] 기능도 SSE → SQS 비동기로 전환 ✅ 완료 (E2E 테스트 포함)
 
 ```
-브라우저 → POST /api/gendocs/{id}/generate → FastAPI (SSE 스트리밍)
-                                               ├── Phase 1: 챕터별 LLM 생성
-                                               ├── Phase 2: DOCX 병합
-                                               └── Phase 3: Supabase 업로드
+[AS-IS]
+브라우저 → POST /api/gendocs/{id}/generate          → FastAPI (SSE 스트리밍, 전체 문서)
+브라우저 → POST /api/gendocs/genchapters/{id}/rewrite → FastAPI (SSE 스트리밍, 단일 챕터)
+
+[TO-BE]
+브라우저 → POST /api/gendocs/{id}/generate           → FastAPI (즉시 반환) → SQS doc-queue
+브라우저 → POST /api/gendocs/genchapters/{id}/rewrite → FastAPI (즉시 반환) → SQS chapter-queue
+
+SQS doc-queue     → Worker Thread 1 → Phase 1(LLM) + Phase 2(DOCX 병합) + Phase 3(업로드)
+SQS chapter-queue → Worker Thread 2 → 템플릿 처리 + LLM 생성 (단일 챕터)
+
+브라우저(화면 재진입 시)
+  → GET /api/gendocs/{id}/generate/status            조회 (gendocs_realtimes)
+  → GET /api/gendocs/genchapters/{id}/rewrite/status 조회 (genchapters_realtimes)
 ```
 
-**문제점:**
-- LLM 호출이 길어지면 HTTP 연결이 끊길 수 있음
-- 동시 요청이 많아지면 API 서버 리소스 고갈
-- 수평 확장이 어려움
-
-**목표 구조:**
-```
-브라우저 → POST /api/gendocs/{id}/generate → FastAPI (즉시 반환)
-                                               └── SQS 큐에 작업 적재
-           ↓
-           토스트 메시지 표시 후 사용자는 다른 화면으로 자유롭게 이동 가능
-
-SQS 큐 → ECS Fargate 워커 (자동 확장)
-           ├── Phase 1: 챕터별 LLM 생성
-           ├── Phase 2: DOCX 병합
-           └── Phase 3: Supabase 업로드
-
-브라우저(챕터 화면 재진입 시)
-  → GET /api/gendocs/{id}/generate/status 조회
-  → 버튼 상태 / 완료 여부 표시
-```
-
-**UX 핵심 변경:**
+**UX 핵심 변경 (공통):**
 - 진행률 창(로딩 오버레이) **완전 제거**
 - 버튼 클릭 후 화면 차단 없음 → 사용자가 다른 작업 가능
-- 완료 여부는 챕터 화면에 돌아올 때 확인
+- 완료 여부는 화면 재진입 시 자동 확인 (5초 폴링)
 
 ---
 
 ## 현재 상태
 
-| 항목 | 현재 상태 |
-|------|----------|
-| Docker 파일 | 없음 (신규 작성 필요) |
-| 배포 환경 | AWS (Azure → AWS 이전 예정) |
-| boto3 | requirements.txt에 이미 포함 |
-| AWS_REGION / 키 | config.py에 이미 설정됨 |
-| SQS / ECS 코드 | 없음 |
-| 작업 상태 테이블 | `GenDocs_Queue` 신규 설계 (아래 참고) |
+| 항목 | 상태 |
+|------|------|
+| Docker 파일 | ✅ 완료 (`worker/Dockerfile`) |
+| 배포 환경 | ✅ AWS ECS Fargate |
+| SQS doc-queue | ✅ `smartdocu-gendocs-queue` |
+| SQS chapter-queue | ✅ `smartdocu-genchapters-queue` (2차 추가) |
+| Worker | ✅ 1개 프로세스, 2개 스레드 (doc + chapter) |
+| 작업 상태 테이블 (문서) | ✅ `sdoc.gendocs_realtimes` (구 `gendocs_queue`) |
+| 작업 상태 테이블 (챕터) | ✅ `sdoc.genchapters_realtimes` (2차 추가) |
 
 ---
 
-## Step 1 — DB: GenDocs_Queue 테이블 생성
+## Step 1 — DB: 작업 상태 테이블 생성 ✅ 완료
 
-> **가장 먼저 해야 하는 작업.** API, 워커, 프론트 모두 이 테이블을 기준으로 통신한다.
+### 1-A. `sdoc.gendocs_realtimes` (문서 전체 작성 상태)
 
-### 테이블 설계 (`sdoc.GenDocs_Queue`)
+> 구 테이블명 `gendocs_queue` → `gendocs_realtimes` 로 변경됨
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
-| GenDocUID | uuid **PK** | 문서 ID (재실행 시 upsert) |
+| GenDocUID | uuid **PK** | 작성문서 ID (재실행 시 upsert) |
 | DocID | int4 | 문서 ID |
 | GenDocNm | varchar | 작성문서명 |
-| ProgressRate | varchar | 진행 정도 (미사용 예정) |
-| JobStatusCD | varchar | **S** = 처리중, **E** = 완료 |
+| JobStatusCD | varchar | **S** = 처리중, **E** = 완료/오류 |
 | ErrorCD | varchar | 오류코드 (정상 완료 시 null) |
 | ErrorMessage | varchar | 오류 메시지 |
 | StartDts | timestamp | 작업 시작 일시 |
 | EndDts | timestamp | 작업 종료 일시 |
+| Creator | uuid | 작업 요청 사용자 |
 
-### 상태 판별 규칙
+### 1-B. `sdoc.genchapters_realtimes` (단일 챕터 재작성 상태)
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| GenChapterUID | uuid **PK** | 작성챕터 ID (재실행 시 upsert) |
+| DocID | int4 | 문서 ID |
+| ChapterUID | uuid **NOT NULL** | 챕터 ID |
+| JobStatusCD | varchar | **S** = 처리중, **E** = 완료/오류 |
+| ErrorCD | varchar | 오류코드 |
+| ErrorMessage | varchar | 오류 메시지 |
+| StartDts | timestamp | 작업 시작 일시 |
+| EndDts | timestamp | 작업 종료 일시 |
+| Creator | uuid | 작업 요청 사용자 |
+
+### 공통 상태 판별 규칙
 
 | JobStatusCD | ErrorCD | 의미 | 프론트 표시 |
 |-------------|---------|------|------------|
 | 없음 (row 없음) | - | 아직 실행 안 됨 | 버튼 활성 |
-| `S` | - | 처리 중 | 버튼 비활성 + "생성 중..." 표시 |
-| `E` | null | 정상 완료 | 버튼 활성 (완료 알람은 별도 알람으로 처리) |
-| `E` | 값 있음 | 실패 | 버튼 활성 (오류 알람은 별도 알람으로 처리) |
-
-> DOCX 결과 URL은 기존 `gendocs.createfileurl` 컬럼을 그대로 사용하므로 별도 컬럼 불필요.
+| `S` | - | 처리 중 | 버튼 비활성 + "작성 중..." 표시, 5초 폴링 |
+| `E` | null | 정상 완료 | 버튼 활성, 데이터 자동 갱신 |
+| `E` | 값 있음 | 실패 | 버튼 활성, 오류 메시지 표시 |
+| `S` 30분 초과 | - | CRASH | 자동으로 `E`+`CRASH` 처리, 잠금 해제 |
 
 ---
 
 ## Step 2 — AWS 인프라 설정 ✅ 완료
 
-> Step 3(워커 코드 작성)과 병렬로 진행 가능.
-
-### ① SQS 큐
+### ① SQS 큐 — 문서 전체 작성
 | 항목 | 값 |
 |------|-----|
 | 큐 이름 | `smartdocu-gendocs-queue` |
 | 유형 | Standard |
 | Visibility Timeout | 900초 (15분) |
 | **Queue URL** | `https://sqs.ap-northeast-2.amazonaws.com/189993504048/smartdocu-gendocs-queue` |
+
+### ① SQS 큐 — 단일 챕터 재작성 (2차 추가)
+| 항목 | 값 |
+|------|-----|
+| 큐 이름 | `smartdocu-genchapters-queue` |
+| 유형 | Standard |
+| Visibility Timeout | 900초 (15분) |
+| **Queue URL** | `https://sqs.ap-northeast-2.amazonaws.com/189993504048/smartdocu-genchapters-queue` |
 
 ### ② ECR 리포지토리
 | 항목 | 값 |
@@ -134,51 +143,70 @@ SQS 큐 → ECS Fargate 워커 (자동 확장)
 
 ---
 
-## Step 3 — 워커 코드 작성
+## Step 3 — 워커 코드 작성 ✅ 완료
 
-> Step 2(AWS 인프라)와 병렬로 진행 가능.
+`worker/main.py` — 1개 프로세스, 큐별 스레드로 동작.
 
-SQS에서 메시지를 꺼내 문서 생성 3개 Phase를 실행하는 **독립 Python 프로세스**.
+### 핸들러 구조
 
-### 재사용할 기존 유틸
+| 스레드 | 큐 | 핸들러 함수 | 처리 내용 |
+|--------|-----|------------|----------|
+| Thread 1 | `smartdocu-gendocs-queue` | `process_message()` | Phase 1(LLM) + Phase 2(DOCX 병합) + Phase 3(Storage 업로드) |
+| Thread 2 | `smartdocu-genchapters-queue` | `process_chapter_message()` | 템플릿 처리 + LLM 생성 (단일 챕터) |
 
-| 파일 | 재사용 함수 |
-|------|------------|
-| `utilsPrj/chapter_making.py` | `replace_doc()`, 큐 로그 함수들 |
-| `utilsPrj/html_to_docx.py` | `html_to_docx_merge()` |
-| `utilsPrj/supabase_client.py` | `get_thread_supabase()` |
-| `backend/app/config.py` | 환경변수 |
-
-### 워커 처리 흐름
+### 문서 전체 작성 흐름 (`process_message`)
 
 ```
 SQS long polling (20초 대기)
-  → 메시지 수신 (gendocuid, chapters 목록, user_id)
-  → GenDocs_Queue upsert: JobStatusCD='S'
-
+  → 메시지 수신 (gendocuid, results[], user_id, ...)
+  → gendocs_realtimes upsert: JobStatusCD='S'
   try:
-    Phase 1: 챕터별 LLM 생성 (chapter_making.replace_doc 재사용)
-    Phase 2: DOCX 병합 (html_to_docx.html_to_docx_merge 재사용)
-    Phase 3: Supabase 업로드 → gendocs.createfileurl 업데이트
-    → GenDocs_Queue upsert: JobStatusCD='E', EndDts=now()
-
+    Phase 1: 챕터별 LLM 생성 (replace_doc 재사용)
+    Phase 2: DOCX 병합 (html_to_docx_merge 재사용)
+    Phase 3: Supabase Storage 업로드 → gendocs.createfileurl 업데이트
+    → gendocs_realtimes upsert: JobStatusCD='E'
   except:
-    → GenDocs_Queue upsert: JobStatusCD='E', ErrorCD=..., ErrorMessage=..., EndDts=now()
-
+    → gendocs_realtimes upsert: JobStatusCD='E', ErrorCD='ERR'
   finally:
-    genlocks 해제
-    SQS 메시지 삭제
+    genlocks(doclocked) 해제 / SQS 메시지 삭제
+```
+
+### 단일 챕터 재작성 흐름 (`process_chapter_message`)
+
+```
+SQS long polling (20초 대기)
+  → 메시지 수신 (genchapteruid, chapteruid, gendocuid, ...)
+  → genchapters_realtimes upsert: JobStatusCD='S'
+  try:
+    템플릿 처리 → flattexttemplate 저장 → genobjects 갱신
+    replace_doc(genChapterDirectYn=True, divide='Chapter') — LLM 생성
+    gendoc_genchapters 이력 기록
+    → genchapters_realtimes upsert: JobStatusCD='E'
+  except:
+    → genchapters_realtimes upsert: JobStatusCD='E', ErrorCD='ERR'
+  finally:
+    genlocks(chapterlocked) 해제 / SQS 메시지 삭제
+```
+
+### 추후 분리 포인트
+
+```
+현재: 1 ECS Service (2 threads: doc + chapter)
+미래: 2 ECS Service
+  - smartdocu-doc-worker-service     (doc thread only)
+  - smartdocu-chapter-worker-service (chapter thread only)
+  분리 방법: 환경변수 WORKER_QUEUES=doc 또는 chapter 로 활성 큐 선택
 ```
 
 ---
 
 ## Step 4 — Docker 이미지 + ECR 푸시 ✅ 완료
 
-워커용 Dockerfile 작성 후 ECR에 이미지 업로드.
+워커용 Dockerfile — `worker/Dockerfile`
 
-- 포함 대상: `backend/`, `utilsPrj/`, `worker/` 폴더
+- 포함 대상: `requirements.txt`(루트), `backend/`, `utilsPrj/`, `worker/`, `static/`
+- **주의:** `requirements.txt`는 루트에 위치 (`backend/requirements.txt` 아님)
 - 이미지: `189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest`
-- Digest: `sha256:a2a7712047669f20663e55e99cea4cb6904b9b49fd9a2bcda4dfcfb085d83a13`
 
 ### ECR 재푸시 명령어 (이미지 업데이트 시)
 ```bash
@@ -261,60 +289,82 @@ docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:l
 
 ---
 
-## Step 6 — 백엔드 API 변경 (`gendocs.py`)
+## Step 6 — 백엔드 API 변경 (`gendocs.py`) ✅ 완료
 
-### 기존 엔드포인트 변경
-- **AS-IS:** `POST /{gendocuid}/generate` → SSE StreamingResponse
-- **TO-BE:** `POST /{gendocuid}/generate` → `{ gendocuid }` 즉시 반환
-  1. genlocks 선점
-  2. GenDocs_Queue upsert (JobStatusCD='S', StartDts=now())
-  3. SQS 메시지 전송 (gendocuid, chapters, user_id)
-
-### 신규 상태 조회 엔드포인트
-- `GET /{gendocuid}/generate/status`
-- GenDocs_Queue 조회 → `{ JobStatusCD, ErrorCD, ErrorMessage }` 반환
-
----
-
-## Step 7 — 프론트엔드 변경 (`ReqChaptersReadPage.jsx`)
-
-> **탭 구조 확인:** React Router + `navigate()` 방식으로 탭 전환 시 컴포넌트가 unmount/remount됨.
-> 탭을 다시 클릭하는 순간 `useEffect`가 자동 실행되므로 **사용자가 새로고침하지 않아도 상태가 자동 반영**됨.
-
-### 제거 대상
-- 전체화면 로딩 오버레이 (`setLoading`, `chapProgress` 관련 UI 전체)
-- SSE fetch reader loop (`handleDocRewrite` 내 스트리밍 코드)
-
-### 변경 내용
-
-**버튼 클릭 시 (`handleDocRewrite`):**
-
+### 문서 전체 작성
 | | AS-IS | TO-BE |
 |--|-------|-------|
-| API 호출 | fetch + SSE reader loop (블로킹) | POST 후 즉시 반환 |
-| 사용자 대기 | 진행률 오버레이로 화면 차단 | `message.success` 토스트 표시 후 자유롭게 다른 탭 이동 가능 |
-| 진행 확인 | SSE 이벤트 수신 | 없음 (탭 재진입 시 자동 확인) |
+| 엔드포인트 | `POST /{gendocuid}/generate` | 동일 |
+| 응답 | SSE StreamingResponse | `{ gendocuid }` 즉시 반환 |
+| 처리 | FastAPI 내에서 직접 실행 | genlocks 선점 → gendocs_realtimes('S') → SQS 전송 |
+| 상태조회 | 없음 | `GET /{gendocuid}/generate/status` 신규 |
 
-**탭 재진입 시 (useEffect on mount — 자동 실행):**
-- `GET /api/gendocs/{gendocuid}/generate/status` 자동 조회
-- `JobStatusCD='S'` → 버튼 비활성 + "생성 중..." 표시, 페이지에 머무는 동안 폴링 유지
-- `JobStatusCD='E'` (완료/실패 모두) → 버튼 활성 (완료·오류 메시지는 별도 알람으로 처리)
-- row 없음 → 버튼 정상 활성
+### 단일 챕터 재작성 (2차 변경)
+| | AS-IS | TO-BE |
+|--|-------|-------|
+| 엔드포인트 | `POST /genchapters/{id}/rewrite` | 동일 |
+| 응답 | SSE StreamingResponse | `{ genchapteruid }` 즉시 반환 |
+| 처리 | FastAPI 내에서 직접 실행 | genlocks 선점 → genchapters_realtimes('S') → SQS 전송 |
+| 상태조회 | 없음 | `GET /genchapters/{id}/rewrite/status` 신규 |
+
+### 환경변수 추가
+| 변수 | 값 |
+|------|-----|
+| `SQS_QUEUE_URL` | `https://sqs.ap-northeast-2.amazonaws.com/189993504048/smartdocu-gendocs-queue` |
+| `SQS_CHAPTER_QUEUE_URL` | `https://sqs.ap-northeast-2.amazonaws.com/189993504048/smartdocu-genchapters-queue` |
 
 ---
 
-## Step 8 — E2E 테스트 및 배포 ✅ 완료
+## Step 7 — 프론트엔드 변경 (`ReqChaptersReadPage.jsx`) ✅ 완료
 
-### 테스트 체크리스트
+> **탭 구조:** React Router + `navigate()` 방식으로 탭 전환 시 컴포넌트 unmount/remount.
+> 탭 재진입 시 `useEffect`가 자동 실행 → 상태 자동 반영.
+
+### 공통 변경사항
+- 전체화면 로딩 오버레이 완전 제거 (문서/챕터 모두)
+- SSE fetch reader loop 제거 (문서/챕터 모두)
+
+### 문서 전체 작성 (`handleDocRewrite`)
+- 클릭 → POST 즉시 반환 → `generating=true` + 성공 토스트
+- 탭 재진입 시 `GET /generate/status` 자동 조회 → `S`면 폴링 시작
+- 5초 폴링 → `S` 아니면 버튼 활성 + 챕터 목록 refetch
+
+### 단일 챕터 재작성 (`handleRewrite`) — 2차 변경
+- 클릭 → POST 즉시 반환 → `rewriting=true` + 성공 토스트
+- 챕터 선택 시 `GET /genchapters/{id}/rewrite/status` 자동 조회 → `S`면 폴링 시작
+- 5초 폴링 → `S` 아니면 버튼 활성 + 챕터 콘텐츠 자동 갱신
+
+### 다국어 신규 키 (등록 필요)
+| 키 | 한국어 |
+|----|--------|
+| `msg.doc.writing` | 문서 작성 중... |
+| `msg.doc.write.started` | 문서 작성 요청이 접수되었습니다. |
+| `msg.chapter.writing` | 챕터 작성 중... |
+| `msg.chapter.write.started` | 챕터 작성 요청이 접수되었습니다. |
+| `msg.chapter.already.writing` | 이 문서 혹은 해당 챕터가 이미 작성 중입니다. |
+
+---
+
+## Step 8 — E2E 테스트 및 배포
+
+### 문서 전체 작성 (1차) 테스트 체크리스트
 - [x] 버튼 클릭 → 토스트 표시 후 다른 화면으로 이동 가능 확인 (오버레이 없음)
 - [x] 작업 enqueue → SQS 메시지 적재 확인
 - [x] 워커가 메시지 수신 후 처리 시작 확인
 - [x] 챕터 화면 재진입 시 "생성 중..." 상태 표시 확인
 - [x] 챕터 화면 재진입 시 완료 상태 표시 및 DOCX URL 접근 확인
 - [x] 문서 전체 작성 (Phase 1 LLM → Phase 2 DOCX 병합 → Phase 3 Storage 업로드) 정상 동작 확인
-- [ ] 워커 오류 시 챕터 화면 재진입 시 오류 배너 표시 확인
+- [ ] 워커 오류 시 오류 표시 확인
 - [ ] 동시 요청 시 Fargate 태스크 Scale Out 확인
 - [ ] 큐 비었을 때 태스크 Scale In 확인
+
+### 단일 챕터 재작성 (2차) 테스트 체크리스트
+- [x] 버튼 클릭 → 토스트 표시 후 버튼 비활성 확인 (오버레이 없음)
+- [x] SQS chapter-queue 메시지 적재 확인
+- [x] 워커 Thread 2가 메시지 수신 후 처리 시작 확인
+- [x] 챕터 재선택 시 "챕터 작성 중..." 상태 자동 표시 확인
+- [x] 완료 후 챕터 콘텐츠 자동 갱신 확인
+- [x] 이미 작성 중인 챕터 재클릭 시 경고 토스트 확인
 
 ---
 
@@ -345,17 +395,35 @@ AWS 콘솔 → ECS → 클러스터 `smartdocu-cluster` → 서비스 `smartdocu
 ## 작업 의존성 순서
 
 ```
-Step 1  GenDocs_Queue 테이블 생성
+[1차 — 문서 전체 작성] ✅ 완료
+Step 1  gendocs_realtimes 테이블 생성
     ↓
-Step 2  AWS 인프라 설정  ←→  Step 3  워커 코드 작성  (병렬 가능)
-    ↓                              ↓
+Step 2  AWS 인프라 (SQS doc-queue, ECR, IAM, ECS 클러스터)
+    ↓
+Step 3  워커 코드 작성 (process_message)
+    ↓
 Step 4  Dockerfile + ECR 푸시
     ↓
-Step 5  ECS Task Definition + Auto Scaling
+Step 5  ECS Task Definition + Service + Auto Scaling
     ↓
-Step 6  백엔드 API 변경
+Step 6  백엔드 API 변경 (generate → SQS)
     ↓
-Step 7  프론트엔드 변경
+Step 7  프론트엔드 변경 (SSE 제거, 폴링)
     ↓
-Step 8  E2E 테스트 및 배포
+Step 8  E2E 테스트 ✅
+
+[2차 — 단일 챕터 재작성] ✅ 완료
+Step 1  genchapters_realtimes 테이블 생성
+    ↓
+Step 2  AWS 인프라 (SQS chapter-queue 추가)
+    ↓
+Step 3  워커 코드 추가 (process_chapter_message + 멀티 스레드 main)
+    ↓
+Step 4  Dockerfile 수정 + ECR 재푸시
+    ↓
+Step 6  백엔드 API 변경 (rewrite → SQS + status 엔드포인트)
+    ↓
+Step 7  프론트엔드 변경 (SSE 제거, 폴링)
+    ↓
+Step 8  E2E 테스트 (진행 중)
 ```

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-northeast-2"
     SECRETS_TTL_SECONDS: int = 86400
     SQS_QUEUE_URL: str = ""
+    SQS_CHAPTER_QUEUE_URL: str = ""
 
     # 이메일
     EMAIL_HOST_USER: str = ""
