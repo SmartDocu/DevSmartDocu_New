@@ -469,7 +469,7 @@ export default function AppLayout() {
         <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px', flex: 1, position: 'relative' }}>
             {helpItem && (
-              <div style={{ position: 'absolute', top: 28, right: 24, zIndex: 1 }}>
+              <div style={{ position: 'absolute', top: 21, right: 2, zIndex: 1 }}>
                 <QuestionCircleOutlined
                   style={{ fontSize: 20, cursor: 'pointer', color: '#8c8c8c' }}
                   onClick={() => setHelpModalOpen(true)}
