@@ -748,9 +748,9 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         "useruid": user_id,
     }, on_conflict="gendocuid,genchapteruid").execute()
 
-    # genchapters_realtimes upsert (처리 시작 상태)
+    # genchapters_realtimes insert (처리 시작 상태) → genchapterjobuid 획득
     sb_svc = get_service_client()
-    sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").upsert({
+    res = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").insert({
         "genchapteruid": genchapteruid,
         "docid": docid,
         "chapteruid": chapteruid,
@@ -759,7 +759,10 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         "errorcd": None,
         "errormessage": None,
         "creator": user_id,
-    }, on_conflict="genchapteruid").execute()
+        "is_start_doc": False,
+        "gendocjobuid": None,
+    }).execute()
+    genchapterjobuid = res.data[0]["genchapterjobuid"]
 
     # SQS 메시지 전송
     sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
@@ -767,13 +770,16 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         QueueUrl=settings.SQS_CHAPTER_QUEUE_URL,
         MessageBody=json.dumps({
             "genchapteruid": genchapteruid,
+            "genchapterjobuid": genchapterjobuid,
             "gendocuid": gendocuid,
+            "gendocjobuid": None,
             "chapteruid": chapteruid,
             "docid": docid,
             "tenantid": ctx.get("tenantid"),
             "projectid": ctx.get("projectid"),
             "user_id": user_id,
             "access_token": token,
+            "is_start_doc": False,
         }, ensure_ascii=False),
     )
 
@@ -785,8 +791,8 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb_svc = get_service_client()
     row = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").select(
-        "jobstatuscd,errorcd,errormessage,startdts,chapteruid"
-    ).eq("genchapteruid", genchapteruid).execute().data
+        "genchapterjobuid,jobstatuscd,errorcd,errormessage,startdts,chapteruid"
+    ).eq("genchapteruid", genchapteruid).order("startdts", desc=True).limit(1).execute().data
     if not row:
         return {"JobStatusCD": None, "ErrorCD": None, "ErrorMessage": None}
 
@@ -798,14 +804,12 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
             start = datetime.fromisoformat(row[0]["startdts"].replace("Z", "+00:00"))
             if datetime.now(timezone.utc) - start > timedelta(minutes=30):
                 now_iso = datetime.now(timezone.utc).isoformat()
-                sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").upsert({
-                    "genchapteruid": genchapteruid,
-                    "chapteruid": row[0]["chapteruid"],
+                sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").update({
                     "jobstatuscd": "E",
                     "errorcd": "CRASH",
                     "errormessage": "Worker process terminated unexpectedly",
                     "enddts": now_iso,
-                }, on_conflict="genchapteruid").execute()
+                }).eq("genchapterjobuid", row[0]["genchapterjobuid"]).execute()
                 sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
                     "chapterlocked": False,
                     "chapterenddts": now_iso,
@@ -991,9 +995,9 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     gendocnm_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
     gendocnm = gendocnm_row[0]["gendocnm"] if gendocnm_row else ""
 
-    # gendocs_realtimes upsert (처리 시작 상태)
+    # gendocs_realtimes insert (처리 시작 상태) → gendocjobuid 획득
     sb_svc = get_service_client()
-    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").upsert({
+    res = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").insert({
         "gendocuid": gendocuid,
         "docid": docid,
         "gendocnm": gendocnm,
@@ -1002,7 +1006,8 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
         "errorcd": None,
         "errormessage": None,
         "creator": user_id,
-    }, on_conflict="gendocuid").execute()
+    }).execute()
+    gendocjobuid = res.data[0]["gendocjobuid"]
 
     # SQS 메시지 전송
     sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
@@ -1010,6 +1015,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
         QueueUrl=settings.SQS_QUEUE_URL,
         MessageBody=json.dumps({
             "gendocuid": gendocuid,
+            "gendocjobuid": gendocjobuid,
             "user_id": user_id,
             "access_token": token,
             "results": results,
@@ -1028,8 +1034,8 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb_svc = get_service_client()
     row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").select(
-        "jobstatuscd,errorcd,errormessage,startdts"
-    ).eq("gendocuid", gendocuid).execute().data
+        "gendocjobuid,jobstatuscd,errorcd,errormessage,startdts"
+    ).eq("gendocuid", gendocuid).order("startdts", desc=True).limit(1).execute().data
     if not row:
         return {"JobStatusCD": None, "ErrorCD": None, "ErrorMessage": None}
 
@@ -1041,13 +1047,12 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
             start = datetime.fromisoformat(row[0]["startdts"].replace("Z", "+00:00"))
             if datetime.now(timezone.utc) - start > timedelta(minutes=30):
                 now_iso = datetime.now(timezone.utc).isoformat()
-                sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").upsert({
-                    "gendocuid": gendocuid,
+                sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").update({
                     "jobstatuscd": "E",
                     "errorcd": "CRASH",
                     "errormessage": "Worker process terminated unexpectedly",
                     "enddts": now_iso,
-                }, on_conflict="gendocuid").execute()
+                }).eq("gendocjobuid", row[0]["gendocjobuid"]).execute()
                 sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
                     "doclocked": False,
                     "docenddts": now_iso,
@@ -1089,22 +1094,72 @@ def _build_context(sb, variables: list, req, docid) -> dict:
     return context
 
 
-def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str):
+def _convert_filterjson_to_querycolnm(sb, dfv_datauids: list, raw_params: dict) -> dict:
+    if not raw_params or not dfv_datauids:
+        return raw_params
+    ofm_resp = sb.schema(SUPABASE_SCHEMA).table("objectfiltermaps") \
+        .select("dfvcolnm, objectdatauid, objectdatacolnm") \
+        .in_("dfvdatauid", dfv_datauids).execute()
+    if not ofm_resp.data:
+        return raw_params
+    dfvcolnm_to_ofm = {}
+    for r in ofm_resp.data:
+        if r["dfvcolnm"] not in dfvcolnm_to_ofm:
+            dfvcolnm_to_ofm[r["dfvcolnm"]] = r
+    obj_datauids = list({r["objectdatauid"] for r in ofm_resp.data if r.get("objectdatauid")})
+    src_uid_map = {}
+    if obj_datauids:
+        datas_resp = sb.schema(SUPABASE_SCHEMA).table("datas") \
+            .select("datauid, sourcedatauid").in_("datauid", obj_datauids).execute()
+        src_uid_map = {r["datauid"]: r.get("sourcedatauid") for r in (datas_resp.data or [])}
+    source_uids = [v for v in src_uid_map.values() if v]
+    dc_map = {}
+    if source_uids:
+        dc_resp = sb.schema(SUPABASE_SCHEMA).table("datacols") \
+            .select("datauid, querycolnm, dispcolnm").in_("datauid", source_uids).execute()
+        for c in (dc_resp.data or []):
+            dc_map.setdefault(c["datauid"], {})[c["dispcolnm"]] = c["querycolnm"]
+    converted = {}
+    for k, v in raw_params.items():
+        ofm = dfvcolnm_to_ofm.get(k)
+        if not ofm:
+            converted[k] = v
+            continue
+        obj_disp = ofm["objectdatacolnm"]
+        src_uid = src_uid_map.get(ofm.get("objectdatauid"))
+        disp_col_map = dc_map.get(src_uid, {}) if src_uid else {}
+        query_col = disp_col_map.get(obj_disp, obj_disp)
+        converted[query_col] = v
+    return converted
+
+
+_DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
+                   "CA": "charts", "TA": "tables", "SA": "sentences"}
+
+
+def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None):
     """req_chapters_read.py의 _upsert_genobjects와 동일"""
     now_iso = datetime.now().isoformat()
-
+    dfv_datauids = []
+    if docid:
+        dfv_rows = sb.schema(SUPABASE_SCHEMA).table("datas") \
+            .select("datauid").eq("datasourcecd", "dfv").eq("dfv_docid", docid).execute().data
+        dfv_datauids = [r["datauid"] for r in dfv_rows]
     rows = []
     for item in extracted:
         object_data = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("objectnm", item["objectNm"]).execute().data
         if not object_data:
             continue
+        objecttypecd = object_data[0].get("objecttypecd")
+        objectuid = object_data[0]["objectuid"]
+        filterjson = _convert_filterjson_to_querycolnm(sb, dfv_datauids, item["params"] or {})
         rows.append({
             "genobjectuid": str(uuid.uuid4()),
             "genchapteruid": genchapteruid,
             "chapteruid": chapteruid,
             "objectuid": object_data[0]["objectuid"],
             "objecttypecd": object_data[0].get("objecttypecd"),
-            "filterjson": item["params"],
+            "filterjson": filterjson,
             "replacestring": item["replacestring"],
             "creator": user_id,
             "createdts": now_iso,

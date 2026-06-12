@@ -512,7 +512,7 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token)):
     if body.cols:
         sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
         sb.schema(SUPABASE_SCHEMA).table("datacols").insert(
-            [{**c.model_dump(), "datauid": datauid, "creator": str(user.id)} for c in body.cols]
+            [{**c.model_dump(), "datauid": datauid, "useyn": True, "creator": str(user.id)} for c in body.cols]
         ).execute()
     return {"datauid": datauid, "message": "저장되었습니다."}
 
@@ -541,7 +541,7 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token)):
     if body.cols:
         sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
         sb.schema(SUPABASE_SCHEMA).table("datacols").insert(
-            [{**c.model_dump(), "datauid": datauid, "creator": str(user.id)} for c in body.cols]
+            [{**c.model_dump(), "datauid": datauid, "useyn": True, "creator": str(user.id)} for c in body.cols]
         ).execute()
     return {"datauid": datauid, "message": "저장되었습니다."}
 

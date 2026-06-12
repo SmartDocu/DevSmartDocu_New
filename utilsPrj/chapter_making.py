@@ -19,9 +19,12 @@ from anthropic import Anthropic
 from langchain_core.output_parsers.string import StrOutputParser
 
 import traceback
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from threading import Lock, Semaphore, Thread
+
+
 
 _db_semaphore = Semaphore(4)
 
@@ -536,7 +539,7 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
     """단일 UI 객체의 HTML 생성"""
     columns, dict_rows = call_params_ui(request, supabase, docid, gendoc_uid, data_uid, params, query)
 
-    # filterjson 기반 행 필터링
+    # filterjson 기반 행 필터링 (filterjson 키 = querycolnm, dict_rows 키 = dispcolnm)
     genobjectuid = data_item.get('genobjectuid')
     if genobjectuid:
         go_resp = supabase.schema(SUPABASE_SCHEMA).table("genobjects") \
@@ -545,7 +548,6 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
         if filterjson and dict_rows:
             if isinstance(filterjson, str):
                 filterjson = json.loads(filterjson)
-            # querycolnm → dispcolnm 변환
             data_uid_for_map = data_item.get('datauid')
             col_resp = supabase.schema(SUPABASE_SCHEMA).table("datacols") \
                 .select("querycolnm, dispcolnm").eq("datauid", data_uid_for_map).execute()

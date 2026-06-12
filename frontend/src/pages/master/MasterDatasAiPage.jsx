@@ -74,10 +74,10 @@ export default function MasterDatasAiPage() {
   const [isTableValue, setIsTableValue] = useState(false)
 
   useEffect(() => {
-    if (previewCols.length === 0 && existingCols.length > 0) {
+    if (existingCols.length > 0) {
       setPreviewCols(existingCols.map((c) => ({ ...c })))
     }
-  }, [existingCols])
+  }, [form.datauid, existingCols])
 
   useEffect(() => {
     if (!isNew) return
@@ -206,7 +206,7 @@ export default function MasterDatasAiPage() {
                   <tr
                     key={d.datauid}
                     onClick={() => handleSelect(d)}
-                    style={{ cursor: 'pointer', background: selected?.datauid === d.datauid ? '#e6f4ff' : '' }}
+                    style={{ cursor: 'pointer', background: selected?.datauid === d.datauid ? 'var(--selected-row-bg)' : '', color: selected?.datauid === d.datauid ? 'var(--selected-row)' : '' }}
                   >
                     <td>{d.datanm}</td>
                     <td style={{ textAlign: 'center' }}>
