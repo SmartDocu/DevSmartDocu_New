@@ -666,7 +666,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 5. thd. (98개)
+## 5. thd. (99개)
 
 | term_key |
 |----------|
@@ -720,6 +720,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | thd.llmvendornm_thd |
 | thd.logical_name_thd |
 | thd.measureyn |
+| thd.menu_table |
 | thd.menucd_thd |
 | thd.messagekey_thd |
 | thd.messagetypecd_thd |
@@ -838,7 +839,15 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 
 ---
 
-## 7. inf. (10개)
+## 7. mnu. (1개)
+
+| term_key |
+|----------|
+| mnu.system.translation |
+
+---
+
+## 8. inf. (10개)
 
 | term_key |
 |----------|
@@ -863,10 +872,11 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.   | 191  |
 | btn.   | 66   |
 | lbl.   | 261  |
-| thd.   | 98   |
+| thd.   | 99   |
 | ttl.   | 60   |
+| mnu.   | 1    |
 | inf.   | 10   |
-| **합계** | **722** |
+| **합계** | **725** |
 
 
 ---

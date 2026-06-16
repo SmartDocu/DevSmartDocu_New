@@ -30,6 +30,25 @@ export function useDatasProjects() {
   })
 }
 
+export function useDatasByProject(projectid, docid) {
+  return useQuery({
+    queryKey: ['datas-by-project', projectid, docid],
+    queryFn: () =>
+      apiClient.get('/datas/by-project', {
+        params: { ...(projectid ? { projectid } : {}), ...(docid ? { docid } : {}) },
+      }).then((r) => r.data),
+    enabled: !!projectid,
+  })
+}
+
+export function useDataDetail(datauid) {
+  return useQuery({
+    queryKey: ['data-detail', datauid],
+    queryFn: () => apiClient.get(`/datas/${datauid}/detail`).then((r) => r.data),
+    enabled: !!datauid,
+  })
+}
+
 export function useDatasDb() {
   return useQuery({
     queryKey: ['datas', 'db'],

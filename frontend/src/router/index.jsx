@@ -44,6 +44,8 @@ import AdminHelpsPage from '@/pages/admin/AdminHelpsPage'
 import AdminMenusPage from '@/pages/admin/AdminMenusPage'
 import AdminMessagesPage from '@/pages/admin/AdminMessagesPage'
 import AdminTermsPage from '@/pages/admin/AdminTermsPage'
+import AdminUiTermsPage from '@/pages/admin/AdminUiTermsPage'
+import AdminDatasetsPage from '@/pages/admin/AdminDatasetsPage'
 import AdminCodesPage from '@/pages/admin/AdminCodesPage'
 import MasterAiChartsPage from '@/pages/master/MasterAiChartsPage'
 import MasterAiSentencesPage from '@/pages/master/MasterAiSentencesPage'
@@ -151,6 +153,8 @@ export const router = createBrowserRouter([
       { path: 'admin/menus', element: <AdminMenusPage /> },
       { path: 'admin/messages', element: <AdminMessagesPage /> },
       { path: 'admin/terms', element: <AdminTermsPage /> },
+      { path: 'admin/ui-terms', element: <AdminUiTermsPage /> },
+      { path: 'admin/datasets', element: <AdminDatasetsPage /> },      
       { path: 'admin/codes', element: <AdminCodesPage /> },
     ],
   },

@@ -333,7 +333,8 @@ def list_tenants(token: str = Depends(get_token)):
             row["dectelno"] = ""
 
     langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
-    return {"tenants": rows, "billing_models": BILLING_MODELS, "languages": langs}
+    timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezone").select("*").eq("useyn", True).execute().data or [])]
+    return {"tenants": rows, "billing_models": BILLING_MODELS, "languages": langs, "timezones": timezones}
 
 
 @router.post("/tenants")

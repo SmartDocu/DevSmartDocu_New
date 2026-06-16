@@ -10,27 +10,6 @@ const BILLING_OPTIONS = [
   { value: 'En' },
 ]
 
-const IANA_TIMEZONES = [
-  'Africa/Cairo', 'Africa/Johannesburg', 'Africa/Lagos', 'Africa/Nairobi',
-  'America/Anchorage', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'America/Mexico_City', 'America/New_York', 'America/Phoenix', 'America/Sao_Paulo',
-  'America/Toronto', 'America/Vancouver',
-  'Asia/Bangkok', 'Asia/Dhaka', 'Asia/Dubai', 'Asia/Hong_Kong',
-  'Asia/Jakarta', 'Asia/Karachi', 'Asia/Kolkata', 'Asia/Kuala_Lumpur',
-  'Asia/Manila', 'Asia/Riyadh', 'Asia/Seoul', 'Asia/Shanghai',
-  'Asia/Singapore', 'Asia/Taipei', 'Asia/Tehran', 'Asia/Tokyo', 'Asia/Yangon',
-  'Atlantic/Azores',
-  'Australia/Adelaide', 'Australia/Brisbane', 'Australia/Melbourne',
-  'Australia/Perth', 'Australia/Sydney',
-  'Europe/Amsterdam', 'Europe/Athens', 'Europe/Berlin', 'Europe/Brussels',
-  'Europe/Budapest', 'Europe/Copenhagen', 'Europe/Dublin', 'Europe/Helsinki',
-  'Europe/Istanbul', 'Europe/Kiev', 'Europe/Lisbon', 'Europe/London',
-  'Europe/Madrid', 'Europe/Moscow', 'Europe/Oslo', 'Europe/Paris',
-  'Europe/Prague', 'Europe/Rome', 'Europe/Stockholm', 'Europe/Vienna',
-  'Europe/Warsaw', 'Europe/Zurich',
-  'Pacific/Auckland', 'Pacific/Fiji', 'Pacific/Guam', 'Pacific/Honolulu',
-  'UTC',
-]
 
 const EMPTY_FORM = {
   tenantid: '', tenantnm: '', useyn: true, billingmodelcd: 'Fr',
@@ -58,6 +37,7 @@ export default function SettingsTenantsPage() {
 
   const tenants = data.tenants || []
   const languages = data.languages || []
+  const timezones = data.timezones || []
 
   const handleRowSelect = (row) => {
     setSelectedId(row.tenantid)
@@ -270,7 +250,7 @@ export default function SettingsTenantsPage() {
             <select value={form.timezone}
               onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))}>
               <option value="">{t('msg.select')}</option>
-              {IANA_TIMEZONES.map((tz) => (
+              {timezones.map((tz) => (
                 <option key={tz} value={tz}>{tz}</option>
               ))}
             </select>

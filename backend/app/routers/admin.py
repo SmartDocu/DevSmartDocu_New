@@ -731,3 +731,62 @@ def delete_prompt_translation(promptkey: str, languagecd: str, token: str = Depe
         .eq("promptkey", promptkey).eq("languagecd", languagecd).execute()
     )
     return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════
+#  UI TERMS (UI 용어 조회/검색 — 읽기 전용)
+# ══════════════════════════════════════════════════════
+
+@router.get("/ui-terms")
+def list_ui_terms(
+    search: Optional[str] = Query(None),
+    token: str = Depends(get_token),
+):
+    _require_admin(token)
+    sb = _sb_service()
+
+    terms = (
+        sb.schema(SUPABASE_SCHEMA).table("ui_terms").select("*").order("term_key").execute().data or []
+    )
+
+    translations: list = []
+    offset = 0
+    while True:
+        batch = (
+            sb.schema(SUPABASE_SCHEMA)
+            .table("ui_term_translations")
+            .select("*")
+            .range(offset, offset + 999)
+            .execute()
+            .data or []
+        )
+        translations.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+
+    trans_map: dict = {}
+    for tr in translations:
+        key = tr["term_key"]
+        if key not in trans_map:
+            trans_map[key] = []
+        trans_map[key].append({"language_cd": tr["language_cd"], "translated_text": tr["translated_text"]})
+
+    result = [
+        {**term, "translations": trans_map.get(term["term_key"], [])}
+        for term in terms
+    ]
+
+    if search:
+        s = search.lower()
+        result = [
+            item for item in result
+            if (
+                s in (item.get("term_key") or "").lower()
+                or s in (item.get("term_group") or "").lower()
+                or s in (item.get("default_text") or "").lower()
+                or any(s in (tr.get("translated_text") or "").lower() for tr in item["translations"])
+            )
+        ]
+
+    return {"items": result, "total": len(result)}

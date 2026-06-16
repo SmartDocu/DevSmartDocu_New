@@ -128,6 +128,214 @@ def list_datas_projects(token: str = Depends(get_token)):
     }
 
 
+# ── Datas by Project (read-only) ───────────────────────────────────────────────
+
+_DATASOURCE_LABEL = {
+    "db": "DB",
+    "ex": "Excel",
+    "api": "API",
+    "df": "My DataSet - Dataset",
+    "dfv": "My DataSet - Variable",
+}
+
+
+@router.get("/by-project")
+def list_datas_by_project(
+    projectid: Optional[str] = None,
+    docid: Optional[str] = None,
+    token: str = Depends(get_token),
+):
+    _get_user(token)
+    sb = _sb(token)
+
+    if not projectid:
+        return {"items": []}
+
+    # 비dfv: projectid 기준 (db, ex, api, df 포함)
+    base_datas = (
+        sb.schema(SUPABASE_SCHEMA).table("datas")
+        .select("*")
+        .eq("projectid", int(projectid))
+        .neq("datasourcecd", "dfv")
+        .execute().data or []
+    )
+
+    # dfv: dfv_docid 기준
+    dfv_datas = []
+    if docid:
+        dfv_datas = (
+            sb.schema(SUPABASE_SCHEMA).table("datas")
+            .select("*")
+            .eq("dfv_docid", int(docid))
+            .eq("datasourcecd", "dfv")
+            .execute().data or []
+        )
+
+    datas = base_datas + dfv_datas
+
+    # 사용 중 목록: doc_datas.docid 기준
+    doc_use_set: set = set()
+    if docid:
+        doc_data_rows = (
+            sb.schema(SUPABASE_SCHEMA).table("doc_datas")
+            .select("datauid")
+            .eq("docid", int(docid))
+            .execute().data or []
+        )
+        doc_use_set = {r["datauid"] for r in doc_data_rows if r.get("datauid")}
+
+    # df/dfv는 sourcedatauid의 connector를 사용
+    src_uids = list({d["sourcedatauid"] for d in datas if d.get("datasourcecd") in ("df", "dfv") and d.get("sourcedatauid")})
+    src_conn_lookup: dict = {}
+    if src_uids:
+        src_rows = (
+            sb.schema(SUPABASE_SCHEMA).table("datas")
+            .select("datauid, connuid")
+            .in_("datauid", src_uids)
+            .execute().data or []
+        )
+        src_conn_lookup = {r["datauid"]: r.get("connuid") for r in src_rows}
+
+    all_conn_ids = list({
+        cid for cid in
+        [d.get("connuid") for d in datas] +
+        list(src_conn_lookup.values())
+        if cid
+    })
+    conn_map: dict = {}
+    if all_conn_ids:
+        connectors = (
+            sb.schema(SUPABASE_SCHEMA).table("connectors")
+            .select("connuid, connnm")
+            .in_("connuid", all_conn_ids)
+            .execute().data or []
+        )
+        conn_map = {c["connuid"]: c["connnm"] for c in connectors}
+
+    def _connnm(d: dict) -> str:
+        src = d.get("datasourcecd") or ""
+        if src in ("df", "dfv"):
+            src_connuid = src_conn_lookup.get(d.get("sourcedatauid") or "")
+            return conn_map.get(src_connuid or "", "")
+        return conn_map.get(d.get("connuid") or "", "")
+
+    _SORT_ORDER = {"db": 0, "ex": 1, "api": 2, "df": 3, "dfv": 4}
+
+    items = sorted(
+        [
+            {
+                "datauid": d.get("datauid"),
+                "datanm": d.get("datanm") or "",
+                "datasourcecd": d.get("datasourcecd") or "",
+                "datasource_label": _DATASOURCE_LABEL.get(d.get("datasourcecd") or "", d.get("datasourcecd") or ""),
+                "connnm": _connnm(d),
+                "desc": d.get("desc"),
+                "useyn": d.get("useyn"),
+                "doc_use_yn": d.get("datasourcecd") == "dfv" or d.get("datauid") in doc_use_set,
+            }
+            for d in datas
+        ],
+        key=lambda x: (_SORT_ORDER.get(x["datasourcecd"], 99), x["connnm"].lower(), x["datanm"].lower()),
+    )
+
+    return {"items": items}
+
+
+@router.get("/{datauid}/detail")
+def get_data_detail(datauid: str, token: str = Depends(get_token)):
+    _get_user(token)
+    sb = _sb(token)
+
+    rows = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Not found")
+    d = rows[0]
+    src = d.get("datasourcecd") or ""
+
+    # 커넥터 dbtype 조회
+    dbtype = None
+    if d.get("connuid"):
+        conn_row = (
+            sb.schema(SUPABASE_SCHEMA).table("connectors")
+            .select("dbtype")
+            .eq("connuid", d["connuid"])
+            .execute().data
+        )
+        dbtype = conn_row[0].get("dbtype") if conn_row else None
+
+    result: dict = {
+        "datasourcecd": src,
+        "dbtype": dbtype,
+        "query": d.get("query"),
+        "endpoint": d.get("endpoint"),
+        "excelnm": d.get("excelnm"),
+        "gensentence": d.get("gensentence"),
+        "conn_api": None,
+        "source_data": None,
+    }
+
+    if src == "api" and d.get("connuid"):
+        ca = (
+            sb.schema(SUPABASE_SCHEMA).table("conn_apis")
+            .select("baseurl, authtype")
+            .eq("connuid", d["connuid"])
+            .execute().data
+        )
+        result["conn_api"] = ca[0] if ca else None
+
+    if src in ("df", "dfv") and d.get("sourcedatauid"):
+        sr = (
+            sb.schema(SUPABASE_SCHEMA).table("datas")
+            .select("*")
+            .eq("datauid", d["sourcedatauid"])
+            .execute().data
+        )
+        if sr:
+            s = sr[0]
+            s_src = s.get("datasourcecd") or ""
+            source_data: dict = {
+                "datanm": s.get("datanm"),
+                "datasourcecd": s_src,
+                "datasource_label": _DATASOURCE_LABEL.get(s_src, s_src),
+                "connnm": "",
+                "dbtype": None,
+                "query": s.get("query"),
+                "endpoint": s.get("endpoint"),
+                "excelnm": s.get("excelnm"),
+                "conn_api": None,
+            }
+            if s.get("connuid"):
+                conn = (
+                    sb.schema(SUPABASE_SCHEMA).table("connectors")
+                    .select("connnm, dbtype")
+                    .eq("connuid", s["connuid"])
+                    .execute().data
+                )
+                if conn:
+                    source_data["connnm"] = conn[0].get("connnm", "")
+                    source_data["dbtype"] = conn[0].get("dbtype")
+                if s_src == "api":
+                    ca2 = (
+                        sb.schema(SUPABASE_SCHEMA).table("conn_apis")
+                        .select("baseurl, authtype")
+                        .eq("connuid", s["connuid"])
+                        .execute().data
+                    )
+                    source_data["conn_api"] = ca2[0] if ca2 else None
+            result["source_data"] = source_data
+
+    datacols = (
+        sb.schema(SUPABASE_SCHEMA).table("datacols")
+        .select("querycolnm, dispcolnm, datatypecd, measureyn, orderno")
+        .eq("datauid", datauid)
+        .order("orderno")
+        .execute().data or []
+    )
+    result["datacols"] = datacols
+
+    return result
+
+
 # ── DB Connectors ──────────────────────────────────────────────────────────────
 
 @router.get("/dbconnectors", response_model=DbConnectorsResponse)
