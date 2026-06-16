@@ -25,7 +25,7 @@ def list_objects(chapteruid: str, token: str = Depends(get_token)):
         if obj.get("createdts"):
             try:
                 dt = dp.parse(obj["createdts"]) if isinstance(obj["createdts"], str) else obj["createdts"]
-                obj["createdts"] = dt.strftime("%y-%m-%d %H:%M")
+                obj["createdts"] = dt.strftime("%Y-%m-%d %H:%M")
             except Exception:
                 obj["createdts"] = ""
         nm = obj.get("objecttypenm") or ""

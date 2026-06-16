@@ -2,6 +2,7 @@
 import json
 import os
 import uuid
+from datetime import timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -42,13 +43,35 @@ def _encrypt(val: str) -> Optional[str]:
         return None
 
 
-def _fmt_dt(raw) -> str:
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
     if not raw:
         return ""
     try:
         from dateutil import parser as dtparser
         dt = dtparser.parse(raw) if isinstance(raw, str) else raw
-        return dt.strftime("%y-%m-%d %H:%M")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
 
@@ -470,12 +493,26 @@ def get_myinfo(token: str = Depends(get_token)):
                 "approvenote": tnu.get("approvenote", ""),
             }
 
+    # timezones 목록 (useyn=true)
+    tz_rows = sb.schema(SUPABASE_SCHEMA).table("timezone").select("timezone").eq("useyn", True).execute().data or []
+    timezones = [r["timezone"] for r in tz_rows]
+
+    # 유효 timezone: tenantusers → tenants 순으로 fallback
+    effective_timezone = tenantuser.get("timezone") or tenant.get("timezone") or None
+
+    # tenant.createdts timezone 적용 포맷
+    offsetminutes = _get_offsetminutes(sb, str(user_id))
+    if tenant.get("createdts"):
+        tenant["createdts"] = _fmt_dt(tenant["createdts"], offsetminutes)
+
     return {
         "user_info": user_info,
         "tenantuser": tenantuser,
         "tenant": tenant,
         "project_users": project_users,
         "tenant_change": tenant_change,
+        "timezones": timezones,
+        "timezone": effective_timezone,
     }
 
 
@@ -489,3 +526,20 @@ def update_username(body: UpdateUsernameRequest, token: str = Depends(get_token)
     sb = _sb(token)
     sb.schema(SUPABASE_SCHEMA).table("users").update({"usernm": body.usernm}).eq("useruid", user.id).execute()
     return {"status": "ok"}
+
+
+class UpdateTimezoneRequest(BaseModel):
+    timezone: Optional[str] = None
+
+
+@router.post("/myinfo/timezone")
+def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    sb.schema(SUPABASE_SCHEMA).table("tenantusers").update({"timezone": body.timezone}).eq("useruid", user.id).execute()
+    offsetminutes = None
+    if body.timezone:
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", body.timezone).maybe_single().execute()
+        if tz_row.data:
+            offsetminutes = tz_row.data.get("offsetminutes")
+    return {"status": "ok", "offsetminutes": offsetminutes}

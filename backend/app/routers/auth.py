@@ -221,26 +221,51 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         ctx.editbuttonyn = "N"
 
     # 9. languagecd: TenantUsers.languagecd → Tenants.languagecd
+    # 10. offsetminutes: TenantUsers.timezone → Tenants.timezone → sdoc.timezone.offsetminutes
     try:
         lang_row = (
             sd.table("tenantusers")
-            .select("languagecd, tenantid")
+            .select("languagecd, tenantid, timezone")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
         )
-        if lang_row.data and lang_row.data.get("languagecd"):
-            ctx.languagecd = lang_row.data["languagecd"]
-        elif lang_row.data and lang_row.data.get("tenantid"):
-            t_lang = (
-                sd.table("tenants")
-                .select("languagecd")
-                .eq("tenantid", lang_row.data["tenantid"])
-                .maybe_single()
-                .execute()
-            )
-            if t_lang.data:
-                ctx.languagecd = t_lang.data.get("languagecd")
+        if lang_row.data:
+            if lang_row.data.get("languagecd"):
+                ctx.languagecd = lang_row.data["languagecd"]
+            elif lang_row.data.get("tenantid"):
+                t_lang = (
+                    sd.table("tenants")
+                    .select("languagecd")
+                    .eq("tenantid", lang_row.data["tenantid"])
+                    .maybe_single()
+                    .execute()
+                )
+                if t_lang.data:
+                    ctx.languagecd = t_lang.data.get("languagecd")
+
+            tz = lang_row.data.get("timezone")
+            if not tz and lang_row.data.get("tenantid"):
+                t_tz = (
+                    sd.table("tenants")
+                    .select("timezone")
+                    .eq("tenantid", lang_row.data["tenantid"])
+                    .maybe_single()
+                    .execute()
+                )
+                if t_tz.data:
+                    tz = t_tz.data.get("timezone")
+
+            if tz:
+                tz_row = (
+                    sd.table("timezone")
+                    .select("offsetminutes")
+                    .eq("timezone", tz)
+                    .maybe_single()
+                    .execute()
+                )
+                if tz_row.data:
+                    ctx.offsetminutes = tz_row.data.get("offsetminutes")
     except Exception:
         pass
 

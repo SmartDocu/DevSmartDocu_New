@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
 
 // ─── Servers ──────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,19 @@ export function useUpdateUsername() {
     mutationFn: (body) => apiClient.post('/settings/myinfo/username', body).then((r) => r.data),
     onSuccess: () => {
       message.success(t('msg.save.success'))
+      qc.invalidateQueries({ queryKey: ['myinfo'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+  })
+}
+
+export function useUpdateTimezone() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/myinfo/timezone', body).then((r) => r.data),
+    onSuccess: (data) => {
+      message.success(t('msg.save.success'))
+      useAuthStore.getState().updateUser({ offsetminutes: data.offsetminutes ?? null })
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
     onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),

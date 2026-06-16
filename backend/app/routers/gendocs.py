@@ -54,12 +54,34 @@ def _get_user_context(sb, user_id: str) -> dict:
     return {"docid": docid, "tenantid": tenantid, "projectid": projectid}
 
 
-def _fmt(val: Optional[str]) -> str:
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt(val: Optional[str], offsetminutes: Optional[int] = None) -> str:
     if not val:
         return ""
     try:
         dt = dp.parse(val) if isinstance(val, str) else val
-        return dt.strftime("%y-%m-%d %H:%M")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return ""
 
@@ -100,19 +122,26 @@ def list_gendocs(
     today = datetime.now().date()
     sd = start_date or (today - timedelta(days=10)).strftime("%Y-%m-%d")
     ed = end_date or today.strftime("%Y-%m-%d")
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
-    rpc_params = {"p_docid": docid, "p_start_date": sd}
-    end_plus = (datetime.strptime(ed, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-    rpc_params["p_end_date"] = end_plus
+    # 사용자 로컬 날짜 → UTC 변환 후 RPC 전달
+    # utc = local_midnight(UTC 기준) - offsetminutes분
+    if offsetminutes is not None:
+        sd_utc = datetime.strptime(sd, "%Y-%m-%d").replace(tzinfo=timezone.utc) - timedelta(minutes=offsetminutes)
+        ed_utc = datetime.strptime(ed, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1) - timedelta(minutes=offsetminutes)
+        rpc_params = {"p_docid": docid, "p_start_date": sd_utc.isoformat(), "p_end_date": ed_utc.isoformat()}
+    else:
+        end_plus = (datetime.strptime(ed, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        rpc_params = {"p_docid": docid, "p_start_date": sd, "p_end_date": end_plus}
 
     rows = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r_docid", rpc_params).execute().data or []
     docnm_resp = sb.schema(SUPABASE_SCHEMA).table("docs").select("docnm").eq("docid", docid).execute().data
     docnm = docnm_resp[0]["docnm"] if docnm_resp else None
 
     for item in rows:
-        item["createfiledts"] = _fmt(item.get("createfiledts"))
-        item["closedts"] = _fmt(item.get("closedts"))
-        item["createdts"] = _fmt(item.get("createdts"))
+        item["createfiledts"] = _fmt(item.get("createfiledts"), offsetminutes)
+        item["closedts"] = _fmt(item.get("closedts"), offsetminutes)
+        item["createdts"] = _fmt(item.get("createdts"), offsetminutes)
         # params
         params = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs_params__r", {"p_gendocuid": item["gendocuid"]}).execute().data or []
         item["params"] = params
@@ -174,34 +203,36 @@ def get_dataparams(token: str = Depends(get_token)):
 
 @router.get("/{gendocuid}/status")
 def get_gendoc_status(gendocuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+    user = _get_user(token)
     sb = _sb(token)
     status_rows = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendoc_status__r", {"p_gendocuid": gendocuid}).execute().data or []
     gendoc = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     for i in status_rows:
-        i["createfiledts"] = _fmt(i.get("createfiledts"))
-        i["updatefiledts"] = _fmt(i.get("updatefiledts"))
+        i["createfiledts"] = _fmt(i.get("createfiledts"), offsetminutes)
+        i["updatefiledts"] = _fmt(i.get("updatefiledts"), offsetminutes)
 
     gendocnm = gendoc[0]["gendocnm"] if gendoc else ""
-    createfiledts = _fmt(gendoc[0].get("createfiledts")) if gendoc else ""
+    createfiledts = _fmt(gendoc[0].get("createfiledts"), offsetminutes) if gendoc else ""
     return {"status": status_rows, "gendocnm": gendocnm, "createfiledts": createfiledts}
 
 
 @router.get("/{gendocuid}/chapters")
 def get_genchapters(gendocuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+    user = _get_user(token)
     sb = _sb(token)
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
     chapters = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
     for c in chapters:
-        c["createfiledts"] = _fmt(c.get("createfiledts"))
-        c["updatefiledts"] = _fmt(c.get("updatefiledts"))
+        c["createfiledts"] = _fmt(c.get("createfiledts"), offsetminutes)
+        c["updatefiledts"] = _fmt(c.get("updatefiledts"), offsetminutes)
     gendoc = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
     gendoc_info = gendoc[0] if gendoc else {}
-    gendoc_info["createfiledts"] = _fmt(gendoc_info.get("createfiledts"))
-    gendoc_info["updatefiledts"] = _fmt(gendoc_info.get("updatefiledts"))
+    gendoc_info["createfiledts"] = _fmt(gendoc_info.get("createfiledts"), offsetminutes)
+    gendoc_info["updatefiledts"] = _fmt(gendoc_info.get("updatefiledts"), offsetminutes)
     finaldts_raw = gendoc_info.get("finaldts")
-    formatted_finaldts = _fmt(finaldts_raw)
+    formatted_finaldts = _fmt(finaldts_raw, offsetminutes)
     gendoc_info["finaldts"] = "" if formatted_finaldts == "00-01-01 00:00" else formatted_finaldts
     return {"chapters": chapters, "gendoc": gendoc_info}
 
@@ -409,8 +440,9 @@ def check_objects(body: dict, token: str = Depends(get_token)):
 
 @router.get("/genchapters/{genchapteruid}/objects")
 def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
-    _get_user(token)
+    user = _get_user(token)
     sb = _sb(token)
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid,docid,createfiledts").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
@@ -418,7 +450,7 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
     docid = genchap[0].get("docid")
-    createfiledts = _fmt(genchap[0].get("createfiledts"))
+    createfiledts = _fmt(genchap[0].get("createfiledts"), offsetminutes)
 
     chapter = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
     chapternm = chapter[0]["chapternm"] if chapter else ""
@@ -451,8 +483,8 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
             "orderno": obj.get("orderno", 0),
             "resulttext": go.get("resulttext"),
             "replacestring": go.get("replacestring"),
-            "objcreatedts": _fmt(obj.get("createdts")),
-            "genobjcreatedts": _fmt(go.get("createdts")),
+            "objcreatedts": _fmt(obj.get("createdts"), offsetminutes),
+            "genobjcreatedts": _fmt(go.get("createdts"), offsetminutes),
             "new_objectyn": False,
             "new_genobjectyn": not bool(go.get("resulttext")),
             "chapteruid": chapteruid,
@@ -627,7 +659,7 @@ def get_doc_content(
                     if ts:
                         try:
                             from dateutil import parser as dp
-                            doc_info[ts_field] = dp.parse(ts).strftime("%y-%m-%d %H:%M")
+                            doc_info[ts_field] = dp.parse(ts).strftime("%Y-%m-%d %H:%M")
                         except Exception:
                             doc_info[ts_field] = ts
     except Exception:

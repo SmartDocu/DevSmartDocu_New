@@ -28,6 +28,7 @@ class UserContext(BaseModel):
     editbuttonyn: Optional[str] = "N"
     sampledocyn: Optional[str] = "N"
     languagecd: Optional[str] = None
+    offsetminutes: Optional[int] = None
 
 
 class LoginResponse(BaseModel):

@@ -2,7 +2,6 @@
 import os
 import smtplib
 import uuid
-import zoneinfo
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import Optional
@@ -22,7 +21,25 @@ def _sb_svc():
     return get_service_client()
 
 
-def _fmt_dt(s, tz_name=None):
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(s, offsetminutes: Optional[int] = None):
     if not s:
         return ""
     try:
@@ -30,12 +47,9 @@ def _fmt_dt(s, tz_name=None):
         dt = dp.parse(s) if isinstance(s, str) else s
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        if tz_name:
-            try:
-                dt = dt.astimezone(zoneinfo.ZoneInfo(tz_name))
-            except Exception:
-                pass
-        return dt.strftime("%y-%m-%d %H:%M")
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(s)
 
@@ -113,14 +127,7 @@ def list_qnas(token: str = Depends(get_token)):
     roleid_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     roleid = roleid_row[0].get("roleid", 1) if roleid_row else 1
 
-    # 사용자 tenant timezone 조회
-    tz_name = None
-    tu_row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user.id).execute().data
-    if tu_row:
-        tenantid = tu_row[0].get("tenantid")
-        tz_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tenantid).execute().data
-        if tz_row:
-            tz_name = tz_row[0].get("timezone")
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     rows = sb.schema(SUPABASE_SCHEMA).table("qnas").select("*").order("createdts", desc=True).execute().data or []
 
@@ -131,8 +138,8 @@ def list_qnas(token: str = Depends(get_token)):
     for q in rows:
         q["creatornm"] = user_map.get(q.get("creator"), "")
         q["answernm"] = user_map.get(q.get("answeruseruid"), "") if q.get("answeruseruid") else ""
-        q["createdts"] = _fmt_dt(q.get("createdts"), tz_name)
-        q["answerdts"] = _fmt_dt(q.get("answerdts"), tz_name)
+        q["createdts"] = _fmt_dt(q.get("createdts"), offsetminutes)
+        q["answerdts"] = _fmt_dt(q.get("answerdts"), offsetminutes)
         is_private = q.get("isprivate", False)
         if roleid == 7:
             q["can_click"] = True

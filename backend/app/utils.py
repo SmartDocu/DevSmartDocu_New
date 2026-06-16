@@ -10,7 +10,7 @@ def fmt_dt(raw) -> str:
     try:
         from dateutil import parser as dtparser
         dt = dtparser.parse(raw) if isinstance(raw, str) else raw
-        return dt.strftime("%y-%m-%d %H:%M")
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
 

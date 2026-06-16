@@ -101,40 +101,101 @@ router.include_router([domain].router, prefix="/[domain]", tags=["[domain]"])
 
 ---
 
-## 날짜/시간 포맷 — `_fmt_dt` 사용 필수
+## 날짜/시간 — Timezone 적용 규칙
 
-DB에 저장된 timestamp(UTC)를 화면에 표시할 때는 반드시 `_fmt_dt(s, tz_name)`을 사용한다.
-직접 `strftime` 또는 `datetime.now()` 포맷을 쓰지 말 것.
+DB는 UTC로 저장. 화면 표시 시 사용자 timezone을 적용해야 한다.
+**포맷: `"%Y-%m-%d %H:%M"` (예: "2026-06-16 14:30") — 전 화면 통일, 변경 금지.**
 
-```python
-# misc.py 내 정의 — 필요 시 공통 유틸로 이동 예정
-def _fmt_dt(s, tz_name=None):
-    ...  # UTC → tz_name 변환 후 "%y-%m-%d %H:%M" 포맷 반환
+### 변환 공식
+```
+로컬 시간 = UTC + offsetminutes분
+예) offsetminutes=540(UTC+9) → UTC 14:30 → 로컬 23:30
 ```
 
-### 사용 패턴
+### 1. offsetminutes 조회 헬퍼 — 신규 라우터에 복사해서 사용
 
 ```python
-# 1. 사용자 tenantid로 timezone 조회 (list 엔드포인트 상단에서 1회)
-tz_name = None
-tu_row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user.id).execute().data
-if tu_row:
-    tenantid = tu_row[0].get("tenantid")
-    tz_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tenantid).execute().data
-    if tz_row:
-        tz_name = tz_row[0].get("timezone")
-
-# 2. 각 row의 timestamp 필드에 적용
-row["createdts"] = _fmt_dt(row.get("createdts"), tz_name)
-row["updateddts"] = _fmt_dt(row.get("updateddts"), tz_name)
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
 ```
 
-### 저장 시 UTC 명시
+- `tenantusers.timezone` → 없으면 `tenants.timezone` → `sdoc.timezone.offsetminutes` 조회
+- timezone 미설정 사용자는 `None` 반환 → UTC 그대로 표시 (허용)
+
+### 2. 날짜 포맷 함수 — 신규 라우터에 복사해서 사용
+
+```python
+from datetime import timedelta, timezone
+from dateutil import parser as dp
+
+def _fmt_dt(val, offsetminutes: Optional[int] = None) -> str:
+    if not val:
+        return ""
+    try:
+        dt = dp.parse(val) if isinstance(val, str) else val
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
+```
+
+### 3. 날짜 **표시** 패턴 (list 엔드포인트)
+
+```python
+@router.get("/items")
+def list_items(token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    offsetminutes = _get_offsetminutes(sb, str(user.id))  # 엔드포인트 상단에서 1회
+
+    rows = sb.schema(SUPABASE_SCHEMA).table("items").select("*").execute().data or []
+    for row in rows:
+        row["createdts"]  = _fmt_dt(row.get("createdts"),  offsetminutes)
+        row["updateddts"] = _fmt_dt(row.get("updateddts"), offsetminutes)
+    return {"items": rows}
+```
+
+### 4. 날짜 **검색** 패턴 (프론트에서 로컬 날짜 문자열 "YYYY-MM-DD"로 전달)
+
+프론트 입력값은 사용자 로컬 날짜(자정 기준) → UTC로 변환 후 DB 조회해야 정확하다.
+
+```python
+# utc = 로컬 자정(UTC 기준) - offsetminutes분
+if offsetminutes is not None:
+    sd_utc = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) - timedelta(minutes=offsetminutes)
+    ed_utc = datetime.strptime(end_date,   "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1) - timedelta(minutes=offsetminutes)
+    # DB 쿼리에 ISO 문자열로 전달
+    rows = sb...filter("createdts", "gte", sd_utc.isoformat()).filter("createdts", "lt", ed_utc.isoformat())...
+else:
+    # timezone 미설정: 날짜 문자열 그대로 (UTC 기준)
+    end_plus = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    rows = sb...filter("createdts", "gte", start_date).filter("createdts", "lt", end_plus)...
+```
+
+> 참고 구현: `gendocs.py` → `list_gendocs()`
+
+### 5. 저장 시 UTC 명시
 
 ```python
 from datetime import datetime, timezone
 
-# answerdts, updateddts 등 Python에서 직접 생성하는 timestamp
 "answerdts": datetime.now(timezone.utc).isoformat(),
 ```
 

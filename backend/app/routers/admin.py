@@ -2,6 +2,7 @@
 import sys
 import uuid
 import traceback
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -328,13 +329,35 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
 #  LLMs (LLM 모델 관리)
 # ══════════════════════════════════════════════════════
 
-def _fmt_dt(raw) -> str:
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
     if not raw:
         return ""
     try:
         from dateutil import parser as dtparser
         dt = dtparser.parse(raw) if isinstance(raw, str) else raw
-        return dt.strftime("%y-%m-%d %H:%M")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
 
@@ -511,14 +534,16 @@ def delete_llmapi(llmapiuid: str, token: str = Depends(get_token)):
 
 @router.get("/tenant-requests")
 def list_tenant_requests(token: str = Depends(get_token)):
-    _require_admin(token)
+    user = _require_admin(token)
     sb = _sb_service()
+    sb_user = get_sb(token)
+    offsetminutes = _get_offsetminutes(sb_user, str(user.id))
 
     from utilsPrj.crypto_helper import decrypt_value
 
     rows = sb.schema(SUPABASE_SCHEMA).table("tenantreqs").select("*").order("createdts", desc=True).execute().data or []
     for row in rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"))
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         if row.get("encemail"):
             try:
                 row["email"] = decrypt_value(row["encemail"])

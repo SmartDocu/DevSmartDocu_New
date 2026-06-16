@@ -296,6 +296,56 @@ const handlePreview = async () => {
 
 ---
 
+### 날짜/시간 표시 및 검색 — Timezone 규칙
+
+#### 기본 원칙
+- DB는 UTC 저장. **모든 날짜/시간 변환은 백엔드에서 처리**하고, 프론트는 백엔드가 내려준 문자열을 그대로 표시한다.
+- 포맷: **`"YYYY-MM-DD HH:MM"`** (예: "2026-06-16 14:30") — 전 화면 통일.
+- `new Date(...).toLocaleDateString()` / `toLocaleString()` 등 브라우저 로컬 변환 **절대 사용 금지**.
+
+#### 날짜 표시 — 백엔드 문자열 그대로 렌더링
+
+```jsx
+// ✅ 올바른 방법 — 백엔드가 timezone 적용 후 포맷된 문자열을 내려줌
+<span>{row.createdts}</span>
+<span>{item.createfiledts || '-'}</span>
+
+// ❌ 금지 — 브라우저 로컬 시간 기준으로 변환됨
+<span>{new Date(row.createdts).toLocaleDateString()}</span>
+```
+
+#### 날짜 검색 (DatePicker / RangePicker) — 날짜 문자열 그대로 API에 전달
+
+프론트는 `dayjs` 객체를 `"YYYY-MM-DD"` 문자열로 변환해 API에 전달하기만 하면 된다.
+UTC 변환은 백엔드가 `offsetminutes`를 이용해 처리한다.
+
+```jsx
+import dayjs from 'dayjs'
+const { RangePicker } = DatePicker
+
+const [dates, setDates] = useState([dayjs().subtract(1, 'month'), dayjs()])
+
+// API 호출 시
+const sd = dates[0]?.format('YYYY-MM-DD')  // "2026-06-01"
+const ed = dates[1]?.format('YYYY-MM-DD')  // "2026-06-16"
+// → GET /api/items?start_date=2026-06-01&end_date=2026-06-16
+// 백엔드에서 offsetminutes 적용해 UTC로 변환 후 조회
+```
+
+#### user.offsetminutes 참조 (필요한 경우만)
+
+로그인 시 `authStore`의 `user.offsetminutes`에 사용자 timezone offset이 저장된다.
+백엔드를 거치지 않고 프론트에서 직접 시간 계산이 필요한 경우에만 사용.
+
+```jsx
+import { useAuthStore } from '@/stores/authStore'
+const offsetminutes = useAuthStore(s => s.user?.offsetminutes)  // 예: 540, -540, null
+```
+
+> 참고 구현: `MyInfoPage.jsx` (날짜 표시), `ReqDocListPage.jsx` (RangePicker 검색)
+
+---
+
 ### ui_terms 등록 방법
 
 화면 작성 완료 후 사용된 `t('키')` 목록을 추출해 Supabase에 등록한다.

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import {
-  Button, Card, Col, Descriptions, Form, Input, Row, Space, Table, Tag, Typography, Alert,
+  Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography, Alert,
 } from 'antd'
 import { EditOutlined, SaveOutlined } from '@ant-design/icons'
-import { useMyInfo, useUpdateUsername } from '@/hooks/useSettings'
+import { useMyInfo, useUpdateUsername, useUpdateTimezone } from '@/hooks/useSettings'
 import { useLangStore, t } from '@/stores/langStore'
 
 const { Title } = Typography
@@ -16,7 +16,10 @@ export default function MyInfoPage() {
   useLangStore((s) => s.translations)
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
+  const updateTimezone = useUpdateTimezone()
   const [editingName, setEditingName] = useState(false)
+  const [editingTimezone, setEditingTimezone] = useState(false)
+  const [timezoneVal, setTimezoneVal] = useState(null)
   const [form] = Form.useForm()
 
   const userInfo = data.user_info || {}
@@ -24,6 +27,8 @@ export default function MyInfoPage() {
   const tenantuser = data.tenantuser || {}
   const projectUsers = data.project_users || []
   const tenantChange = data.tenant_change || null
+  const timezones = data.timezones || []
+  const currentTimezone = data.timezone || null
 
   const isAgreed = (v) => v === 'Y' || v === true
 
@@ -37,6 +42,15 @@ export default function MyInfoPage() {
     updateUsername.mutate({ usernm: values.usernm }, { onSuccess: () => setEditingName(false) })
   }
 
+  const handleEditTimezone = () => {
+    setTimezoneVal(currentTimezone)
+    setEditingTimezone(true)
+  }
+
+  const handleSaveTimezone = () => {
+    updateTimezone.mutate({ timezone: timezoneVal }, { onSuccess: () => setEditingTimezone(false) })
+  }
+
   const projectColumns = [
     { title: t('thd.projectnm_thd'), dataIndex: 'projectnm', key: 'projectnm' },
     {
@@ -48,9 +62,7 @@ export default function MyInfoPage() {
     },
   ]
 
-  const createdts = tenant.createdts
-    ? new Date(tenant.createdts).toLocaleDateString()
-    : '-'
+  const createdts = tenant.createdts || '-'
 
   return (
     <div>
@@ -79,6 +91,29 @@ export default function MyInfoPage() {
                   <Space>
                     <span>{userInfo.usernm || '-'}</span>
                     <Button size="small" icon={<EditOutlined />} onClick={handleEditName} type="text" />
+                  </Space>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('lbl.timezone')}>
+                {editingTimezone ? (
+                  <Space>
+                    <Select
+                      value={timezoneVal}
+                      onChange={setTimezoneVal}
+                      style={{ width: 220 }}
+                      size="small"
+                      showSearch
+                      options={timezones.map((tz) => ({ label: tz, value: tz }))}
+                    />
+                    <Button size="small" type="primary" icon={<SaveOutlined />} loading={updateTimezone.isPending} onClick={handleSaveTimezone}>
+                      {t('btn.save')}
+                    </Button>
+                    <Button size="small" onClick={() => setEditingTimezone(false)}>{t('btn.cancel')}</Button>
+                  </Space>
+                ) : (
+                  <Space>
+                    <span>{currentTimezone || '-'}</span>
+                    <Button size="small" icon={<EditOutlined />} onClick={handleEditTimezone} type="text" />
                   </Space>
                 )}
               </Descriptions.Item>
