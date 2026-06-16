@@ -1,0 +1,492 @@
+/* ── D2Insight 페이지 고정 컨테이너 ── */
+.d2insight-wrap {
+  position: fixed;
+  display: flex;
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+/* ── 사이드바 (dark) ── */
+.d2insight-wrap .sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: #1e2a35;
+  color: #c8d6e5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.d2insight-wrap .current-session-block {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #2e3f50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.d2insight-wrap .current-session-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #5a7a99;
+  text-transform: uppercase;
+}
+.d2insight-wrap .current-session-title {
+  font-size: 13px;
+  color: #b0c4d8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+
+.d2insight-wrap .sidebar-newchat {
+  padding: 8px 10px;
+  border-bottom: 2px solid #2e3f50;
+}
+.d2insight-wrap .new-chat-btn {
+  background: #0e66c4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
+  font-weight: 600;
+  display: block;
+}
+.d2insight-wrap .new-chat-btn:hover { background: #0056b3; }
+
+.d2insight-wrap .sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: 8px 0;
+}
+
+.d2insight-wrap .sidebar-section { margin-bottom: 2px; }
+
+.d2insight-wrap .section-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #8aa4bc;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 14px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.d2insight-wrap .section-toggle:hover { background: #253445; color: #dceaf7; }
+.d2insight-wrap .section-toggle.open { color: #dceaf7; }
+
+.d2insight-wrap .section-toggle-left { display: flex; align-items: center; gap: 6px; }
+.d2insight-wrap .section-icon { font-size: 14px; }
+.d2insight-wrap .section-icon.icon-active { color: #f0c040; }
+.d2insight-wrap .section-label { font-size: 13px; }
+.d2insight-wrap .section-count {
+  font-size: 11px;
+  background: #3d5166;
+  color: #b0c4d8;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+.d2insight-wrap .arrow { font-size: 14px; }
+
+.d2insight-wrap .session-list {
+  list-style: none;
+  padding: 0 0 4px 0;
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3d5166 transparent;
+}
+.d2insight-wrap .session-list::-webkit-scrollbar { width: 4px; }
+.d2insight-wrap .session-list::-webkit-scrollbar-thumb { background: #3d5166; border-radius: 2px; }
+
+.d2insight-wrap .session-item {
+  padding: 7px 8px 7px 28px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #b0c4d8;
+  display: flex;
+  align-items: center;
+}
+.d2insight-wrap .session-item:hover { background: #253445; color: #dceaf7; }
+.d2insight-wrap .session-item.viewing {
+  background: #1e3a52;
+  color: #dceaf7;
+  border-left: 3px solid #4a9eda;
+  padding-left: 25px;
+}
+
+.d2insight-wrap .session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.d2insight-wrap .session-date-badge {
+  font-size: 11px;
+  color: #5a7a99;
+  flex-shrink: 0;
+  margin: 0 4px;
+}
+.d2insight-wrap .session-menu-btn {
+  background: none;
+  border: none;
+  color: #6a8099;
+  font-size: 15px;
+  padding: 0 4px;
+  cursor: pointer;
+  opacity: 0;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+.d2insight-wrap .session-item:hover .session-menu-btn { opacity: 1; }
+.d2insight-wrap .session-menu-btn:hover { color: #dceaf7; background: #3d5166; }
+
+.d2insight-wrap .session-fav-indicator {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #3d5166;
+  margin-right: 4px;
+  pointer-events: none;
+}
+.d2insight-wrap .session-fav-indicator.fav-on { color: #f0c040; }
+
+.d2insight-wrap .date-group { margin-bottom: 2px; }
+.d2insight-wrap .date-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #8aa4bc;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px 7px 28px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+.d2insight-wrap .date-toggle:hover { background: #253445; }
+.d2insight-wrap .date-toggle.open { color: #dceaf7; }
+.d2insight-wrap .date-group .session-item { padding-left: 40px; }
+.d2insight-wrap .date-group .session-item.viewing { padding-left: 37px; }
+.d2insight-wrap .date-count { margin-left: 4px; }
+
+.d2insight-wrap .sidebar-empty {
+  font-size: 12px;
+  color: #6a8099;
+  padding: 12px 14px;
+}
+
+.d2insight-wrap .session-dropdown {
+  position: fixed;
+  background: #2c3e50;
+  border: 1px solid #3d5166;
+  border-radius: 6px;
+  z-index: 2000;
+  min-width: 72px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.d2insight-wrap .session-dropdown-del {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: #f08080;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.d2insight-wrap .session-dropdown-del:hover { background: #3d5166; }
+
+/* ── 메인 콘텐츠 ── */
+.d2insight-wrap .main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.d2insight-wrap .chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  min-height: 0;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.d2insight-wrap .messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  min-height: 0;
+}
+
+/* ── 메시지 스타일 ── */
+.d2insight-wrap .msg-row { margin-bottom: 20px; }
+.d2insight-wrap .message {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+.d2insight-wrap .message.assistant { flex-direction: row; }
+.d2insight-wrap .message.user {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+.d2insight-wrap .assistant-icon { height: 36px; margin-right: 10px; }
+.d2insight-wrap .user-icon { height: 40px; margin-left: 10px; }
+.d2insight-wrap .message-content {
+  max-width: 75%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.d2insight-wrap .message.user .message-content { background: #0e66c4; color: white; }
+.d2insight-wrap .message.assistant .message-content { background: #e9ecef; color: #333; }
+
+.d2insight-wrap .visualization-container {
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.d2insight-wrap .visualization-container table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.d2insight-wrap .visualization-container th,
+.d2insight-wrap .visualization-container td {
+  padding: 6px 10px; border-bottom: 1px solid #ddd;
+}
+.d2insight-wrap .visualization-container th { background: #f0f4f8; font-weight: 600; }
+.d2insight-wrap .visualization-container img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+
+.d2insight-wrap .msg-fav-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #ccc;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 8px;
+  line-height: 1;
+  align-self: center;
+  transition: color 0.15s;
+}
+.d2insight-wrap .msg-fav-btn:hover { color: #f0c040; }
+.d2insight-wrap .msg-fav-btn.fav-on { color: #f0c040; }
+
+/* ── Report Card ── */
+.d2insight-wrap .report-card {
+  margin-top: 12px;
+  border: 1px solid #c8ddf5;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f0f6ff;
+}
+.d2insight-wrap .report-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.d2insight-wrap .report-icon { font-size: 18px; flex-shrink: 0; }
+.d2insight-wrap .report-filename {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1b3a5c;
+  word-break: break-all;
+}
+.d2insight-wrap .report-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.d2insight-wrap .report-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 5px;
+  cursor: pointer;
+  border: 1px solid #0e66c4;
+  background: white;
+  color: #0e66c4;
+  text-decoration: none;
+  display: inline-block;
+  line-height: 1.4;
+}
+.d2insight-wrap .report-btn:hover { background: #e8f0fe; }
+.d2insight-wrap .report-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.d2insight-wrap .report-btn.download { background: #0e66c4; color: white; }
+.d2insight-wrap .report-btn.download:hover { background: #0056b3; }
+.d2insight-wrap .report-btn.share-btn { background: #cfe0f3; color: #1a4a7a; border-color: #a8c8e8; }
+.d2insight-wrap .report-btn.share-btn:hover { background: #b8d2ee; }
+
+.d2insight-wrap .report-preview {
+  padding: 16px 20px;
+  border-top: 1px solid #c8ddf5;
+  background: white;
+  font-size: 13px;
+  line-height: 1.7;
+  max-height: 480px;
+  overflow-y: auto;
+  color: #222;
+}
+.d2insight-wrap .report-preview h1,
+.d2insight-wrap .report-preview h2,
+.d2insight-wrap .report-preview h3 { margin: 12px 0 6px; color: #1b3a5c; }
+.d2insight-wrap .report-preview h1 { font-size: 18px; }
+.d2insight-wrap .report-preview h2 { font-size: 16px; }
+.d2insight-wrap .report-preview h3 { font-size: 14px; }
+.d2insight-wrap .report-preview p { margin: 6px 0; }
+.d2insight-wrap .report-preview table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.d2insight-wrap .report-preview th,
+.d2insight-wrap .report-preview td { border: 1px solid #ddd; padding: 5px 8px; }
+.d2insight-wrap .report-preview th { background: #f0f4f8; font-weight: 600; }
+.d2insight-wrap .report-preview ul,
+.d2insight-wrap .report-preview ol { padding-left: 20px; margin: 6px 0; }
+.d2insight-wrap .report-preview code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+/* ── 폴더 픽커 모달 ── */
+.d2insight-wrap .modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.d2insight-wrap .modal-box {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px;
+  min-width: 280px;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.d2insight-wrap .modal-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #1a2a3a; }
+.d2insight-wrap .modal-empty { font-size: 13px; color: #888; padding: 8px 0; }
+.d2insight-wrap .folder-list { list-style: none; padding: 0; margin-bottom: 16px; max-height: 200px; overflow-y: auto; }
+.d2insight-wrap .folder-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-radius: 6px; color: #2c3e50; }
+.d2insight-wrap .folder-item:hover { background: #eef4fb; }
+.d2insight-wrap .folder-item.selected { background: #d0e6f8; font-weight: 600; color: #0e66c4; }
+.d2insight-wrap .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.d2insight-wrap .modal-btn { padding: 7px 18px; border-radius: 6px; border: none; font-size: 13px; cursor: pointer; font-weight: 500; }
+.d2insight-wrap .modal-btn.cancel { background: #f0f0f0; color: #555; }
+.d2insight-wrap .modal-btn.cancel:hover { background: #e0e0e0; }
+.d2insight-wrap .modal-btn.confirm { background: #0e66c4; color: #fff; }
+.d2insight-wrap .modal-btn.confirm:hover { background: #0056b3; }
+.d2insight-wrap .modal-btn.confirm:disabled { background: #a8c8e8; cursor: not-allowed; }
+
+/* ── 입력창 ── */
+.d2insight-wrap .input-container {
+  border-top: 1px solid #ddd;
+  padding: 12px 20px;
+  background: #f8f9fa;
+  flex-shrink: 0;
+}
+.d2insight-wrap .input-wrapper { display: flex; gap: 10px; margin-top: 0; }
+.d2insight-wrap .question-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 13px;
+  resize: none;
+  font-family: inherit;
+  min-height: 60px;
+}
+.d2insight-wrap .send-btn {
+  padding: 8px 20px;
+  background: #0e66c4;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  align-self: flex-end;
+  white-space: nowrap;
+}
+.d2insight-wrap .send-btn:hover { background: #0056b3; }
+.d2insight-wrap .send-btn:disabled { background: #6c757d; cursor: not-allowed; }
+
+/* ── 로딩 ── */
+.d2insight-wrap .loading { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.d2insight-wrap .spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #e0e0e0;
+  border-top: 3px solid #0e66c4;
+  border-radius: 50%;
+  animation: d2insight-spin 0.9s linear infinite;
+}
+@keyframes d2insight-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.d2insight-wrap .loading-text { color: #666; font-size: 13px; }
+
+/* ── 히스토리 뷰 ── */
+.d2insight-wrap .history-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  overflow: hidden;
+}
+.d2insight-wrap .history-bar {
+  padding: 10px 20px;
+  background: #f0f4f8;
+  border-bottom: 1px solid #dce3ea;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #444;
+  flex-shrink: 0;
+}
+.d2insight-wrap .history-back-btn {
+  background: none;
+  border: 1px solid #aaa;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #555;
+}
+.d2insight-wrap .history-back-btn:hover { background: #e9ecef; }
+.d2insight-wrap .history-messages { flex: 1; overflow-y: auto; padding: 20px; min-height: 0; }
+.d2insight-wrap .history-msg-wrapper { margin-bottom: 20px; }
+.d2insight-wrap .fav-btn-row { display: flex; justify-content: flex-end; padding: 3px 8px 0 0; }
+.d2insight-wrap .continue-btn {
+  background: none;
+  border: 1px solid #aaa;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #555;
+}
+.d2insight-wrap .continue-btn:hover { background: #e9ecef; }

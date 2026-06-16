@@ -55,6 +55,8 @@ import MasterChatTablesPage from '@/pages/master/MasterChatTablesPage'
 import MasterChatColumnsPage from '@/pages/master/MasterChatColumnsPage'
 import ExperiencePage from '@/pages/public/ExperiencePage'
 import SampleEventPopup from '@/pages/popup/SampleEventPopup'
+import D2ChatPage from '@/pages/d2chat/D2ChatPage'
+import D2InsightPage from '@/pages/d2insight/D2InsightPage'
 
 export const router = createBrowserRouter([
   // ── 팝업 콘텐츠 페이지 (iframe 로드용, 레이아웃 없음) ───────────────────
@@ -132,6 +134,12 @@ export const router = createBrowserRouter([
       { path: 'master/ai-charts', element: <MasterAiChartsPage /> },
       { path: 'master/ai-sentences', element: <MasterAiSentencesPage /> },
       { path: 'master/ai-tables', element: <MasterAiTablesPage /> },
+
+      // d2chat — 데이터 Q&A 채팅
+      { path: 'd2chat', element: <D2ChatPage /> },
+
+      // d2insight — AI 보고서 에이전트
+      { path: 'd2insight', element: <D2InsightPage /> },
 
       // admin/ (roleid=7 전용)
       { path: 'admin/user-role', element: <AdminUserRolePage /> },

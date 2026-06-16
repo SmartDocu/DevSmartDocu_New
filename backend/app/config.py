@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_SCHEMA: str = ""
+    SUPABASE_DB_URL: str = ""   # postgresql://postgres:pw@db.xxx.supabase.co:5432/postgres
 
     # LLM API Keys
     CLAUDE_API_KEY: str = ""
@@ -38,6 +39,13 @@ class Settings(BaseSettings):
     NAVER_SECRET_KEY: str = ""
     NAVER_SMS_SERVICE_ID: str = ""
     NAVER_SMS_FROM_NUMBER: str = ""
+
+    # MSSQL (d2chat 전용)
+    DB_DRIVER: str = ""
+    DB_SERVER: str = ""
+    DB_DATABASE: str = ""
+    DB_USERNAME: str = ""
+    DB_PASSWORD: str = ""
 
     # 앱 설정
     PROJECT_DEBUG: bool = True

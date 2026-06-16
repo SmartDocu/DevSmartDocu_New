@@ -1,0 +1,618 @@
+/* ── D2Chat 페이지 고정 컨테이너 ── */
+.d2chat-wrap {
+  position: fixed;
+  display: flex;
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+/* ── 사이드바 ── */
+.d2chat-wrap .sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: #1e2a35;
+  color: #c8d6e5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.d2chat-wrap .current-session-block {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #2e3f50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.d2chat-wrap .current-session-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #5a7a99;
+  text-transform: uppercase;
+}
+.d2chat-wrap .current-session-title {
+  font-size: 13px;
+  color: #b0c4d8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+
+.d2chat-wrap .sidebar-newchat {
+  padding: 8px 10px;
+  border-bottom: 2px solid #2e3f50;
+}
+.d2chat-wrap .new-chat-btn {
+  background: #0e66c4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
+  font-weight: 600;
+  display: block;
+}
+.d2chat-wrap .new-chat-btn:hover { background: #0056b3; }
+
+.d2chat-wrap .sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: 8px 0;
+}
+
+.d2chat-wrap .sidebar-section {
+  border-bottom: 1px solid #2e3f50;
+}
+
+.d2chat-wrap .section-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #8aa4bc;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 14px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.4px;
+}
+.d2chat-wrap .section-toggle:hover { background: #253445; color: #dceaf7; }
+.d2chat-wrap .section-toggle.open  { color: #dceaf7; }
+
+.d2chat-wrap .section-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.d2chat-wrap .section-icon { font-size: 13px; }
+.d2chat-wrap .fav-section .section-icon { font-size: 15px; }
+.d2chat-wrap .section-icon.icon-active { color: #f0c040; }
+.d2chat-wrap .section-label { flex: 1; }
+.d2chat-wrap .section-count {
+  background: #3d5166;
+  color: #b0c4d8;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
+}
+.d2chat-wrap .arrow { font-size: 10px; }
+
+.d2chat-wrap .session-list {
+  list-style: none;
+  padding: 0 0 4px 0;
+}
+
+.d2chat-wrap .session-item {
+  padding: 7px 8px 7px 28px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #b0c4d8;
+  display: flex;
+  align-items: center;
+}
+.d2chat-wrap .session-item:hover { background: #253445; color: #dceaf7; }
+.d2chat-wrap .session-item.active { background: #1a4f7a; color: #fff; }
+.d2chat-wrap .session-item.viewing {
+  background: #1e3a52;
+  color: #dceaf7;
+  border-left: 3px solid #4a9eda;
+  padding-left: 25px;
+}
+
+.d2chat-wrap .date-group .session-item { padding-left: 40px; }
+.d2chat-wrap .date-group .session-item.viewing { padding-left: 37px; }
+
+.d2chat-wrap .session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.d2chat-wrap .session-date-badge {
+  font-size: 10px;
+  color: #5a7a99;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.d2chat-wrap .session-menu-btn {
+  background: none;
+  border: none;
+  color: #6a8099;
+  font-size: 15px;
+  padding: 0 4px;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+.d2chat-wrap .session-item:hover .session-menu-btn { opacity: 1; }
+.d2chat-wrap .session-menu-btn:hover { color: #dceaf7; background: #3d5166; }
+
+.d2chat-wrap .session-fav-indicator {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #444;
+  margin-right: 4px;
+  pointer-events: none;
+}
+.d2chat-wrap .session-fav-indicator.fav-on { color: #f0c040; }
+
+.d2chat-wrap .date-group { margin-bottom: 2px; }
+.d2chat-wrap .date-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #8aa4bc;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px 7px 28px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  letter-spacing: 0.5px;
+}
+.d2chat-wrap .date-toggle:hover { background: #253445; }
+.d2chat-wrap .date-toggle.open { color: #dceaf7; }
+.d2chat-wrap .date-count { color: #b8b080; }
+
+.d2chat-wrap .sidebar-empty {
+  font-size: 12px;
+  color: #6a8099;
+  padding: 16px 14px;
+}
+
+.d2chat-wrap .session-dropdown {
+  position: fixed;
+  background: #2c3e50;
+  border: 1px solid #3d5166;
+  border-radius: 6px;
+  z-index: 2000;
+  min-width: 80px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.d2chat-wrap .session-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: #b0c4d8;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.d2chat-wrap .session-dropdown-item:hover { background: #3d5166; color: #dceaf7; }
+.d2chat-wrap .session-dropdown-del {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: #f08080;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.d2chat-wrap .session-dropdown-del:hover { background: #3d5166; }
+
+/* ── 메인 콘텐츠 ── */
+.d2chat-wrap .main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.d2chat-wrap .chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  min-height: 0;
+}
+
+.d2chat-wrap .messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  min-height: 0;
+}
+
+/* ── 메시지 스타일 ── */
+.d2chat-wrap .msg-row { margin-bottom: 20px; }
+
+.d2chat-wrap .message {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+.d2chat-wrap .message.assistant { flex-direction: row; }
+.d2chat-wrap .message.user {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+
+.d2chat-wrap .assistant-icon { height: 36px; margin-right: 10px; }
+.d2chat-wrap .user-icon { height: 40px; margin-left: 10px; }
+
+.d2chat-wrap .message-content {
+  max-width: 75%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.d2chat-wrap .message.user .message-content {
+  background: #0e66c4;
+  color: white;
+}
+.d2chat-wrap .message.assistant .message-content {
+  background: #e9ecef;
+  color: #333;
+}
+
+.d2chat-wrap .visualization-container {
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.d2chat-wrap .visualization-container table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.d2chat-wrap .visualization-container th,
+.d2chat-wrap .visualization-container td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #ddd;
+}
+.d2chat-wrap .visualization-container th { background: #f0f4f8; font-weight: 600; }
+.d2chat-wrap .visualization-container img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+
+.d2chat-wrap .msg-fav-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #ccc;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 10px;
+  line-height: 1;
+  align-self: center;
+  transition: color 0.15s;
+}
+.d2chat-wrap .msg-fav-btn:hover { color: #f0c040; }
+.d2chat-wrap .msg-fav-btn.fav-on { color: #f0c040; }
+
+.d2chat-wrap .fav-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 3px 8px 0 0;
+}
+
+/* ── 입력창 ── */
+.d2chat-wrap .input-container {
+  border-top: 1px solid #ddd;
+  padding: 12px 20px;
+  background: #f8f9fa;
+  flex-shrink: 0;
+}
+.d2chat-wrap .input-wrapper {
+  display: flex;
+  gap: 10px;
+}
+.d2chat-wrap .question-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 13px;
+  resize: none;
+  font-family: inherit;
+  min-height: 60px;
+}
+.d2chat-wrap .send-btn {
+  padding: 8px 20px;
+  background: #0e66c4;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  align-self: flex-end;
+}
+.d2chat-wrap .send-btn:hover { background: #0056b3; }
+.d2chat-wrap .send-btn:disabled { background: #6c757d; cursor: not-allowed; }
+.d2chat-wrap .auto-test-btn {
+  padding: 8px 14px;
+  background: #3d5166;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  align-self: flex-end;
+}
+.d2chat-wrap .auto-test-btn:hover { background: #2c3e50; }
+.d2chat-wrap .auto-test-btn:disabled { background: #6c757d; cursor: not-allowed; }
+
+/* ── 로딩 ── */
+.d2chat-wrap .loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+}
+.d2chat-wrap .spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #e0e0e0;
+  border-top: 3px solid #0e66c4;
+  border-radius: 50%;
+  animation: d2chat-spin 0.9s linear infinite;
+}
+@keyframes d2chat-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.d2chat-wrap .loading-text { color: #666; font-size: 13px; }
+
+/* ── 히스토리 뷰 ── */
+.d2chat-wrap .history-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: white;
+}
+.d2chat-wrap .history-bar {
+  padding: 8px 16px;
+  background: #eef4fb;
+  border-bottom: 1px solid #c8ddf5;
+  font-size: 12px;
+  color: #3a6090;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.d2chat-wrap .history-back-btn {
+  flex-shrink: 0;
+  background: #0e66c4;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.d2chat-wrap .history-back-btn:hover { background: #0056b3; }
+.d2chat-wrap .history-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #fafafa;
+  min-height: 0;
+}
+.d2chat-wrap .continue-btn {
+  font-size: 12px;
+  padding: 4px 14px;
+  background: #e8f0fe;
+  color: #0e66c4;
+  border: 1px solid #b3caf5;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.d2chat-wrap .continue-btn:hover { background: #ccddfb; }
+
+/* ── 쿼리 패널 ── */
+.d2chat-wrap .query-panel {
+  width: 0;
+  background: #f8f9fa;
+  border-left: 1px solid #ddd;
+  overflow: hidden;
+  transition: width 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.d2chat-wrap .query-panel.active {
+  width: 380px;
+}
+.d2chat-wrap .query-header {
+  padding: 12px 16px;
+  background: #2c3e50;
+  color: #dceaf7;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.d2chat-wrap .query-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+}
+.d2chat-wrap .query-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.d2chat-wrap .query-item {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.d2chat-wrap .query-question {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.d2chat-wrap .query-sql {
+  background: #282c34;
+  color: #abb2bf;
+  padding: 10px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-bottom: 6px;
+}
+.d2chat-wrap .query-copy-btn {
+  color: #ffffff;
+  background: #0e66c4;
+  padding: 2px 12px;
+  border: 1px solid #0e66c4;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+/* ── 쿼리 토글 버튼 ── */
+.d2chat-toggle-query-btn {
+  cursor: pointer;
+  height: 64px;
+  line-height: 20px;
+  background: none;
+  border: none;
+  padding: 0 6px;
+  text-align: center;
+  align-self: flex-end;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+.d2chat-toggle-query-btn img { width: 44px; height: 44px; }
+.d2chat-toggle-query-btn .toggle-text {
+  font-size: 11px;
+  color: #555;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* ── 공유 모달 ── */
+.d2chat-share-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.d2chat-share-modal-box {
+  background: white;
+  border-radius: 12px;
+  padding: 28px 32px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.d2chat-share-modal-box h3 { margin-bottom: 6px; font-size: 16px; color: #2c3e50; }
+.d2chat-share-session-title {
+  font-size: 13px;
+  color: #5a7a99;
+  margin-bottom: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.d2chat-share-user-list {
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+.d2chat-share-user-item {
+  border-bottom: 1px solid #f0f0f0;
+}
+.d2chat-share-user-item:last-child { border-bottom: none; }
+.d2chat-share-user-item label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+}
+.d2chat-share-user-item label:hover { background: #f5f8ff; }
+.d2chat-share-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.d2chat-share-modal-actions button {
+  padding: 7px 20px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.d2chat-share-modal-actions .cancel-btn { background: #f0f0f0; color: #555; }
+.d2chat-share-modal-actions .cancel-btn:hover { background: #e0e0e0; }
+.d2chat-share-modal-actions .share-btn { background: #0e66c4; color: #fff; }
+.d2chat-share-modal-actions .share-btn:hover { background: #0056b3; }
+.d2chat-share-modal-actions .share-btn:disabled { background: #a8c8e8; cursor: not-allowed; }
