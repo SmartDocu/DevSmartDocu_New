@@ -6,6 +6,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.datas import (
@@ -126,6 +127,17 @@ def list_datas_projects(token: str = Depends(get_token)):
             for pid in active_ids
         ]
     }
+
+
+class MyProjectRequest(BaseModel):
+    myprojectid: str
+
+@router.post("/myproject")
+def update_my_project(body: MyProjectRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    sb.schema(SUPABASE_SCHEMA).table("users").update({"myprojectid": body.myprojectid}).eq("useruid", str(user.id)).execute()
+    return {"status": "ok"}
 
 
 # ── Datas by Project (read-only) ───────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal } from 'antd'
-import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
@@ -13,6 +13,7 @@ import AppSidebar from '@/components/Layout/AppSidebar'
 import { useState, useEffect } from 'react'
 import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
+import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
@@ -41,6 +42,16 @@ export default function AppLayout() {
   const { data: allMenus = [] } = useMenus()
   const { data: helpData } = useHelpSearch(location.pathname, languageCd || 'en')
   const helpItem = helpData?.help ?? null
+  const { data: projectList = [] } = useDatasProjects({ enabled: !!user })
+  const updateMyProject = useUpdateMyProject()
+  const [selectedProjectId, setSelectedProjectId] = useState(null)
+
+  useEffect(() => {
+    if (projectList.length === 0) return
+    const saved = user?.myprojectid
+    const found = saved && projectList.find(p => String(p.projectid) === String(saved))
+    setSelectedProjectId(found ? found.projectid : projectList[0].projectid)
+  }, [projectList])
 
   // re-render 트리거용 구독
   useLangStore((s) => s.translations)
@@ -230,9 +241,29 @@ export default function AppLayout() {
 
           {/* 사용자 영역 */}
           <div style={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {/* 프로젝트 선택 */}
+            {isLoggedIn && projectList.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Select
+                  value={selectedProjectId || undefined}
+                  onChange={(val) => {
+                    setSelectedProjectId(val)
+                    updateUser({ myprojectid: String(val) })
+                    updateMyProject.mutate(String(val))
+                  }}
+                  size="small"
+                  variant="borderless"
+                  style={{ minWidth: 120, color: '#fff' }}
+                  popupMatchSelectWidth={false}
+                  options={projectList.map(p => ({ value: p.projectid, label: p.projectnm }))}
+                  className="lang-select"
+                />
+              </div>
+            )}
+
             {/* 문서 선택 */}
             {isLoggedIn && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 20 }}>
                 <img
                   src="/doc-select.svg"
                   alt={t('ttl.doc.select')}

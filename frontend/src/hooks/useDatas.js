@@ -23,10 +23,17 @@ export function useChapterDatas(chapteruid) {
   })
 }
 
-export function useDatasProjects() {
+export function useDatasProjects({ enabled = true } = {}) {
   return useQuery({
     queryKey: ['datas-projects'],
     queryFn: () => apiClient.get('/datas/projects').then((r) => r.data.projects),
+    enabled,
+  })
+}
+
+export function useUpdateMyProject() {
+  return useMutation({
+    mutationFn: (myprojectid) => apiClient.post('/datas/myproject', { myprojectid }),
   })
 }
 

@@ -25,6 +25,7 @@ class UserContext(BaseModel):
     tenanticonurl: Optional[str] = None
     projectid: Optional[str] = None
     projectmanager: Optional[str] = "N"
+    myprojectid: Optional[str] = None
     editbuttonyn: Optional[str] = "N"
     sampledocyn: Optional[str] = "N"
     languagecd: Optional[str] = None

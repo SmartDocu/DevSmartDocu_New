@@ -78,7 +78,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         user_row = (
             sd.table("users")
-            .select("roleid,billingmodelcd,mydocid")
+            .select("roleid,billingmodelcd,mydocid,myprojectid")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
@@ -87,6 +87,8 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
             ctx.roleid = user_row.data.get("roleid")
             ctx.billingmodelcd = user_row.data.get("billingmodelcd")
             mydocid = user_row.data.get("mydocid")
+            if user_row.data.get("myprojectid"):
+                ctx.myprojectid = str(user_row.data["myprojectid"])
     except Exception:
         pass
 
