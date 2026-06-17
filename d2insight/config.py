@@ -9,10 +9,15 @@ Grade = Literal["fast", "balanced", "quality"]
 
 # --- LLM 모델 등급 ---
 # fast: 인텐트 파싱/분류, balanced: 보고서 본문 섹션, quality: 결론/핵심 인사이트
+# ANTHROPIC_MODELS: dict[str, str] = {
+#     "fast": "claude-haiku-4-5-20251001",
+#     "balanced": "claude-sonnet-4-6",
+#     "quality": "claude-opus-4-8",
+# }
 ANTHROPIC_MODELS: dict[str, str] = {
     "fast": "claude-haiku-4-5-20251001",
-    "balanced": "claude-sonnet-4-6",
-    "quality": "claude-opus-4-8",
+    "balanced": "claude-haiku-4-5-20251001",
+    "quality": "claude-haiku-4-5-20251001",
 }
 
 # --- Data source selection ---
