@@ -152,11 +152,15 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
     [favoritesData],
   )
 
-  /* ── 즐겨찾기 메뉴 항목 목록 ── */
-  const favoriteMenus = useMemo(
-    () => visibleMenus.filter((m) => favoriteSet.has(m.menucd)),
-    [visibleMenus, favoriteSet],
-  )
+  /* ── 즐겨찾기 메뉴 항목 목록 (favorites.orderno 순) ── */
+  const favoriteMenus = useMemo(() => {
+    const orderMap = Object.fromEntries(
+      (favoritesData || []).map((f) => [f.menucd, f.orderno])
+    )
+    return visibleMenus
+      .filter((m) => favoriteSet.has(m.menucd))
+      .sort((a, b) => (orderMap[a.menucd] ?? 999) - (orderMap[b.menucd] ?? 999))
+  }, [visibleMenus, favoriteSet, favoritesData])
 
   /* ── 트리 빌드 ── */
   const menuTree = useMemo(() => buildTree(visibleMenus), [visibleMenus])
@@ -207,9 +211,16 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
     if (!menu.route_path) return
     if (menu.route_path.startsWith('http')) {
       window.open(menu.route_path, '_blank')
-    } else {
-      navigate('/' + menu.route_path)
+      return
     }
+    const maxTabs = configs?.maxtabs ?? 10
+    const alreadyOpen = tabs.some((t) => t.key === menu.menucd)
+    if (!alreadyOpen && tabs.length >= maxTabs) {
+      message.warning(t('msg.tab.maxcount').replace('{n}', maxTabs))
+      return
+    }
+    openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: menu.route_path })
+    navigate('/' + menu.route_path)
   }
 
   if (menusLoading) {

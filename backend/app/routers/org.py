@@ -338,7 +338,7 @@ def list_tenant_llms(token: str = Depends(get_token)):
         p.pop("encapikey", None)  # 보안상 제거
 
     # LLM 모델 목록 (드롭다운용)
-    llmmodels = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm,llmmodelnicknm,useyn").order("llmmodelnm").execute().data or []
+    llmmodels = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm,llmmodelnicknm,useyn").eq("useyn", True).order("llmmodelnm").execute().data or []
 
     return {
         "tenant": tenant,

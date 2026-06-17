@@ -464,7 +464,7 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
         "CA": "AI차트", "TA": "AI표", "SA": "AI문장",
         "CU": "차트", "TU": "표", "SU": "문장",
     }
-    go_rows = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", genchapteruid).execute().data or []
+    go_rows = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", genchapteruid).order("createdts").execute().data or []
     objects = []
     for go in go_rows:
         obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectnm,objectdesc,objecttypecd,orderno,createdts").eq("objectuid", go["objectuid"]).execute().data
@@ -489,7 +489,7 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
             "new_genobjectyn": not bool(go.get("resulttext")),
             "chapteruid": chapteruid,
         })
-    objects = sorted(objects, key=lambda x: x.get("orderno", 0))
+    objects = sorted(objects, key=lambda x: (x.get("orderno", 0), str(x.get("filterjson") or "")))
 
     return {
         "objects": objects,
