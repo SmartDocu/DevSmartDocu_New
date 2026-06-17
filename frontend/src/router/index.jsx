@@ -31,6 +31,7 @@ import SettingsServersPage from '@/pages/settings/SettingsServersPage'
 import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
 import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
 import MyInfoPage from '@/pages/MyInfoPage'
+import MfaSetupPage from '@/pages/settings/MfaSetupPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
 import OrgTenantLlmsPage from '@/pages/org/OrgTenantLlmsPage'
 import OrgProjectsPage from '@/pages/org/OrgProjectsPage'
@@ -124,6 +125,7 @@ export const router = createBrowserRouter([
       { path: 'settings/tenants', element: <SettingsTenantsPage /> },
       { path: 'settings/connectors', element: <SettingsConnectorsPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
+      { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },
 
       // Stage 8: 조직 관리 (org/)

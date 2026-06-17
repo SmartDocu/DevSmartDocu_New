@@ -13,6 +13,11 @@ from backend.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     MessageResponse,
+    MfaVerifyRequest,
+    MfaEnrollRequest,
+    MfaEnrollResponse,
+    MfaEnrollVerifyRequest,
+    MfaUnenrollRequest,
     RefreshRequest,
     RegisterRequest,
     SendResetEmailRequest,
@@ -41,6 +46,28 @@ def _get_service_client():
 def _get_user_client(access_token: str, refresh_token: Optional[str] = None):
     """사용자 토큰 기반 Supabase 클라이언트."""
     return get_thread_supabase(access_token=access_token, refresh_token=refresh_token)
+
+
+def _check_mfa_required(user_client) -> tuple[bool, Optional[str]]:
+    """
+    MFA 필요 여부와 factor_id를 반환한다.
+    - aal1 상태이고 verified factor가 있으면 MFA 필요
+    반환: (mfa_required: bool, factor_id: str | None)
+    """
+    try:
+        assurance = user_client.auth.mfa.get_authenticator_assurance_level()
+        if assurance.next_level == "aal2" and assurance.current_level != "aal2":
+            factors_resp = user_client.auth.mfa.list_factors()
+            verified_factors = [
+                f for f in (factors_resp.totp or [])
+                if f.status == "verified"
+            ]
+            if verified_factors:
+                return True, verified_factors[0].id
+    except Exception:
+        pass
+    return False, None
+
 
 def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     ctx = UserContext(id=user_id, email=email)
@@ -221,68 +248,48 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         ctx.editbuttonyn = "N"
 
     # 9. languagecd: TenantUsers.languagecd → Tenants.languagecd
-    # 10. offsetminutes: TenantUsers.timezone → Tenants.timezone → sdoc.timezone.offsetminutes
     try:
         lang_row = (
             sd.table("tenantusers")
-            .select("languagecd, tenantid, timezone")
+            .select("languagecd, tenantid")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
         )
-        if lang_row.data:
-            if lang_row.data.get("languagecd"):
-                ctx.languagecd = lang_row.data["languagecd"]
-            elif lang_row.data.get("tenantid"):
-                t_lang = (
-                    sd.table("tenants")
-                    .select("languagecd")
-                    .eq("tenantid", lang_row.data["tenantid"])
-                    .maybe_single()
-                    .execute()
-                )
-                if t_lang.data:
-                    ctx.languagecd = t_lang.data.get("languagecd")
-
-            tz = lang_row.data.get("timezone")
-            if not tz and lang_row.data.get("tenantid"):
-                t_tz = (
-                    sd.table("tenants")
-                    .select("timezone")
-                    .eq("tenantid", lang_row.data["tenantid"])
-                    .maybe_single()
-                    .execute()
-                )
-                if t_tz.data:
-                    tz = t_tz.data.get("timezone")
-
-            if tz:
-                tz_row = (
-                    sd.table("timezone")
-                    .select("offsetminutes")
-                    .eq("timezone", tz)
-                    .maybe_single()
-                    .execute()
-                )
-                if tz_row.data:
-                    ctx.offsetminutes = tz_row.data.get("offsetminutes")
+        if lang_row.data and lang_row.data.get("languagecd"):
+            ctx.languagecd = lang_row.data["languagecd"]
+        elif lang_row.data and lang_row.data.get("tenantid"):
+            t_lang = (
+                sd.table("tenants")
+                .select("languagecd")
+                .eq("tenantid", lang_row.data["tenantid"])
+                .maybe_single()
+                .execute()
+            )
+            if t_lang.data:
+                ctx.languagecd = t_lang.data.get("languagecd")
     except Exception:
         pass
 
     return ctx
 
+
 # ─── 엔드포인트 ─────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest):
-    """이메일/비밀번호로 로그인하고 토큰과 사용자 컨텍스트를 반환한다."""
+    """
+    1단계 로그인: 이메일/비밀번호 검증
+    - MFA 미등록 → 즉시 토큰 + 사용자 컨텍스트 반환
+    - MFA 등록됨 → mfa_required=True + 임시 토큰 반환 (2단계 필요)
+    """
     try:
         from utilsPrj.supabase_client import get_supabase_client
         anon_client = get_supabase_client()
         auth_resp = anon_client.auth.sign_in_with_password(
             {"email": body.email, "password": body.password}
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="이메일 또는 비밀번호가 올바르지 않습니다.",
@@ -295,9 +302,70 @@ def login(body: LoginRequest):
             detail="로그인에 실패했습니다.",
         )
 
+    user_client = _get_user_client(session.access_token, session.refresh_token)
+
+    # ── MFA 등록 여부 확인 ───────────────────────────────────────────────────
+    mfa_required, factor_id = _check_mfa_required(user_client)
+
+    print(f'MFA_여부: {mfa_required}')
     user = auth_resp.user
-    supabase = _get_user_client(session.access_token, session.refresh_token)
-    ctx = _load_user_context(supabase, str(user.id), user.email)
+    ctx = _load_user_context(user_client, str(user.id), user.email)
+
+    if mfa_required:
+        # aal1 임시 토큰만 반환 — 완전한 인증 아님
+        return LoginResponse(
+            mfa_required=True,
+            factor_id=factor_id,
+            access_token_temp=session.access_token,
+            refresh_token_temp=session.refresh_token,
+            # user=ctx,
+        )
+    # ────────────────────────────────────────────────────────────────────────
+
+    return LoginResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        user=ctx,
+    )
+
+
+@router.post("/mfa-verify", response_model=LoginResponse)
+def mfa_verify(body: MfaVerifyRequest):
+    """
+    2단계 로그인: TOTP 코드 검증 → aal2 세션 발급
+    프론트는 /login에서 받은 임시 토큰 + factor_id + 6자리 코드를 전송한다.
+    """
+    user_client = _get_user_client(body.access_token, body.refresh_token)
+
+    try:
+        # Step 1: challenge 발급
+        challenge_resp = user_client.auth.mfa.challenge(
+            {"factor_id": body.factor_id}
+        )
+        challenge_id = challenge_resp.id
+
+        # Step 2: TOTP 코드 검증 → aal2 세션 반환
+        verify_resp = user_client.auth.mfa.verify({
+            "factor_id": body.factor_id,
+            "challenge_id": challenge_id,
+            "code": body.code,
+        })
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="인증 코드가 올바르지 않습니다.",
+        )
+
+    session = verify_resp.session
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MFA 검증에 실패했습니다.",
+        )
+
+    final_client = _get_user_client(session.access_token, session.refresh_token)
+    user = verify_resp.user
+    ctx = _load_user_context(final_client, str(user.id), user.email)
 
     return LoginResponse(
         access_token=session.access_token,
@@ -324,7 +392,7 @@ def refresh_token(body: RefreshRequest):
         from utilsPrj.supabase_client import get_supabase_client
         client = get_supabase_client()
         resp = client.auth.refresh_session(body.refresh_token)
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="토큰 갱신에 실패했습니다. 다시 로그인해주세요.",
@@ -473,7 +541,6 @@ def register(body: RegisterRequest):
         )
 
     # billingmodelcd 값 결정
-    # tenant 있으면 테넌트 테이블에서 조회, 없으면 single 파라미터 사용
     try:
         if body.tenantid:
             tenant_row = (
@@ -523,7 +590,6 @@ def register(body: RegisterRequest):
         )
     smartdoc_tenantid = smartdoc_row.data[0]["tenantid"]
 
-    # tenant 미선택 시 SmartDoc으로 설정
     effective_tenantid = body.tenantid if body.tenantid else smartdoc_tenantid
 
     # SmartDoc public 프로젝트 조회
@@ -544,7 +610,6 @@ def register(body: RegisterRequest):
 
     # 공통 권한 부여 + 추가 처리
     try:
-        # 공통 tenantusers 삽입
         service.schema(SCHEMA).table("tenantusers").insert({
             "tenantid": smartdoc_tenantid,
             "useruid": user_id,
@@ -553,7 +618,6 @@ def register(body: RegisterRequest):
             "creator": user_id,
         }).execute()
 
-        # 공통 projectusers 삽입
         service.schema(SCHEMA).table("projectusers").insert({
             "projectid": public_projectid,
             "useruid": user_id,
@@ -562,7 +626,6 @@ def register(body: RegisterRequest):
             "creator": user_id,
         }).execute()
 
-        # billingmodelcd == 'single': 개인 프로젝트 생성
         if body.billingmodelcd == "single":
             proj_result = service.schema(SCHEMA).table("projects").insert({
                 "tenantid": smartdoc_tenantid,
@@ -580,7 +643,6 @@ def register(body: RegisterRequest):
                 "creator": user_id,
             }).execute()
 
-        # 별도 테넌트 선택 시 tenantnewusers 삽입
         if body.tenantid and str(body.tenantid) != str(smartdoc_tenantid):
             service.schema(SCHEMA).table("tenantnewusers").insert({
                 "tenantid": body.tenantid,
@@ -589,7 +651,6 @@ def register(body: RegisterRequest):
                 "approvecd": "A",
             }).execute()
 
-        # Pro(Pr) 결제 처리
         if body.single == "Pr":
             billing_start = datetime.now().date()
             billing_end = billing_start + relativedelta(months=1) - timedelta(days=1)
@@ -624,6 +685,127 @@ def register(body: RegisterRequest):
     return MessageResponse(ok=True, message="회원가입이 완료되었습니다.\n이메일 인증 후 로그인 가능합니다.")
 
 
+# ─── MFA 관리 ────────────────────────────────────────────────────────────────
+
+@router.get("/mfa-factors", response_model=dict)
+def get_mfa_factors(token: str = Depends(get_token)):
+    """
+    현재 사용자의 MFA factor 목록 조회.
+    설정 화면에서 MFA 등록 여부 확인 및 factor_id 획득에 사용한다.
+    """
+    user_client = _get_user_client(token)
+    try:
+        factors_resp = user_client.auth.mfa.list_factors()
+        totp_list = [
+            {
+                "factor_id": f.id,
+                "status": f.status,           # "verified" | "unverified"
+                "friendly_name": f.friendly_name,
+                "created_at": str(f.created_at),
+            }
+            for f in (factors_resp.totp or [])
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    return {
+        "factors": totp_list,
+        "mfa_enabled": any(f["status"] == "verified" for f in totp_list),
+    }
+
+@router.post("/mfa-enroll", response_model=MfaEnrollResponse)
+def mfa_enroll(body: MfaEnrollRequest, token: str = Depends(get_token)):
+    user_client = _get_user_client(token, body.refresh_token)
+
+    # ── Supabase Admin REST API로 unverified factor 직접 삭제 ─────────────
+    try:
+        import httpx
+        from backend.app.config import settings  # SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+        user_resp = user_client.auth.get_user(token)
+        user_id = str(user_resp.user.id)
+
+        # 1) factor 목록 조회 (Admin API)
+        headers = {
+            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        }
+        list_url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}/factors"
+        res = httpx.get(list_url, headers=headers)
+        factors = res.json()
+        print(f"[MFA] admin factors: {factors}")
+
+        # 2) unverified factor 삭제
+        for f in (factors or []):
+            if f.get("status") == "unverified":
+                factor_id = f.get("id")
+                del_url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}/factors/{factor_id}"
+                del_res = httpx.delete(del_url, headers=headers)
+                print(f"[MFA] 삭제 결과: {factor_id} → {del_res.status_code}")
+
+    except Exception as e:
+        print(f"[MFA] factor 정리 실패: {e}")
+
+    try:
+        resp = user_client.auth.mfa.enroll({
+            "factor_type": "totp",
+            "issuer": "D2Doc",
+        })
+    except Exception as e:
+        print(f"[MFA] enroll 실패: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"MFA 등록 실패: {str(e)}",
+        )
+
+    return MfaEnrollResponse(
+        factor_id=resp.id,
+        totp_uri=resp.totp.uri,
+        secret=resp.totp.secret,
+    )
+
+
+@router.post("/mfa-enroll-verify", response_model=MessageResponse)
+def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_token)):
+    """
+    등록한 TOTP 코드를 검증하여 verified 상태로 전환한다.
+    이 단계 완료 후부터 로그인 시 MFA 코드 입력이 요구된다.
+    """
+    user_client = _get_user_client(token, body.refresh_token or None)  # ← refresh_token 추가
+    try:
+        challenge_resp = user_client.auth.mfa.challenge(
+            {"factor_id": body.factor_id}
+        )
+        print(f"[MFA] challenge_id: {challenge_resp.id}")  # ← 추가
+        user_client.auth.mfa.verify({
+            "factor_id": body.factor_id,
+            "challenge_id": challenge_resp.id,
+            "code": body.code,
+        })
+    except Exception as e:
+        print(f"[MFA] enroll_verify 실패: {e}")  # ← 추가
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="인증 코드가 올바르지 않습니다. QR 코드를 다시 스캔해주세요.",
+        )
+    return MessageResponse(ok=True, message="MFA가 활성화되었습니다.")
+
+
+@router.delete("/mfa-unenroll", response_model=MessageResponse)
+def mfa_unenroll(body: MfaUnenrollRequest, token: str = Depends(get_token)):
+    user_client = _get_user_client(token, body.refresh_token or None)  # ← refresh_token 추가
+    try:
+        user_client.auth.mfa.unenroll({"factor_id": body.factor_id})  # ← body.factor_id로
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"MFA 해제 실패: {str(e)}",
+        )
+    return MessageResponse(ok=True, message="MFA가 비활성화되었습니다.")
+
+
 # ─── SMS 인증 ────────────────────────────────────────────────────────────────
 
 _PHONE_REGEX = re.compile(r"^01[016789]-?\d{3,4}-?\d{4}$")
@@ -656,7 +838,6 @@ def send_sms(body: SendSmsRequest):
             content=f"[D2Doc] 인증번호: {code} (5분 이내 입력)",
         )
     except Exception as e:
-        # SMS 발송 실패 시에도 개발 환경에서는 코드를 반환 (로그로 확인)
         import logging
         logging.warning(f"SMS send failed: {e} | code={code}")
 

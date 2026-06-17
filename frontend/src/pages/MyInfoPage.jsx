@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography, Alert,
 } from 'antd'
-import { EditOutlined, SaveOutlined } from '@ant-design/icons'
+import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
 import { useMyInfo, useUpdateUsername, useUpdateTimezone } from '@/hooks/useSettings'
+import { useMfaFactors } from '@/hooks/useMfa'
 import { useLangStore, t } from '@/stores/langStore'
 
 const { Title } = Typography
@@ -14,9 +16,11 @@ const APPROVE_LABELS = () => ({ A: t('cod.approve_pending'), D: t('cod.approve_r
 
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
+  const navigate = useNavigate()
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
+  const { data: factorsData } = useMfaFactors()
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
   const [timezoneVal, setTimezoneVal] = useState(null)
@@ -29,6 +33,8 @@ export default function MyInfoPage() {
   const tenantChange = data.tenant_change || null
   const timezones = data.timezones || []
   const currentTimezone = data.timezone || null
+
+  const isMfaEnabled = factorsData?.mfa_enabled ?? false
 
   const isAgreed = (v) => v === 'Y' || v === true
 
@@ -93,7 +99,7 @@ export default function MyInfoPage() {
                     <Button size="small" icon={<EditOutlined />} onClick={handleEditName} type="text" />
                   </Space>
                 )}
-              </Descriptions.Item>
+              </Descriptions.Item>              
               <Descriptions.Item label={t('lbl.timezone')}>
                 {editingTimezone ? (
                   <Space>
@@ -146,6 +152,38 @@ export default function MyInfoPage() {
           </Card>
         </Col>
       </Row>
+
+      {/* 보안 설정 (MFA) ─────────────────────────────────────────────────── */}
+      <Card
+        size="small"
+        title={t('ttl.myinfo.security')}
+        loading={isLoading}
+        style={{ marginBottom: 16 }}
+      >
+        <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label={t('ttl.mfa.status')}>
+            <Space>
+              {isMfaEnabled ? (
+                <Tag color="green">{t('lbl.mfa.enabled')}</Tag>
+              ) : (
+                <Tag color="default">{t('lbl.mfa.disabled')}</Tag>
+              )}
+              <Button
+                htmlType="button"
+                size="small"
+                icon={<LockOutlined />}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  navigate('/settings/mfa')
+                }}
+              >
+                {isMfaEnabled ? t('btn.mfa.manage') : t('ttl.mfa.setup')}
+              </Button>
+            </Space>
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
 
       {/* 약관 동의 여부 */}
       <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ marginBottom: 16 }}>
