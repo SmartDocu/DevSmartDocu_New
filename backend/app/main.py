@@ -32,15 +32,18 @@ app.include_router(router, prefix="/api")
 @app.on_event("startup")
 async def startup_event():
     try:
-        from d2chat.service import mcp_service
+        # from d2chat.service import mcp_service
+        from d2chat.mcp_core.service import mcp_service
         mcp_service.initialize()
         print("[d2chat] MCP 서비스 초기화 완료")
     except Exception as e:
         print(f"[d2chat] MCP 서비스 초기화 실패 (서비스 미사용 시 무시): {e}")
 
     try:
-        from d2insight.report import meta_loader
-        meta_loader.refresh()
+        # from d2insight.report import meta_loader
+        # meta_loader.refresh()
+        from d2insight.data_source import meta_loader
+        meta_loader.load()
         print("[d2insight] 메타데이터 캐시 초기화 완료")
     except Exception as e:
         print(f"[d2insight] 메타데이터 초기화 실패 (무시): {e}")

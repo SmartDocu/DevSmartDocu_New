@@ -1,18 +1,18 @@
-"""D2Insight Chat API 라우터."""
+"""Insight Chat API router."""
 from __future__ import annotations
 
+import uuid as _uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token
-from d2insight.report.intent_parser import parse_intent
-from d2insight.report.pipeline_runner import run_tool, run_report_from_spec
-from d2insight.report import session as _session
-from d2insight.report import report_spec as _spec_mod
-from d2insight.history import insight_storage as storage
-from d2insight.report import token_tracker
+from d2insight.chat.intent_parser import parse_intent
+from d2insight.chat.pipeline_runner import run_tool, run_report_from_spec
+from d2insight.chat import session as _session
+from d2insight.chat import report_spec as _spec_mod
+from d2insight.db import insight_storage as storage
+from d2insight import token_tracker
 
 router = APIRouter()
 
@@ -23,7 +23,6 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     user_id: str | None = None
-    provider: str | None = None  # anthropic | openai
 
 
 class FavoriteQARequest(BaseModel):
@@ -63,23 +62,22 @@ class ChatResponse(BaseModel):
 # ── 채팅 ─────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
-def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResponse:
+def chat_endpoint(req: ChatRequest) -> ChatResponse:
     token_tracker.reset()
-    import uuid as _uuid
+
     try:
         sid, hist = _session.get_or_create(req.session_id, user_id=req.user_id)
     except Exception as e:
-        print(f"[d2insight/session] get_or_create 실패 (fallback): {e}")
+        print(f"[session] get_or_create 실패 (fallback): {e}")
         sid = req.session_id or str(_uuid.uuid4())
         hist = []
 
-    provider = req.provider or None
-
+    # ── 대화형 보고서 작성 진행 중 ───────────────────────────────────────
     active_spec = _spec_mod.get_spec(sid)
     if active_spec:
-        updated_spec, bot_response = _spec_mod.advance_spec(sid, req.message, history=hist, provider=provider)
+        updated_spec, bot_response = _spec_mod.advance_spec(sid, req.message, history=hist)
         if bot_response == "__EXECUTE__":
-            result = run_report_from_spec(updated_spec, req.user_id, provider=provider)
+            result = run_report_from_spec(updated_spec, req.user_id)
             _spec_mod.clear_spec(sid)
         elif bot_response == "__CANCEL__":
             result = {
@@ -94,11 +92,12 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                 "chart_image": None, "report_path": None,
             }
     else:
-        intent = parse_intent(req.message, provider=provider)
+        # ── 기존 플로우 ────────────────────────────────────────────────────
+        intent = parse_intent(req.message)
         intent["original_message"] = req.message
         tool = intent.get("tool", "chat")
         target_month = intent.get("target_month")
-        months_back = intent.get("months_back", 5)
+        months_back = intent.get("months_back", 3)
 
         if tool == "report" and (intent.get("mode") == "start" or not target_month):
             spec = _spec_mod.create_spec(
@@ -117,10 +116,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                 "chart_image": None, "report_path": None,
             }
         else:
-            result = run_tool(
-                tool, target_month, months_back,
-                history=hist, intent=intent, user_id=req.user_id, provider=provider,
-            )
+            result = run_tool(tool, target_month, months_back, history=hist, intent=intent, user_id=req.user_id)
 
     tokens = token_tracker.get()
 
@@ -143,7 +139,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             servicecd="I",
         )
     except Exception as e:
-        print(f"[d2insight/session] append_qa 실패 (저장 건너뜀): {e}")
+        print(f"[session] append_qa 실패 (저장 건너뜀): {e}")
 
     if qauid and (tokens["input"] or tokens["output"]):
         token_tracker.record_turn(sid, qauid, tokens)
@@ -161,16 +157,16 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                 questiontypecd=questiontypecd,
             )
         except Exception as e:
-            print(f"[d2insight/session] insert_llm_api_logs 실패 (저장 건너뜀): {e}")
+            print(f"[session] insert_llm_api_logs 실패 (저장 건너뜀): {e}")
 
     return ChatResponse(session_id=sid, qauid=qauid, **result)
 
 
-# ── 이어가기 ──────────────────────────────────────────────────────
+# ── 이어가기 ─────────────────────────────────────────────────────
 
 @router.post("/session/inject")
-def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
-    import uuid as _uuid
+def inject_qa(body: InjectRequest):
+    """과거 Q&A를 현재(또는 새) 세션에 이어붙인다."""
     try:
         sid, _ = _session.get_or_create(body.session_id, user_id=body.user_id)
     except Exception:
@@ -184,7 +180,7 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
         }
         _session.append_qa(sid, body.question, answer_json, user_id=body.user_id, filenm=body.report_path)
     except Exception as e:
-        print(f"[d2insight/inject] append_qa 실패: {e}")
+        print(f"[inject] append_qa 실패: {e}")
 
     return {"ok": True, "session_id": sid}
 
@@ -192,12 +188,14 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
 # ── 히스토리 ─────────────────────────────────────────────────────
 
 @router.get("/history/{user_id}")
-def get_history(user_id: str, token: str = Depends(get_token)):
+def get_history(user_id: str):
+    """날짜별로 그룹화된 세션 목록 반환."""
     return storage.get_history_by_date(user_id)
 
 
 @router.get("/history/{user_id}/{session_id}")
-def get_session_messages(user_id: str, session_id: str, token: str = Depends(get_token)):
+def get_session_messages(user_id: str, session_id: str):
+    """세션의 Q&A 메시지 목록 반환."""
     messages = storage.get_session_messages(session_id)
     if not messages:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
@@ -205,7 +203,7 @@ def get_session_messages(user_id: str, session_id: str, token: str = Depends(get
 
 
 @router.delete("/history/{user_id}/{session_id}")
-def delete_session(user_id: str, session_id: str, token: str = Depends(get_token)):
+def delete_session(user_id: str, session_id: str):
     storage.delete_session(session_id, user_id)
     return {"ok": True}
 
@@ -213,12 +211,12 @@ def delete_session(user_id: str, session_id: str, token: str = Depends(get_token
 # ── 즐겨찾기 ─────────────────────────────────────────────────────
 
 @router.get("/favorites/{user_id}")
-def get_favorites(user_id: str, token: str = Depends(get_token)):
+def get_favorites(user_id: str):
     return storage.get_favorites(user_id)
 
 
 @router.post("/favorite/qa")
-def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
+def add_favorite_qa(body: FavoriteQARequest):
     ok = storage.add_favorite_qa(body.qauid, body.user_id)
     if not ok:
         raise HTTPException(status_code=404, detail="QA를 찾을 수 없습니다.")
@@ -226,7 +224,7 @@ def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
 
 
 @router.delete("/favorite/qa/{user_id}/{qauid}")
-def remove_favorite_qa(user_id: str, qauid: str, token: str = Depends(get_token)):
+def remove_favorite_qa(user_id: str, qauid: str):
     storage.remove_favorite_qa(qauid, user_id)
     return {"ok": True}
 
@@ -234,7 +232,8 @@ def remove_favorite_qa(user_id: str, qauid: str, token: str = Depends(get_token)
 # ── 폴더 ─────────────────────────────────────────────────────────
 
 @router.get("/folders/{user_id}")
-def get_folders(user_id: str, token: str = Depends(get_token)):
+def get_folders(user_id: str):
+    """폴더 목록 반환. 폴더가 없으면 샘플 폴더를 자동 생성한다."""
     tenant_id, _ = storage.get_project_info(user_id)
     storage.seed_sample_folders(tenant_id, user_id)
     return storage.get_folders(tenant_id)
@@ -243,7 +242,8 @@ def get_folders(user_id: str, token: str = Depends(get_token)):
 # ── 공유 ─────────────────────────────────────────────────────────
 
 @router.post("/share")
-def share_qa(body: ShareRequest, token: str = Depends(get_token)):
+def share_qa(body: ShareRequest):
+    """QA를 같은 tenant의 모든 사용자와 공유한다."""
     ok = storage.share_qa(body.qauid, body.user_id, body.folder_uid)
     if not ok:
         raise HTTPException(status_code=404, detail="QA를 찾을 수 없습니다.")
@@ -251,37 +251,39 @@ def share_qa(body: ShareRequest, token: str = Depends(get_token)):
 
 
 @router.get("/shares/sent/{user_id}")
-def get_shares_sent(user_id: str, token: str = Depends(get_token)):
+def get_shares_sent(user_id: str):
     return storage.get_shares_sent(user_id)
 
 
 @router.delete("/shares/sent/{share_qauid}/{user_id}")
-def delete_share_sent(share_qauid: str, user_id: str, token: str = Depends(get_token)):
+def delete_share_sent(share_qauid: str, user_id: str):
     storage.delete_share_sent(share_qauid, user_id)
     return {"ok": True}
 
 
 @router.delete("/shares/received/{share_qauid}/{user_id}")
-def delete_share_received(share_qauid: str, user_id: str, token: str = Depends(get_token)):
+def delete_share_received(share_qauid: str, user_id: str):
     storage.delete_share_received(share_qauid, user_id)
     return {"ok": True}
 
 
 @router.get("/shares/received/{user_id}")
-def get_shares_received(user_id: str, token: str = Depends(get_token)):
+def get_shares_received(user_id: str):
+    """같은 tenant의 모든 공유 보고서 목록 반환."""
     tenant_id, _ = storage.get_project_info(user_id)
     return storage.get_all_shares(tenant_id)
 
 
 @router.get("/shares/{share_qauid}")
-def get_share_detail(share_qauid: str, token: str = Depends(get_token)):
+def get_share_detail(share_qauid: str):
+    """공유된 QA 내용 조회."""
     row = storage.get_share(share_qauid)
     if not row:
         raise HTTPException(status_code=404, detail="공유 내역을 찾을 수 없습니다.")
     return row
 
 
-# ── 헬스 체크 ─────────────────────────────────────────────────────
+# ── 기타 ─────────────────────────────────────────────────────────
 
 @router.get("/health")
 def api_health() -> dict:

@@ -1,15 +1,39 @@
 """대화형 보고서 명세(ReportSpec) 수집 및 관리."""
 from __future__ import annotations
+
 import json
 import re
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from d2insight.llm.client import chat as _llm_chat
+import anthropic
+
+from backend.app.config import settings
+from d2insight.config import ANTHROPIC_MODELS
 
 _KST = ZoneInfo("Asia/Seoul")
+_anthropic_client: anthropic.Anthropic | None = None
 
+
+def _get_client() -> anthropic.Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=settings.CLAUDE_API_KEY)
+    return _anthropic_client
+
+
+def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 150) -> str:
+    resp = _get_client().messages.create(
+        model=ANTHROPIC_MODELS[grade],
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text
+
+
+# session_id → spec dict (인메모리)
 _spec_store: dict[str, dict] = {}
 
 ENTRY_QUESTION = "원하는 양식이나 형태가 있나요? 제가 일괄 작성할까요?"
@@ -37,7 +61,7 @@ _EXTRACT_SYSTEM = f"""사용자 메시지에서 보고서 파라미터를 추출
 - report_type: [{_REPORT_TYPE_LIST}] 중 하나. "판매/매출/영업" → 판매분석, "서버/로그/IT" → 기술분석, 언급 없으면 null
 - months_back: "3개월"→3, "6개월"→6, "1년"→12, "반년"→6, "작년 1년치"→12, 언급 없으면 null
 - top_n: "5개", "상위 10개" → 숫자(개수). "상위 30%" 같은 비율 표현은 null. 언급 없으면 null
-- threshold: 반드시 수치(숫자+단위)가 있어야 추출. "±3σ"→"±3σ", "2시그마"→"2시그마", "전월대비 25%"→"전월대비 25%". "전월대비로", "전월대비 분석" 같이 수치 없는 경우 → null
+- threshold: 반드시 수치(숫자+단위)가 있어야 추출. "±3σ"→"±3σ", "2시그마"→"2시그마", "전월대비 25%"→"전월대비 25%". 수치 없는 경우 → null
 - accepted_default: "네", "그렇게", "좋아요", "알아서", "맞아요", "그렇게 해주세요" → true
 - bulk: "일괄 작성", "일괄로", "바로 해주세요", "그냥 해주세요", "기본으로", "알아서 해주세요" → true
 - confirmed: "네 시작", "생성해", "작성해", "맞아요 진행" 등 확인 단계 최종 승인 → true
@@ -110,7 +134,7 @@ def build_confirmation(spec: dict) -> str:
     )
 
 
-def _extract_params(message: str, spec: dict, history: list[dict] | None = None, provider: str | None = None) -> dict:
+def _extract_params(message: str, spec: dict, history: list[dict] | None = None) -> dict:
     defaults = {
         "target_month": None, "report_type": None, "months_back": None, "top_n": None,
         "threshold": None, "accepted_default": False, "bulk": False, "confirmed": False, "cancel": False,
@@ -124,18 +148,16 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
                 f"사용자: {m.get('content', '')[:200]}" for m in recent
             ) + "\n\n"
     try:
-        raw = _llm_chat(
-            [{"role": "user", "content": (
+        raw = _quick_chat(
+            (
                 f"오늘 날짜: {today}\n"
                 f"{hist_text}"
                 f"현재 수집된 정보: {json.dumps(spec, ensure_ascii=False)}\n"
                 f"사용자 메시지: {message}"
-            )}],
-            grade="fast",
+            ),
             system=_EXTRACT_SYSTEM,
+            grade="fast",
             max_tokens=150,
-            label="파라미터 추출",
-            provider=provider,
         )
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
         if m:
@@ -145,12 +167,18 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
     return defaults
 
 
-def advance_spec(session_id: str, message: str, history: list[dict] | None = None, provider: str | None = None) -> tuple[dict, str]:
+def advance_spec(session_id: str, message: str, history: list[dict] | None = None) -> tuple[dict, str]:
+    """사용자 메시지로 spec을 진행시키고 (updated_spec, bot_response)를 반환.
+
+    bot_response 특수값:
+      "__EXECUTE__" → 호출자가 보고서 생성 실행
+      "__CANCEL__"  → spec 삭제됨, 취소 메시지 출력
+    """
     spec = get_spec(session_id)
     if not spec:
         return {}, "__CANCEL__"
 
-    params = _extract_params(message, spec, history=history, provider=provider)
+    params = _extract_params(message, spec, history=history)
 
     if params.get("cancel"):
         clear_spec(session_id)

@@ -6,16 +6,17 @@ from typing import Optional
 
 from langchain_core.tools import tool
 
-from d2insight.report import token_tracker
-from d2insight.report import meta_loader
-
-_PROVIDER_TO_MODEL = {
-    "anthropic": "claude-haiku-4-5-20251001",
-    "openai": "gpt-5.4-mini",
-}
+from d2insight.data_source import meta_loader
+from d2insight.report.sql_generator import SqlGenerator
 
 
 class _DataStore:
+    """쿼리 결과 원본을 보관한다.
+
+    결론 생성 시 md_body(Markdown 테이블 + Base64 이미지) 대신
+    compact 원본 데이터를 Opus에 전달하기 위해 사용한다.
+    """
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._entries: list[dict] = []
@@ -54,27 +55,16 @@ def execute_query(question: str, table_name: Optional[str] = None) -> dict:
                   예: '2025년 1월 서버별 오류 발생 건수를 집계해줘'
         table_name: 조회할 뷰 이름 (메타정보에서 선택). 생략하면 전체 뷰 대상.
     """
-    from backend.app.config import settings
-    from d2shared.sql_generator import SqlGenerator
-
     all_meta = meta_loader.all_metadata()
     if table_name and table_name in all_meta:
         table_metadata = {table_name: all_meta[table_name]}
     else:
         table_metadata = all_meta
-
-    provider = token_tracker.get_provider()
-    model = _PROVIDER_TO_MODEL.get(provider, "claude-haiku-4-5-20251001")
-    gen = SqlGenerator(
-        connection_url=settings.SUPABASE_DB_URL,
-        db_schema=settings.SUPABASE_SCHEMA,
-        model=model,
-    )
+    gen = SqlGenerator()
     result = gen.execute_natural_language_query(
         question=question,
         table_name=table_name,
         table_metadata=table_metadata,
-        force_aggregate=True,
     )
     _data_store.add(question, result)
     return result

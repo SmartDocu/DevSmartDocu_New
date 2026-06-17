@@ -1,10 +1,21 @@
-"""ABC-XYZ classification at (제품, 채널) item level."""
+"""ABC-XYZ classification at (제품, 채널) item level.
+
+Two windows per design (§5.3):
+  - 분석 필터용 (analysis filter): 당월 제외 직전 3개월
+  - 현황 표시용 (display): 당월 포함 최근 3개월
+
+ABC: cumulative revenue share thresholds (config.ABC_THRESHOLDS)
+XYZ: coefficient of variation (CV = std/mean) thresholds (config.XYZ_THRESHOLDS)
+
+Grade-change detection compares the current 분석 필터용 window with the same
+window shifted one month earlier (the previous report's filter window).
+"""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from d2insight import config
+import d2insight.config as config
 
 ITEM_DIMS: list[str] = ["제품", "채널"]
 
@@ -31,6 +42,7 @@ def _xyz_grade(cv: float, x_thr: float, y_thr: float) -> str:
 def classify_abc_xyz(
     df: pd.DataFrame, *, target_month: str, include_target: bool
 ) -> dict:
+    """Classify items at ITEM_DIMS level over the chosen 3-month window."""
     months = _three_month_window(target_month, include_target=include_target)
     window = df[df["월"].isin(months)]
 
@@ -50,6 +62,7 @@ def classify_abc_xyz(
     total_rev = pivot.sum(axis=1)
     total_sum = float(total_rev.sum())
 
+    # ABC ─ cumulative share by descending revenue
     a_thr, b_thr = config.ABC_THRESHOLDS
     sorted_rev = total_rev.sort_values(ascending=False)
     if total_sum > 0:
@@ -64,6 +77,7 @@ def classify_abc_xyz(
     cum_share = cum_share_sorted.reindex(total_rev.index)
     point_share = total_rev / total_sum if total_sum > 0 else total_rev * 0.0
 
+    # XYZ ─ coefficient of variation (population std)
     mean_rev = pivot.mean(axis=1)
     std_rev = pivot.std(axis=1, ddof=0)
     mean_safe = mean_rev.replace(0, np.nan)
@@ -92,6 +106,7 @@ def classify_abc_xyz(
 
 
 def detect_grade_changes(curr: dict, prev: dict) -> pd.DataFrame:
+    """Items whose 등급 differs between current and previous filter windows."""
     curr_df = curr["classification"]
     prev_df = prev["classification"]
     if curr_df.empty:
@@ -120,6 +135,7 @@ def filter_analysis_targets(classification: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_phase2(df: pd.DataFrame, target_month: str) -> dict:
+    """Full Phase 2 pipeline for a target month."""
     filter_curr = classify_abc_xyz(df, target_month=target_month, include_target=False)
     prev_target = _shift_month(target_month, -1)
     filter_prev = classify_abc_xyz(df, target_month=prev_target, include_target=False)

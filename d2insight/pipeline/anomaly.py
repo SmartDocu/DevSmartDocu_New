@@ -1,11 +1,19 @@
-"""AnomalyDetector: 차원별 양방향 이상치 감지 + 5단계 심각도 분류."""
+"""AnomalyDetector: 차원별 양방향 이상치 감지 + 5단계 심각도 분류.
+
+심각도 기준 (documents/sales_report_analysis_summary.md §6-2):
+  🚨  데이터 오류 의심 — 달성률 200% 이상
+  🔴  심각 하락        — 달성률 70% 미만
+  🟡  주의 하락        — 달성률 70~90%
+  🟢  정상             — 달성률 90~110%
+  🔵  상승 이상치      — 달성률 110% 초과 (원인 확인 필요)
+"""
 from __future__ import annotations
 
 import pandas as pd
 
-from d2insight import config
+import d2insight.config as config
 
-_DIMENSIONS = config.DIMENSIONS
+_DIMENSIONS = config.DIMENSIONS  # ['채널', '제품대분류', '제품중분류', '지역']
 
 
 def _shift_month(yyyymm: str, n: int) -> str:
@@ -14,7 +22,22 @@ def _shift_month(yyyymm: str, n: int) -> str:
     return f"{total // 12:04d}-{(total % 12) + 1:02d}"
 
 
+def _severity(ratio: float | None) -> str:
+    if ratio is None:
+        return "🔵"  # 신규 항목 (전월 없음)
+    if ratio >= config.ANOMALY_SURGE_CRITICAL:
+        return "🚨"
+    if ratio > config.ANOMALY_NORMAL_HIGH:
+        return "🔵"
+    if ratio >= config.ANOMALY_NORMAL_LOW:
+        return "🟢"
+    if ratio >= config.ANOMALY_CAUTION:
+        return "🔴" if ratio < config.ANOMALY_CRITICAL else "🟡"
+    return "🔴"
+
+
 def _classify(ratio: float | None) -> str:
+    """임계값 상수를 직접 비교해 심각도를 반환."""
     if ratio is None:
         return "🔵"
     if ratio >= config.ANOMALY_SURGE_CRITICAL:
@@ -55,7 +78,7 @@ def _analyze_dimension(
 
     records = joined.reset_index().to_dict(orient="records")
     anomalies = [r for r in records if r["severity"] != "🟢"]
-    anomalies.sort(key=lambda r: r["delta"])
+    anomalies.sort(key=lambda r: r["delta"])  # 하락 폭이 큰 순
 
     return {
         "all": records,
@@ -65,6 +88,7 @@ def _analyze_dimension(
 
 
 def run_anomaly_detection(df: pd.DataFrame, target_month: str) -> dict:
+    """차원별 양방향 이상치를 감지하고 심각도를 분류한다."""
     prev_month = _shift_month(target_month, -1)
     curr = df[df["월"] == target_month]
     prev = df[df["월"] == prev_month]

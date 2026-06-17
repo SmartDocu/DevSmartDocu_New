@@ -69,7 +69,7 @@ def run_outlier(data: list, column: str, method: str = "iqr", sigma: float = 3.0
         data: 분석할 데이터 (records 형식).
         column: 이상치를 탐지할 수치 컬럼명.
         method: iqr (기본) | zscore
-        sigma: zscore 방식일 때 사용할 표준편차 배수 (기본 3.0).
+        sigma: zscore 방식일 때 사용할 표준편차 배수 (기본 3.0). 예: 사용자가 "±5σ" 요청 시 5.0 전달.
     """
     df = pd.DataFrame(data)
     if column not in df.columns:

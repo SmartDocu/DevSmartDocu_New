@@ -139,12 +139,6 @@ export const router = createBrowserRouter([
       { path: 'master/ai-sentences', element: <MasterAiSentencesPage /> },
       { path: 'master/ai-tables', element: <MasterAiTablesPage /> },
 
-      // d2chat — 데이터 Q&A 채팅
-      { path: 'd2chat', element: <D2ChatPage /> },
-
-      // d2insight — AI 보고서 에이전트
-      { path: 'd2insight', element: <D2InsightPage /> },
-
       // admin/ (roleid=7 전용)
       { path: 'admin/user-role', element: <AdminUserRolePage /> },
       { path: 'admin/sample-prompts', element: <AdminSamplePromptPage /> },
@@ -156,8 +150,14 @@ export const router = createBrowserRouter([
       { path: 'admin/messages', element: <AdminMessagesPage /> },
       { path: 'admin/terms', element: <AdminTermsPage /> },
       { path: 'admin/ui-terms', element: <AdminUiTermsPage /> },
-      { path: 'admin/datasets', element: <AdminDatasetsPage /> },      
+      { path: 'admin/datasets', element: <AdminDatasetsPage /> },
       { path: 'admin/codes', element: <AdminCodesPage /> },
+
+      // d2chat: AI 데이터 분석 챗봇
+      { path: 'd2chat', element: <D2ChatPage /> },
+
+      // d2insight: AI 분석 보고서 에이전트
+      { path: 'd2insight', element: <D2InsightPage /> },
     ],
   },
 

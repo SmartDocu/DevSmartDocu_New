@@ -1,4 +1,24 @@
-"""Shapley value attribution at dimension level."""
+"""Shapley value attribution at dimension level.
+
+Applied to items filtered by ABC-XYZ (AZ/AX/AY/BZ) only (design §5.5).
+
+Value function v(S) — *explanatory power gained at granularity S*:
+    v(∅)    = |total Δ|
+    v(S)    = Σ_g |Δ_g|   (groups defined by dims in S)
+    v(full) = Σ_cells |Δ_cell|
+
+v is monotonic in S (triangle inequality). Shapley values are therefore
+non-negative and capture the "structural variation each dimension uncovers."
+We then express each dim's Shapley as a *share* of Σ Shapley so it reads as
+"% of explanatory power."
+
+Primary Driver: largest share. If 1·2위 차이 < 10pp it is *complex* (multiple).
+Noise: dims with share < `config.MIN_CONTRIBUTION` (default 5%).
+
+For the current set of 4 dimensions exact Shapley over 2⁴=16 subsets is
+trivially fast — Monte Carlo (`config.SHAPLEY_ITERATIONS`) is reserved for
+future cases with more dimensions.
+"""
 from __future__ import annotations
 
 from itertools import combinations
@@ -7,8 +27,10 @@ from typing import Callable
 
 import pandas as pd
 
-from d2insight import config
+import d2insight.config as config
 
+
+# Map canonical dimension names (config.DIMENSIONS) to actual DataFrame columns.
 _DIM_COLUMN: dict[str, str] = {
     "채널": "채널",
     "제품대분류": "제품대분류",
@@ -24,6 +46,7 @@ def _shift_month(yyyymm: str, n: int) -> str:
 
 
 def _value_fn_factory(curr: pd.DataFrame, prev: pd.DataFrame) -> Callable[[tuple[str, ...]], float]:
+    """v(S) = Σ_g |Δ_g| over groups defined by dimension columns in S."""
     total_curr = float(curr["매출"].sum())
     total_prev = float(prev["매출"].sum())
 
@@ -38,6 +61,7 @@ def _value_fn_factory(curr: pd.DataFrame, prev: pd.DataFrame) -> Callable[[tuple
 
 
 def shapley_exact(value_fn: Callable[[tuple[str, ...]], float], dim_cols: list[str]) -> dict[str, float]:
+    """Closed-form Shapley using cached v(S). Suitable for ≤ ~8 dimensions."""
     n = len(dim_cols)
     n_fact = factorial(n)
     cache: dict[frozenset, float] = {}
@@ -61,6 +85,7 @@ def shapley_exact(value_fn: Callable[[tuple[str, ...]], float], dim_cols: list[s
 def select_primary_driver(
     shapley_share: dict[str, float], complex_threshold_pp: float = 0.10
 ) -> dict:
+    """Top dim by absolute share. If 1·2위 차이 < threshold, mark as complex."""
     if not shapley_share:
         return {"primary": [], "is_complex": False, "top_share": 0.0}
     sorted_dims = sorted(shapley_share.items(), key=lambda x: abs(x[1]), reverse=True)
@@ -83,6 +108,8 @@ def run_phase3(
     target_month: str,
     analysis_targets: pd.DataFrame,
 ) -> dict:
+    """Compute Shapley dimension attribution for target month vs previous month,
+    restricted to items in `analysis_targets` (Phase 2 output)."""
     prev_month = _shift_month(target_month, -1)
     canonical_dims = list(config.DIMENSIONS)
     dim_cols = [_DIM_COLUMN[d] for d in canonical_dims]

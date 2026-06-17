@@ -1,29 +1,19 @@
-"""d2chat 라우터 — JWT 인증 적용."""
 import json
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from typing import Optional, List
 
-from backend.app.dependencies import get_token
-from d2chat.service import mcp_service
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from d2chat.mcp_core.service import mcp_service
 from d2chat.questions import get_questions
 from d2chat.history import supabase_storage as storage
 
 router = APIRouter()
 
 
-def _get_user_id(token: str) -> str:
-    """JWT 토큰에서 user_id(UUID) 추출."""
-    from utilsPrj.supabase_client import get_thread_supabase
-    sb = get_thread_supabase(access_token=token)
-    resp = sb.auth.get_user(token)
-    if not resp or not resp.user:
-        raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
-    return str(resp.user.id)
-
-
-# ── 요청 모델 ──────────────────────────────────────────────────────
+# ── 요청 모델 ─────────────────────────────────────────────────────
 
 class QuestionRequest(BaseModel):
     question: str
@@ -47,7 +37,7 @@ class ShareRequest(BaseModel):
     target_user_uids: List[str]
 
 
-# ── 질문/답변 ──────────────────────────────────────────────────────
+# ── 질문/답변 (세션 없으면 첫 전송 시 자동 생성) ─────────────────
 
 @router.post("/ask")
 def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
@@ -55,22 +45,24 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
     if not question:
         raise HTTPException(status_code=400, detail="질문을 입력해주세요.")
 
-    user_id = _get_user_id(token)
+    user = _get_user(token)
+    user_id = str(user.id)
+    sb = _sb(token)
     session_id = body.session_id
+
+    # qauid 사전 생성 (LLM 로그와 QA 저장에 동일 ID 사용)
     pre_qauid = str(uuid.uuid4())
 
     new_session_id = None
-    info: dict = {}
-    qa_count = 0
-
     if not session_id or session_id == "default":
-        tenant_id, project_id = storage.get_project_info(user_id)
-        session_id = storage.create_session(user_id, tenant_id, project_id)
+        tenant_id, project_id = storage.get_project_info(sb, user_id)
+        session_id = storage.create_session(sb, user_id, tenant_id, project_id)
         new_session_id = session_id
         info = {"tenantid": tenant_id, "projectid": project_id}
+        qa_count = 0
     else:
-        info = storage.get_session_info(session_id)
-        qa_count = storage.get_qa_count(session_id)
+        info = storage.get_session_info(sb, session_id)
+        qa_count = storage.get_qa_count(sb, session_id)
 
     log_ctx = {
         "qauid":          pre_qauid,
@@ -84,14 +76,12 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
 
     try:
         result = mcp_service.ask(question, session_id=session_id, log_ctx=log_ctx)
-        viz = result.get("visualization_type", "none")
-
         response = {
             "question":           question,
             "answer":             result.get("answer", ""),
             "query":              result.get("query"),
             "queries":            result.get("queries", []),
-            "visualization_type": viz,
+            "visualization_type": result.get("visualization_type", "none"),
             "status":             "success",
         }
         if new_session_id:
@@ -101,6 +91,7 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
         if result.get("chart_image"):
             response["chart_image"] = result["chart_image"]
 
+        viz = result.get("visualization_type", "none")
         answer_json = json.dumps({
             "answer":             result.get("answer", ""),
             "visualization_type": viz,
@@ -116,6 +107,7 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
             })
 
         storage.append_qa(
+            sb,
             session_uid=session_id,
             tenant_id=info.get("tenantid"),
             project_id=info.get("projectid"),
@@ -129,27 +121,30 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
             outputtoken=result.get("total_outputtoken"),
         )
         response["qauid"] = pre_qauid
-        return response
 
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── 이어하기 ──────────────────────────────────────────────────────
+# ── 이어하기 ─────────────────────────────────────────────────────
 
 @router.post("/session/inject")
 def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
+    user = _get_user(token)
+    user_id = str(user.id)
+    sb = _sb(token)
     session_id = body.session_id
     new_session_id = None
 
+    # 활성 세션이 없으면 자동 생성
     if not session_id:
-        tenant_id, project_id = storage.get_project_info(user_id)
-        session_id = storage.create_session(user_id, tenant_id, project_id)
+        tenant_id, project_id = storage.get_project_info(sb, user_id)
+        session_id = storage.create_session(sb, user_id, tenant_id, project_id)
         new_session_id = session_id
 
-    info = storage.get_session_info(session_id)
-    qa_count = storage.get_qa_count(session_id)
+    info     = storage.get_session_info(sb, session_id)
+    qa_count = storage.get_qa_count(sb, session_id)
 
     answer_json = json.dumps({
         "answer":             body.answer,
@@ -159,6 +154,7 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     }, ensure_ascii=False)
 
     storage.append_qa(
+        sb,
         session_uid=session_id,
         tenant_id=info.get("tenantid"),
         project_id=info.get("projectid"),
@@ -176,18 +172,19 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     return res
 
 
-# ── 히스토리 ──────────────────────────────────────────────────────
+# ── 히스토리 ─────────────────────────────────────────────────────
 
 @router.get("/history")
 def get_history(token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    return storage.get_history_by_date(user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    return storage.get_history_by_date(sb, str(user.id))
 
 
 @router.get("/history/{session_id}")
 def get_session(session_id: str, token: str = Depends(get_token)):
-    _get_user_id(token)  # 인증 확인
-    data = storage.get_session_messages(session_id)
+    sb = _sb(token)
+    data = storage.get_session_messages(sb, session_id)
     if not data["messages"]:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
     return data
@@ -195,80 +192,90 @@ def get_session(session_id: str, token: str = Depends(get_token)):
 
 @router.delete("/history/{session_id}")
 def delete_session(session_id: str, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    storage.delete_session(session_id, user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    storage.delete_session(sb, session_id, str(user.id))
     return {"ok": True}
 
 
-# ── 즐겨찾기 ──────────────────────────────────────────────────────
+# ── 즐겨찾기 (Q&A 단위) ──────────────────────────────────────────
 
 @router.get("/favorites")
 def get_favorites(token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    return storage.get_favorites(user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    return storage.get_favorites(sb, str(user.id))
 
 
 @router.post("/favorite/qa")
 def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    storage.add_favorite_qa(body.qauid, user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    storage.add_favorite_qa(sb, body.qauid, str(user.id))
     return {"ok": True}
 
 
 @router.delete("/favorite/qa/{qauid}")
 def remove_favorite_qa(qauid: str, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    storage.remove_favorite_qa(qauid, user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    storage.remove_favorite_qa(sb, qauid, str(user.id))
     return {"ok": True}
 
 
-# ── 공유 ──────────────────────────────────────────────────────────
+# ── 공유 ─────────────────────────────────────────────────────────
 
 @router.post("/share")
 def share_session(body: ShareRequest, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    info = storage.get_session_info(body.session_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    info = storage.get_session_info(sb, body.session_id)
     share_uid = storage.share_session(
+        sb,
         session_uid=body.session_id,
         target_user_uids=body.target_user_uids,
         tenant_id=info.get("tenantid"),
         project_id=info.get("projectid"),
         session_titles=body.session_titles,
-        creator=user_id,
+        creator=str(user.id),
     )
     return {"ok": True, "share_uid": share_uid}
 
 
 @router.get("/shares/sent")
 def get_shares_sent(token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    return storage.get_shares_sent(user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    return storage.get_shares_sent(sb, str(user.id))
 
 
 @router.delete("/shares/sent/{share_uid}")
 def delete_share(share_uid: str, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    storage.delete_share(share_uid, user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    storage.delete_share(sb, share_uid, str(user.id))
     return {"ok": True}
 
 
 @router.get("/shares/received")
 def get_shares_received(token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    return storage.get_shares_received(user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    return storage.get_shares_received(sb, str(user.id))
 
 
 @router.delete("/shares/received/{share_uid}")
 def delete_share_received(share_uid: str, token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    storage.delete_share_received(share_uid, user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    storage.delete_share_received(sb, share_uid, str(user.id))
     return {"ok": True}
 
 
 @router.get("/snapshots/{share_uid}")
 def get_snapshot(share_uid: str, token: str = Depends(get_token)):
-    _get_user_id(token)
-    data = storage.get_snapshot_messages(share_uid)
+    sb = _sb(token)
+    data = storage.get_snapshot_messages(sb, share_uid)
     if not data["messages"]:
         raise HTTPException(status_code=404, detail="스냅샷을 찾을 수 없습니다.")
     return data
@@ -278,14 +285,16 @@ def get_snapshot(share_uid: str, token: str = Depends(get_token)):
 
 @router.get("/users/same-tenant")
 def get_users_same_tenant(token: str = Depends(get_token)):
-    user_id = _get_user_id(token)
-    tenant_id, project_id = storage.get_project_info(user_id)
+    user = _get_user(token)
+    sb = _sb(token)
+    user_id = str(user.id)
+    tenant_id, project_id = storage.get_project_info(sb, user_id)
     if tenant_id is None:
         return []
-    return storage.get_users_same_tenant(tenant_id, user_id, project_id)
+    return storage.get_users_same_tenant(sb, tenant_id, user_id, project_id)
 
 
-# ── 기타 ──────────────────────────────────────────────────────────
+# ── 기타 ─────────────────────────────────────────────────────────
 
 @router.get("/questions")
 def get_questions_api():
@@ -294,7 +303,6 @@ def get_questions_api():
 
 @router.get("/info")
 def get_data_info(token: str = Depends(get_token)):
-    _get_user_id(token)
     try:
         return mcp_service.get_data_info()
     except Exception as e:

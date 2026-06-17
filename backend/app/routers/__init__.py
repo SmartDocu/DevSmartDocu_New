@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc, menus, configs, i18n, codes, messages, terms, data_metas, data_cols, popups, connectors
-from d2chat import router as d2chat_router_module
-from d2insight import router as d2insight_router_module
+from d2chat import routes as d2chat
+from d2insight.chat import router as d2insight
 
 router = APIRouter()
 router.include_router(auth.router,      prefix="/auth",      tags=["auth"])
@@ -28,5 +28,5 @@ router.include_router(data_metas.router, prefix="/data-metas", tags=["data-metas
 router.include_router(data_cols.router,  prefix="/data-cols",  tags=["data-cols"])
 router.include_router(popups.router,      prefix="/popups",      tags=["popups"])
 router.include_router(connectors.router,  prefix="/connectors",  tags=["connectors"])
-router.include_router(d2chat_router_module.router,    prefix="/d2chat",    tags=["d2chat"])
-router.include_router(d2insight_router_module.router, prefix="/d2insight", tags=["d2insight"])
+router.include_router(d2chat.router,      prefix="/d2chat",      tags=["d2chat"])
+router.include_router(d2insight.router,   prefix="/d2insight",   tags=["d2insight"])

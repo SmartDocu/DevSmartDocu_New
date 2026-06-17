@@ -466,7 +466,7 @@ export default function AppLayout() {
           </div>
         )}
 
-        <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
+        <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: tabs.length > 0 ? 'calc(100vh - 104px)' : 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px', flex: 1, position: 'relative' }}>
             {helpItem && (
               <div style={{ position: 'absolute', top: 21, right: 2, zIndex: 1 }}>

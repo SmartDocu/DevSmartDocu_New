@@ -1,10 +1,11 @@
-"""Supabase 기반 세션 관리."""
+"""Supabase 기반 세션 관리 (insight_sessions + insight_qas)."""
 from __future__ import annotations
 
-from d2insight.history import insight_storage
+from d2insight.db import insight_storage
 
 
 def get_or_create(session_id: str | None, user_id: str | None = None) -> tuple[str, list[dict]]:
+    """세션 ID가 있으면 DB에서 히스토리를 로드하고, 없으면 새 세션을 생성한다."""
     creator = user_id or None
     if session_id:
         session = insight_storage.get_session(session_id)
@@ -27,6 +28,7 @@ def append_qa(
     outputtoken: int | None = None,
     servicecd: str = "I",
 ) -> str:
+    """QA 한 쌍을 insight_qas에 저장하고 qauid를 반환한다."""
     creator = user_id or None
     tenant_id, project_id = insight_storage.get_project_info(creator) if creator else (None, None)
     return insight_storage.append_qa(

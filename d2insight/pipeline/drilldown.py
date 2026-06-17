@@ -1,11 +1,20 @@
-"""Cross drilldown — recursive Δ breakdown starting from Primary Driver."""
+"""Cross drilldown — recursive Δ breakdown starting from Primary Driver.
+
+Algorithm (design §5.6):
+  1. Group by Primary Driver dim → compute Δ per group → Top N (Pareto 80%, ≤5)
+  2. For each top group, recurse into the next non-noise dim
+  3. Stop at DRILLDOWN_DEPTH cross levels or when no more dims remain
+  4. Cells with revenue share < DRILLDOWN_MIN_CELL_SHARE are excluded
+
+Cross dim ordering: by Shapley share descending, excluding primary and noise dims.
+"""
 from __future__ import annotations
 
 from typing import Optional
 
 import pandas as pd
 
-from d2insight import config
+import d2insight.config as config
 
 
 _DIM_COLUMN: dict[str, str] = {
@@ -102,6 +111,7 @@ def run_phase4_drilldown(
     noise_dims_canonical: list[str],
     shapley_share_canonical: dict[str, float],
 ) -> dict:
+    """Build drilldown tree starting from the (first) Primary Driver."""
     prev_month = _shift_month(target_month, -1)
 
     if not primary_driver_canonical or analysis_targets.empty:

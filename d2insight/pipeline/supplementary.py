@@ -1,13 +1,27 @@
-"""Supplementary analysis: 신규/단종 detection + outlier flagging."""
+"""Supplementary analysis: 신규/단종 detection + outlier flagging.
+
+Item key: (제품, 채널), consistent with Phase 2.
+
+Thresholds (config.py defaults):
+  - NEW_DISC_HIGH_IMPACT_RATIO = 0.30  → 신규 또는 단종 매출 비중이 |Δ매출|의 30% 이상이면 high_impact
+  - OUTLIER_CHANGE_PCT = 0.30          → 전월 대비 ±30% 변화 (사용자 미지정 시 기본값)
+  - OUTLIER_MIN_REVENUE_SHARE = 0.01   → 항목 매출이 당월 총매출의 ≥1%
+
+outlier_threshold 파라미터:
+  - None           → config.OUTLIER_CHANGE_PCT (30%) 기본값
+  - "±3σ", "3시그마", "+- 5시그마" → σ 기반: |change_pct - 평균| > N * 표준편차
+  - "±30%", "30%"  → % 기반: |change_pct| > 0.30
+"""
 from __future__ import annotations
 
 import re
 import pandas as pd
 
-from d2insight import config
+import d2insight.config as config
 
 
 def _parse_outlier_threshold(threshold_str: str | None) -> dict:
+    """threshold 문자열 → {"type": "sigma"|"pct", "value": float}"""
     if not threshold_str:
         return {"type": "pct", "value": config.OUTLIER_CHANGE_PCT}
     sigma_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:σ|시그마)", threshold_str, re.IGNORECASE)
@@ -32,6 +46,10 @@ def run_phase4_supplementary(
     target_month: str,
     outlier_threshold: str | None = None,
 ) -> dict:
+    """Detect 신규/단종 items and outliers between target_month and the previous month.
+
+    outlier_threshold: "±3σ" | "3시그마" | "±30%" | None (기본: config.OUTLIER_CHANGE_PCT)
+    """
     prev_month = _shift_month(target_month, -1)
     curr = df[df["월"] == target_month]
     prev = df[df["월"] == prev_month]
@@ -66,6 +84,7 @@ def run_phase4_supplementary(
     new_items = new_items.reset_index().sort_values("curr", ascending=False)
     discontinued_items = discontinued_items.reset_index().sort_values("prev", ascending=False)
 
+    # Outliers: items present in BOTH periods, with threshold and ≥min_share
     pool = joined[(joined["prev"] > 0) & (joined["curr"] > 0)].copy()
     pool["delta"] = pool["curr"] - pool["prev"]
     pool["change_pct"] = pool["delta"] / pool["prev"]

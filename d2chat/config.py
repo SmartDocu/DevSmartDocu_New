@@ -1,1 +1,3 @@
-DEFAULT_LLM_MODEL = "claude-haiku-4-5-20251001"
+from d2shared.config import DEFAULT_LLM_MODEL
+
+__all__ = ['DEFAULT_LLM_MODEL']

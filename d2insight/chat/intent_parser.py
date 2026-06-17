@@ -1,13 +1,38 @@
 """Parse user message into structured intent using LLM (fast grade)."""
+from __future__ import annotations
+
 import json
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from d2insight.llm.client import chat
+import anthropic
+
+from backend.app.config import settings
+from d2insight.config import ANTHROPIC_MODELS
 
 _KST = ZoneInfo("Asia/Seoul")
+_anthropic_client: anthropic.Anthropic | None = None
 
+
+def _get_client() -> anthropic.Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=settings.CLAUDE_API_KEY)
+    return _anthropic_client
+
+
+def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 200) -> str:
+    resp = _get_client().messages.create(
+        model=ANTHROPIC_MODELS[grade],
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text
+
+
+# 14개 고수준 카테고리 목록 (registry.py와 동기화)
 _REPORT_CATEGORIES = """보고서 유형 카테고리 (report_type 선택 기준):
 - 경영분석: KPI, 사업부 성과, 전략 지표, 경영 종합
 - 판매분석: 매출, 영업, 수주, 채널/제품/지역별 판매
@@ -29,13 +54,6 @@ _SYSTEM = f"""당신은 분석 보고서 에이전트의 인텐트 파서입니�
 
 도구 선택 기준:
 - health: 서버 상태, 헬스체크, 설정 확인
-- extract: 매출 데이터 추출, 월별 매출 조회
-- abc_xyz: ABC-XYZ 분류, 제품 등급 분류
-- shapley: Shapley 분석, 주요 원인, 기여도 분석
-- drilldown: 드릴다운, 세부 원인 분석
-- supplementary: 보조 분석, 신규/단종 탐지, 이상치
-- validate: 데이터 검증
-- anomaly: 이상치 감지, 달성률 분석
 - report: 보고서 생성 요청 (분석 보고서, 현황 보고서 등)
 - chat: 위에 해당하지 않는 일반 대화, 사용법 문의
 
@@ -61,21 +79,26 @@ mode 선택 기준 (tool이 "report"일 때):
 - "auto": "생성해줘", "만들어줘", "써줘", "작성해줘" 등 즉시 실행 명령 → 즉시 실행
 
 응답 JSON 형식:
-{{"tool": "도구명", "target_month": "YYYY-MM 또는 null", "months_back": 숫자, "report_type": "카테고리명 또는 null", "mode": "start 또는 auto 또는 null"}}"""
+{{"tool": "도구명", "target_month": "YYYY-MM 또는 null", "months_back": 숫자, "report_type": "카테고리명 또는 null", "mode": "start 또는 auto 또는 null"}}
+
+예시:
+- "2013-03 판매실적 보고서 작성하려 합니다" → {{"tool": "report", "target_month": "2013-03", "months_back": 3, "report_type": "판매분석", "mode": "start"}}
+- "판매 보고서 만들고 싶어요" → {{"tool": "report", "target_month": null, "months_back": 3, "report_type": "판매분석", "mode": "start"}}
+- "2014-01 매출 보고서 생성해줘" → {{"tool": "report", "target_month": "2014-01", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
+- "2024-01 서버 로그 분석 보고서" → {{"tool": "report", "target_month": "2024-01", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
+- "서버 상태 확인" → {{"tool": "health", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}
+- "어떤 분석을 할 수 있나요?" → {{"tool": "chat", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}"""
 
 
-def parse_intent(message: str, provider: str | None = None) -> dict:
+def parse_intent(message: str) -> dict:
+    """Return {{tool, target_month, months_back, report_type, mode}} from user message."""
     today = datetime.now(tz=_KST).strftime("%Y-%m-%d")
     try:
-        raw = chat(
-            [{"role": "user", "content": f"오늘 날짜: {today}\n사용자 메시지: {message}"}],
-            grade="fast",
+        raw = _quick_chat(
+            f"오늘 날짜: {today}\n사용자 메시지: {message}",
             system=_SYSTEM,
+            grade="fast",
             max_tokens=200,
-            label="인텐트 파싱",
-            stepnm="classifier",
-            steptitle="질문 분류",
-            provider=provider,
         )
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
         if m:

@@ -1,17 +1,36 @@
-"""보고서작성방안.md §2~§6 DataSet 빌더."""
+"""보고서작성방안.md §2~§6 DataSet 빌더.
+
+흐름:
+  1. build_actual_compare_datasets() — DB에서 당월/비교월 집계 DataFrame 취득
+  2. build_summary_dataset()         — §3 전체 Measure 증감 요약
+  3. build_by_item_dataset()         — §4 차원×항목별 증감 + 파레토 플래그
+  4. build_by_item_summary_dataset() — §5 차원별 통계(Impact, Z, HHI, Shapley, DVI)
+  5. build_by_item_count_dataset()   — §6 제품/고객 신규·손실 항목수
+  6. build_sales_bridge()            — §13 Sales Bridge 분해
+  7. build_all_datasets()            — 1~6 통합 실행
+
+비교 기간:
+  compare_type="MoM" → 전월
+  compare_type="YoY" → 전년동월
+  compare_type="QoQ" → 전분기(3개월 전)
+"""
 from __future__ import annotations
 
 from datetime import date
 from typing import NamedTuple
+from urllib.parse import quote_plus
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from d2insight import config
+from backend.app.config import settings
+import d2insight.config as config
 from d2insight.pipeline.shapley import shapley_exact, _value_fn_factory
 
+
+# ── 상수 ─────────────────────────────────────────────────────────────────────
 
 DIMENSION_COLS: list[str] = [
     "채널",
@@ -26,43 +45,48 @@ DIMENSION_COLS: list[str] = [
 ]
 
 KEY_MEASURE   = "매출"
-MEASURE_COLS  = ["매출", "수량", "할인액"]
-COUNT_DIMS    = ["제품", "고객번호"]
+MEASURE_COLS  = ["매출", "수량", "할인액"]   # 단가(ASP) = 매출/수량, 별도 계산
 
-PARETO_THRESHOLD: float = config.PARETO_THRESHOLD
+COUNT_DIMS    = ["제품", "고객번호"]          # By_Item_Count 대상
+
+PARETO_THRESHOLD: float = config.PARETO_THRESHOLD          # 0.80
 ANOMALY_SIGMA:    float = getattr(config, "ANOMALY_SIGMA", 3.0)
 
+
+# ── 반환 타입 ─────────────────────────────────────────────────────────────────
 
 class SalesDatasets(NamedTuple):
     target_month:      str
     compare_type:      str
-    actual_df:         pd.DataFrame
-    compare_df:        pd.DataFrame
-    summary_df:        pd.DataFrame
-    byitem_df:         pd.DataFrame
-    byitem_summary_df: pd.DataFrame
-    byitem_count_df:   pd.DataFrame
-    sales_bridge:      dict
+    actual_df:         pd.DataFrame   # 당월 집계
+    compare_df:        pd.DataFrame   # 비교월 집계
+    summary_df:        pd.DataFrame   # §3
+    byitem_df:         pd.DataFrame   # §4
+    byitem_summary_df: pd.DataFrame   # §5
+    byitem_count_df:   pd.DataFrame   # §6
+    sales_bridge:      dict           # §13
 
 
-# AdventureWorks MSSQL SQL — Supabase에서는 실행 실패하나 try/except로 보호됨
+# ── 집계 SQL ──────────────────────────────────────────────────────────────────
+
 _SQL_AGG = """
 SELECT
     CASE h.OnlineOrderFlag
-        WHEN 1 THEN '온라인' ELSE '오프라인' END      AS "채널",
-    h.AccountNumber                                    AS "고객번호",
-    COALESCE(h.Continent,     '미분류')                AS "지역_대륙",
-    COALESCE(h.Country,       '미분류')                AS "지역_국가",
-    COALESCE(h.TerritoryName, '미분류')                AS "지역명",
-    COALESCE(d.categoryname,    '미분류')              AS "제품대분류",
-    COALESCE(d.subcategoryname, '미분류')              AS "제품중분류",
-    COALESCE(d.modelname,       '미분류')              AS "제품모델",
-    COALESCE(d.productname,     '미분류')              AS "제품",
-    SUM(d.OrderQty)                                    AS "수량",
-    SUM(d.UnitPrice * d.UnitPriceDiscount * d.OrderQty) AS "할인액",
-    SUM(d.LineTotal)                                   AS "매출"
-FROM view_SalesOrderHeader h
-INNER JOIN view_SalesOrderDetail d ON h.SalesOrderID = d.SalesOrderID
+        WHEN 1 THEN N'온라인' ELSE N'오프라인' END      AS [채널],
+    h.AccountNumber                                       AS [고객번호],
+    ISNULL(h.Continent,     N'미분류')                   AS [지역_대륙],
+    ISNULL(h.Country,       N'미분류')                   AS [지역_국가],
+    ISNULL(h.TerritoryName, N'미분류')                   AS [지역명],
+    ISNULL(d.categoryname,    N'미분류')                 AS [제품대분류],
+    ISNULL(d.subcategoryname, N'미분류')                 AS [제품중분류],
+    ISNULL(d.modelname,       N'미분류')                 AS [제품모델],
+    ISNULL(d.productname,     N'미분류')                 AS [제품],
+    SUM(d.OrderQty)                                       AS [수량],
+    SUM(d.UnitPrice * d.UnitPriceDiscount * d.OrderQty)  AS [할인액],
+    SUM(d.LineTotal)                                      AS [매출]
+FROM  [dbo].[view_SalesOrderHeader] h
+INNER JOIN [dbo].[view_SalesOrderDetail] d
+    ON h.SalesOrderID = d.SalesOrderID
 WHERE h.OrderDate >= :start_date
   AND h.OrderDate <  :end_date
 GROUP BY
@@ -72,11 +96,22 @@ GROUP BY
 """
 
 
-def _build_engine() -> Engine:
-    from backend.app.config import settings
-    db_url = settings.SUPABASE_DB_URL
-    return create_engine(db_url, pool_pre_ping=True)
+# ── DB Engine ─────────────────────────────────────────────────────────────────
 
+def _build_engine() -> Engine:
+    odbc = (
+        f"Driver={{{settings.DB_DRIVER}}};"
+        f"Server={settings.DB_SERVER},1433;"
+        f"Database={settings.DB_DATABASE};"
+        f"UID={settings.DB_USERNAME};"
+        f"PWD={settings.DB_PASSWORD};"
+        "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+    )
+    url = f"mssql+pyodbc:///?odbc_connect={quote_plus(odbc)}"
+    return create_engine(url, pool_pre_ping=True)
+
+
+# ── 날짜 유틸 ─────────────────────────────────────────────────────────────────
 
 def _month_first(yyyymm: str) -> date:
     y, m = map(int, yyyymm.split("-"))
@@ -99,16 +134,19 @@ def _compare_range(target_month: str, compare_type: str) -> tuple[date, date]:
         start = _add_months(base, -12)
     elif compare_type == "QoQ":
         start = _add_months(base, -3)
-    else:
+    else:                               # MoM (default)
         start = _add_months(base, -1)
     return start, _add_months(start, 1)
 
+
+# ── §2: Actual + Compare DataFrames ─────────────────────────────────────────
 
 def build_actual_compare_datasets(
     target_month: str,
     compare_type: str = "MoM",
     engine: Engine | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """당월(Actual) + 비교월(Compare) 집계 DataFrame 반환."""
     if engine is None:
         engine = _build_engine()
 
@@ -130,10 +168,13 @@ def build_actual_compare_datasets(
     return actual_df, compare_df
 
 
+# ── §3: Summary_DataSet ───────────────────────────────────────────────────────
+
 def build_summary_dataset(
     actual_df: pd.DataFrame,
     compare_df: pd.DataFrame,
 ) -> pd.DataFrame:
+    """§3 Summary_DataSet: Measure별 Comparison / Actual / Variance / Rate."""
     rows = []
 
     for col in MEASURE_COLS:
@@ -152,6 +193,7 @@ def build_summary_dataset(
             "Rate":             round(rate,  4),
         })
 
+    # ASP(단가) = 매출 / 수량 — 별도 계산
     a_qty = float(actual_df["수량"].sum())  if "수량" in actual_df.columns  else 0.0
     c_qty = float(compare_df["수량"].sum()) if "수량" in compare_df.columns else 0.0
     a_asp = actual_df["매출"].sum()  / a_qty if a_qty else 0.0
@@ -170,14 +212,21 @@ def build_summary_dataset(
     return pd.DataFrame(rows)
 
 
+# ── §4: By_Item_DataSet ───────────────────────────────────────────────────────
+
 def _pareto_flag(values: pd.Series, threshold: float) -> np.ndarray:
+    """상위 threshold 누적 비율에 도달하는 항목들에 1 표시 (내림차순 기준).
+
+    파레토 80%: 누적합이 80%에 도달하기 전까지의 항목을 Is_Main = 1로 표시.
+    경계 항목(80%를 처음 넘는 항목)도 포함한다.
+    """
     total = values.sum()
     if total <= 0:
         return np.zeros(len(values), dtype=int)
 
-    order    = np.argsort(values.values)[::-1]
+    order    = np.argsort(values.values)[::-1]          # 내림차순 인덱스
     cumsum   = np.cumsum(values.values[order])
-    prev_cum = np.concatenate([[0.0], cumsum[:-1]])
+    prev_cum = np.concatenate([[0.0], cumsum[:-1]])      # 직전 누적합
     flag     = (prev_cum / total < threshold).astype(int)
 
     result = np.zeros(len(values), dtype=int)
@@ -190,6 +239,7 @@ def build_by_item_dataset(
     compare_df: pd.DataFrame,
     pareto_threshold: float = PARETO_THRESHOLD,
 ) -> pd.DataFrame:
+    """§4 By_Item_DataSet: 모든 차원 × 항목별 Key_Measure 증감 + 파레토 플래그."""
     parts: list[pd.DataFrame] = []
 
     for dim in DIMENSION_COLS:
@@ -235,21 +285,26 @@ def build_by_item_dataset(
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
+# ── §5: By_Item_Summary_DataSet ───────────────────────────────────────────────
+
 def _shapley_for_dims(
     actual_df: pd.DataFrame,
     compare_df: pd.DataFrame,
     dim_cols: list[str],
 ) -> dict[str, float]:
+    """기존 shapley_exact 재활용 — value fn은 Σ|Δ_g| 기준."""
     avail = [d for d in dim_cols if d in actual_df.columns and d in compare_df.columns]
     if not avail:
         return {d: 0.0 for d in dim_cols}
 
+    # _value_fn_factory는 "매출" 컬럼을 사용 — KEY_MEASURE와 동일
     value_fn = _value_fn_factory(actual_df, compare_df)
     raw      = shapley_exact(value_fn, avail)
 
     total = sum(abs(v) for v in raw.values())
     share = {d: (v / total if total else 0.0) for d, v in raw.items()}
 
+    # avail에 없는 차원은 0
     return {d: round(share.get(d, 0.0), 4) for d in dim_cols}
 
 
@@ -258,6 +313,7 @@ def build_by_item_summary_dataset(
     actual_df: pd.DataFrame,
     compare_df: pd.DataFrame,
 ) -> pd.DataFrame:
+    """§5 By_Item_Summary_DataSet: 차원별 통계 + Shapley + HHI + DVI."""
     if byitem_df.empty:
         return pd.DataFrame()
 
@@ -266,6 +322,7 @@ def build_by_item_summary_dataset(
 
     rows = []
     for dim in dim_cols:
+        # New 항목 제외
         sub = byitem_df[
             (byitem_df["Dimension_Logical_Name"] == dim)
             & (byitem_df["New_Lost_Flag"] != "New")
@@ -285,7 +342,10 @@ def build_by_item_summary_dataset(
         z_scores  = (rates - rate_mean) / sigma if sigma > 0 else np.zeros(n)
         avg_z     = float(np.mean(np.abs(z_scores)))
 
+        # HHI = Σ (|Δi| / Impact_Score)²  — 임팩트 집중도
         hhi = float(np.sum((np.abs(variances) / impact_score) ** 2)) if impact_score > 0 else 0.0
+
+        # DVI = Impact × HHI × Average_Z
         dvi = impact_score * hhi * avg_z
 
         rows.append({
@@ -314,7 +374,10 @@ def build_by_item_summary_dataset(
     return df
 
 
+# ── §6: By_Item_Count_DataSet ─────────────────────────────────────────────────
+
 def build_by_item_count_dataset(byitem_df: pd.DataFrame) -> pd.DataFrame:
+    """§6 By_Item_Count_DataSet: 제품·고객 신규/손실 항목수."""
     if byitem_df.empty:
         return pd.DataFrame()
 
@@ -333,10 +396,13 @@ def build_by_item_count_dataset(byitem_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ── §13: Sales Bridge ─────────────────────────────────────────────────────────
+
 def build_sales_bridge(
     summary_df: pd.DataFrame,
     byitem_df: pd.DataFrame,
 ) -> dict:
+    """§13 Sales Bridge 분해: 수량·ASP·할인·신규상품·단종·신규고객·이탈 효과."""
     s = summary_df.set_index("Physical_Name")
 
     def _get(col: str, field: str, default: float = 0.0) -> float:
@@ -355,10 +421,10 @@ def build_sales_bridge(
     c_asp = c_rev / c_qty if c_qty else 0.0
     a_asp = a_rev / a_qty if a_qty else 0.0
 
-    total_variance  = round(a_rev - c_rev, 2)
-    qty_effect      = round((a_qty - c_qty) * c_asp, 2)
-    asp_effect      = round((a_asp - c_asp) * a_qty, 2)
-    discount_effect = round(-(a_disc - c_disc), 2)
+    total_variance    = round(a_rev - c_rev, 2)
+    qty_effect        = round((a_qty - c_qty) * c_asp, 2)
+    asp_effect        = round((a_asp - c_asp) * a_qty, 2)
+    discount_effect   = round(-(a_disc - c_disc), 2)
 
     def _dim_effect(dim: str, flag: str, val_col: str) -> float:
         sub = byitem_df[
@@ -379,11 +445,14 @@ def build_sales_bridge(
     }
 
 
+# ── 통합 실행 ──────────────────────────────────────────────────────────────────
+
 def build_all_datasets(
     target_month: str,
     compare_type: str = "MoM",
     engine: Engine | None = None,
 ) -> SalesDatasets:
+    """§2~§6 DataSet + Sales Bridge 전체 빌드."""
     if engine is None:
         engine = _build_engine()
 

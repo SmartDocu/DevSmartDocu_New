@@ -1,4 +1,28 @@
-# 분석 파라미터 상수 (환경변수 미사용 — env 로딩은 backend/app/config.py에서 담당)
+"""d2insight 분석 파라미터 및 LLM 모델 등급.
+
+DB/Supabase/LLM API 키 등 환경설정은 backend.app.config.settings 로 일원화되어
+있으므로 여기서는 다루지 않는다 (d2chat과 동일한 컨벤션).
+"""
+from typing import Literal
+
+Grade = Literal["fast", "balanced", "quality"]
+
+# --- LLM 모델 등급 ---
+# fast: 인텐트 파싱/분류, balanced: 보고서 본문 섹션, quality: 결론/핵심 인사이트
+ANTHROPIC_MODELS: dict[str, str] = {
+    "fast": "claude-haiku-4-5-20251001",
+    "balanced": "claude-sonnet-4-6",
+    "quality": "claude-opus-4-8",
+}
+
+# --- Data source selection ---
+DATA_SOURCE = "db"  # db | csv | excel (현재 db만 지원)
+
+# --- Output ---
+# 한글 폰트 ttf 경로. 미지정 시 OS 기본 위치(Win: malgun.ttf, Linux: NanumGothic)를 자동 탐색.
+REPORT_FONT_PATH = ""
+
+# --- Analysis params ---
 ABC_THRESHOLDS = (0.70, 0.90)
 XYZ_THRESHOLDS = (0.20, 0.50)
 ANALYSIS_TARGETS = ["AZ", "AX", "AY", "BZ"]
@@ -7,21 +31,23 @@ TOP_N_MAX = 5
 PARETO_THRESHOLD = 0.80
 MIN_CONTRIBUTION = 0.05
 DRILLDOWN_DEPTH = 2
-DRILLDOWN_MIN_CELL_SHARE = 0.001
+DRILLDOWN_MIN_CELL_SHARE = 0.001  # 0.1% of total filtered revenue
 DIMENSIONS = ["채널", "제품대분류", "제품중분류", "지역"]
-REGION_LEVEL = "Country"
+REGION_LEVEL = "Country"  # 드릴다운에서는 Territory Name까지
 
-NEW_DISC_HIGH_IMPACT_RATIO = 0.30
-OUTLIER_CHANGE_PCT = 0.30
-OUTLIER_MIN_REVENUE_SHARE = 0.01
+# Supplementary analysis (Phase 4)
+NEW_DISC_HIGH_IMPACT_RATIO = 0.30   # 신규/단종 비중 ≥ 30% → high_impact 플래그
+OUTLIER_CHANGE_PCT = 0.30           # ±30% 변화 (설계서 ±50% 에서 강화)
+OUTLIER_MIN_REVENUE_SHARE = 0.01    # 항목 매출이 당월 총매출의 ≥1%
 
-ANOMALY_SURGE_CRITICAL = 2.00
-ANOMALY_NORMAL_HIGH    = 1.10
-ANOMALY_NORMAL_LOW     = 0.90
-ANOMALY_CRITICAL       = 0.70
-ANOMALY_CAUTION        = 0.70   # _severity() 함수 호환용 (= ANOMALY_CRITICAL)
+# AnomalyDetector 심각도 임계값 (달성률 = 당월/전월)
+ANOMALY_SURGE_CRITICAL = 2.00   # ≥200% → 데이터 오류 의심
+ANOMALY_NORMAL_HIGH = 1.10      # >110% → 상승 이상치
+ANOMALY_NORMAL_LOW = 0.90       # ≥90%  → 정상 하한
+ANOMALY_CRITICAL = 0.70         # ≥70%  → 주의 / <70% → 심각
 
-ANOMALY_SIGMA: float = 3.0
+# dataset_builder 이상징후 기준 (±N × σ)
+ANOMALY_SIGMA: float = 3.0      # 기본 ±3σ (보고서작성방안 기준)
+
+# dataset_builder 비교 기간 기본값 ("MoM" | "YoY" | "QoQ")
 COMPARE_TYPE: str = "MoM"
-
-REPORT_FONT_PATH: str = ""  # 미설정 시 OS 기본 폰트 자동 탐색
