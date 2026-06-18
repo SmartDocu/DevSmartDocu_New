@@ -69,33 +69,6 @@ async def save_chapter(
         rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
         existing = rows[0] if rows else None
 
-    # useyn 활성화 시 항목 수 제한 확인
-    if existing and useyn and not existing.get("useyn", False):
-        configs = sb.schema(SUPABASE_SCHEMA).table("configs").select("freeobjectcnt").execute().data or []
-        freeobjectcnt = configs[0]["freeobjectcnt"] if configs else 999
-
-        doc_data = (
-            sb.schema(SUPABASE_SCHEMA)
-            .rpc("fn_doc_count__r", {"p_docid": docid, "p_chapteruid": chapteruid})
-            .execute()
-            .data or []
-        )
-        object_cnt = doc_data[0].get("object_cnt", 0) if doc_data else 0
-        chapter_objs = (
-            sb.schema(SUPABASE_SCHEMA)
-            .table("objects")
-            .select("objectuid")
-            .eq("useyn", True)
-            .eq("chapteruid", chapteruid)
-            .execute()
-            .data or []
-        )
-        if object_cnt + len(chapter_objs) > freeobjectcnt:
-            raise HTTPException(
-                status_code=405,
-                detail=f"항목 설정 최대 사용량 {freeobjectcnt}을 초과하였습니다.",
-            )
-
     record: dict = {
         "docid": docid,
         "chapternm": chapternm,
@@ -264,23 +237,7 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
     # 1. texttemplate 저장
     sb_user.schema(SUPABASE_SCHEMA).table("chapters").update({"texttemplate": html}).eq("chapteruid", chapteruid).execute()
 
-    # 2. 무료 플랜 항목 수 제한 체크
-    if billingmodelcd == "Fr":
-        cfg = sb_svc.schema(SUPABASE_SCHEMA).table("configs").select("freeobjectcnt").execute().data
-        freeobjectcnt = cfg[0]["freeobjectcnt"] if cfg else 0
-        ch_row = sb_svc.schema(SUPABASE_SCHEMA).table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data
-        docid = ch_row[0]["docid"] if ch_row else None
-        if docid:
-            cnt_data = sb_svc.schema(SUPABASE_SCHEMA).rpc("fn_doc_count__r", {"p_docid": docid, "p_chapteruid": chapteruid}).execute().data
-            object_cnt = cnt_data[0].get("object_cnt", 0) if cnt_data else 0
-            if object_cnt + len(body.formats) > freeobjectcnt:
-                return {
-                    "ok": False,
-                    "message": f"항목 설정 최대 사용량 {freeobjectcnt}을 초과하였습니다.",
-                    "add": "템플릿은 정상 저장되었습니다.",
-                }
-
-    # 3. objects 동기화
+    # 2. objects 동기화
     existing = sb_svc.schema(SUPABASE_SCHEMA).table("objects").select("objectuid,objectnm").eq("chapteruid", chapteruid).execute().data or []
     new_nms = {f["objectNm"] for f in body.formats if f.get("objectNm")}
     to_del = [o["objectuid"] for o in existing if o["objectnm"] not in new_nms]

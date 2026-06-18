@@ -40,7 +40,6 @@ import AdminUserRolePage from '@/pages/admin/AdminUserRolePage'
 import AdminSamplePromptPage from '@/pages/admin/AdminSamplePromptPage'
 import AdminLlmsPage from '@/pages/admin/AdminLlmsPage'
 import AdminLlmApisPage from '@/pages/admin/AdminLlmApisPage'
-import AdminTenantRequestsPage from '@/pages/admin/AdminTenantRequestsPage'
 import AdminHelpsPage from '@/pages/admin/AdminHelpsPage'
 import AdminMenusPage from '@/pages/admin/AdminMenusPage'
 import AdminMessagesPage from '@/pages/admin/AdminMessagesPage'
@@ -144,7 +143,6 @@ export const router = createBrowserRouter([
       { path: 'admin/sample-prompts', element: <AdminSamplePromptPage /> },
       { path: 'admin/llms', element: <AdminLlmsPage /> },
       { path: 'admin/llmapis', element: <AdminLlmApisPage /> },
-      { path: 'admin/tenant-requests', element: <AdminTenantRequestsPage /> },
       { path: 'admin/helps', element: <AdminHelpsPage /> },
       { path: 'admin/menus', element: <AdminMenusPage /> },
       { path: 'admin/messages', element: <AdminMessagesPage /> },

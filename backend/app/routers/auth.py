@@ -666,31 +666,6 @@ def register(body: RegisterRequest):
                 "approvecd": "A",
             }).execute()
 
-        if body.single == "Pr":
-            billing_start = datetime.now().date()
-            billing_end = billing_start + relativedelta(months=1) - timedelta(days=1)
-            config = service.schema(SCHEMA).table("configs").select("*").execute().data[0]
-            service.schema(SCHEMA).table("billmasters").insert({
-                "billtargetcd": "U",
-                "tenantid": effective_tenantid,
-                "useruid": user_id,
-                "billingmodelcd": "Pr",
-                "billingfirstdt": billing_start.isoformat(),
-                "useyn": True,
-                "creator": user_id,
-            }).execute()
-            service.schema(SCHEMA).table("billdts").insert({
-                "billtargetcd": "U",
-                "tenantid": effective_tenantid,
-                "useruid": user_id,
-                "billstartdt": billing_start.isoformat(),
-                "billenddt": billing_end.isoformat(),
-                "billingmodelcd": "Pr",
-                "inputtokencapa": config["inputtokencapa"],
-                "serviceamt": config["pricepro"],
-                "creator": user_id,
-            }).execute()
-
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

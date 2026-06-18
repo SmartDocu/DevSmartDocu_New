@@ -528,42 +528,6 @@ def delete_llmapi(llmapiuid: str, token: str = Depends(get_token)):
     return {"result": "success", "message": "삭제되었습니다."}
 
 
-# ══════════════════════════════════════════════════════
-#  TENANT REQUESTS (기업 생성 요청 관리, 조회 전용)
-# ══════════════════════════════════════════════════════
-
-@router.get("/tenant-requests")
-def list_tenant_requests(token: str = Depends(get_token)):
-    user = _require_admin(token)
-    sb = _sb_service()
-    sb_user = get_sb(token)
-    offsetminutes = _get_offsetminutes(sb_user, str(user.id))
-
-    from utilsPrj.crypto_helper import decrypt_value
-
-    rows = sb.schema(SUPABASE_SCHEMA).table("tenantreqs").select("*").order("createdts", desc=True).execute().data or []
-    for row in rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
-        if row.get("encemail"):
-            try:
-                row["email"] = decrypt_value(row["encemail"])
-            except Exception:
-                row["email"] = ""
-        else:
-            row["email"] = ""
-        if row.get("enctelno"):
-            try:
-                row["telno"] = decrypt_value(row["enctelno"])
-            except Exception:
-                row["telno"] = ""
-        else:
-            row["telno"] = ""
-        # 보안상 암호화 필드 제거
-        row.pop("encemail", None)
-        row.pop("enctelno", None)
-
-    return {"tenantreqs": rows}
-
 
 # ══════════════════════════════════════════════════════
 #  HELPS (도움말 관리)
