@@ -136,38 +136,6 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     existing_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).eq("useruid", useruid).execute().data
     existing = existing_rows[0] if existing_rows else None
 
-    # 사용자 수 제한 체크 (신규 등록 or 비활성→활성 전환)
-    today = datetime.utcnow().date().isoformat()
-    useyn_old = existing["useyn"] if existing else None
-    is_new_or_activate = not existing or (useyn_old is False and body.useyn is True)
-
-    if is_new_or_activate and other_tenantid != tenantid:
-        billdts_res = (
-            sb.schema(SUPABASE_SCHEMA).table("billdts").select("*")
-            .lte("billstartdt", today).gte("billenddt", today)
-            .eq("tenantid", tenantid).execute()
-        )
-        if not billdts_res.data:
-            raise HTTPException(status_code=400, detail="현재 사용 가능한 결제 기간이 존재하지 않습니다.")
-        billstartdt = billdts_res.data[0]["billstartdt"]
-
-        tum_res = (
-            sb.schema(SUPABASE_SCHEMA).table("tenantusermonths").select("*")
-            .eq("tenantid", tenantid).eq("billstartdt", billstartdt).execute()
-        )
-        current_count = len(tum_res.data)
-        tenant_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("billingusercnt").eq("tenantid", tenantid).execute().data
-        max_cnt = tenant_row[0]["billingusercnt"] if tenant_row else 0
-        if max_cnt and max_cnt <= current_count:
-            raise HTTPException(status_code=400, detail="해당 요금제의 사용 가능 인원이 모두 찼습니다.")
-        sb.schema(SUPABASE_SCHEMA).table("tenantusermonths").insert({
-            "billstartdt": billstartdt,
-            "tenantid": tenantid,
-            "useruid": useruid,
-            "recordtypecd": "N",
-            "creator": user_id,
-        }).execute()
-
     save_data = {
         "tenantid": tenantid,
         "useruid": useruid,
