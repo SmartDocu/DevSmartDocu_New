@@ -123,9 +123,9 @@ export default function MfaSetupPage() {
       <Descriptions column={1} size="small" bordered>
         <Descriptions.Item label={t('ttl.mfa.status')}>
           {isMfaEnabled ? (
-            <Tag color="green" icon={<CheckCircleOutlined />}>{t('lbl.mfa.enabled')}</Tag>
+            <Tag color="green" icon={<CheckCircleOutlined />}>{t('lbl.mfa.enable')}</Tag>
           ) : (
-            <Tag color="default">{t('lbl.mfa.disabled')}</Tag>
+            <Tag color="default">{t('btn.mfa.disable')}</Tag>
           )}
         </Descriptions.Item>
         {verifiedFactor && (
@@ -192,7 +192,7 @@ export default function MfaSetupPage() {
               onClick={handleCopySecret}
               type={copiedSecret ? 'primary' : 'default'}
             >
-              {copiedSecret ? t('btn.copied') : t('btn.copy')}
+              {copiedSecret ? t('btn.mfa.copied') : t('btn.mfa.copy')}
             </Button>
           </Space.Compact>
           <Paragraph style={{ marginTop: 12, marginBottom: 0 }}>
@@ -207,7 +207,7 @@ export default function MfaSetupPage() {
         <Space>
           <Button size="small" onClick={() => setCurrentStep(0)}>{t('btn.cancel')}</Button>
           <Button size="small" type="primary" icon={<QrcodeOutlined />} onClick={() => setCurrentStep(2)}>
-            {t('btn.next')}
+            {t('btn.mfa.next')}
           </Button>
         </Space>
       </div>
@@ -251,7 +251,7 @@ export default function MfaSetupPage() {
 
       <div style={{ textAlign: 'right' }}>
         <Space>
-          <Button size="small" onClick={() => setCurrentStep(1)}>{t('btn.prev')}</Button>
+          <Button size="small" onClick={() => setCurrentStep(1)}>{t('btn.mfa.prev')}</Button>
           <Button
             size="small"
             type="primary"
@@ -274,7 +274,7 @@ export default function MfaSetupPage() {
         showIcon
         icon={<CheckCircleOutlined />}
         message={t('msg.mfa.activated')}
-        description={t('msg.mfa.activated_desc')}
+        // description={t('msg.mfa.activated_desc')}
         style={{ marginBottom: 16 }}
       />
       <div style={{ textAlign: 'right' }}>
@@ -321,8 +321,8 @@ export default function MfaSetupPage() {
                 size="small"
                 current={currentStep - 1}
                 items={[
-                  { title: t('stp.mfa.scan') },
-                  { title: t('stp.mfa.verify') },
+                  { title: t('ttl.mfa.scan') },
+                  { title: t('ttl.mfa.verify') },
                 ]}
                 style={{ marginBottom: 16 }}
               />

@@ -345,33 +345,46 @@ def mfa_verify(body: MfaVerifyRequest):
             {"factor_id": body.factor_id}
         )
         challenge_id = challenge_resp.id
+        print(f"[MFA-VERIFY] challenge 발급 성공: challenge_id={challenge_id}")
+    except Exception as e:
+        print(f"[MFA-VERIFY] challenge 실패: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"MFA challenge 실패: {str(e)}",
+        )
 
+    try:
         # Step 2: TOTP 코드 검증 → aal2 세션 반환
         verify_resp = user_client.auth.mfa.verify({
             "factor_id": body.factor_id,
             "challenge_id": challenge_id,
             "code": body.code,
         })
-    except Exception:
+        print(f"[MFA-VERIFY] verify 성공")
+    except Exception as e:
+        print(f"[MFA-VERIFY] verify 실패: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="인증 코드가 올바르지 않습니다.",
         )
 
-    session = verify_resp.session
-    if not session:
+    access_token = getattr(verify_resp, "access_token", None)
+    refresh_token = getattr(verify_resp, "refresh_token", None)
+    print(f"[MFA-VERIFY] verify_resp attrs: {vars(verify_resp)}")
+
+    if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="MFA 검증에 실패했습니다.",
         )
 
-    final_client = _get_user_client(session.access_token, session.refresh_token)
+    final_client = _get_user_client(access_token, refresh_token)
     user = verify_resp.user
     ctx = _load_user_context(final_client, str(user.id), user.email)
 
     return LoginResponse(
-        access_token=session.access_token,
-        refresh_token=session.refresh_token,
+        access_token=access_token,
+        refresh_token=refresh_token,
         user=ctx,
     )
 
