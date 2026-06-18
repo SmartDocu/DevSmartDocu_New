@@ -443,6 +443,46 @@
   margin: 0;
   font-family: inherit;
 }
+.report-preview-html {
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  background: white;
+  border-top: 1px solid rgba(26,122,138,0.15);
+  max-height: 600px;
+  overflow-y: auto;
+}
+.report-preview-html h1,
+.report-preview-html h2,
+.report-preview-html h3 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  color: #1a7a8a;
+}
+.report-preview-html p { margin: 6px 0; }
+.report-preview-html ul,
+.report-preview-html ol { padding-left: 20px; margin: 6px 0; }
+.report-preview-html table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.report-preview-html th,
+.report-preview-html td {
+  border: 1px solid #d0d0d0;
+  padding: 6px 10px;
+  text-align: left;
+}
+.report-preview-html th { background: #f0f4f7; font-weight: 600; }
+.report-preview-html blockquote {
+  border-left: 3px solid #1a7a8a;
+  margin: 8px 0;
+  padding: 4px 12px;
+  color: #555;
+  background: #f8fbfc;
+}
 
 /* ── 공유 모달 ── */
 .modal-overlay {
@@ -493,3 +533,69 @@
   color: white;
 }
 .modal-buttons button:disabled { background: #ccc; }
+
+.folder-modal-box {
+  width: 420px;
+}
+.modal-title {
+  margin: 0 0 14px;
+  font-size: 16px;
+  color: #1a2e3b;
+  font-weight: 600;
+}
+.modal-empty {
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px 0;
+  margin: 0;
+}
+.folder-list {
+  list-style: none;
+  margin: 0 0 12px; 
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.folder-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+  transition: background 0.15s;
+}
+.folder-item:last-child { border-bottom: none; }
+.folder-item:hover { background: #f0f7fa; }
+.folder-item.selected {
+  background: #e0f2f5;
+  color: #1a7a8a;
+  font-weight: 600;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.modal-btn {
+  padding: 6px 18px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.modal-btn.cancel {
+  background: #6c757d;
+  color: white;
+}
+.modal-btn.confirm {
+  background: #1a7a8a;
+  color: white;
+}
+.modal-btn.confirm:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}

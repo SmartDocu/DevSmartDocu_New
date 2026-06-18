@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { App } from 'antd'
+import { marked } from 'marked'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import chatbotBot from '@/assets/icons/chatbot_bot.svg'
@@ -586,7 +587,7 @@ export default function D2InsightPage() {
 
       {/* 공유 모달 */}
       {shareTarget && (
-        <ShareModal
+        <FolderPickerModal
           qauid={shareTarget.qauid}
           userId={userId}
           onClose={() => setShareTarget(null)}
@@ -596,6 +597,27 @@ export default function D2InsightPage() {
       )}
     </div>
   )
+}
+
+// Base64 data URI 이미지를 플레이스홀더로 교체 후 marked 파싱, 복원
+function parseMarkdownWithImages(text) {
+  const images = []
+  const placeholder = text.replace(
+    /!\[([^\]]*)\]\((data:image\/[^)]*)\)/g,
+    (_, alt, src) => {
+      const id = images.length
+      images.push({ alt, src })
+      return `![${alt}](CHART_IMG_${id}_PLACEHOLDER)`
+    }
+  )
+  let html = marked.parse(placeholder)
+  images.forEach(({ alt, src }, id) => {
+    html = html.replace(
+      `<img src="CHART_IMG_${id}_PLACEHOLDER" alt="${alt}">`,
+      `<img src="${src}" alt="${alt}" style="max-width:100%;height:auto;display:block;margin:12px 0;" />`
+    )
+  })
+  return html
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -693,7 +715,10 @@ function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, 
             {previewExpanded && previewContent && (
               previewContent.startsWith('__pdf__:')
                 ? <iframe src={previewContent.slice(8)} style={{ width: '100%', height: 600, border: 'none' }} title="보고서 미리보기" />
-                : <pre className="report-preview-text">{previewContent}</pre>
+                : <div
+                    className="report-preview-html"
+                    dangerouslySetInnerHTML={{ __html: parseMarkdownWithImages(previewContent) }}
+                  />
             )}
           </div>
         )}
@@ -709,15 +734,27 @@ function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, 
 }
 
 // ─────────────────────────────────────────────────────────────────
-// 공유 모달 — QA 단위 공유 (tenant 내 공개)
+// 공유 모달 — 폴더 선택 후 tenant 내 공유
 // ─────────────────────────────────────────────────────────────────
-function ShareModal({ qauid, userId, onClose, onShared, message }) {
+function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
+  const [folders, setFolders] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [sharing, setSharing] = useState(false)
 
+  useEffect(() => {
+    if (!userId) return
+    apiClient.get(`/d2insight/folders/${userId}`)
+      .then(r => setFolders(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [userId])
+
   const handleShare = async () => {
+    if (!selected) return
     setSharing(true)
     try {
-      await apiClient.post('/d2insight/share', { user_id: userId, qauid })
+      await apiClient.post('/d2insight/share', { user_id: userId, qauid, folder_uid: selected })
       onShared?.()
       onClose()
     } catch (e) {
@@ -728,16 +765,36 @@ function ShareModal({ qauid, userId, onClose, onShared, message }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-        <h2>보고서 공유</h2>
-        <p style={{ color: '#555', fontSize: 14, margin: '0 0 16px' }}>
-          이 보고서를 같은 테넌트의 모든 사용자와 공유합니다.
-        </p>
-        <div className="modal-buttons">
-          <button type="button" onClick={handleShare} disabled={sharing}>
-            {sharing ? '공유 중...' : '공유하기'}
+      <div className="modal-box folder-modal-box" onClick={(e) => e.stopPropagation()}>
+        <h3 className="modal-title">공유 폴더 선택</h3>
+        {loading ? (
+          <p className="modal-empty">폴더 로딩 중...</p>
+        ) : folders.length === 0 ? (
+          <p className="modal-empty">등록된 폴더가 없습니다.</p>
+        ) : (
+          <ul className="folder-list">
+            {folders.map(f => (
+              <li
+                key={f.folderuid}
+                className={`folder-item${selected === f.folderuid ? ' selected' : ''}`}
+                style={{ paddingLeft: `${(f.folderlevel - 1) * 16 + 12}px` }}
+                onClick={() => setSelected(f.folderuid)}
+              >
+                {f.folderlevel > 1 ? '└ ' : ''}{f.foldernm}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="modal-btn cancel" onClick={onClose}>취소</button>
+          <button
+            type="button"
+            className="modal-btn confirm"
+            onClick={handleShare}
+            disabled={!selected || sharing}
+          >
+            {sharing ? '공유 중...' : '공유'}
           </button>
-          <button type="button" onClick={onClose} style={{ background: '#6c757d' }}>취소</button>
         </div>
       </div>
     </div>
