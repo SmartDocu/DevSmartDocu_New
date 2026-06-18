@@ -20,7 +20,8 @@ export default function MyInfoPage() {
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
-  const { data: factorsData } = useMfaFactors()
+  
+  const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
   const [timezoneVal, setTimezoneVal] = useState(null)
@@ -157,16 +158,16 @@ export default function MyInfoPage() {
       <Card
         size="small"
         title={t('ttl.myinfo.security')}
-        loading={isLoading}
+        loading={factorsLoading}
         style={{ marginBottom: 16 }}
       >
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label={t('ttl.mfa.status')}>
             <Space>
               {isMfaEnabled ? (
-                <Tag color="green">{t('lbl.mfa.enabled')}</Tag>
+                <Tag color="green">{t('btn.mfa.enable')}</Tag>
               ) : (
-                <Tag color="default">{t('lbl.mfa.disabled')}</Tag>
+                <Tag color="default">{t('btn.mfa.disable')}</Tag>
               )}
               <Button
                 htmlType="button"

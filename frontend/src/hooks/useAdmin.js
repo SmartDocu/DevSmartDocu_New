@@ -125,15 +125,6 @@ export function useDeleteLlm() {
   })
 }
 
-// ─── Tenant Requests ─────────────────────────────────────────────────────────
-
-export function useAdminTenantRequests() {
-  return useQuery({
-    queryKey: ['admin-tenant-requests'],
-    queryFn: () => apiClient.get('/admin/tenant-requests').then((r) => r.data),
-  })
-}
-
 // ─── User Role ────────────────────────────────────────────────────────────────
 
 export function useAdminUserRoles() {

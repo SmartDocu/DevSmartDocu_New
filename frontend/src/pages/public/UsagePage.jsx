@@ -4,7 +4,6 @@ import RegisterModal from '@/components/RegisterModal/RegisterModal'
 import LoginModal from '@/components/LoginModal/LoginModal'
 import { useAuthStore } from '@/stores/authStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
-import TenantRequestModal from '@/components/TenantRequestModal/TenantRequestModal'
 
 const cardStyle = {
   background: '#f7f9fc',
@@ -70,12 +69,9 @@ export default function UsagePage() {
   const [loginOpen,       setLoginOpen]       = useState(false)
   const isLoggedIn = useAuthStore((s) => !!s.accessToken)
   const openInTab = useOpenInTab()
-  const [tenantType,      setTenantType]      = useState(null)
-  const [tenantModalOpen, setTenantModalOpen] = useState(false)
   const [hoveredCard,     setHoveredCard]     = useState(null)
 
   const openRegister = () => setRegisterOpen(true)
-  const openTenant = (type) => { setTenantType(type); setTenantModalOpen(true) }
 
   const getCardStyle = (id) => ({
     ...cardStyle,
@@ -168,7 +164,6 @@ export default function UsagePage() {
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10, height: 82, justifyContent: 'flex-end' }}>
-                <button style={btnInfoStyle} onClick={() => openTenant('teams')}>기업 등록</button>
                 <button style={btnStyle} onClick={openRegister}>회원가입</button>
               </div>
               <div style={{ fontSize: 14, color: '#091747', lineHeight: 1.6, marginTop: 5, height: 67 }}>
@@ -192,7 +187,6 @@ export default function UsagePage() {
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10, height: 82, justifyContent: 'flex-end' }}>
-                <button style={btnInfoStyle} onClick={() => openTenant('tenant')}>기업 등록</button>
                 <button style={btnStyle} onClick={openRegister}>회원가입</button>
               </div>
               <div style={{ fontSize: 14, color: '#091747', lineHeight: 1.6, marginTop: 5, height: 67 }}>
@@ -260,11 +254,6 @@ export default function UsagePage() {
 
       <RegisterModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
-      <TenantRequestModal
-        open={tenantModalOpen}
-        onClose={() => { setTenantModalOpen(false); setTenantType(null) }}
-        type={tenantType}
-      />
     </div>
   )
 }
