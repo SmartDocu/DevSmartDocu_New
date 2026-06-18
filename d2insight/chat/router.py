@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     user_id: str | None = None
+    project_id: int | None = None
 
 
 class FavoriteQARequest(BaseModel):
@@ -39,6 +40,7 @@ class ShareRequest(BaseModel):
 class InjectRequest(BaseModel):
     session_id: str | None = None
     user_id: str | None = None
+    project_id: int | None = None
     question: str
     answer: str
     visualization_type: str = "none"
@@ -66,7 +68,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
     token_tracker.reset()
 
     try:
-        sid, hist = _session.get_or_create(req.session_id, user_id=req.user_id)
+        sid, hist = _session.get_or_create(req.session_id, user_id=req.user_id, project_id=req.project_id)
     except Exception as e:
         print(f"[session] get_or_create 실패 (fallback): {e}")
         sid = req.session_id or str(_uuid.uuid4())
@@ -132,6 +134,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
         qauid = _session.append_qa(
             sid, req.message, answer_json,
             user_id=req.user_id,
+            project_id=req.project_id,
             filenm=result.get("report_path"),
             fileurl=result.get("fileurl"),
             inputtoken=tokens["input"] or None,
@@ -168,7 +171,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
 def inject_qa(body: InjectRequest):
     """과거 Q&A를 현재(또는 새) 세션에 이어붙인다."""
     try:
-        sid, _ = _session.get_or_create(body.session_id, user_id=body.user_id)
+        sid, _ = _session.get_or_create(body.session_id, user_id=body.user_id, project_id=body.project_id)
     except Exception:
         sid = body.session_id or str(_uuid.uuid4())
 
@@ -178,7 +181,7 @@ def inject_qa(body: InjectRequest):
             "visualization_type": body.visualization_type,
             "table_html": body.table_html,
         }
-        _session.append_qa(sid, body.question, answer_json, user_id=body.user_id, filenm=body.report_path)
+        _session.append_qa(sid, body.question, answer_json, user_id=body.user_id, project_id=body.project_id, filenm=body.report_path)
     except Exception as e:
         print(f"[inject] append_qa 실패: {e}")
 

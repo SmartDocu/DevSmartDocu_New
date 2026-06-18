@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { App } from 'antd'
 import { CodeOutlined, CloseOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
 import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
 import '../d2shared/d2common.css'
@@ -28,6 +29,7 @@ const EXAMPLE_QUESTIONS = [
 
 export default function D2ChatPage() {
   const { message } = App.useApp()
+  const user = useAuthStore((s) => s.user)
 
   // ── 대화 상태 ──────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState(null)
@@ -202,6 +204,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.post('/d2chat/session/inject', {
         session_id: sessionId,
+        project_id: user?.projectid ?? null,
         question, answer, query, visualization_type, table_html, chart_image,
       })
       if (data.session_id) updateSessionId(data.session_id)
@@ -247,7 +250,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.post(
         '/d2chat/ask',
-        { question, session_id: sessionIdRef.current },
+        { question, session_id: sessionIdRef.current, project_id: user?.projectid ?? null },
         ASK_TIMEOUT,
       )
 

@@ -18,9 +18,11 @@ router = APIRouter()
 class QuestionRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
+    project_id: Optional[int] = None
 
 class InjectRequest(BaseModel):
     session_id: Optional[str] = None
+    project_id: Optional[int] = None
     question: str
     answer: str
     query: Optional[str] = None
@@ -56,6 +58,8 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
     new_session_id = None
     if not session_id or session_id == "default":
         tenant_id, project_id = storage.get_project_info(sb, user_id)
+        if body.project_id is not None:
+            project_id = body.project_id
         session_id = storage.create_session(sb, user_id, tenant_id, project_id)
         new_session_id = session_id
         info = {"tenantid": tenant_id, "projectid": project_id}
@@ -140,6 +144,8 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     # 활성 세션이 없으면 자동 생성
     if not session_id:
         tenant_id, project_id = storage.get_project_info(sb, user_id)
+        if body.project_id is not None:
+            project_id = body.project_id
         session_id = storage.create_session(sb, user_id, tenant_id, project_id)
         new_session_id = session_id
 

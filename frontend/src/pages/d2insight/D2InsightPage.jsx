@@ -190,6 +190,7 @@ export default function D2InsightPage() {
       const { data } = await apiClient.post('/d2insight/session/inject', {
         session_id: sessionId,
         user_id: userId,
+        project_id: user?.projectid ?? null,
         question, answer, report_path: reportPath,
       })
       if (data.session_id) updateSessionId(data.session_id)
@@ -218,7 +219,7 @@ export default function D2InsightPage() {
     try {
       const { data } = await apiClient.post(
         '/d2insight/chat',
-        { message: text, session_id: sessionIdRef.current, user_id: userId },
+        { message: text, session_id: sessionIdRef.current, user_id: userId, project_id: user?.projectid ?? null },
         CHAT_TIMEOUT,
       )
 
