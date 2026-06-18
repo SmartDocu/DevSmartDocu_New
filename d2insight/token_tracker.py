@@ -111,6 +111,16 @@ def get() -> dict:
     }
 
 
+def merge_calls(calls: list[dict]) -> None:
+    """Worker 스레드의 call 기록을 현재(메인) 스레드 tracker에 병합한다."""
+    if not hasattr(_local, "calls"):
+        reset()
+    for call in calls:
+        _local.calls.append(call)
+        _local.input_tokens = getattr(_local, "input_tokens", 0) + call.get("input", 0)
+        _local.output_tokens = getattr(_local, "output_tokens", 0) + call.get("output", 0)
+
+
 def set_current_section(name: str) -> None:
     """섹션 루프 진입 시 호출 — 현재 작성 중인 섹션명을 스레드-로컬에 저장한다."""
     _local.current_section = name

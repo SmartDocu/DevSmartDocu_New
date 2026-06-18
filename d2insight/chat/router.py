@@ -269,9 +269,9 @@ def delete_share_received(share_qauid: str, user_id: str):
 
 @router.get("/shares/received/{user_id}")
 def get_shares_received(user_id: str):
-    """같은 tenant의 모든 공유 보고서 목록 반환."""
-    tenant_id, _ = storage.get_project_info(user_id)
-    return storage.get_all_shares(tenant_id)
+    """같은 project의 모든 공유 보고서 목록 반환."""
+    _, project_id = storage.get_project_info(user_id)
+    return storage.get_all_shares(project_id)
 
 
 @router.get("/shares/{share_qauid}")

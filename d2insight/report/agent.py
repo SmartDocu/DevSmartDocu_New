@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -19,7 +20,7 @@ from langgraph.prebuilt import ToolNode
 
 from backend.app.config import settings
 from d2insight import token_tracker
-from d2insight.config import ANTHROPIC_MODELS
+from d2insight.config import ANTHROPIC_MODELS, REPORT_MAX_WORKERS
 from d2insight.data_source.generic_sql import GenericSqlSource
 from d2insight.data_source import meta_loader
 from d2insight.report.registry import get_config
@@ -607,8 +608,15 @@ class ReportAgent:
         }
         return defaults.get(report_type, ["분석 개요", "핵심 지표", "세부 분석", "종합"])
 
-    def _run_section(self, system: str, section_name: str, date_range: tuple[str, str]) -> str:
-        """섹션 하나를 독립 LangGraph 컨텍스트에서 실행한다."""
+    def _run_section(self, system: str, section_name: str, date_range: tuple[str, str]) -> tuple[str, dict]:
+        """섹션 하나를 독립 LangGraph 컨텍스트에서 실행한다.
+
+        Worker 스레드에서 호출될 수 있으므로 token_tracker를 스레드-로컬로 초기화한다.
+        Returns: (markdown_text, token_data)
+        """
+        token_tracker.reset()
+        token_tracker.set_current_section(section_name)
+
         start, end = date_range
         section_msg = (
             f"**{section_name}** 섹션 하나만 작성하세요.\n\n"
@@ -644,7 +652,8 @@ class ReportAgent:
                             if text:
                                 parts.append(text)
 
-        return "\n\n".join(p for p in parts if p.strip())
+        md = "\n\n".join(p for p in parts if p.strip())
+        return md, token_tracker.get()
 
     def generate(
         self,
@@ -691,14 +700,48 @@ class ReportAgent:
             sales_datasets=sales_datasets,
         )
 
-        # Phase 1: 섹션별 독립 실행 (섹션마다 새 LangGraph 컨텍스트, 누적 없음)
-        section_parts: list[str] = []
-        for section_name in section_plan:
-            token_tracker.set_current_section(section_name)
-            section_md = self._run_section(section_system, section_name, date_range)
-            if section_md.strip():
-                section_parts.append(section_md)
+        # Phase 1: 섹션별 병렬 실행 (마지막 항목 = 결론은 모든 섹션 완료 후 순차 실행)
+        parallel_sections = section_plan[:-1]
+        conclusion_section = section_plan[-1]
+
+        section_results: dict[int, str] = {}
+        _t0 = datetime.now()
+        print(f"[parallel] 병렬 섹션 {len(parallel_sections)}개 시작 (max_workers={REPORT_MAX_WORKERS})")
+
+        with ThreadPoolExecutor(max_workers=REPORT_MAX_WORKERS) as executor:
+            future_to_idx = {
+                executor.submit(self._run_section, section_system, name, date_range): idx
+                for idx, name in enumerate(parallel_sections)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                name = parallel_sections[idx]
+                try:
+                    md, token_data = future.result()
+                    section_results[idx] = md
+                    token_tracker.merge_calls(token_data["calls"])
+                    print(f"[parallel] 완료: {name} ({(datetime.now() - _t0).seconds}s)")
+                except Exception as e:
+                    print(f"[parallel] 실패: {name} — {e}")
+                    section_results[idx] = ""
+
+        # 계획 순서 재배열
+        section_parts = [
+            section_results[i]
+            for i in range(len(parallel_sections))
+            if section_results.get(i, "").strip()
+        ]
+
+        # 결론 항목: 전체 본문 완성 후 순차 실행
+        print(f"[parallel] 결론 섹션 시작: {conclusion_section}")
+        conclusion_md, conclusion_token_data = self._run_section(
+            section_system, conclusion_section, date_range
+        )
+        token_tracker.merge_calls(conclusion_token_data["calls"])
         token_tracker.set_current_section("")
+        if conclusion_md.strip():
+            section_parts.append(conclusion_md)
+        print(f"[parallel] 전체 완료 ({(datetime.now() - _t0).seconds}s)")
 
         md_body = "\n\n".join(section_parts)
 

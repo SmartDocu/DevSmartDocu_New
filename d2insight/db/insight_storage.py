@@ -409,26 +409,26 @@ def delete_share_sent(share_qauid: str, creator: str) -> bool:
         return False
 
 
-def get_all_shares(tenant_id: int | None) -> list[dict]:
-    """같은 tenant의 모든 공유 보고서 반환."""
+def get_all_shares(project_id: int | None) -> list[dict]:
+    """같은 project의 모든 공유 보고서 반환."""
     try:
         q = (
             _sc.table("insight_qa_shares")
             .select("qauid, sessionuid, question, answer, filenm, fileurl, creator, createdts, folderuid")
             .order("createdts", desc=True)
         )
-        if tenant_id is not None:
-            q = q.or_(f"tenantid.eq.{tenant_id},tenantid.is.null")
+        if project_id is not None:
+            q = q.or_(f"projectid.eq.{project_id},projectid.is.null")
         else:
-            q = q.is_("tenantid", "null")
+            q = q.is_("projectid", "null")
         res = q.execute()
         return _format_share_rows(res.data or [])
     except Exception:
         return []
 
 
-def get_shares_received(tenant_id: int | None, my_creator: str) -> list[dict]:
-    """같은 tenantid에서 내가 creator가 아닌 공유 QA 목록을 반환한다."""
+def get_shares_received(project_id: int | None, my_creator: str) -> list[dict]:
+    """같은 projectid에서 내가 creator가 아닌 공유 QA 목록을 반환한다."""
     try:
         q = (
             _sc.table("insight_qa_shares")
@@ -436,10 +436,10 @@ def get_shares_received(tenant_id: int | None, my_creator: str) -> list[dict]:
             .neq("creator", my_creator)
             .order("createdts", desc=True)
         )
-        if tenant_id is not None:
-            q = q.or_(f"tenantid.eq.{tenant_id},tenantid.is.null")
+        if project_id is not None:
+            q = q.or_(f"projectid.eq.{project_id},projectid.is.null")
         else:
-            q = q.is_("tenantid", "null")
+            q = q.is_("projectid", "null")
         res = q.execute()
         return _format_share_rows(res.data or [])
     except Exception:
