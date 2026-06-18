@@ -336,8 +336,6 @@ def list_tenants(token: str = Depends(get_token)):
     sb = _sb(token)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").order("createdts", desc=True).execute().data or []
-    bills = sb.schema(SUPABASE_SCHEMA).table("billmasters").select("*").execute().data or []
-    bill_map = {b["tenantid"]: b for b in bills}
 
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
@@ -347,13 +345,6 @@ def list_tenants(token: str = Depends(get_token)):
                 row["creatornm"] = u[0]["usernm"] if u else ""
             except Exception:
                 row["creatornm"] = ""
-        bill = bill_map.get(row.get("tenantid"))
-        if bill:
-            row["decemail"] = _decrypt(bill.get("encemail", ""))
-            row["dectelno"] = _decrypt(bill.get("enctelno", ""))
-        else:
-            row["decemail"] = ""
-            row["dectelno"] = ""
 
     langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezone").select("*").eq("useyn", True).execute().data or [])]
@@ -418,25 +409,12 @@ async def save_tenant(
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
-        from datetime import date
-        bill_data = {
-            "billtargetcd": "T",
-            "tenantid": new_tenantid,
-            "billingmodelcd": billingmodelcd or "Fr",
-            "billingfirstdt": date.today().isoformat(),
-            "useyn": True,
-            "encemail": _encrypt(email or ""),
-            "enctelno": _encrypt(telno or ""),
-            "creator": user.id,
-        }
-        sb.schema(SUPABASE_SCHEMA).table("billmasters").insert(bill_data).execute()
     return {"status": "inserted"}
 
 
 @router.delete("/tenants/{tenantid}")
 def delete_tenant(tenantid: str, token: str = Depends(get_token)):
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("billmasters").delete().eq("tenantid", tenantid).execute()
     sb.schema(SUPABASE_SCHEMA).table("tenants").delete().eq("tenantid", tenantid).execute()
     return {"status": "ok"}
 

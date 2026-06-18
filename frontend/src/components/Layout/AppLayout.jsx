@@ -50,7 +50,11 @@ export default function AppLayout() {
     if (projectList.length === 0) return
     const saved = user?.myprojectid
     const found = saved && projectList.find(p => String(p.projectid) === String(saved))
-    setSelectedProjectId(found ? found.projectid : projectList[0].projectid)
+    const resolved = found ? found.projectid : projectList[0].projectid
+    setSelectedProjectId(resolved)
+    if (String(resolved) !== String(saved ?? '')) {
+      updateUser({ myprojectid: String(resolved) })
+    }
   }, [projectList])
 
   // re-render 트리거용 구독
