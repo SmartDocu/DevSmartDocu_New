@@ -77,12 +77,26 @@ def list_docs(token: str = Depends(get_token)):
     docs_details = (
         sb.schema(SUPABASE_SCHEMA)
         .table("docs")
-        .select("docid, docdesc, createdts, projectid, sampleyn, basetemplatenm, basetemplateurl, docnm")
+        .select("docid, docdesc, createdts, projectid, sampleyn, basetemplatenm, basetemplateurl, docnm, docgroupid")
         .in_("docid", docids)
         .execute()
         .data or []
     )
     doc_map = {d["docid"]: d for d in docs_details}
+
+    # 2-1. docgroup 이름 조회
+    docgroup_ids = list({d["docgroupid"] for d in docs_details if d.get("docgroupid")})
+    docgroup_map: dict = {}
+    if docgroup_ids:
+        dg_rows = (
+            sb.schema(SUPABASE_SCHEMA)
+            .table("docgroups")
+            .select("docgroupid, docgroupnm")
+            .in_("docgroupid", docgroup_ids)
+            .execute()
+            .data or []
+        )
+        docgroup_map = {r["docgroupid"]: r["docgroupnm"] for r in dg_rows}
 
     # 3. 프로젝트 정보 조회 (useyn=True만)
     project_ids = list({d.get("projectid") for d in docs_details if d.get("projectid")})
@@ -157,6 +171,7 @@ def list_docs(token: str = Depends(get_token)):
             is_manager = (projectid in manager_project_ids) or (tenantid in manager_tenant_ids)
             editbuttonyn = "Y" if is_manager else "N"
 
+        dgid = details.get("docgroupid")
         result_list.append({
             "docid": docid,
             "docnm": details.get("docnm", ""),
@@ -169,6 +184,8 @@ def list_docs(token: str = Depends(get_token)):
             "sampleyn": sampleyn,
             "createdts": details.get("createdts", ""),
             "editbuttonyn": editbuttonyn,
+            "docgroupid": dgid,
+            "docgroupnm": docgroup_map.get(dgid) if dgid else None,
         })
 
     # 6. 정렬: 샘플 우선, 최신순
@@ -194,6 +211,8 @@ def list_docs(token: str = Depends(get_token)):
                 basetemplateurl=d.get("basetemplateurl"),
                 sampleyn=d.get("sampleyn", False),
                 editbuttonyn=d.get("editbuttonyn", "N"),
+                docgroupid=d.get("docgroupid"),
+                docgroupnm=d.get("docgroupnm"),
             )
             for d in result_list
         ]
@@ -290,6 +309,7 @@ async def save_doc(
     docnm: str = Form(...),
     docdesc: Optional[str] = Form(None),
     docid: Optional[int] = Form(None),
+    docgroupid: Optional[int] = Form(None),
     templatefile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
 ):
@@ -320,7 +340,7 @@ async def save_doc(
     if dup:
         raise HTTPException(status_code=400, detail="msg.doc.name.duplicate")
 
-    record: dict = {"projectid": projectid, "docnm": docnm, "docdesc": docdesc}
+    record: dict = {"projectid": projectid, "docnm": docnm, "docdesc": docdesc, "docgroupid": docgroupid}
 
     if templatefile and templatefile.filename:
         # 기존 파일 삭제

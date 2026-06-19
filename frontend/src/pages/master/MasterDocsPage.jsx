@@ -1,20 +1,24 @@
 import { useState } from 'react'
+import { App } from 'antd'
 import { useDocs, useProjects, useSaveDoc, useDeleteDoc } from '@/hooks/useDocs'
 import { useLangStore, t } from '@/stores/langStore'
 import { useDataParams } from '@/hooks/useDataParams'
 import { useDocDatasets } from '@/hooks/useDocDatasets'
+import DocGroupSelectModal from './DocGroupSelectModal'
 
 export default function MasterDocsPage() {
+  const { modal } = App.useApp()
   const { data: docs = [] } = useDocs()
   const { data: projects = [] } = useProjects()
   const saveDoc = useSaveDoc()
   const deleteDoc = useDeleteDoc()
 
   const [selectedDoc, setSelectedDoc] = useState(null)
-  const [docForm, setDocForm] = useState({ docid: '', projectid: '', docnm: '', docdesc: '' })
+  const [docForm, setDocForm] = useState({ docid: '', projectid: '', docnm: '', docdesc: '', docgroupid: '', docgroupnm: '' })
   const [templateFile, setTemplateFile] = useState(null)
   const [templateName, setTemplateName] = useState(null)
   const [docSaving, setDocSaving] = useState(false)
+  const [groupModalOpen, setGroupModalOpen] = useState(false)
 
   const selectedDocEditYn = selectedDoc?.editbuttonyn === 'Y'
   const canEdit = selectedDoc ? selectedDocEditYn : projects.length > 0
@@ -25,14 +29,14 @@ export default function MasterDocsPage() {
 
   const selectDoc = (doc) => {
     setSelectedDoc(doc)
-    setDocForm({ docid: doc.docid, projectid: doc.projectid, docnm: doc.docnm, docdesc: doc.docdesc || '' })
+    setDocForm({ docid: doc.docid, projectid: doc.projectid, docnm: doc.docnm, docdesc: doc.docdesc || '', docgroupid: doc.docgroupid || '', docgroupnm: doc.docgroupnm || '' })
     setTemplateName(doc.basetemplatenm || null)
     setTemplateFile(null)
   }
 
   const handleDocNew = () => {
     setSelectedDoc(null)
-    setDocForm({ docid: '', projectid: projects[0]?.projectid || '', docnm: '', docdesc: '' })
+    setDocForm({ docid: '', projectid: projects[0]?.projectid || '', docnm: '', docdesc: '', docgroupid: '', docgroupnm: '' })
     setTemplateName(null)
     setTemplateFile(null)
   }
@@ -45,6 +49,7 @@ export default function MasterDocsPage() {
     fd.append('docnm', docForm.docnm)
     if (docForm.docdesc) fd.append('docdesc', docForm.docdesc)
     if (docForm.docid) fd.append('docid', docForm.docid)
+    if (docForm.docgroupid) fd.append('docgroupid', docForm.docgroupid)
     if (templateFile) fd.append('templatefile', templateFile)
     saveDoc.mutate(fd, {
       onSuccess: () => setDocSaving(false),
@@ -54,8 +59,11 @@ export default function MasterDocsPage() {
 
   const handleDocDelete = () => {
     if (!docForm.docid) { alert(t('msg.doc.select.delete')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteDoc.mutate(docForm.docid, { onSuccess: handleDocNew })
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      okType: 'danger',
+      onOk: () => deleteDoc.mutate(docForm.docid, { onSuccess: handleDocNew }),
+    })
   }
 
   return (
@@ -122,6 +130,34 @@ export default function MasterDocsPage() {
                 {projects.map((p) => <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>)}
               </select>
             )}
+          </div>
+          <div className="form-group">
+            <label>{t('lbl.docgroupnm')}:</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1, padding: '6px 4px', color: docForm.docgroupnm ? '#333' : '#bbb' }}>
+                {docForm.docgroupnm || t('msg.not.selected')}
+              </span>
+              {canEdit && docForm.projectid && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => setGroupModalOpen(true)}
+                >
+                  {t('btn.select.group')}
+                </button>
+              )}
+              {canEdit && docForm.docgroupid && (
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => setDocForm((f) => ({ ...f, docgroupid: '', docgroupnm: '' }))}
+                >
+                  {t('btn.clear')}
+                </button>
+              )}
+            </div>
           </div>
           <div className="form-group">
             <label htmlFor="doc-docnm"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.docnm')}:</label>
@@ -222,6 +258,13 @@ export default function MasterDocsPage() {
           })()}
         </div>
       </div>
+
+      <DocGroupSelectModal
+        open={groupModalOpen}
+        onClose={() => setGroupModalOpen(false)}
+        projectid={docForm.projectid}
+        onSelect={(docgroupid, docgroupnm) => setDocForm((f) => ({ ...f, docgroupid, docgroupnm }))}
+      />
     </div>
   )
 }

@@ -22,6 +22,8 @@ class DocItem(BaseModel):
     basetemplateurl: Optional[str] = None
     sampleyn: Optional[bool] = False
     editbuttonyn: str = "Y"
+    docgroupid: Optional[int] = None
+    docgroupnm: Optional[str] = None
 
 
 class DocsListResponse(BaseModel):
