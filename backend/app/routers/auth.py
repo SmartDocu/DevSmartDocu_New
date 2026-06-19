@@ -683,23 +683,44 @@ def get_mfa_factors(token: str = Depends(get_token)):
     현재 사용자의 MFA factor 목록 조회.
     설정 화면에서 MFA 등록 여부 확인 및 factor_id 획득에 사용한다.
     """
-    user_client = _get_user_client(token)
+    import httpx
+
+    # access_token으로 user_id 조회
     try:
-        factors_resp = user_client.auth.mfa.list_factors()
-        totp_list = [
-            {
-                "factor_id": f.id,
-                "status": f.status,           # "verified" | "unverified"
-                "friendly_name": f.friendly_name,
-                "created_at": str(f.created_at),
-            }
-            for f in (factors_resp.totp or [])
-        ]
+        user_client = _get_user_client(token)
+        user_resp = user_client.auth.get_user(token)
+        user_id = str(user_resp.user.id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 토큰입니다.",
+        )
+
+    # Admin REST API로 factor 목록 조회 (set_session 없이도 동작)
+    try:
+        headers = {
+            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        }
+        list_url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}/factors"
+        res = httpx.get(list_url, headers=headers)
+        factors = res.json() or []
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+    totp_list = [
+        {
+            "factor_id": f.get("id"),
+            "status": f.get("status"),
+            "friendly_name": f.get("friendly_name", ""),
+            "created_at": f.get("created_at", ""),
+        }
+        for f in factors
+        if f.get("factor_type") == "totp"
+    ]
     return {
         "factors": totp_list,
         "mfa_enabled": any(f["status"] == "verified" for f in totp_list),
