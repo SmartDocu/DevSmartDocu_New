@@ -79,24 +79,6 @@ def queue_genobject_run_log(genobjectuid, objecttypecd, sourcebase, inputtoken, 
     }
     _log_queue.put(log_data)
 
-
-def queue_loggenobject_log(loggenobjectuid, genObjectDirectYn, loggenchapteruid, genobjectuid, genchapteruid, user_id, str_end, errormessage, run_start_dts):
-    """로그를 큐에 추가"""
-    log_data = {
-        'type': 'loggenobject',
-        'loggenobjectuid': loggenobjectuid,
-        'genObjectDirectYn': genObjectDirectYn,
-        'loggenchapteruid': loggenchapteruid,
-        'genobjectuid': genobjectuid,
-        'genchapteruid': genchapteruid,
-        'user_id': user_id,
-        'str_end': str_end,
-        'errormessage': errormessage,
-        'timestamp': run_start_dts
-    }
-    _log_queue.put(log_data)
-
-
 def queue_genobject_result(genobjectuid, genchapteruid, chapteruid, objectuid, objecttypecd, 
                            sourcebase, sourcetext, resulttext, user_id, run_start_dts):
     """genobject 결과를 큐에 추가 (upsert용)"""
@@ -122,9 +104,6 @@ def flush_logs_to_db(supabase, log_source="AI"):
     genobject_inserts = []
     genobject_updates = {}
     genobject_results = {}
-    
-    loggenobject_inserts = []
-    loggenobject_updates = {}
 
     genobjectrunlog_inserts = []
     
@@ -152,26 +131,6 @@ def flush_logs_to_db(supabase, log_source="AI"):
                         "createdts": log['timestamp']
                     }
         
-        elif log['type'] == 'loggenobject':
-            if log['str_end'] == 'str':
-                loggenchapter = None if log['genObjectDirectYn'] else log['loggenchapteruid']
-                loggenobject_inserts.append({
-                    'loggenobjectuid': log['loggenobjectuid'],
-                    'directreqyn': log['genObjectDirectYn'],
-                    'loggenchapteruid': loggenchapter,
-                    'genobjectuid': log['genobjectuid'],
-                    'genchapteruid': log['genchapteruid'],
-                    'creator': log['user_id'],
-                    'startdts': log['timestamp']
-                })
-            elif log['str_end'] == 'end':
-                uid = log['loggenobjectuid']
-                loggenobject_updates[uid] = {
-                    'loggenobjectuid': uid,
-                    'enddts': log['timestamp'],
-                    'errormessage': log['errormessage']
-                }
-
         elif log['type'] == 'genobjectrunlog':
             genobjectrunlog_inserts.append({
                 'genobjectuid': log['genobjectuid'],
@@ -215,35 +174,8 @@ def flush_logs_to_db(supabase, log_source="AI"):
                 ).in_('genobjectuid', uids).execute()
                 print(f"[Batch-{log_source}] genobject updated: progressrate={rate}, {len(uids)}개 (1회 호출)")
         
-        if loggenobject_inserts:
-            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').insert(loggenobject_inserts).execute()
-            print(f"[Batch-{log_source}] loggenobject inserted: {len(loggenobject_inserts)}개 (1회 호출)")
-        
-        # if loggenobject_updates:
-        #     for data in loggenobject_updates.values():
-        #         supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').update({
-        #             'enddts': data['enddts'],
-        #             'errormessage': data['errormessage']
-        #         }).eq('loggenobjectuid', data['loggenobjectuid']).execute()
-        #     print(f"[Batch-{log_source}] loggenobject updated: {len(loggenobject_updates)}개")
 
-        if loggenobject_updates:
-            # 기존: for loop 삭제
-            # 새로: upsert로 한 번에
-            update_list = [
-                {
-                    'loggenobjectuid': data['loggenobjectuid'],
-                    'enddts': data['enddts'],
-                    'errormessage': data['errormessage']
-                }
-                for data in loggenobject_updates.values()
-            ]
-            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').upsert(update_list).execute()
-            print(f"[Batch-{log_source}] loggenobject updated: {len(loggenobject_updates)}개 (1회 호출)")
 
-        # if genobjectrunlog_inserts:
-        #     for data in genobjectrunlog_inserts:
-        #         supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(data).execute()
 
         if genobjectrunlog_inserts:
             supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(genobjectrunlog_inserts).execute()
@@ -330,13 +262,6 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
 
         data_item['genobjectuid'] = genobjectuid
         
-        loggenchapteruid = kwargs.get('loggenchapteruid', None)
-        genObjectDirectYn = kwargs.get('genObjectDirectYn', False)
-        
-        loggenobjectuid = str(uuid.uuid4())
-        run_start_dts = datetime.now().isoformat()
-        queue_loggenobject_log(loggenobjectuid, genObjectDirectYn, loggenchapteruid, genobjectuid, gen_chapter_uid, user_id, 'str', None, run_start_dts)
-
         query = data_item['query'] or ""
         params = re.findall(r'@(\w+)', query)
         
@@ -448,10 +373,6 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             'createdts': run_start_dts
         }
         
-        run_start_dts = datetime.now().isoformat()
-        queue_loggenobject_log(loggenobjectuid, genObjectDirectYn, loggenchapteruid, 
-                            genobjectuid, gen_chapter_uid, user_id, 'end', None, run_start_dts)
-
         return {
             'success': True,
             'result': result,
@@ -605,7 +526,7 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
 
 def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid, gendoc_uid, 
                                     gen_chapter_uid, chapter_uid, user_id, text_template, 
-                                    sep, genObjectDirectYn, loggenchapteruid):
+                                    sep):
     """UI 객체들을 순차적으로 처리"""
     
     replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
@@ -613,7 +534,6 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
 
     # for ui_idx, (original_idx, data_item) in enumerate(ui_objects):
     for ui_idx, (original_idx, data_item) in enumerate(ui_objects):
-        loggenobjectuid = None
         genobjectuid = None
         
         try:
@@ -638,11 +558,6 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
 
             data_item['genobjectuid'] = genobjectuid
             
-            loggenobjectuid = str(uuid.uuid4())
-            run_start_dts = datetime.now().isoformat()
-            queue_loggenobject_log(loggenobjectuid, genObjectDirectYn, loggenchapteruid, 
-                                genobjectuid, gen_chapter_uid, user_id, 'str', None, run_start_dts)
-
             params = re.findall(r'@(\w+)', query)
 
             run_start_dts = datetime.now().isoformat()
@@ -690,10 +605,6 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                 result['createdts']
             )
 
-            run_start_dts = datetime.now().isoformat()
-            queue_loggenobject_log(loggenobjectuid, genObjectDirectYn, loggenchapteruid, 
-                                genobjectuid, gen_chapter_uid, user_id, 'end', None, run_start_dts)
-
         except Exception as e:
             print(f"UI 객체 처리 실패: {data_item.get('objectnm', '')} - {str(e)}")
             traceback.print_exc()
@@ -705,11 +616,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                 'error': str(e),
                 'message': f"UI 항목 실패: {data_item.get('objectnm', '')} - {str(e)}"
             }
-            
-            if loggenobjectuid:
-                run_start_dts = datetime.now().isoformat()
-                queue_loggenobject_log(loggenobjectuid, genObjectDirectYn, loggenchapteruid, 
-                                    genobjectuid, gen_chapter_uid, user_id, 'end', str(e), run_start_dts)
+
             continue
     
     # UI 객체 로그 일괄 저장
@@ -729,7 +636,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
 
 def process_ai_object_with_tracking(data_item, request, docid, gendoc_uid, chapter_uid, 
                                     user_id, original_idx, datas_len, gen_chapter_uid, 
-                                    tenant_id, genObjectDirectYn, loggenchapteruid):
+                                    tenant_id):
     """AI 객체 처리 (재시도 없이 결과만 반환)"""
     
     result_data = process_ai_object(
@@ -742,9 +649,7 @@ def process_ai_object_with_tracking(data_item, request, docid, gendoc_uid, chapt
         original_idx,
         datas_len,
         gen_chapter_uid,
-        tenant_id,
-        genObjectDirectYn=genObjectDirectYn,
-        loggenchapteruid=loggenchapteruid
+        tenant_id
     )
     
     return result_data
@@ -754,7 +659,7 @@ def process_ai_object_with_tracking(data_item, request, docid, gendoc_uid, chapt
 #####
 def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, chapter_uid,
                                    user_id, datas_len, gen_chapter_uid, tenant_id, 
-                                   genObjectDirectYn, loggenchapteruid, max_retries=3):
+                                   max_retries=3):
     """오류난 항목들을 순차적으로 재시도"""
     
     retry_results = {}
@@ -777,8 +682,6 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
                     datas_len,
                     gen_chapter_uid,
                     tenant_id,
-                    genObjectDirectYn=genObjectDirectYn,
-                    loggenchapteruid=loggenchapteruid
                 )
                 
                 # 성공한 경우
@@ -813,7 +716,7 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
 
 def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid, 
                                 chapter_uid, user_id, gen_chapter_uid, sep,
-                                tenant_id, genObjectDirectYn, loggenchapteruid,
+                                tenant_id, 
                                 progress_lock, completed_count, ui_count):
     """AI 객체들을 병렬로 처리 후 오류 항목들만 순차적으로 재시도"""
     
@@ -843,8 +746,6 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                     len(datas),
                     gen_chapter_uid,
                     tenant_id,
-                    genObjectDirectYn=genObjectDirectYn,
-                    loggenchapteruid=loggenchapteruid
                 )
                 future_to_index[future] = (original_idx, data_item)
 
@@ -910,8 +811,6 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
             len(datas),
             gen_chapter_uid,
             tenant_id,
-            genObjectDirectYn,
-            loggenchapteruid,
             max_retries=3
         )
         
@@ -1023,16 +922,9 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
     completed_count = [0]
 
     run_yn = False
-    loggenobjectuid = None
     genobjectuid = None
 
     try:
-        ## 직접 동작 여부 체크
-        genChapterDirectYn = kwargs.get('genChapterDirectYn', False)
-        genObjectDirectYn = kwargs.get('genObjectDirectYn', False)
-        
-        loggendocuid = kwargs.get('loggendocuid', None)
-        loggenchapteruid = kwargs.get('loggenchapteruid', None)
         divide = kwargs.get("divide", "")
         doc_write = kwargs.get("doc_write", False)
 
@@ -1070,8 +962,6 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     read_flat = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('flattexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
                     flat_template = read_flat[0].get('flattexttemplate') if read_flat else None
                     text_template = flat_template or read_chapter[0]['texttemplate']
-                    loggenchapteruid = str(uuid.uuid4())
-                    update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, gen_chapter_uid, gendoc_uid, user_id, 'str', docid, chapter_uid)
                 else:
                     gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
                     # 빈 리스트 체크
@@ -1155,7 +1045,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         for progress_item in process_ui_objects_sequentially(
                             request, supabase, ui_objects, datas, docid, gendoc_uid,
                             gen_chapter_uid, chapter_uid, user_id, text_template,
-                            sep, genObjectDirectYn, loggenchapteruid
+                            sep
                         ):
                             if progress_item['type'] == 'ui_complete':
                                 text_template = progress_item['text_template']
@@ -1171,7 +1061,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         for progress_item in process_ai_objects_parallel(
                             request, ai_objects, datas, docid, gendoc_uid,
                             chapter_uid, user_id, gen_chapter_uid, sep,
-                            tenant_id, genObjectDirectYn, loggenchapteruid,
+                            tenant_id,
                             progress_lock, completed_count, len(ui_objects)
                         ):
                             if progress_item['type'] == 'ai_complete':
@@ -1196,9 +1086,6 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         }
                     
                     cleanup_thread_client()
-
-                if not genObjectDirectYn:
-                    update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, gen_chapter_uid, gendoc_uid, user_id, 'end', docid, chapter_uid)
                     
             elif obj == 'write':
                 gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
@@ -1258,9 +1145,6 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
         return text_template
 
     except Exception as e:
-        if (run_yn and loggenobjectuid is not None):
-             update_loggenobject(supabase, loggenobjectuid, genObjectDirectYn, loggenchapteruid, genobjectuid, gen_chapter_uid, user_id, 'end', str(e))
-
         traceback.print_exc()
         yield {
             'type': 'error',
@@ -1352,48 +1236,3 @@ def make_genobject(supabase, genobjectuid, gen_chapter_uid, chapter_uid, objectu
                 "progressrate": progressrate,
             }
             supabase.schema(SUPABASE_SCHEMA).table('genobjects').update(genobject).eq("genobjectuid", genobjectuid).execute()
-
-
-def update_loggenobject(supabase, loggenobjectuid, genObjectDirectYn, loggenchapteruid, genobjectuid, genchapteruid, user_id, str_end, errormessage):
-    with _db_semaphore:
-        loggenchapter = None if genObjectDirectYn else loggenchapteruid
-
-        loggenobject = {'loggenobjectuid': loggenobjectuid}
-
-        if str_end == 'str':
-            loggenobject['directreqyn'] = genObjectDirectYn
-            loggenobject['loggenchapteruid'] = loggenchapter
-            loggenobject['genobjectuid'] = genobjectuid
-            loggenobject['genchapteruid'] = genchapteruid
-            loggenobject['creator'] = user_id
-            loggenobject['startdts'] = datetime.now().isoformat()
-
-            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').insert(loggenobject).execute()
-
-        elif str_end == 'end':
-            loggenobject['enddts'] = datetime.now().isoformat()
-            loggenobject['errormessage'] = errormessage
-
-            supabase.schema(SUPABASE_SCHEMA).table('loggenobjects').update(loggenobject).eq('loggenobjectuid', loggenobjectuid).execute()
-
-
-def update_loggenchapter(supabase, loggenchapteruid, genChapterDirectYn, loggendocuid, genchapteruid, gendocuid, user_id, str_end, docid, chapteruid):
-    loggendoc = None if genChapterDirectYn else loggendocuid
-
-    loggenchapter = {'loggenchapteruid': loggenchapteruid}
-
-    if str_end == 'str':
-        loggenchapter['directreqyn'] = genChapterDirectYn
-        loggenchapter['loggendocuid'] = loggendoc
-        loggenchapter['genchapteruid'] = genchapteruid
-        loggenchapter['gendocuid'] = gendocuid
-        loggenchapter['docid'] = docid
-        loggenchapter['chapteruid'] = chapteruid
-        loggenchapter['creator'] = user_id
-        loggenchapter['startdts'] = datetime.now().isoformat()
-    elif str_end == 'end':
-        loggenchapter['enddts'] = datetime.now().isoformat()
-    
-    supabase.schema(SUPABASE_SCHEMA).table('loggenchapters').upsert(loggenchapter).execute()
-
-
