@@ -55,7 +55,7 @@ def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
                 tz = t.data.get("timezone")
         if not tz:
             return None
-        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
         return tz_row.data.get("offsetminutes") if tz_row.data else None
     except Exception:
         return None
@@ -347,7 +347,7 @@ def list_tenants(token: str = Depends(get_token)):
                 row["creatornm"] = ""
 
     langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
-    timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezone").select("*").eq("useyn", True).execute().data or [])]
+    timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezones").select("*").eq("useyn", True).execute().data or [])]
     return {"tenants": rows, "billing_models": BILLING_MODELS, "languages": langs, "timezones": timezones}
 
 
@@ -472,7 +472,7 @@ def get_myinfo(token: str = Depends(get_token)):
             }
 
     # timezones 목록 (useyn=true)
-    tz_rows = sb.schema(SUPABASE_SCHEMA).table("timezone").select("timezone").eq("useyn", True).execute().data or []
+    tz_rows = sb.schema(SUPABASE_SCHEMA).table("timezones").select("timezone").eq("useyn", True).execute().data or []
     timezones = [r["timezone"] for r in tz_rows]
 
     # 유효 timezone: tenantusers → tenants 순으로 fallback
@@ -517,7 +517,7 @@ def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token)
     sb.schema(SUPABASE_SCHEMA).table("tenantusers").update({"timezone": body.timezone}).eq("useruid", user.id).execute()
     offsetminutes = None
     if body.timezone:
-        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", body.timezone).maybe_single().execute()
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", body.timezone).maybe_single().execute()
         if tz_row.data:
             offsetminutes = tz_row.data.get("offsetminutes")
     return {"status": "ok", "offsetminutes": offsetminutes}

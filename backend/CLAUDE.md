@@ -127,7 +127,7 @@ def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
                 tz = t.data.get("timezone")
         if not tz:
             return None
-        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezone").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
         return tz_row.data.get("offsetminutes") if tz_row.data else None
     except Exception:
         return None
