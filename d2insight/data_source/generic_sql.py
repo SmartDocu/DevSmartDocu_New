@@ -12,28 +12,22 @@
 from __future__ import annotations
 
 from datetime import date
-from urllib.parse import quote_plus
 from typing import Any
 
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from backend.app.config import settings
 from d2insight.data_source.base import DataSource, MonthRange
 from d2insight.data_source import meta_loader
 
 
 def _build_azure_url() -> str:
-    odbc = (
-        f"Driver={{{settings.DB_DRIVER}}};"
-        f"Server={settings.DB_SERVER},1433;"
-        f"Database={settings.DB_DATABASE};"
-        f"UID={settings.DB_USERNAME};"
-        f"PWD={settings.DB_PASSWORD};"
-        "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
-    )
-    return f"mssql+pyodbc:///?odbc_connect={quote_plus(odbc)}"
+    from d2shared import meta_loader as shared_meta
+    url = shared_meta.get_connection_url()
+    if not url:
+        raise RuntimeError("Supabase에서 DB 연결 URL을 가져오지 못했습니다.")
+    return url
 
 
 def _table_ref(dialect: str, schema: str, view_name: str) -> str:

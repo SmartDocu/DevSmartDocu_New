@@ -1,10 +1,8 @@
 """
 service.py MCP 채팅 서비스 - 싱글톤 패턴으로 MCPAgent 관리
 """
-from urllib.parse import quote_plus
 from typing import Dict
 
-from backend.app.config import settings
 from d2chat.mcp_agent.mcp_agent import MCPAgent
 from d2chat.config import DEFAULT_LLM_MODEL
 from d2shared import meta_loader
@@ -27,30 +25,11 @@ class MCPChatService:
             return
 
         try:
-            DB_DRIVER = settings.DB_DRIVER
-            DB_SERVER = settings.DB_SERVER
-            DB_DATABASE = settings.DB_DATABASE
-            DB_USERNAME = settings.DB_USERNAME
-            DB_PASSWORD = settings.DB_PASSWORD
-
-            if not all([DB_SERVER, DB_DATABASE, DB_USERNAME, DB_PASSWORD]):
-                raise ValueError("DB 연결 정보가 config에 설정되지 않았습니다.")
-
-            conn_str = (
-                f"Driver={{{DB_DRIVER}}};"
-                f"Server={DB_SERVER},1433;"
-                f"Database={DB_DATABASE};"
-                f"UID={DB_USERNAME};"
-                f"PWD={DB_PASSWORD};"
-                "Encrypt=yes;"
-                "TrustServerCertificate=no;"
-                "Connection Timeout=30;"
-            )
-
-            params = quote_plus(conn_str)
-            db_connection = f"mssql+pyodbc:///?odbc_connect={params}"
-
             tables_metadata = meta_loader.load()
+            db_connection = meta_loader.get_connection_url()
+
+            if not db_connection:
+                raise ValueError("Supabase에서 DB 연결 정보를 가져오지 못했습니다 (data_metas → datas → connectors 경로 확인 필요).")
 
             self._agent = MCPAgent(
                 db_connection=db_connection,

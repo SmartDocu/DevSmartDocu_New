@@ -1,13 +1,10 @@
 """Azure SQL adapter for AdventureWorks (dbo schema)."""
 from __future__ import annotations
 
-from urllib.parse import quote_plus
-
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from backend.app.config import settings
 from d2insight.data_source.base import DataSource, MonthRange
 
 
@@ -40,15 +37,10 @@ ORDER BY [월]
 
 
 def _build_engine() -> Engine:
-    odbc = (
-        f"Driver={{{settings.DB_DRIVER}}};"
-        f"Server={settings.DB_SERVER},1433;"
-        f"Database={settings.DB_DATABASE};"
-        f"UID={settings.DB_USERNAME};"
-        f"PWD={settings.DB_PASSWORD};"
-        "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
-    )
-    url = f"mssql+pyodbc:///?odbc_connect={quote_plus(odbc)}"
+    from d2shared import meta_loader
+    url = meta_loader.get_connection_url()
+    if not url:
+        raise RuntimeError("Supabase에서 DB 연결 URL을 가져오지 못했습니다.")
     return create_engine(url, pool_pre_ping=True)
 
 
