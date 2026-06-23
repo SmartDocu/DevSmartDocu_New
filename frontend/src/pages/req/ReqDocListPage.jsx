@@ -7,6 +7,7 @@ import { App, DatePicker, Spin } from 'antd'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useGendocs, useDataparams, useCreateGendoc, useDeleteGendoc, useUpdateGendocParams, useCloseGendoc, useOpenGendoc } from '@/hooks/useGendocs'
+import { useDocGroups } from '@/hooks/useDocGroups'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useTabStore } from '@/stores/tabStore'
@@ -15,9 +16,10 @@ import { useReqStore } from '@/stores/reqStore'
 const { RangePicker } = DatePicker
 
 // sessionStorage 키
-const SS_GENDOCUID = 'doc_list_gendocuid'
-const SS_START     = 'doc_list_start_date'
-const SS_END       = 'doc_list_end_date'
+const SS_GENDOCUID  = 'doc_list_gendocuid'
+const SS_START      = 'doc_list_start_date'
+const SS_END        = 'doc_list_end_date'
+const SS_SEARCH_BY  = 'doc_list_search_by'
 
 function initDates() {
   const s = sessionStorage.getItem(SS_START)
@@ -158,13 +160,26 @@ export default function ReqDocListPage() {
   const today = dayjs()
   const [dates,        setDates]        = useState(initDates)
   const [appliedDates, setAppliedDates] = useState(initDates)
+  const [searchBy,     setSearchBy]     = useState(() => sessionStorage.getItem(SS_SEARCH_BY) || 'Doc')
+  const [docgroupid,   setDocgroupid]   = useState('')
   const [loading,      setLoading]      = useState(false)
   const [loadingText,  setLoadingText]  = useState('')
 
   const sd = appliedDates[0]?.format('YYYY-MM-DD')
   const ed = appliedDates[1]?.format('YYYY-MM-DD')
 
-  const { data: listData = {}, isLoading, refetch } = useGendocs(sd, ed, user?.docid)
+  const { data: docgroups = [] } = useDocGroups(searchBy === 'DocGroup' ? user?.projectid : null)
+
+  // DocGroup 선택 시 첫 번째 항목 자동 선택 + 조회
+  useEffect(() => {
+    if (searchBy === 'DocGroup' && docgroups.length > 0 && !docgroupid) {
+      const firstId = String(docgroups[0].docgroupid)
+      setDocgroupid(firstId)
+      setAppliedDates((prev) => [...prev])
+    }
+  }, [searchBy, docgroups]) // eslint-disable-line
+
+  const { data: listData = {}, isLoading, refetch } = useGendocs(sd, ed, user?.docid, searchBy, docgroupid)
   const { data: paramData = {} } = useDataparams()
 
   const gendocs      = listData.gendocs    || []
@@ -186,6 +201,11 @@ export default function ReqDocListPage() {
   const [selectedRow, setSelectedRow] = useState(null)
   const [docnmInput,  setDocnmInput]  = useState('')
   const [paramValues, setParamValues] = useState({})  // paramuid → { value, finalnm }
+
+  // DocGroup 모드에서는 선택된 row의 params로 표 정의, Doc 모드에서는 dataparams 사용
+  const displayParams = (searchBy === 'DocGroup' && selectedRow)
+    ? (selectedRow.params || [])
+    : dataparams
 
   // 값 찾기 모달 상태
   const [searchModal, setSearchModal] = useState(null)  // null | { dp, rows, columns }
@@ -345,8 +365,9 @@ export default function ReqDocListPage() {
   // 세션 저장
   const saveSession = (gendocuid) => {
     sessionStorage.setItem(SS_GENDOCUID, gendocuid || selectedGendocuid)
-    sessionStorage.setItem(SS_START, appliedDates[0]?.format('YYYY-MM-DD') || '')
-    sessionStorage.setItem(SS_END,   appliedDates[1]?.format('YYYY-MM-DD') || '')
+    sessionStorage.setItem(SS_START,     appliedDates[0]?.format('YYYY-MM-DD') || '')
+    sessionStorage.setItem(SS_END,       appliedDates[1]?.format('YYYY-MM-DD') || '')
+    sessionStorage.setItem(SS_SEARCH_BY, searchBy)
     sessionStorage.setItem('path', 'req_doc_list')
   }
 
@@ -407,6 +428,36 @@ export default function ReqDocListPage() {
           <RangePicker value={dates} onChange={setDates} />
           <button className="btn btn-link" onClick={() => setDates([today.subtract(3, 'month'), today])}>{t('btn.3months')}</button>
           <button className="btn btn-link" onClick={() => setDates([today.subtract(12, 'month'), today])}>{t('btn.1year')}</button>
+          <span style={{ color: '#d9d9d9', margin: '0 4px' }}>|</span>
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.search.by')}:</label>
+          {['Doc', 'DocGroup'].map((v) => (
+            <label key={v} style={{ fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="radio"
+                name="searchBy"
+                value={v}
+                checked={searchBy === v}
+                onChange={() => {
+                  setSearchBy(v)
+                  setDocgroupid('')
+                  sessionStorage.setItem(SS_SEARCH_BY, v)
+                }}
+              />
+              {v}
+            </label>
+          ))}
+          {searchBy === 'DocGroup' && (
+            <select
+              value={docgroupid}
+              onChange={(e) => setDocgroupid(e.target.value)}
+              style={{ height: 32, padding: '0 8px', borderRadius: 4, border: '1px solid #d9d9d9', fontSize: 13, minWidth: 140 }}
+            >
+              <option value="">{t('msg.select')}</option>
+              {docgroups.map((g) => (
+                <option key={g.docgroupid} value={g.docgroupid}>{g.docgroupnm}</option>
+              ))}
+            </select>
+          )}
           <button type="button" className="icon-btn" onClick={() => { setAppliedDates(dates); setTimeout(refetch, 0) }} title={t('btn.lookup')}>
             <img src="/icons/search.svg" className="icon-img config-icon" alt={t('btn.lookup')} />
           </button>
@@ -417,7 +468,7 @@ export default function ReqDocListPage() {
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
 
         {/* 왼쪽: 문서 목록 */}
-        <div style={{ flex: 1, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 6, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.doc.list')}</h3>
             {editbuttonyn && (
@@ -430,6 +481,7 @@ export default function ReqDocListPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
+                  {searchBy === 'DocGroup' && <th style={{ width: '12%' }}>{t('lbl.docnm')}</th>}
                   <th style={{ width: '18%' }}>{t('thd.gendocnm')}</th>
                   <th style={{ width: '15%' }}>{t('thd.params')}</th>
                   <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.createuser')}</th>
@@ -442,9 +494,9 @@ export default function ReqDocListPage() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 16 }}><Spin /></td></tr>
+                  <tr><td colSpan={searchBy === 'DocGroup' ? 9 : 8} style={{ textAlign: 'center', padding: 16 }}><Spin /></td></tr>
                 ) : gendocs.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 16 }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={searchBy === 'DocGroup' ? 9 : 8} style={{ textAlign: 'center', padding: 16 }}>{t('msg.no.data')}</td></tr>
                 ) : gendocs.map((row) => (
                   <tr
                     key={row.gendocuid}
@@ -452,6 +504,7 @@ export default function ReqDocListPage() {
                     className={selectedGendocuid === row.gendocuid ? 'selected-row' : ''}
                     style={{ cursor: 'pointer' }}
                   >
+                    {searchBy === 'DocGroup' && <td>{row.docnm || ''}</td>}
                     <td>{row.gendocnm}</td>
                     <td>{row.finalnm_joined || ''}</td>
                     <td style={{ textAlign: 'center' }}>{row.createuser  || ''}</td>
@@ -468,7 +521,7 @@ export default function ReqDocListPage() {
         </div>
 
         {/* 오른쪽: 문서 구성 + 매개변수 */}
-        <div style={{ flex: 0.75, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 4, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
 
           {/* 문서 구성 소제목 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
@@ -530,9 +583,9 @@ export default function ReqDocListPage() {
               </tr>
             </thead>
             <tbody>
-              {dataparams.length === 0 ? (
+              {displayParams.length === 0 ? (
                 <tr><td colSpan={3} style={{ textAlign: 'center', padding: 12 }}>{t('msg.no.data')}</td></tr>
-              ) : dataparams.map((dp) => (
+              ) : displayParams.map((dp) => (
                 <tr key={dp.paramuid}>
                   <td>{dp.paramnm}</td>
                   <td>{dp.samplevalue || ''}</td>

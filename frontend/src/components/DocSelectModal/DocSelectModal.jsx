@@ -185,6 +185,11 @@ export default function DocSelectModal({ open, onClose }) {
                   {doc.tenantnm ? ` (${doc.tenantnm})` : ''}
                 </div>
               )}
+              {doc.docgroupnm && (
+                <div style={{ fontSize: 13, marginTop: 4, color: '#555' }}>
+                  {t('lbl.docgroupnm')} : {doc.docgroupnm}
+                </div>
+              )}
               {doc.docdesc && (
                 <div style={{ fontSize: 12, marginTop: 4, color: '#888', whiteSpace: 'pre-wrap' }}>
                   {doc.docdesc}

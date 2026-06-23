@@ -157,6 +157,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.delete.success |
 | msg.deleted |
 | msg.doc.empty |
+| msg.docgroup.has.docs |
 | msg.doc.loading |
 | msg.doc.required |
 | msg.doc.select |
@@ -187,6 +188,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.message.select.trans |
 | msg.no.change.history |
 | msg.no.chapter |
+| msg.not.selected |
 | msg.no.filter.info |
 | msg.no.image |
 | msg.no.data |
@@ -306,6 +308,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.back |
 | btn.back.to.login |
 | btn.cancel |
+| btn.clear |
 | btn.chapter.read |
 | btn.chapter.rewrite |
 | btn.close |
@@ -350,6 +353,8 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | btn.reset.send |
 | btn.sample.prompt |
 | btn.save |
+| btn.select |
+| btn.select.group |
 | btn.savecols |
 | btn.send |
 | btn.setting |
@@ -441,6 +446,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.doc.createfiledts |
 | lbl.doc.final.dts |
 | lbl.doc.upload.dts |
+| lbl.docgroupnm |
 | lbl.docnm |
 | lbl.done |
 | lbl.email |
@@ -520,6 +526,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.rolecd_lbl |
 | lbl.route_path |
 | lbl.sample |
+| lbl.search.by |
 | lbl.samplevalue |
 | lbl.sca.params |
 | lbl.sca.params.list |
@@ -802,6 +809,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.doc.select |
 | ttl.doc.status_ttl |
 | ttl.doc.write_ttl |
+| ttl.docgroup.select |
 | ttl.docselect |
 | ttl.docselect.change |
 | ttl.filter.map.setting |

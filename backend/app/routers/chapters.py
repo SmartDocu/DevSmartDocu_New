@@ -221,10 +221,6 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
     from utilsPrj.supabase_client import get_service_client
     sb_svc = get_service_client()
 
-    # 사용자 billingmodelcd (무료 플랜 제한)
-    user_info = sb_svc.schema(SUPABASE_SCHEMA).table("users").select("billingmodelcd").eq("useruid", user_id).execute().data
-    billingmodelcd = user_info[0]["billingmodelcd"] if user_info else ""
-
     # page-break 정규화
     pagebreak = '<p>&nbsp;</p><div class="page-break" style="page-break-after:always;"><span style="display:none;">&nbsp;</span></div>'
     html = body.texttemplate

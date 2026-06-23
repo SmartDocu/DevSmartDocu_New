@@ -172,12 +172,6 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
         save_data["creator"] = user_id
         sb.schema(SUPABASE_SCHEMA).table("tenantusers").insert(save_data).execute()
 
-        # billingmodelcd 업데이트
-        bm_res = sb.schema(SUPABASE_SCHEMA).table("tenants").select("billingmodelcd").eq("tenantid", tenantid).execute().data
-        bm = bm_res[0]["billingmodelcd"] if bm_res else None
-        if bm:
-            sb.schema(SUPABASE_SCHEMA).table("users").update({"billingmodelcd": bm}).eq("useruid", useruid).execute()
-
         # public 프로젝트에 추가
         proj_res = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("tenantid", tenantid).eq("projectnm", "public").execute().data
         if proj_res:

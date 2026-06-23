@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Modal, App } from 'antd'
+import { Modal, App, Input, Button, Space, Tooltip } from 'antd'
+import { DeleteOutlined, FolderOutlined } from '@ant-design/icons'
 import { useDocGroups, useSaveDocGroup, useDeleteDocGroup } from '@/hooks/useDocGroups'
 import { t } from '@/stores/langStore'
 
@@ -11,6 +12,7 @@ export default function DocGroupSelectModal({ open, onClose, projectid, onSelect
 
   const [newNm, setNewNm] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [hoveredId, setHoveredId] = useState(null)
 
   const handleAdd = () => {
     if (!newNm.trim()) return
@@ -25,7 +27,8 @@ export default function DocGroupSelectModal({ open, onClose, projectid, onSelect
     )
   }
 
-  const handleDelete = (group) => {
+  const handleDelete = (e, group) => {
+    e.stopPropagation()
     modal.confirm({
       content: t('msg.confirm.delete'),
       okType: 'danger',
@@ -47,100 +50,88 @@ export default function DocGroupSelectModal({ open, onClose, projectid, onSelect
       open={open}
       onCancel={onClose}
       footer={null}
-      title={t('ttl.docgroup.select')}
-      width={760}
+      title={
+        <Space>
+          <FolderOutlined style={{ color: '#1677ff' }} />
+          {t('ttl.docgroup.select')}
+        </Space>
+      }
+      width={560}
     >
-      <div style={{ marginBottom: 20 }}>
+      {/* 그룹 목록 */}
+      <div style={{ minHeight: 120, maxHeight: 340, overflowY: 'auto', marginBottom: 16 }}>
         {isLoading ? (
-          <div style={{ padding: '16px 0', color: '#999' }}>{t('msg.loading')}</div>
+          <div style={{ padding: '32px 0', textAlign: 'center', color: '#bbb' }}>{t('msg.loading')}</div>
         ) : docgroups.length === 0 ? (
-          <div style={{ padding: '16px 0', color: '#999' }}>{t('msg.no.data')}</div>
+          <div style={{ padding: '32px 0', textAlign: 'center', color: '#bbb' }}>{t('msg.no.data')}</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '55%' }} />
-              <col style={{ width: '23%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ background: '#f5f5f5' }}>
-                <th style={thStyle}>{t('lbl.docgroupnm')}</th>
-                <th style={thStyle}>{t('lbl.desc_lbl')}</th>
-                <th style={thStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {docgroups.map((g) => (
-                <tr key={g.docgroupid} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={tdStyle}>{g.docgroupnm}</td>
-                  <td style={tdStyle}>{g.docgroupdesc || '-'}</td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      style={{ marginRight: 6, padding: '2px 10px', fontSize: 12 }}
-                      onClick={() => handleSelect(g)}
-                    >
-                      {t('btn.select')}
-                    </button>
-                    <button
-                      className="btn btn-danger"
-                      type="button"
-                      style={{ padding: '2px 10px', fontSize: 12 }}
-                      onClick={() => handleDelete(g)}
-                      disabled={deleteDocGroup.isPending}
-                    >
-                      {t('btn.delete')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          docgroups.map((g) => (
+            <div
+              key={g.docgroupid}
+              onClick={() => handleSelect(g)}
+              onMouseEnter={() => setHoveredId(g.docgroupid)}
+              onMouseLeave={() => setHoveredId(null)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '10px 14px',
+                borderRadius: 8,
+                marginBottom: 4,
+                cursor: 'pointer',
+                background: hoveredId === g.docgroupid ? '#e6f4ff' : '#fafafa',
+                border: `1px solid ${hoveredId === g.docgroupid ? '#91caff' : '#f0f0f0'}`,
+                transition: 'all 0.15s',
+              }}
+            >
+              <FolderOutlined style={{ color: '#1677ff', marginRight: 10, fontSize: 15, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#222', lineHeight: 1.4 }}>{g.docgroupnm}</div>
+                {g.docgroupdesc && (
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {g.docgroupdesc}
+                  </div>
+                )}
+              </div>
+              <Tooltip title={t('btn.delete')}>
+                <Button
+                  type="text"
+                  icon={<DeleteOutlined />}
+                  danger
+                  size="small"
+                  onClick={(e) => handleDelete(e, g)}
+                  disabled={deleteDocGroup.isPending}
+                  style={{ flexShrink: 0, opacity: hoveredId === g.docgroupid ? 1 : 0, transition: 'opacity 0.15s' }}
+                />
+              </Tooltip>
+            </div>
+          ))
         )}
       </div>
 
-      <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1 }}>
-          <input
-            type="text"
-            placeholder={t('lbl.docgroupnm')}
-            value={newNm}
-            onChange={(e) => setNewNm(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            style={{ width: '100%', marginBottom: 4 }}
-          />
-          <input
-            type="text"
-            placeholder={t('lbl.desc_lbl')}
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            style={{ width: '100%' }}
-          />
-        </div>
-        <button
-          className="btn btn-primary"
-          type="button"
+      {/* 새 그룹 추가 */}
+      <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Input
+          placeholder={t('lbl.docgroupnm')}
+          value={newNm}
+          onChange={(e) => setNewNm(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          style={{ flex: 2 }}
+        />
+        <Input
+          placeholder={t('lbl.desc_lbl')}
+          value={newDesc}
+          onChange={(e) => setNewDesc(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          style={{ flex: 3 }}
+        />
+        <Button
+          type="primary"
           onClick={handleAdd}
           disabled={!newNm.trim() || saveDocGroup.isPending}
-          style={{ alignSelf: 'center' }}
         >
           {t('btn.add')}
-        </button>
+        </Button>
       </div>
     </Modal>
   )
-}
-
-const thStyle = {
-  padding: '8px 10px',
-  textAlign: 'left',
-  fontWeight: 600,
-  borderBottom: '1px solid #e8e8e8',
-}
-
-const tdStyle = {
-  padding: '8px 10px',
-  verticalAlign: 'middle',
 }

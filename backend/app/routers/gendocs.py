@@ -110,6 +110,8 @@ def list_gendocs(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     docid: Optional[int] = None,
+    search_by: Optional[str] = "Doc",
+    docgroupid: Optional[int] = None,
     token: str = Depends(get_token),
 ):
     user = _get_user(token)
@@ -129,10 +131,10 @@ def list_gendocs(
     if offsetminutes is not None:
         sd_utc = datetime.strptime(sd, "%Y-%m-%d").replace(tzinfo=timezone.utc) - timedelta(minutes=offsetminutes)
         ed_utc = datetime.strptime(ed, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1) - timedelta(minutes=offsetminutes)
-        rpc_params = {"p_docid": docid, "p_start_date": sd_utc.isoformat(), "p_end_date": ed_utc.isoformat()}
+        rpc_params = {"p_docid": docid, "p_start_date": sd_utc.isoformat(), "p_end_date": ed_utc.isoformat(), "p_search_by": search_by, "p_docgroupid": docgroupid}
     else:
         end_plus = (datetime.strptime(ed, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-        rpc_params = {"p_docid": docid, "p_start_date": sd, "p_end_date": end_plus}
+        rpc_params = {"p_docid": docid, "p_start_date": sd, "p_end_date": end_plus, "p_search_by": search_by, "p_docgroupid": docgroupid}
 
     rows = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r_docid", rpc_params).execute().data or []
     docnm_resp = sb.schema(SUPABASE_SCHEMA).table("docs").select("docnm").eq("docid", docid).execute().data

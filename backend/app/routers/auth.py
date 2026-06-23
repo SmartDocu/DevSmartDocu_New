@@ -78,14 +78,13 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         user_row = (
             sd.table("users")
-            .select("roleid,billingmodelcd,mydocid,myprojectid")
+            .select("roleid,mydocid,myprojectid")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
         )
         if user_row.data:
             ctx.roleid = user_row.data.get("roleid")
-            ctx.billingmodelcd = user_row.data.get("billingmodelcd")
             mydocid = user_row.data.get("mydocid")
             if user_row.data.get("myprojectid"):
                 ctx.myprojectid = str(user_row.data["myprojectid"])
@@ -555,29 +554,12 @@ def register(body: RegisterRequest):
             detail=f"회원가입 실패: {str(e)}",
         )
 
-    # billingmodelcd 값 결정
-    try:
-        if body.tenantid:
-            tenant_row = (
-                service.schema(SCHEMA)
-                .table("tenants")
-                .select("billingmodelcd")
-                .eq("tenantid", body.tenantid)
-                .execute()
-            )
-            billcd = tenant_row.data[0]["billingmodelcd"]
-        else:
-            billcd = body.single or body.billingmodelcd
-    except Exception:
-        billcd = body.billingmodelcd
-
     # users 테이블에 사용자 정보 저장
     try:
         service.schema(SCHEMA).table("users").insert({
             "useruid": user_id,
             "email": body.email,
             "roleid": 1,
-            "billingmodelcd": billcd,
             "termsofuseyn": body.termsofuseyn,
             "userinfoyn": body.userinfoyn,
             "marketingyn": body.marketingyn,
@@ -589,6 +571,21 @@ def register(body: RegisterRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"DB 저장 실패: {str(e)}",
         )
+
+    # accounts 테이블에 User 타입 계정 생성 (개인 가입자만)
+    if body.accounttype == "U":
+        try:
+            service.schema(SCHEMA).table("accounts").insert({
+                "accounttype": "U",
+                "useruid": user_id,
+                "accountstatus": "Active",
+                "creator": user_id,
+            }).execute()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"DB 저장 실패 (accounts): {str(e)}",
+            )
 
     # SmartDoc 기본 tenantid 조회
     smartdoc_row = (
@@ -641,7 +638,7 @@ def register(body: RegisterRequest):
             "creator": user_id,
         }).execute()
 
-        if body.billingmodelcd == "single":
+        if body.accounttype == "U":
             proj_result = service.schema(SCHEMA).table("projects").insert({
                 "tenantid": smartdoc_tenantid,
                 "projectnm": body.email,

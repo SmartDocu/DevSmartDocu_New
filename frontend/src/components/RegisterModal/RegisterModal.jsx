@@ -4,7 +4,7 @@ import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
 
 export default function RegisterModal({ open, onClose }) {
-  const [billingmodelcd, setBillingmodelcd] = useState('single')
+  const [accounttype, setAccounttype] = useState('U')
   const [single, setSingle] = useState('Fr')
   const [tenantid, setTenantid] = useState('')
   const [usernm, setUsernm] = useState('')
@@ -27,7 +27,7 @@ export default function RegisterModal({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return
-    setBillingmodelcd('single')
+    setAccounttype('U')
     setSingle('Fr')
     setTenantid('')
     setUsernm('')
@@ -62,7 +62,7 @@ export default function RegisterModal({ open, onClose }) {
 
   const handleSubmit = async () => {
     if (!termsofuseyn || !userinfoyn) { alert(t('msg.register.terms.required')); return }
-    if (billingmodelcd === 'multi' && !tenantid) { alert(t('msg.register.tenant.required')); return }
+    if (accounttype === 'T' && !tenantid) { alert(t('msg.register.tenant.required')); return }
     if (!usernm) { alert(t('msg.usernm.required')); return }
     if (!email) { alert(t('msg.email.required')); return }
     if (!password) { alert(t('msg.password.required')); return }
@@ -75,8 +75,8 @@ export default function RegisterModal({ open, onClose }) {
         email,
         password,
         usernm,
-        billingmodelcd,
-        tenantid: billingmodelcd === 'multi' ? tenantid : undefined,
+        accounttype,
+        tenantid: accounttype === 'T' ? tenantid : undefined,
         userinfoyn: userinfoyn ? 'Y' : 'N',
         termsofuseyn: termsofuseyn ? 'Y' : 'N',
         marketingyn: marketingyn ? 'Y' : 'N',
@@ -122,20 +122,20 @@ export default function RegisterModal({ open, onClose }) {
           <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.billing.model')}</span>
           <div style={{ flex: 1, display: 'flex', gap: 16 }}>
             <label style={{ fontSize: 14 }}>
-              <input type="radio" name="billingmodelcd" value="single" checked={billingmodelcd === 'single'}
-                onChange={() => setBillingmodelcd('single')} style={{ marginRight: 4 }} />
+              <input type="radio" name="accounttype" value="U" checked={accounttype === 'U'}
+                onChange={() => setAccounttype('U')} style={{ marginRight: 4 }} />
               {t('lbl.billing.single')}
             </label>
             <label style={{ fontSize: 14 }}>
-              <input type="radio" name="billingmodelcd" value="multi" checked={billingmodelcd === 'multi'}
-                onChange={() => setBillingmodelcd('multi')} style={{ marginRight: 4 }} />
+              <input type="radio" name="accounttype" value="T" checked={accounttype === 'T'}
+                onChange={() => setAccounttype('T')} style={{ marginRight: 4 }} />
               {t('lbl.billing.multi')}
             </label>
           </div>
         </label>
 
         {/* 요금제 (개인) */}
-        {billingmodelcd === 'single' && (
+        {accounttype === 'U' && (
           <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
             <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.plan')}</span>
             <select value={single} onChange={(e) => setSingle(e.target.value)}
@@ -147,7 +147,7 @@ export default function RegisterModal({ open, onClose }) {
         )}
 
         {/* 기업 선택 (단체) */}
-        {billingmodelcd === 'multi' && (
+        {accounttype === 'T' && (
           <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
             <span style={{ width: 80, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.tenant')}</span>
             <select value={tenantid} onChange={(e) => setTenantid(e.target.value)}

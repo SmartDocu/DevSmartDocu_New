@@ -10,8 +10,6 @@ import { useLangStore, t } from '@/stores/langStore'
 
 const { Title } = Typography
 
-const BILLING_LABELS = { Fr: 'Free', Pr: 'Pro', Te: 'Teams', En: 'Enterprise' }
-const BILLING_COLORS = { Fr: 'default', Pr: 'blue', Te: 'green', En: 'gold' }
 const APPROVE_LABELS = () => ({ A: t('cod.approve_pending'), D: t('cod.approve_rejected') })
 
 export default function MyInfoPage() {
@@ -123,18 +121,6 @@ export default function MyInfoPage() {
                     <Button size="small" icon={<EditOutlined />} onClick={handleEditTimezone} type="text" />
                   </Space>
                 )}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('lbl.plan')}>
-                <Space>
-                  <Tag color={BILLING_COLORS[userInfo.billingmodelcd] || 'default'}>
-                    {BILLING_LABELS[userInfo.billingmodelcd] || userInfo.billingmodelcd || '-'}
-                  </Tag>
-                  {userInfo.billingmodelcd === 'Fr' && (
-                    <Button size="small" type="primary" onClick={() => alert(t('msg.preparing'))}>
-                      {t('btn.upgrade')}
-                    </Button>
-                  )}
-                </Space>
               </Descriptions.Item>
             </Descriptions>
           </Card>

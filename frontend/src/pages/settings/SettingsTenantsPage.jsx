@@ -3,16 +3,8 @@ import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useSettingsTenants, useSaveTenant, useDeleteTenant } from '@/hooks/useSettings'
 
-const BILLING_OPTIONS = [
-  { value: 'Fr' },
-  { value: 'Pr' },
-  { value: 'Te' },
-  { value: 'En' },
-]
-
-
 const EMPTY_FORM = {
-  tenantid: '', tenantnm: '', useyn: true, billingmodelcd: 'Fr',
+  tenantid: '', tenantnm: '', useyn: true,
   billingusercnt: '', llmlimityn: false, email: '', telno: '',
   languagecd: '', timezone: '', issystemtenant: false,
 }
@@ -45,7 +37,6 @@ export default function SettingsTenantsPage() {
       tenantid: row.tenantid,
       tenantnm: row.tenantnm || '',
       useyn: !!row.useyn,
-      billingmodelcd: row.billingmodelcd || 'Fr',
       billingusercnt: row.billingusercnt ?? '',
       llmlimityn: !!row.llmlimityn,
       email: row.decemail || '',
@@ -77,7 +68,6 @@ export default function SettingsTenantsPage() {
     if (form.tenantid) fd.append('tenantid', form.tenantid)
     fd.append('tenantnm', form.tenantnm)
     fd.append('useyn', form.useyn ? 'true' : 'false')
-    fd.append('billingmodelcd', form.billingmodelcd || 'Fr')
     if (form.billingusercnt !== '') fd.append('billingusercnt', String(form.billingusercnt))
     fd.append('llmlimityn', form.llmlimityn ? 'true' : 'false')
     if (form.email) fd.append('email', form.email)
@@ -140,8 +130,7 @@ export default function SettingsTenantsPage() {
               <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
-                    <th style={{ width: '50%' }}>{t('thd.tenantnm_thd')}</th>
-                    <th style={{ width: '35%' }}>{t('thd.billingmodelcd')}</th>
+                    <th style={{ width: '85%' }}>{t('thd.tenantnm_thd')}</th>
                     <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
                   </tr>
                 </thead>
@@ -154,7 +143,6 @@ export default function SettingsTenantsPage() {
                       onClick={() => handleRowSelect(row)}
                     >
                       <td>{row.tenantnm}</td>
-                      <td>{t(`cod.billing_${row.billingmodelcd}`)}</td>
                       <td style={{ textAlign: 'center' }}>{row.useyn ? '✔' : ''}</td>
                     </tr>
                   ))}
@@ -191,20 +179,6 @@ export default function SettingsTenantsPage() {
             <div style={{ paddingLeft: 60 }}>
               <input type="checkbox" checked={form.useyn}
                 onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.plan')}:</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 24, paddingLeft: 60 }}>
-              {BILLING_OPTIONS.map((o) => (
-                <span key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                  <input type="radio" name="billingmodelcd" value={o.value}
-                    checked={form.billingmodelcd === o.value}
-                    onChange={() => setForm((f) => ({ ...f, billingmodelcd: o.value }))} />
-                  <span>{t(`cod.billing_${o.value}`)}</span>
-                </span>
-              ))}
             </div>
           </div>
 

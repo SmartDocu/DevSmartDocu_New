@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App } from 'antd'
+import { App, Tag } from 'antd'
 import { useDocs, useProjects, useSaveDoc, useDeleteDoc } from '@/hooks/useDocs'
 import { useLangStore, t } from '@/stores/langStore'
 import { useDataParams } from '@/hooks/useDataParams'
@@ -76,29 +76,43 @@ export default function MasterDocsPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
-        {/* Left: doc cards */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        {/* Left: doc list */}
+        <div style={{ flex: 4, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleDocNew}>
               {t('btn.new')}
             </button>
           </div>
-          <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
-            {docs.map((doc) => (
-              <div
-                key={doc.docid}
-                className={`chapter-card${selectedDoc?.docid === doc.docid ? ' selected' : ''}`}
-                onClick={() => selectDoc(doc)}
-              >
-                <div className="card-title">{doc.docnm} - {doc.projectnm}</div>
-              </div>
-            ))}
+          <div className="table-container">
+            <table className="table table-bordered table-sm">
+              <thead>
+                <tr>
+                  <th style={{ width: '40%' }}>{t('lbl.docnm')}</th>
+                  <th style={{ width: '30%' }}>{t('lbl.projectnm_lbl')}</th>
+                  <th style={{ width: '30%' }}>{t('lbl.docgroupnm')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {docs.map((doc) => (
+                  <tr
+                    key={doc.docid}
+                    className={selectedDoc?.docid === doc.docid ? 'selected-row' : ''}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => selectDoc(doc)}
+                  >
+                    <td>{doc.docnm}</td>
+                    <td>{doc.projectnm}</td>
+                    <td>{doc.docgroupnm || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
         {/* Right: doc detail */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 6, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {canEdit && (
@@ -133,31 +147,27 @@ export default function MasterDocsPage() {
           </div>
           <div className="form-group">
             <label>{t('lbl.docgroupnm')}:</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ flex: 1, padding: '6px 4px', color: docForm.docgroupnm ? '#333' : '#bbb' }}>
-                {docForm.docgroupnm || t('msg.not.selected')}
-              </span>
-              {canEdit && docForm.projectid && (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ flexShrink: 0 }}
-                  onClick={() => setGroupModalOpen(true)}
-                >
-                  {t('btn.select.group')}
-                </button>
-              )}
-              {canEdit && docForm.docgroupid && (
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  style={{ flexShrink: 0 }}
-                  onClick={() => setDocForm((f) => ({ ...f, docgroupid: '', docgroupnm: '' }))}
-                >
-                  {t('btn.clear')}
-                </button>
-              )}
-            </div>
+            {docForm.docgroupid ? (
+              <Tag
+                color="blue"
+                closable={canEdit}
+                onClose={() => setDocForm((f) => ({ ...f, docgroupid: '', docgroupnm: '' }))}
+                onClick={canEdit && docForm.projectid ? () => setGroupModalOpen(true) : undefined}
+                style={{ fontSize: 13, padding: '3px 10px', cursor: canEdit ? 'pointer' : 'default', userSelect: 'none' }}
+              >
+                {docForm.docgroupnm}
+              </Tag>
+            ) : canEdit && docForm.projectid ? (
+              <button
+                type="button"
+                onClick={() => setGroupModalOpen(true)}
+                style={{ background: 'none', border: '1px dashed #d9d9d9', borderRadius: 6, padding: '3px 12px', color: '#1677ff', cursor: 'pointer', fontSize: 13 }}
+              >
+                + {t('btn.select.group')}
+              </button>
+            ) : (
+              <span style={{ color: '#bbb', fontSize: 13 }}>-</span>
+            )}
           </div>
           <div className="form-group">
             <label htmlFor="doc-docnm"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.docnm')}:</label>

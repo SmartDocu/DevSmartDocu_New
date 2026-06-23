@@ -17,7 +17,6 @@ class UserContext(BaseModel):
     id: str
     email: str
     roleid: Optional[int] = None
-    billingmodelcd: Optional[str] = None
     docid: Optional[str] = None
     docnm: Optional[str] = None
     tenantid: Optional[str] = None
@@ -62,7 +61,7 @@ class RegisterRequest(BaseModel):
     termsofuseyn: str = "Y"
     userinfoyn: str = "Y"
     marketingyn: str = "N"
-    billingmodelcd: str = "single"
+    accounttype: str = "U"
     single: Optional[str] = None
     tenantid: Optional[str] = None
 

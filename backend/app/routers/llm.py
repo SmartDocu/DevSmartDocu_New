@@ -58,12 +58,12 @@ class FakeLlmRequest:
 
 def _get_user_info(sb, token: str) -> tuple[str, dict]:
     """user_id와 users 테이블 기본 정보 반환.
-    users 테이블 실제 컬럼: roleid, billingmodelcd, mydocid
+    users 테이블 실제 컬럼: roleid, mydocid
     projectid/tenantid는 docs/projects 테이블을 통해 별도 조회 필요.
     """
     user_id = str(get_user(token).id)
     rows = sb.schema(SUPABASE_SCHEMA).table("users").select(
-        "roleid, billingmodelcd, mydocid"
+        "roleid, mydocid"
     ).eq("useruid", user_id).execute().data or []
     # 행이 없어도 user_id는 반환 (preview/save에서 user_id가 주로 필요)
     return user_id, rows[0] if rows else {}
@@ -145,7 +145,7 @@ def llm_init(
         chapter = chapter_rows[0] if chapter_rows else {}
 
         # ③ docs → projectid (project_id는 오직 chapter.docid 경로로만 취득)
-        #    users 테이블에는 projectid 컬럼 없음 (roleid, billingmodelcd, mydocid만 존재)
+        #    users 테이블에는 projectid 컬럼 없음 (roleid, mydocid만 존재)
         docnm = ""
         project_id = None
         if chapter.get("docid"):

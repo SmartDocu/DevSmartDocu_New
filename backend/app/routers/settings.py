@@ -15,7 +15,6 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA
 router = APIRouter()
 
 DB_TYPES = ["Oracle", "Oracle(TNS)", "mssql", "postgres", "supabase"]
-BILLING_MODELS = ["Fr", "Pr", "Te", "En"]
 
 
 def _get_tenantid(sb, user_id: str) -> Optional[str]:
@@ -348,7 +347,7 @@ def list_tenants(token: str = Depends(get_token)):
 
     langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezones").select("*").eq("useyn", True).execute().data or [])]
-    return {"tenants": rows, "billing_models": BILLING_MODELS, "languages": langs, "timezones": timezones}
+    return {"tenants": rows, "languages": langs, "timezones": timezones}
 
 
 @router.post("/tenants")
@@ -356,7 +355,6 @@ async def save_tenant(
     tenantid: Optional[str] = Form(None),
     tenantnm: str = Form(...),
     useyn: str = Form("true"),
-    billingmodelcd: str = Form("Fr"),
     billingusercnt: Optional[str] = Form(None),
     llmlimityn: str = Form("false"),
     email: Optional[str] = Form(None),
@@ -378,7 +376,6 @@ async def save_tenant(
     tenant_data = {
         "tenantnm": tenantnm,
         "useyn": useyn_bool,
-        "billingmodelcd": billingmodelcd or "Fr",
         "billingusercnt": billingusercnt_int,
         "llmlimityn": llmlimityn_bool,
         "issystemtenant": issystemtenant_bool,

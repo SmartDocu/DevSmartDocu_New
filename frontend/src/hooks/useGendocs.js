@@ -3,11 +3,11 @@ import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
-export function useGendocs(startDate, endDate, docid) {
+export function useGendocs(startDate, endDate, docid, searchBy, docgroupid) {
   return useQuery({
-    queryKey: ['gendocs', startDate, endDate, docid],
+    queryKey: ['gendocs', startDate, endDate, docid, searchBy, docgroupid],
     queryFn: () =>
-      apiClient.get('/gendocs', { params: { start_date: startDate, end_date: endDate, docid } }).then((r) => r.data),
+      apiClient.get('/gendocs', { params: { start_date: startDate, end_date: endDate, docid, search_by: searchBy, docgroupid: docgroupid || undefined } }).then((r) => r.data),
     enabled: !!docid,
   })
 }
