@@ -38,7 +38,7 @@ def create_term(body: TermSaveRequest, token: str = Depends(get_token)):
 
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("terms")
-        .select("termkey").eq("termkey", body.termkey).execute().data
+        .select("termkey").eq("termkey", body.termkey).eq("termgroupcd", body.termgroupcd).execute().data
     )
     if existing:
         raise HTTPException(status_code=400, detail=f"이미 존재하는 용어 키입니다: {body.termkey}")

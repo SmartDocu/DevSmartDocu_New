@@ -30,6 +30,7 @@ import ReqDocReadPage from '@/pages/req/ReqDocReadPage'
 import SettingsServersPage from '@/pages/settings/SettingsServersPage'
 import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
 import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
+import SettingsDatasetsPage from '@/pages/settings/SettingsDatasetsPage'
 import MyInfoPage from '@/pages/MyInfoPage'
 import MfaSetupPage from '@/pages/settings/MfaSetupPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
@@ -123,6 +124,7 @@ export const router = createBrowserRouter([
       { path: 'settings/servers', element: <SettingsServersPage /> },
       { path: 'settings/tenants', element: <SettingsTenantsPage /> },
       { path: 'settings/connectors', element: <SettingsConnectorsPage /> },
+      { path: 'settings/datasets', element: <SettingsDatasetsPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
       { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },

@@ -20,7 +20,7 @@ class ColValueSaveRequest(BaseModel):
     datauid: str
     querycolnm: str
     value: str
-    logical_name: Optional[str] = None
+    valuenm: Optional[str] = None
     aliases: Optional[str] = None
     orderno: Optional[int] = None
 
@@ -66,7 +66,7 @@ def list_col_datas(token: str = Depends(get_token)):
     if rows:
         data_uids = [r["datauid"] for r in rows]
         meta_rows = (
-            sb.schema(SUPABASE_SCHEMA).table("data_metas")
+            sb.schema(SUPABASE_SCHEMA).table("data_chatmetas")
             .select("datauid")
             .in_("datauid", data_uids)
             .execute().data or []
@@ -152,7 +152,7 @@ def save_col_value(body: ColValueSaveRequest, token: str = Depends(get_token)):
         "datauid":      body.datauid,
         "querycolnm":   body.querycolnm,
         "value":        body.value,
-        "logical_name": body.logical_name,
+        "valuenm": body.valuenm,
         "aliases":      body.aliases,
         "orderno":      body.orderno,
         "creator":      str(user.id),

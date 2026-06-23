@@ -163,14 +163,33 @@ def list_datas_by_project(
     if not projectid:
         return {"items": []}
 
-    # 비dfv: projectid 기준 (db, ex, api, df 포함)
+    # db/ex/api: projectid 기준
     base_datas = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("*")
         .eq("projectid", int(projectid))
-        .neq("datasourcecd", "dfv")
+        .in_("datasourcecd", ["db", "ex", "api"])
         .execute().data or []
     )
+
+    # df: doc_datas where docid=? and useyn=true 기준
+    df_datas = []
+    if docid:
+        doc_data_uids = [
+            r["datauid"] for r in (
+                sb.schema(SUPABASE_SCHEMA).table("doc_datas")
+                .select("datauid").eq("docid", int(docid)).eq("useyn", True)
+                .execute().data or []
+            )
+        ]
+        if doc_data_uids:
+            df_datas = (
+                sb.schema(SUPABASE_SCHEMA).table("datas")
+                .select("*")
+                .eq("datasourcecd", "df")
+                .in_("datauid", doc_data_uids)
+                .execute().data or []
+            )
 
     # dfv: dfv_docid 기준
     dfv_datas = []
@@ -183,7 +202,7 @@ def list_datas_by_project(
             .execute().data or []
         )
 
-    datas = base_datas + dfv_datas
+    datas = base_datas + df_datas + dfv_datas
 
     # 사용 중 목록: doc_datas.docid 기준
     doc_use_set: set = set()
@@ -505,6 +524,8 @@ def list_source_datas(projectid: int = None, token: str = Depends(get_token)):
 def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
     if body.databasiscd == "dbq":
         query_val = body.querybasis
     elif body.databasiscd == "dbt":
@@ -513,7 +534,7 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
         query_val = None
 
     record = {
-        "projectid":   body.projectid,
+        "tenantid":    tenantid,
         "datanm":      body.datanm,
         "desc":        body.desc,
         "connuid":     body.connuid,
@@ -522,11 +543,11 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
         "query":       query_val,
     }
     if body.datauid:
-        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         return {"datauid": body.datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "db"
-    resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
@@ -542,7 +563,9 @@ async def save_ex_data(
 ):
     user = _get_user(token)
     sb = _sb(token)
-    record: dict = {"projectid": projectid, "datanm": datanm}
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
+    record: dict = {"tenantid": tenantid, "datanm": datanm}
 
     existing_url = None
     if datauid:
@@ -562,11 +585,11 @@ async def save_ex_data(
         record["excelnm"] = excelfile.filename
 
     if datauid:
-        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", datauid).execute()
         return {"datauid": datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "ex"
-    resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
@@ -576,18 +599,20 @@ async def save_ex_data(
 def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
     record = {
-        "projectid": body.projectid,
+        "tenantid": tenantid,
         "datanm": body.datanm,
         "sourcedatauid": body.sourcedatauid,
         "gensentence": body.sentence,
     }
     if body.datauid:
-        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         return {"datauid": body.datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "df"
-    resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
@@ -600,7 +625,6 @@ def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token)):
     row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
     tenantid = row[0]["tenantid"] if row else None
     record = {
-        "projectid": body.projectid,
         "datanm":    body.datanm,
         "desc":      body.desc,
         "connuid":   body.connuid,
@@ -609,12 +633,12 @@ def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token)):
         "tenantid":  tenantid,
     }
     if body.datauid:
-        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
     else:
         record["creator"]      = str(user.id)
         record["datasourcecd"] = "api"
-        resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+        resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
         datauid = resp.data[0]["datauid"]
 
     # params: 기존 전체 삭제 후 재삽입
@@ -711,19 +735,21 @@ def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
 def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
     record = {
-        "projectid": body.projectid,
+        "tenantid": tenantid,
         "datanm": body.datanm,
         "sourcedatauid": body.sourcedatauid,
         "gensentence": body.gensentence,
         "is_multirow": body.is_multirow,
     }
     if body.datauid:
-        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
     else:
         record.update({"creator": str(user.id), "datasourcecd": "df"})
-        resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+        resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
         datauid = resp.data[0]["datauid"]
         sb.schema(SUPABASE_SCHEMA).table("doc_datas").upsert(
             {"docid": body.docid, "datauid": datauid, "useyn": True, "creator": str(user.id)},
@@ -743,8 +769,10 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token)):
 def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
+    tenantid = row[0]["tenantid"] if row else None
     record = {
-        "projectid": body.projectid,
+        "tenantid": tenantid,
         "datanm": body.datanm,
         "sourcedatauid": body.sourcedatauid,
         "gensentence": body.gensentence,
@@ -752,11 +780,11 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token)):
         "dfv_docid": body.dfv_docid,
     }
     if body.datauid:
-        sb.schema(SUPABASE_SCHEMA).table("datas").update(record).eq("datauid", body.datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
     else:
         record.update({"creator": str(user.id), "datasourcecd": "dfv"})
-        resp = sb.schema(SUPABASE_SCHEMA).table("datas").insert(record).execute()
+        resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
         datauid = resp.data[0]["datauid"]
     if body.cols:
         sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
@@ -779,7 +807,7 @@ def delete_data(datauid: str, token: str = Depends(get_token)):
             sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
     sb.schema(SUPABASE_SCHEMA).table("data_api_params").delete().eq("datauid", datauid).execute()
     sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
-    resp = sb.schema(SUPABASE_SCHEMA).table("datas").delete().eq("datauid", datauid).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").delete().eq("datauid", datauid).execute()
     if not resp.data:
         raise HTTPException(status_code=404, detail="삭제할 데이터가 없습니다.")
     return {"message": "삭제되었습니다."}
@@ -859,7 +887,7 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
         col_list = ", ".join(c["querycolnm"] for c in parsed)
         select_query = f"SELECT {col_list} FROM {table_name}"
 
-        sb.schema(SUPABASE_SCHEMA).table("datas").update({"query": select_query}).eq("datauid", datauid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("dataunits").update({"query": select_query}).eq("datauid", datauid).execute()
         sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
         records = [
             {

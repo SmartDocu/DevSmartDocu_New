@@ -518,14 +518,15 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         .eq("projectid", projectid).in_("datasourcecd", ["db", "ex", "api"]) \
         .order("datanm").execute().data or []
 
-    # base_datas의 datauid를 sourcedatauid로 갖는 df만 추가
-    base_uids = [d["datauid"] for d in base_datas]
+    # doc_datas에 등록된 df만 추가
+    doc_data_uids = [d["datauid"] for d in sb_svc.schema(SUPABASE_SCHEMA).table("doc_datas") \
+        .select("datauid").eq("docid", docid).eq("useyn", True).execute().data or []]
     df_datas = []
-    if base_uids:
+    if doc_data_uids:
         df_datas = sb_svc.schema(SUPABASE_SCHEMA).table("datas") \
             .select("datauid, datanm, datasourcecd") \
-            .eq("projectid", projectid).eq("datasourcecd", "df") \
-            .in_("sourcedatauid", base_uids) \
+            .eq("datasourcecd", "df") \
+            .in_("datauid", doc_data_uids) \
             .order("datanm").execute().data or []
 
     datas = sorted(base_datas + df_datas, key=lambda d: d["datanm"])

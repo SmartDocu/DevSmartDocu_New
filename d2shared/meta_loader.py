@@ -1,8 +1,8 @@
 """
-meta_loader.py — Supabase data_metas 공통 메타데이터 로더 (d2chat · d2insight 공유)
+meta_loader.py — Supabase data_chatmetas 공통 메타데이터 로더 (d2chat · d2insight 공유)
 
 앱 시작 시 한 번 로드 후 모듈 수준에서 캐싱한다.
-data_metas → datas → connectors 경로로 DB 연결 URL도 함께 로드한다.
+data_chatmetas → datas → connectors 경로로 DB 연결 URL도 함께 로드한다.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _loaded = False
 
 
 def load() -> dict[str, dict]:
-    """Supabase {schema}.data_metas 에서 테이블/뷰 메타정보와 DB 연결 URL을 로드한다."""
+    """Supabase {schema}.data_chatmetas 에서 테이블/뷰 메타정보와 DB 연결 URL을 로드한다."""
     global _tables_metadata, _db_connection_url, _loaded
     if _loaded:
         return _tables_metadata
@@ -31,7 +31,7 @@ def load() -> dict[str, dict]:
         client = get_service_client()
         rows = (
             client.schema(settings.SUPABASE_SCHEMA)
-            .table("data_metas")
+            .table("data_chatmetas")
             .select("datauid,json")
             .execute()
             .data
@@ -64,7 +64,7 @@ def load() -> dict[str, dict]:
 
 
 def _resolve_connection_url(client, datauid_list: list, schema: str) -> str | None:
-    """data_metas.datauid → datas.connuid → connectors → SQLAlchemy URL."""
+    """data_chatmetas.datauid → datas.connuid → connectors → SQLAlchemy URL."""
     from urllib.parse import quote_plus
 
     # 1. datas 테이블에서 connuid 조회

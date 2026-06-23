@@ -63,11 +63,11 @@ def list_meta_datas(token: str = Depends(get_token)):
     for r in rows:
         r["projectnm"] = pmap.get(r.get("projectid"), "")
 
-    # data_metas 존재 여부
+    # data_chatmetas 존재 여부
     if rows:
         data_uids = [r["datauid"] for r in rows]
         meta_rows = (
-            sb.schema(SUPABASE_SCHEMA).table("data_metas")
+            sb.schema(SUPABASE_SCHEMA).table("data_chatmetas")
             .select("datauid")
             .in_("datauid", data_uids)
             .execute().data or []
@@ -86,7 +86,7 @@ def get_data_meta(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     rows = (
-        sb.schema(SUPABASE_SCHEMA).table("data_metas")
+        sb.schema(SUPABASE_SCHEMA).table("data_chatmetas")
         .select("*")
         .eq("datauid", datauid)
         .execute().data or []
@@ -114,7 +114,7 @@ def save_data_meta(body: DataMetaSaveRequest, token: str = Depends(get_token)):
         "child_column":        body.child_column,
         "creator":             str(user.id),
     }
-    sb.schema(SUPABASE_SCHEMA).table("data_metas").upsert(record, on_conflict="datauid").execute()
+    sb.schema(SUPABASE_SCHEMA).table("data_chatmetas").upsert(record, on_conflict="datauid").execute()
     try:
         master_data_json_create(sb, body.datauid)
     except Exception:
@@ -129,7 +129,7 @@ def delete_data_meta(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     resp = (
-        sb.schema(SUPABASE_SCHEMA).table("data_metas")
+        sb.schema(SUPABASE_SCHEMA).table("data_chatmetas")
         .delete()
         .eq("datauid", datauid)
         .execute()

@@ -29,7 +29,7 @@ class MCPChatService:
             db_connection = meta_loader.get_connection_url()
 
             if not db_connection:
-                raise ValueError("Supabase에서 DB 연결 정보를 가져오지 못했습니다 (data_metas → datas → connectors 경로 확인 필요).")
+                raise ValueError("Supabase에서 DB 연결 정보를 가져오지 못했습니다 (data_chatmetas → datas → connectors 경로 확인 필요).")
 
             self._agent = MCPAgent(
                 db_connection=db_connection,

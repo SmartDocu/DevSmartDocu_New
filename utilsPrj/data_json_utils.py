@@ -53,8 +53,8 @@ def master_data_json_create(supabase, datauid):
             return None
         data_row = data_resp.data[0]
 
-        # data_metas (필수)
-        meta_resp = sb.table("data_metas").select("*").eq("datauid", datauid).execute()
+        # data_chatmetas (필수)
+        meta_resp = sb.table("data_chatmetas").select("*").eq("datauid", datauid).execute()
         if not meta_resp.data:
             return None
         meta = meta_resp.data[0]
@@ -74,7 +74,7 @@ def master_data_json_create(supabase, datauid):
         # datacolvalues (선택)
         vals_resp = (
             sb.table("datacolvalues")
-            .select("querycolnm, value, logical_name, aliases")
+            .select("querycolnm, value, valuenm, aliases")
             .eq("datauid", datauid)
             .order("orderno")
             .execute()
@@ -92,7 +92,7 @@ def master_data_json_create(supabase, datauid):
         data_json = {
             "schema":              schema_name,
             "physical_name":       physical_name,
-            "logical_name":        data_row.get("datanm", ""),
+            "valuenm":        data_row.get("datanm", ""),
             "aliases":             parse_aliases(meta.get("aliases", "")),
             "description":         data_row.get("desc", "") or "",
             "primary_key":         parse_aliases(meta.get("primary_key", "")),
@@ -120,7 +120,7 @@ def master_data_json_create(supabase, datauid):
         # columns 섹션
         for col in cols_resp.data:
             col_json = {
-                "logical_name": col.get("dispcolnm", ""),
+                "valuenm": col.get("dispcolnm", ""),
                 "data_type":    col.get("datatypecd", "string") or "string",
             }
             aliases = parse_aliases(col.get("aliases", ""))
@@ -135,13 +135,13 @@ def master_data_json_create(supabase, datauid):
                 continue
             col_entry = data_json["columns"][col_nm]
             values_obj = col_entry.setdefault("values", {})
-            values_obj[v["value"]] = {"logical_name": v.get("logical_name", "")}
+            values_obj[v["value"]] = {"valuenm": v.get("valuenm", "")}
             val_aliases = parse_aliases(v.get("aliases", ""))
             if val_aliases:
                 values_obj[v["value"]]["aliases"] = val_aliases
 
-        # data_metas.json 업데이트
-        sb.table("data_metas").update({"json": data_json}).eq("datauid", datauid).execute()
+        # data_chatmetas.json 업데이트
+        sb.table("data_chatmetas").update({"json": data_json}).eq("datauid", datauid).execute()
 
         return data_json
 
