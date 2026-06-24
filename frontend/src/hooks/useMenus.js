@@ -4,10 +4,13 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { t } from '@/stores/langStore'
 
-export function useMenus() {
+export function useMenus(appcd = null) {
   return useQuery({
-    queryKey: ['menus'],
-    queryFn: () => apiClient.get('/menus').then((r) => r.data.menus),
+    queryKey: ['menus', appcd],
+    queryFn: () =>
+      apiClient
+        .get('/menus', { params: appcd ? { appcd } : {} })
+        .then((r) => r.data.menus),
     staleTime: 10 * 60 * 1000,
   })
 }

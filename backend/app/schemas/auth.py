@@ -64,6 +64,7 @@ class RegisterRequest(BaseModel):
     accounttype: str = "U"
     single: Optional[str] = None
     tenantid: Optional[str] = None
+    products: Optional[list[str]] = None
 
 
 class SendResetEmailRequest(BaseModel):

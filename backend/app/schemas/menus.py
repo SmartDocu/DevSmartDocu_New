@@ -11,6 +11,7 @@ class MenuItem(BaseModel):
     useyn: Optional[bool] = True
     rolecd: Optional[str] = None
     route_path: Optional[str] = None
+    appcd: Optional[str] = None
 
 
 class MenusListResponse(BaseModel):
@@ -26,6 +27,7 @@ class MenuSaveRequest(BaseModel):
     useyn: Optional[bool] = True
     rolecd: Optional[str] = None
     route_path: Optional[str] = None
+    appcd: Optional[str] = None
 
 
 class MenuSaveResponse(BaseModel):

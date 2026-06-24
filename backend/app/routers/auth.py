@@ -1,10 +1,11 @@
+import hashlib
 import random
 import re
 import string
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token
@@ -30,6 +31,127 @@ from backend.app.schemas.auth import (
 )
 
 router = APIRouter()
+
+
+# ─── 로그인 로그 헬퍼 ────────────────────────────────────────────────────────
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _parse_user_agent(ua: str) -> dict:
+    browser, browser_version, os_nm = "Unknown", "", "Unknown"
+
+    if "Windows NT 10.0" in ua:
+        os_nm = "Windows 10/11"
+    elif "Windows NT" in ua:
+        os_nm = "Windows"
+    elif "Mac OS X" in ua:
+        os_nm = "macOS"
+    elif "Android" in ua:
+        os_nm = "Android"
+    elif "iPhone" in ua or "iPad" in ua:
+        os_nm = "iOS"
+    elif "Linux" in ua:
+        os_nm = "Linux"
+
+    if "Edg/" in ua:
+        browser = "Edge"
+        m = re.search(r"Edg/([\d.]+)", ua)
+        browser_version = m.group(1) if m else ""
+    elif "Chrome/" in ua:
+        browser = "Chrome"
+        m = re.search(r"Chrome/([\d.]+)", ua)
+        browser_version = m.group(1) if m else ""
+    elif "Firefox/" in ua:
+        browser = "Firefox"
+        m = re.search(r"Firefox/([\d.]+)", ua)
+        browser_version = m.group(1) if m else ""
+    elif "Safari/" in ua:
+        browser = "Safari"
+        m = re.search(r"Version/([\d.]+)", ua)
+        browser_version = m.group(1) if m else ""
+
+    return {"browser": browser, "browser_version": browser_version, "os_nm": os_nm}
+
+
+def _device_fingerprint(ip: str, ua: str) -> str:
+    return hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:64]
+
+
+def _get_user_info_by_email(email: str) -> tuple[int, Optional[str]]:
+    """로그인 실패 시 이메일로 tenantid·useruid 조회."""
+    try:
+        svc = get_service_client()
+        sd = svc.schema(SUPABASE_SCHEMA)
+        user_row = sd.table("users").select("useruid").eq("email", email).maybe_single().execute()
+        if not user_row.data:
+            return 0, None
+        useruid = user_row.data["useruid"]
+        tu_row = sd.table("tenantusers").select("tenantid").eq("useruid", useruid).maybe_single().execute()
+        tenantid = int(tu_row.data["tenantid"]) if tu_row.data else 0
+        return tenantid, str(useruid)
+    except Exception:
+        return 0, None
+
+
+def _get_country_code(ip: str) -> Optional[str]:
+    """ip-api.com으로 국가코드 조회 (2자리, 예: KR). 실패 시 None."""
+    if not ip or ip in ("127.0.0.1", "::1"):
+        return None
+    try:
+        import httpx
+        resp = httpx.get(
+            f"http://ip-api.com/json/{ip}",
+            params={"fields": "countryCode"},
+            timeout=3.0,
+        )
+        data = resp.json()
+        return data.get("countryCode") or None
+    except Exception:
+        return None
+
+
+def _insert_login_log(
+    tenantid: int,
+    useruid: Optional[str],
+    logintypecd: str,
+    is_success: bool,
+    errorcd: Optional[str],
+    errormessage: Optional[str],
+    ip: str,
+    is_mfaused: bool,
+    sessionid: Optional[str],
+    browser: str,
+    browser_version: str,
+    os_nm: str,
+    device_fingerprint: str,
+):
+    countrycd = _get_country_code(ip)
+    try:
+        svc = get_service_client()
+        svc.schema(SUPABASE_SCHEMA).table("login_logs").insert({
+            "tenantid": tenantid,
+            "useruid": useruid,
+            "logintypecd": logintypecd,
+            "is_success": is_success,
+            "errorcd": errorcd,
+            "errormessage": errormessage,
+            "ip": ip or None,
+            "countrycd": countrycd,
+            "is_mfaused": is_mfaused,
+            "sessionid": sessionid,
+            "browser": browser,
+            "browser_version": browser_version,
+            "os": os_nm,
+            "device_fingerprint": device_fingerprint,
+        }).execute()
+    except Exception as e:
+        print(f"[login_log] INSERT 실패: {e}")
+
 
 # SMS 인증번호 임시 저장소 (프로세스 내 메모리)
 # 운영 환경에서는 Redis 또는 Supabase로 교체 권장
@@ -278,19 +400,36 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 # ─── 엔드포인트 ─────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=LoginResponse)
-def login(body: LoginRequest):
+def login(body: LoginRequest, request: Request, background_tasks: BackgroundTasks):
     """
     1단계 로그인: 이메일/비밀번호 검증
     - MFA 미등록 → 즉시 토큰 + 사용자 컨텍스트 반환
     - MFA 등록됨 → mfa_required=True + 임시 토큰 반환 (2단계 필요)
     """
+    ip = _get_client_ip(request)
+    ua = request.headers.get("user-agent", "")
+    ua_info = _parse_user_agent(ua)
+    fingerprint = _device_fingerprint(ip, ua)
+
+    def _log(**kwargs):
+        background_tasks.add_task(_insert_login_log, **kwargs)
+
     try:
         from utilsPrj.supabase_client import get_supabase_client
         anon_client = get_supabase_client()
         auth_resp = anon_client.auth.sign_in_with_password(
             {"email": body.email, "password": body.password}
         )
-    except Exception:
+    except Exception as exc:
+        err_msg = str(exc)
+        errorcd = "email_not_confirmed" if "Email not confirmed" in err_msg else "wrong_password"
+        tenantid, useruid = _get_user_info_by_email(body.email)
+        _log(
+            tenantid=tenantid, useruid=useruid, logintypecd="Em",
+            is_success=False, errorcd=errorcd, errormessage=err_msg[:500],
+            ip=ip, is_mfaused=False, sessionid=None,
+            device_fingerprint=fingerprint, **ua_info,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="이메일 또는 비밀번호가 올바르지 않습니다.",
@@ -298,6 +437,13 @@ def login(body: LoginRequest):
 
     session = auth_resp.session
     if not session:
+        tenantid, useruid = _get_user_info_by_email(body.email)
+        _log(
+            tenantid=tenantid, useruid=useruid, logintypecd="Em",
+            is_success=False, errorcd="no_session", errormessage="session is None",
+            ip=ip, is_mfaused=False, sessionid=None,
+            device_fingerprint=fingerprint, **ua_info,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="로그인에 실패했습니다.",
@@ -311,6 +457,15 @@ def login(body: LoginRequest):
     print(f'MFA_여부: {mfa_required}')
     user = auth_resp.user
     ctx = _load_user_context(user_client, str(user.id), user.email)
+
+    _log(
+        tenantid=int(ctx.tenantid) if ctx.tenantid else 0,
+        useruid=str(user.id), logintypecd="Em",
+        is_success=True, errorcd=None, errormessage=None,
+        ip=ip, is_mfaused=mfa_required,
+        sessionid=(session.access_token[:100] if session.access_token else None),
+        device_fingerprint=fingerprint, **ua_info,
+    )
 
     if mfa_required:
         # aal1 임시 토큰만 반환 — 완전한 인증 아님
@@ -479,6 +634,22 @@ def update_password(body: UpdatePasswordRequest):
     return MessageResponse(ok=True, message="비밀번호가 변경되었습니다.")
 
 
+@router.get("/products")
+def get_products():
+    """회원가입 시 선택 가능한 서비스 상품 목록."""
+    service = _get_service_client()
+    result = (
+        service.schema(SUPABASE_SCHEMA)
+        .table("products")
+        .select("productcd,productnm,servicecd,plancd,billingtermcd,users,credit,is_customeraikey")
+        .eq("producttype", "Service")
+        .eq("useyn", True)
+        .eq("is_sales", True)
+        .execute()
+    )
+    return {"products": result.data or []}
+
+
 @router.get("/tenants", response_model=TenantsResponse)
 def get_tenants():
     """회원가입 시 선택 가능한 테넌트 목록을 반환한다."""
@@ -573,14 +744,16 @@ def register(body: RegisterRequest):
         )
 
     # accounts 테이블에 User 타입 계정 생성 (개인 가입자만)
+    accountuid = None
     if body.accounttype == "U":
         try:
-            service.schema(SCHEMA).table("accounts").insert({
+            account_result = service.schema(SCHEMA).table("accounts").insert({
                 "accounttype": "U",
                 "useruid": user_id,
                 "accountstatus": "Active",
                 "creator": user_id,
             }).execute()
+            accountuid = account_result.data[0]["accountuid"]
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -662,6 +835,49 @@ def register(body: RegisterRequest):
                 "creator": user_id,
                 "approvecd": "A",
             }).execute()
+
+        if body.accounttype == "U" and accountuid and body.products:
+            prod_rows = (
+                service.schema(SCHEMA)
+                .table("products")
+                .select("productcd,plancd,servicecd,billingtermcd,users,is_customeraikey")
+                .in_("productcd", body.products)
+                .execute()
+            )
+            prod_map = {p["productcd"]: p for p in (prod_rows.data or [])}
+
+            for productcd in body.products:
+                product = prod_map.get(productcd)
+                if not product:
+                    continue
+
+                sub_result = service.schema(SCHEMA).table("subscriptions").insert({
+                    "tenantid": smartdoc_tenantid,
+                    "accountuid": accountuid,
+                    "productcd": product["productcd"],
+                    "plancd": product.get("plancd"),
+                    "servicecd": product.get("servicecd"),
+                    "billingtermcd": product.get("billingtermcd"),
+                    "subscription_status": "Paid",
+                    "creator": user_id,
+                }).execute()
+                subscriptionuid = sub_result.data[0]["subscriptionuid"]
+
+                service.schema(SCHEMA).table("accountservices").insert({
+                    "accountuid": accountuid,
+                    "servicecd": product["servicecd"],
+                    "tenantid": smartdoc_tenantid,
+                    "subscriptionuid": subscriptionuid,
+                    "servicestatus": "Active",
+                    "productcd": product["productcd"],
+                    "plancd": product.get("plancd"),
+                    "is_customerAIKey": product.get("is_customeraikey", False),
+                    "is_postpaid": True,
+                    "included_users": product.get("users", 1),
+                    "total_users": product.get("users", 1),
+                    "is_autotopup": False,
+                    "creator": user_id,
+                }).execute()
 
     except Exception as e:
         raise HTTPException(

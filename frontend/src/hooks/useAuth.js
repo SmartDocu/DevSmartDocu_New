@@ -18,7 +18,7 @@ export function useLogin() {
         user: data.user,
       })
       alert(t('msg.login.success'))
-      const from = location.state?.from?.pathname || '/'
+      const from = location.state?.from?.pathname || '/launcher'
       navigate(from, { replace: true })
     },
     onError: (err) => {

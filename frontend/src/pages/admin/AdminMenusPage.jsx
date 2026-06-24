@@ -11,6 +11,8 @@ import {
   useSaveTranslation,
   useDeleteTranslation,
 } from '@/hooks/useMenus'
+import { useApps } from '@/hooks/useApps'
+import { useAuthStore } from '@/stores/authStore'
 
 const EMPTY_MENU = {
   menucd: '',
@@ -21,6 +23,7 @@ const EMPTY_MENU = {
   useyn: true,
   rolecd: '',
   route_path: '',
+  appcd: '',
 }
 
 export default function AdminMenusPage() {
@@ -30,6 +33,8 @@ export default function AdminMenusPage() {
   const { data: menus = [] } = useAdminMenus()
   const { data: languages = [] } = useLanguages()
   const { data: roleCodes = [] } = useMenuCodes('menu_rolecd')
+  const user = useAuthStore((s) => s.user)
+  const { data: apps = [] } = useApps({ enabled: !!user })
 
   const [selectedMenu, setSelectedMenu] = useState(null)
   const [isNew, setIsNew] = useState(true)
@@ -67,6 +72,7 @@ export default function AdminMenusPage() {
       useyn: menu.useyn ?? true,
       rolecd: menu.rolecd || '',
       route_path: menu.route_path || '',
+      appcd: menu.appcd || '',
     })
   }
 
@@ -134,6 +140,7 @@ export default function AdminMenusPage() {
                 <tr>
                   <th>{t('thd.menucd_thd')}</th>
                   <th>{t('thd.default_text_thd')}</th>
+                  <th style={{ width: 70, textAlign: 'center' }}>{t('lbl.appcd')}</th>
                   <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
                   <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
@@ -148,6 +155,7 @@ export default function AdminMenusPage() {
                   >
                     <td>{menu.menucd}</td>
                     <td>{menu.default_text}</td>
+                    <td style={{ textAlign: 'center' }}>{menu.appcd || ''}</td>
                     <td style={{ textAlign: 'center' }}>{menu.orderno}</td>
                     <td style={{ textAlign: 'center' }}>{menu.useyn ? '✔' : ''}</td>
                   </tr>
@@ -220,6 +228,19 @@ export default function AdminMenusPage() {
               value={form.route_path}
               onChange={(e) => setForm((f) => ({ ...f, route_path: e.target.value }))}
             />
+          </div>
+          <div className="form-group">
+            <label htmlFor="menu-appcd">{t('lbl.appcd')}:</label>
+            <select
+              id="menu-appcd"
+              value={form.appcd}
+              onChange={(e) => setForm((f) => ({ ...f, appcd: e.target.value }))}
+            >
+              <option value="">-</option>
+              {apps.map((app) => (
+                <option key={app.appcd} value={app.appcd}>{app.appcd} ({app.appnm})</option>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label htmlFor="menu-rolecd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.rolecd_lbl')}:</label>

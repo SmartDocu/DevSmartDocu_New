@@ -123,7 +123,7 @@ function findSelectedKey(menus, pathname) {
   return null
 }
 
-export default function AppSidebar({ collapsed = false, isDark = false }) {
+export default function AppSidebar({ collapsed = false, isDark = false, appcd = null }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, isAuthenticated } = useAuthStore()
@@ -136,7 +136,7 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
 
   const [search, setSearch] = useState('')
 
-  const { data: allMenus = [], isLoading: menusLoading } = useMenus()
+  const { data: allMenus = [], isLoading: menusLoading } = useMenus(appcd)
   const { data: favoritesData = [] } = useFavorites()
   const toggleFavorite = useToggleFavorite()
 
@@ -203,8 +203,10 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
       message.warning(t('msg.tab.maxcount').replace('{n}', maxTabs))
       return
     }
-    openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: menu.route_path })
-    navigate('/' + menu.route_path)
+    const tabPath = appcd ? `app/${appcd}/${menu.route_path}` : menu.route_path
+    const navPath = appcd ? `/app/${appcd}/${menu.route_path}` : `/${menu.route_path}`
+    openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: tabPath })
+    navigate(navPath)
   }
 
   const handleFavClick = (menu) => {
@@ -219,8 +221,10 @@ export default function AppSidebar({ collapsed = false, isDark = false }) {
       message.warning(t('msg.tab.maxcount').replace('{n}', maxTabs))
       return
     }
-    openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: menu.route_path })
-    navigate('/' + menu.route_path)
+    const tabPath = appcd ? `app/${appcd}/${menu.route_path}` : menu.route_path
+    const navPath = appcd ? `/app/${appcd}/${menu.route_path}` : `/${menu.route_path}`
+    openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), path: tabPath })
+    navigate(navPath)
   }
 
   if (menusLoading) {

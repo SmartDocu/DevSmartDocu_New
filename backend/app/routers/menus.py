@@ -14,18 +14,18 @@ router = APIRouter()
 # ─── 공개 목록 (useyn=true, 사이드바용) ──────────────────────────────────────
 
 @router.get("", response_model=MenusListResponse)
-def list_menus():
+def list_menus(appcd: str = None):
     try:
         sb = get_service_client()
-        rows = (
+        q = (
             sb.schema(SUPABASE_SCHEMA)
             .table("menus")
             .select("*")
             .eq("useyn", True)
-            .order("orderno")
-            .execute()
-            .data or []
         )
+        if appcd:
+            q = q.eq("appcd", appcd)
+        rows = q.order("orderno").execute().data or []
         return MenusListResponse(menus=[MenuItem(**r) for r in rows])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -144,6 +144,7 @@ def create_menu(body: MenuSaveRequest, token: str = Depends(get_token)):
         "useyn": body.useyn,
         "rolecd": body.rolecd,
         "route_path": body.route_path,
+        "appcd": body.appcd,
         "creator": user_id,
     }
     try:
@@ -174,6 +175,7 @@ def update_menu(menucd: str, body: MenuSaveRequest, token: str = Depends(get_tok
         "useyn": body.useyn,
         "rolecd": body.rolecd,
         "route_path": body.route_path,
+        "appcd": body.appcd,
     }
     try:
         sb.schema(SUPABASE_SCHEMA).table("menus").update(record).eq("menucd", menucd).execute()

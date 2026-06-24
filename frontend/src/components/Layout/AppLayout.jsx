@@ -1,6 +1,6 @@
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal } from 'antd'
-import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined } from '@ant-design/icons'
+import { Outlet, useNavigate, useLocation, useParams } from 'react-router-dom'
+import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover } from 'antd'
+import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
@@ -14,12 +14,24 @@ import { useState, useEffect } from 'react'
 import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
+import { useApps } from '@/hooks/useApps'
+
+function canSeeApp(rolecd, user) {
+  if (!rolecd || rolecd === 'P') return true
+  if (!user) return false
+  if (rolecd === 'U') return true
+  if (rolecd === 'PM') return user.projectmanager === 'Y'
+  if (rolecd === 'TM') return user.tenantmanager === 'Y'
+  if (rolecd === 'S') return user.roleid === 7
+  return false
+}
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
 
 export default function AppLayout() {
   const navigate = useNavigate()
+  const { appcd } = useParams()
   const { token: cssToken } = theme.useToken()
   const { user, clearAuth, updateUser } = useAuthStore()
   const { message } = App.useApp()
@@ -39,12 +51,14 @@ export default function AppLayout() {
   const { data: configs } = useConfigs()
   const { data: translationsData } = useTranslations(languageCd)
   const setLanguageMutation = useSetLanguage()
-  const { data: allMenus = [] } = useMenus()
+  const { data: allMenus = [] } = useMenus(appcd)
   const { data: helpData } = useHelpSearch(location.pathname, languageCd || 'en')
   const helpItem = helpData?.help ?? null
   const { data: projectList = [] } = useDatasProjects({ enabled: !!user })
   const updateMyProject = useUpdateMyProject()
   const [selectedProjectId, setSelectedProjectId] = useState(null)
+  const [appLauncherOpen, setAppLauncherOpen] = useState(false)
+  const { data: apps = [] } = useApps({ enabled: !!user })
 
   useEffect(() => {
     if (projectList.length === 0) return
@@ -57,19 +71,23 @@ export default function AppLayout() {
     }
   }, [projectList])
 
+
   // re-render 트리거용 구독
   useLangStore((s) => s.translations)
 
   const isLoggedIn = !!user
+  const showSidebar = isLoggedIn && location.pathname !== '/launcher'
 
   const openMyInfoInTab = () => {
+    const tabPath = appcd ? `app/${appcd}/myinfo` : 'myinfo'
+    const navPath = appcd ? `/app/${appcd}/myinfo` : '/myinfo'
     const menu = allMenus.find((m) => m.route_path === 'myinfo')
     if (menu) {
-      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), labelKey: `mnu.${menu.menucd}`, path: 'myinfo' })
+      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), labelKey: `mnu.${menu.menucd}`, path: tabPath })
     } else {
-      openTab({ key: 'myinfo', label: t('ttl.myinfo.personal'), labelKey: 'ttl.myinfo.personal', path: 'myinfo' })
+      openTab({ key: 'myinfo', label: t('ttl.myinfo.personal'), labelKey: 'ttl.myinfo.personal', path: tabPath })
     }
-    navigate('/myinfo')
+    navigate(navPath)
   }
 
   // 언어 초기화
@@ -110,7 +128,7 @@ export default function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {/* 좌측 Sidebar */}
-      {isLoggedIn && <Sider
+      {showSidebar && <Sider
         collapsible
         trigger={null}
         collapsed={siderCollapsed}
@@ -133,7 +151,7 @@ export default function AppLayout() {
           {/* 로고 */}
           <div
             className="sidebar-logo"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(isLoggedIn ? '/launcher' : '/')}
             style={{ borderBottom: isDark ? '1px solid #1a5080' : '1px solid #e8e8e8' }}
           >
             {user?.tenanticonurl && (
@@ -152,7 +170,7 @@ export default function AppLayout() {
 
           {/* 메뉴 영역 (스크롤 가능) */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-            <AppSidebar collapsed={siderCollapsed} isDark={isDark} />
+            <AppSidebar collapsed={siderCollapsed} isDark={isDark} appcd={appcd} />
           </div>
 
           {/* Collapse 버튼 */}
@@ -187,12 +205,12 @@ export default function AppLayout() {
       </Sider>}
 
       {/* 오른쪽 메인 영역 */}
-      <Layout style={{ marginLeft: isLoggedIn ? (siderCollapsed ? 50 : 300) : 0, transition: 'margin-left 0.2s' }}>
+      <Layout style={{ marginLeft: showSidebar ? (siderCollapsed ? 50 : 300) : 0, transition: 'margin-left 0.2s' }}>
         <Header
           style={{
             position: 'fixed',
             top: 0,
-            left: isLoggedIn ? (siderCollapsed ? 50 : 300) : 0,
+            left: showSidebar ? (siderCollapsed ? 50 : 300) : 0,
             right: 0,
             zIndex: 10,
             display: 'flex',
@@ -206,7 +224,7 @@ export default function AppLayout() {
         >
           {/* 로고 + 이름 */}
           <div
-            onClick={() => { clearTabs(); navigate('/') }}
+            onClick={() => { clearTabs(); navigate(isLoggedIn ? '/launcher' : '/') }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
           >
             <img src="/D2Doc.svg" alt="" style={{ height: 32, width: 'auto' }} />
@@ -246,7 +264,7 @@ export default function AppLayout() {
           {/* 사용자 영역 */}
           <div style={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
             {/* 프로젝트 선택 */}
-            {isLoggedIn && projectList.length > 0 && (
+            {isLoggedIn && projectList.length > 0 && (appcd === 'D2CHAT' || appcd === 'D2INSIGHT') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Select
                   value={selectedProjectId || undefined}
@@ -266,7 +284,7 @@ export default function AppLayout() {
             )}
 
             {/* 문서 선택 */}
-            {isLoggedIn && (
+            {isLoggedIn && appcd === 'D2DOC' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 20 }}>
                 <img
                   src="/doc-select.svg"
@@ -300,6 +318,60 @@ export default function AppLayout() {
 
             {isLoggedIn ? (
               <>
+                {/* 앱 런처 */}
+                <Popover
+                  open={appLauncherOpen}
+                  onOpenChange={setAppLauncherOpen}
+                  trigger="click"
+                  placement="bottomRight"
+                  content={
+                    <div style={{ width: 340, padding: 4 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                        {apps.filter((a) => canSeeApp(a.rolecd, user)).map((app) => (
+                          <div
+                            key={app.appcd}
+                            onClick={() => {
+                              setAppLauncherOpen(false)
+                              clearTabs()
+                              navigate(`/app/${app.appcd}`)
+                            }}
+                            style={{
+                              textAlign: 'center',
+                              padding: '14px 8px 10px',
+                              borderRadius: 8,
+                              cursor: 'pointer',
+                              border: `2px solid ${app.appcd === appcd ? '#163E64' : 'transparent'}`,
+                              background: app.appcd === appcd ? '#f0f4f8' : 'transparent',
+                              transition: 'all 0.15s',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (app.appcd !== appcd) {
+                                e.currentTarget.style.background = '#f5f5f5'
+                                e.currentTarget.style.borderColor = '#d0d0d0'
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (app.appcd !== appcd) {
+                                e.currentTarget.style.background = 'transparent'
+                                e.currentTarget.style.borderColor = 'transparent'
+                              }
+                            }}
+                          >
+                            {app.iconurl ? (
+                              <img src={app.iconurl} alt={app.appnm} style={{ width: 32, height: 32, marginBottom: 6, objectFit: 'contain' }} />
+                            ) : (
+                              <AppstoreOutlined style={{ fontSize: 28, color: '#163E64', marginBottom: 6, display: 'block' }} />
+                            )}
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#163E64', lineHeight: 1.3 }}>{app.appnm}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  }
+                >
+                  <AppstoreOutlined style={{ color: '#fff', fontSize: 20, cursor: 'pointer', marginLeft: 20 }} />
+                </Popover>
+
                 {/* 알람 */}
                 <div style={{ marginLeft: 20 }}>
                   <Badge count={3} size="small">
@@ -406,7 +478,7 @@ export default function AppLayout() {
             style={{
               position: 'fixed',
               top: 60,
-              left: isLoggedIn ? (siderCollapsed ? 50 : 300) : 0,
+              left: showSidebar ? (siderCollapsed ? 50 : 300) : 0,
               right: 0,
               zIndex: 9,
               background: '#fafafa',
@@ -431,7 +503,7 @@ export default function AppLayout() {
                   closeTab(key)
                   if (activeKey === key) {
                     if (nextTab) navigate('/' + nextTab.path)
-                    else navigate('/')
+                    else navigate(isLoggedIn ? '/launcher' : '/')
                   }
                 }
               }}
@@ -450,7 +522,7 @@ export default function AppLayout() {
                         closeTab(tab.key)
                         if (activeKey === tab.key) {
                           if (nextTab) navigate('/' + nextTab.path)
-                          else navigate('/')
+                          else navigate(isLoggedIn ? '/launcher' : '/')
                         }
                       },
                     },

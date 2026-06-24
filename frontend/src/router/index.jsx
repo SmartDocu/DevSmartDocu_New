@@ -2,6 +2,9 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/Layout/AppLayout'
 import RequireAuth from '@/components/Auth/RequireAuth'
 import HomePage from '@/pages/HomePage'
+import AppLauncher from '@/pages/AppLauncher'
+import AppIndex from '@/pages/AppIndex'
+import { useAuthStore } from '@/stores/authStore'
 import PasswordResetPage from '@/pages/auth/PasswordResetPage'
 import ServicePage from '@/pages/public/ServicePage'
 import AboutPage from '@/pages/public/AboutPage'
@@ -61,6 +64,12 @@ import SampleEventPopup from '@/pages/popup/SampleEventPopup'
 import D2ChatPage from '@/pages/d2chat/D2ChatPage'
 import D2InsightPage from '@/pages/d2insight/D2InsightPage'
 
+function HomeOrLauncher() {
+  const accessToken = useAuthStore((s) => s.accessToken)
+  if (accessToken) return <Navigate to="/launcher" replace />
+  return <HomePage />
+}
+
 export const router = createBrowserRouter([
   // ── 팝업 콘텐츠 페이지 (iframe 로드용, 레이아웃 없음) ───────────────────
   { path: '/popup/sample-event', element: <SampleEventPopup /> },
@@ -71,7 +80,7 @@ export const router = createBrowserRouter([
     path: '/',
     element: <AppLayout />,
     children: [
-      { index: true, element: <HomePage /> },
+      { index: true, element: <HomeOrLauncher /> },
       { path: 'service', element: <ServicePage /> },
       { path: 'about', element: <AboutPage /> },
       { path: 'usage', element: <UsagePage /> },
@@ -83,15 +92,29 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // ── 인증 필요 (AppLayout) ─────────────────────────────────────────────────
+  // ── 앱 런처 (인증 필요, 기존 AppLayout 헤더/사이드바 유지) ─────────────
   {
-    path: '/',
+    path: '/launcher',
     element: (
       <RequireAuth>
         <AppLayout />
       </RequireAuth>
     ),
     children: [
+      { index: true, element: <AppLauncher /> },
+    ],
+  },
+
+  // ── 앱별 라우트 (인증 필요, AppLayout + appcd) ───────────────────────────
+  {
+    path: '/app/:appcd',
+    element: (
+      <RequireAuth>
+        <AppLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true, element: <AppIndex /> },
 
       // Stage 3: 마스터 데이터
       { path: 'master/docs', element: <MasterDocsPage /> },

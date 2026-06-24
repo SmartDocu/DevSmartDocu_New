@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import { App } from 'antd'
 import { useTabStore } from '@/stores/tabStore'
 import { useMenus } from '@/hooks/useMenus'
@@ -8,9 +8,10 @@ import { t } from '@/stores/langStore'
 export function useOpenInTab() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { appcd } = useParams()
   const { message } = App.useApp()
   const { openTab, tabs, activeKey } = useTabStore()
-  const { data: allMenus = [] } = useMenus()
+  const { data: allMenus = [] } = useMenus(appcd)
   const { data: configs } = useConfigs()
 
   const openInTab = (routePath, query = '', fallbackLabel = '') => {
@@ -33,8 +34,10 @@ export function useOpenInTab() {
     }
     const labelKey = menu ? `mnu.${menu.menucd}` : null
     const label = menu ? t(`mnu.${menu.menucd}`, menu.default_text) : fallbackLabel
-    openTab({ key, label, labelKey, path: `${routePath}${query}` })
-    navigate(`/${routePath}${query}`)
+    const tabPath = appcd ? `app/${appcd}/${routePath}${query}` : `${routePath}${query}`
+    const navPath = appcd ? `/app/${appcd}/${routePath}${query}` : `/${routePath}${query}`
+    openTab({ key, label, labelKey, path: tabPath })
+    navigate(navPath)
   }
 
   return openInTab
