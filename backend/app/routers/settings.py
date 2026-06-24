@@ -14,9 +14,6 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
-DB_TYPES = ["Oracle", "Oracle(TNS)", "mssql", "postgres", "supabase"]
-
-
 def _get_tenantid(sb, user_id: str) -> Optional[str]:
     rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).execute().data
     return rows[0]["tenantid"] if rows else None
@@ -140,7 +137,14 @@ def list_servers(token: str = Depends(get_token)):
         row["username"] = s.get("username", "")
         row.pop("secret_path", None)
 
-    return {"connectors": rows, "dbtypes": DB_TYPES}
+    code_rows = (
+        sb.schema(SUPABASE_SCHEMA).table("codes")
+        .select("default_name").eq("codegroupcd", "dbtype").eq("useyn", True)
+        .order("orderno").execute().data or []
+    )
+    db_types = [r["default_name"] for r in code_rows if r.get("default_name")]
+
+    return {"connectors": rows, "dbtypes": db_types}
 
 
 class ServerSaveRequest(BaseModel):
