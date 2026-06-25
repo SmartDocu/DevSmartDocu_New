@@ -6,30 +6,29 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import anthropic
-
-from backend.app.config import settings
-from d2insight.config import ANTHROPIC_MODELS
+from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+from d2insight.config import LLM_MODELS
 
 _KST = ZoneInfo("Asia/Seoul")
-_anthropic_client: anthropic.Anthropic | None = None
+_llm_cache: dict = {}
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _anthropic_client
-    if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic(api_key=settings.CLAUDE_API_KEY)
-    return _anthropic_client
+def _get_llm(grade: str = "fast", project_id=None, tenant_id=None):
+    key = (grade, project_id, tenant_id)
+    if key not in _llm_cache:
+        _, _api_key, _vendor = get_llm_info(project_id=project_id, tenant_id=tenant_id)
+        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
+    return _llm_cache[key]
 
 
-def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 200) -> str:
-    resp = _get_client().messages.create(
-        model=ANTHROPIC_MODELS[grade],
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
+def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 200,
+                project_id=None, tenant_id=None) -> str:
+    from langchain_core.messages import SystemMessage, HumanMessage
+    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id).invoke(
+        [SystemMessage(content=system), HumanMessage(content=prompt)]
     )
-    return resp.content[0].text
+    content = resp.content
+    return content if isinstance(content, str) else content[0].text
 
 
 # 14개 고수준 카테고리 목록 (registry.py와 동기화)
@@ -90,7 +89,7 @@ mode 선택 기준 (tool이 "report"일 때):
 - "어떤 분석을 할 수 있나요?" → {{"tool": "chat", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}"""
 
 
-def parse_intent(message: str) -> dict:
+def parse_intent(message: str, project_id=None, tenant_id=None) -> dict:
     """Return {{tool, target_month, months_back, report_type, mode}} from user message."""
     today = datetime.now(tz=_KST).strftime("%Y-%m-%d")
     try:
@@ -99,6 +98,8 @@ def parse_intent(message: str) -> dict:
             system=_SYSTEM,
             grade="fast",
             max_tokens=200,
+            project_id=project_id,
+            tenant_id=tenant_id,
         )
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
         if m:

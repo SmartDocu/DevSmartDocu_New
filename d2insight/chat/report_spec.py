@@ -7,30 +7,29 @@ from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-import anthropic
-
-from backend.app.config import settings
-from d2insight.config import ANTHROPIC_MODELS
+from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+from d2insight.config import LLM_MODELS
 
 _KST = ZoneInfo("Asia/Seoul")
-_anthropic_client: anthropic.Anthropic | None = None
+_llm_cache: dict = {}
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _anthropic_client
-    if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic(api_key=settings.CLAUDE_API_KEY)
-    return _anthropic_client
+def _get_llm(grade: str = "fast", project_id=None, tenant_id=None):
+    key = (grade, project_id, tenant_id)
+    if key not in _llm_cache:
+        _, _api_key, _vendor = get_llm_info(project_id=project_id, tenant_id=tenant_id)
+        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
+    return _llm_cache[key]
 
 
-def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 150) -> str:
-    resp = _get_client().messages.create(
-        model=ANTHROPIC_MODELS[grade],
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
+def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 150,
+                project_id=None, tenant_id=None) -> str:
+    from langchain_core.messages import SystemMessage, HumanMessage
+    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id).invoke(
+        [SystemMessage(content=system), HumanMessage(content=prompt)]
     )
-    return resp.content[0].text
+    content = resp.content
+    return content if isinstance(content, str) else content[0].text
 
 
 # session_id → spec dict (인메모리)
@@ -134,7 +133,8 @@ def build_confirmation(spec: dict) -> str:
     )
 
 
-def _extract_params(message: str, spec: dict, history: list[dict] | None = None) -> dict:
+def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
+                    project_id=None, tenant_id=None) -> dict:
     defaults = {
         "target_month": None, "report_type": None, "months_back": None, "top_n": None,
         "threshold": None, "accepted_default": False, "bulk": False, "confirmed": False, "cancel": False,
@@ -158,6 +158,8 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None)
             system=_EXTRACT_SYSTEM,
             grade="fast",
             max_tokens=150,
+            project_id=project_id,
+            tenant_id=tenant_id,
         )
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
         if m:
@@ -167,7 +169,8 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None)
     return defaults
 
 
-def advance_spec(session_id: str, message: str, history: list[dict] | None = None) -> tuple[dict, str]:
+def advance_spec(session_id: str, message: str, history: list[dict] | None = None,
+                 project_id=None, tenant_id=None) -> tuple[dict, str]:
     """사용자 메시지로 spec을 진행시키고 (updated_spec, bot_response)를 반환.
 
     bot_response 특수값:
@@ -178,7 +181,7 @@ def advance_spec(session_id: str, message: str, history: list[dict] | None = Non
     if not spec:
         return {}, "__CANCEL__"
 
-    params = _extract_params(message, spec, history=history)
+    params = _extract_params(message, spec, history=history, project_id=project_id, tenant_id=tenant_id)
 
     if params.get("cancel"):
         clear_spec(session_id)

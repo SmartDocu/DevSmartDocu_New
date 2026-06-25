@@ -150,6 +150,84 @@ def get_llm_model(request):
     return llm
 
 
+def build_langchain_llm(vendor_name: str, api_key: str, model: str):
+    """벤더명·API키·모델명으로 LangChain LLM 인스턴스를 생성한다.
+    get_llm_model 내부의 LLM 생성 로직(Anthropic/OpenAI/Google)을 독립 함수로 추출.
+    d2shared.mcp_server, d2chat.mcp_agent 등에서 임포트해 공통 사용.
+    """
+    if vendor_name == "Anthropic":
+        return ChatAnthropic(
+            anthropic_api_key=api_key,
+            model=model,
+            temperature=0,
+            max_tokens=8192,
+        )
+    if vendor_name == "OpenAI":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model=model, api_key=api_key, temperature=0, max_tokens=8192)
+    elif vendor_name == "Google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=model,
+            temperature=0,
+            google_api_key=api_key,
+            max_output_tokens=8192,
+        )
+    raise ValueError(f"지원하지 않는 LLM 벤더: {vendor_name}")
+
+
+def get_llm_info(supabase=None, project_id=None, tenant_id=None):
+    """Supabase에서 프로젝트/테넌트 LLM 설정을 조회해 (model, dec_api_key, vendor_name) 반환.
+
+    supabase 미전달 시 서비스 역할 클라이언트를 자동 사용.
+    우선순위: 프로젝트 설정 → 테넌트 설정 → 기본값(useyn=True 무작위 선택)
+    FastAPI 라우터에서 사용 가능 (Django request 불필요).
+    """
+    import random as _random
+
+    if supabase is None:
+        supabase = get_service_client()
+
+    def _fetch(table, conditions):
+        data = process_data_in_supabase(
+            supabase, table, "select", {}, conditions, "llmmodelnm, encapikey"
+        )
+        if data:
+            return data[0]["llmmodelnm"], data[0]["encapikey"]
+        return None, None
+
+    llm_model, enc_api_key = None, None
+
+    if project_id:
+        llm_model, enc_api_key = _fetch("projects", {"projectid": project_id})
+
+    if not llm_model and tenant_id:
+        llm_model, enc_api_key = _fetch("tenants", {"tenantid": tenant_id})
+
+    if not llm_model:
+        try:
+            llm_data = process_data_in_supabase(
+                supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm"
+            )
+            llm_model = _random.choice(llm_data)["llmmodelnm"]
+            key_data = process_data_in_supabase(
+                supabase, "llmapis", "select", {}, {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey"
+            )
+            enc_api_key = _random.choice(key_data)["encapikey"]
+        except Exception:
+            raise ValueError(
+                "LLM 설정을 찾을 수 없습니다. "
+                "projects 또는 tenants 테이블에 llmmodelnm/encapikey를 설정하세요."
+            )
+
+    dec_api_key = decrypt_value(enc_api_key)
+    vendor_name = process_data_in_supabase(
+        supabase, "llmmodels", "select", {}, {"llmmodelnm": llm_model}, "llmvendornm"
+    )[0]["llmvendornm"]
+
+    return llm_model, dec_api_key, vendor_name
+
+
 def calculate_capability_indices(data, spec_lower=None, spec_upper=None):
     """
     공정능력지수(Capability Index) 계산

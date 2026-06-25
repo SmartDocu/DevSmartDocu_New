@@ -77,26 +77,10 @@ class MCPServer:
         current_date_info: Optional[Dict] = None,
         log_ctx: Optional[Dict] = None,
         extra_rules: str = "",
+        api_key: Optional[str] = None,
+        vendor_name: Optional[str] = None,
     ) -> str:
         """자연어 질문을 DB dialect에 맞는 SELECT 쿼리로 변환한다."""
-        from backend.app.config import settings
-
-        OPENAI_MODELS = [
-            "gpt-5.1", "gpt-5-pro", "gpt-5", "gpt-5-mini", "gpt-5-nano",
-            "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
-            "gpt-4o", "gpt4o-2024-05-13", "gpt-4o-mini",
-            "gpt-4-turbo", "gpt-4-turbo-preview", "gpt-4",
-            "gpt-3.5-turbo", "gpt-3.5-turbo-16k",
-        ]
-        ANTHROPIC_MODELS = [
-            "claude-fable-5",
-            "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001",
-            "claude-sonnet-4-5-20250929", "claude-sonnet-4-20250514",
-            "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022",
-            "claude-3-5-sonnet-20240620", "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229", "claude-3-haiku-20240307",
-            "claude-3-5-haiku-20241022",
-        ]
 
         dialect = self.langchain_db.dialect
         primary_meta = (table_metadata or {}).get(table_name, {}) if table_name else {}
@@ -196,50 +180,32 @@ DB 정보:
 """
 
         from datetime import datetime
+        from langchain_core.messages import SystemMessage, HumanMessage
+        from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
 
-        if model in OPENAI_MODELS:
-            from openai import OpenAI
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            start = datetime.now()
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You generate SQL queries only."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0,
-                timeout=30,
+        if not api_key or not vendor_name:
+            _project_id = (log_ctx or {}).get("project_id")
+            _tenant_id = (log_ctx or {}).get("tenant_id")
+            model, api_key, vendor_name = get_llm_info(
+                project_id=_project_id, tenant_id=_tenant_id
             )
-            end = datetime.now()
-            log_llm_call(
-                log_ctx=log_ctx, stepnm='sql_generate', steptitle='SQL 생성', llmmodelnm=model,
-                inputtoken=getattr(response.usage, 'prompt_tokens', 0),
-                outputtoken=getattr(response.usage, 'completion_tokens', 0),
-                startdts=start, enddts=end,
-            )
-            return response.choices[0].message.content.strip()
 
-        elif model in ANTHROPIC_MODELS or "claude" in model.lower():
-            from anthropic import Anthropic
-            client = Anthropic(api_key=settings.CLAUDE_API_KEY)
-            start = datetime.now()
-            response = client.messages.create(
-                model=model, max_tokens=2048, temperature=0,
-                system="You generate SQL queries only.",
-                messages=[{"role": "user", "content": prompt}],
-                timeout=30,
-            )
-            end = datetime.now()
-            log_llm_call(
-                log_ctx=log_ctx, stepnm='sql_generate', steptitle='SQL 생성', llmmodelnm=model,
-                inputtoken=getattr(response.usage, 'input_tokens', 0),
-                outputtoken=getattr(response.usage, 'output_tokens', 0),
-                startdts=start, enddts=end,
-            )
-            return response.content[0].text.strip()
-
-        else:
-            raise ValueError(f"지원하지 않는 LLM 모델입니다: {model}")
+        llm = build_langchain_llm(vendor_name, api_key, model)
+        start = datetime.now()
+        response = llm.invoke([
+            SystemMessage(content="You generate SQL queries only."),
+            HumanMessage(content=prompt),
+        ])
+        end = datetime.now()
+        usage = getattr(response, "usage_metadata", None) or {}
+        log_llm_call(
+            log_ctx=log_ctx, stepnm="sql_generate", steptitle="SQL 생성", llmmodelnm=model,
+            inputtoken=usage.get("input_tokens", 0),
+            outputtoken=usage.get("output_tokens", 0),
+            startdts=start, enddts=end,
+        )
+        content = response.content
+        return (content if isinstance(content, str) else content[0].text).strip()
 
     # ── 자연어 쿼리 실행 ────────────────────────────────────────
 
@@ -252,6 +218,8 @@ DB 정보:
         current_date_info: Optional[Dict] = None,
         log_ctx: Optional[Dict] = None,
         extra_rules: str = "",
+        api_key: Optional[str] = None,
+        vendor_name: Optional[str] = None,
     ) -> Dict:
         """자연어 질문을 SQL로 변환하여 실행하고 표준 응답을 반환한다."""
         try:
@@ -259,6 +227,7 @@ DB 정보:
                 question=question, model=model, table_name=table_name,
                 table_metadata=table_metadata, current_date_info=current_date_info,
                 log_ctx=log_ctx, extra_rules=extra_rules,
+                api_key=api_key, vendor_name=vendor_name,
             )
             sql_query = self._clean_sql(sql_query)
 

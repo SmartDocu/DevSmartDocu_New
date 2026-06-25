@@ -8,13 +8,12 @@ import traceback
 from typing import Optional, Dict, List
 
 import pandas as pd
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode
 
-from backend.app.config import settings
+from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
 from d2shared.visualization import (
     strip_markdown,
     detect_visualization_type_with_llm,
@@ -51,7 +50,19 @@ class MCPAgent:
         from d2shared.mcp_server import MCPServer
         self.mcp = MCPServer(db_connection=db_connection)
 
-        self.llm = ChatAnthropic(model=self.llm_model, temperature=temperature, api_key=settings.CLAUDE_API_KEY)
+        # LLM 초기화 실패 시 ask() 첫 호출에서 재시도
+        try:
+            _model, _api_key, _vendor = get_llm_info()
+            self.llm_model = _model
+            self._api_key = _api_key
+            self._vendor = _vendor
+            self.llm = build_langchain_llm(_vendor, _api_key, _model)
+        except Exception as _e:
+            print(f"[MCPAgent] LLM 초기화 실패 (ask() 호출 시 재시도): {_e}")
+            self.llm_model = None
+            self._api_key = None
+            self._vendor = None
+            self.llm = None
         self.memory = MemorySaver()
         self.tables_metadata = self._normalize_tables_metadata(tables_metadata or {})
         self.tools = create_all_tools(self)   # ← tools/__init__.py에서 일괄 생성
@@ -220,6 +231,14 @@ class MCPAgent:
         self._token_input = 0
         self._token_output = 0
 
+        _project_id = (log_ctx or {}).get("project_id")
+        _tenant_id = (log_ctx or {}).get("tenant_id")
+        _model, _api_key, _vendor = get_llm_info(project_id=_project_id, tenant_id=_tenant_id)
+        self.llm_model = _model
+        self._api_key = _api_key
+        self._vendor = _vendor
+        self.llm = build_langchain_llm(_vendor, _api_key, _model)
+
         for attempt in range(1, max_retries + 1):
             try:
                 current_query = None
@@ -289,6 +308,8 @@ class MCPAgent:
                                 table_metadata=metadata,
                                 current_date_info=None,
                                 log_ctx=log_ctx,
+                                api_key=self._api_key,
+                                vendor_name=self._vendor,
                             )
                             if direct_result.get('status') == 'success' and direct_result.get('data'):
                                 current_data = direct_result['data']

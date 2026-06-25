@@ -74,12 +74,26 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
         sid = req.session_id or str(_uuid.uuid4())
         hist = []
 
+    # project_id/tenant_id 확보 (LLM 조회에 사용)
+    _project_id = req.project_id
+    _tenant_id: int | None = None
+    if req.user_id:
+        try:
+            _tenant_id, _pid = storage.get_project_info(req.user_id)
+            if _project_id is None:
+                _project_id = _pid
+        except Exception:
+            pass
+
     # ── 대화형 보고서 작성 진행 중 ───────────────────────────────────────
     active_spec = _spec_mod.get_spec(sid)
     if active_spec:
-        updated_spec, bot_response = _spec_mod.advance_spec(sid, req.message, history=hist)
+        updated_spec, bot_response = _spec_mod.advance_spec(
+            sid, req.message, history=hist, project_id=_project_id, tenant_id=_tenant_id
+        )
         if bot_response == "__EXECUTE__":
-            result = run_report_from_spec(updated_spec, req.user_id)
+            result = run_report_from_spec(updated_spec, req.user_id,
+                                          project_id=_project_id, tenant_id=_tenant_id)
             _spec_mod.clear_spec(sid)
         elif bot_response == "__CANCEL__":
             result = {
@@ -95,7 +109,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
             }
     else:
         # ── 기존 플로우 ────────────────────────────────────────────────────
-        intent = parse_intent(req.message)
+        intent = parse_intent(req.message, project_id=_project_id, tenant_id=_tenant_id)
         intent["original_message"] = req.message
         tool = intent.get("tool", "chat")
         target_month = intent.get("target_month")
@@ -118,7 +132,8 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
                 "chart_image": None, "report_path": None,
             }
         else:
-            result = run_tool(tool, target_month, months_back, history=hist, intent=intent, user_id=req.user_id)
+            result = run_tool(tool, target_month, months_back, history=hist, intent=intent,
+                              user_id=req.user_id, project_id=_project_id, tenant_id=_tenant_id)
 
     tokens = token_tracker.get()
 

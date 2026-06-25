@@ -3,19 +3,19 @@ from __future__ import annotations
 
 import traceback
 
-import anthropic
-
 from backend.app.config import settings
-from d2insight.config import ANTHROPIC_MODELS
+from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+from d2insight.config import LLM_MODELS
 
-_anthropic_client: anthropic.Anthropic | None = None
+_llm_cache: dict = {}
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _anthropic_client
-    if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic(api_key=settings.CLAUDE_API_KEY)
-    return _anthropic_client
+def _get_llm(grade: str = "fast", project_id=None, tenant_id=None):
+    key = (grade, project_id, tenant_id)
+    if key not in _llm_cache:
+        _, _api_key, _vendor = get_llm_info(project_id=project_id, tenant_id=tenant_id)
+        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
+    return _llm_cache[key]
 
 
 def _quick_chat(
@@ -24,19 +24,21 @@ def _quick_chat(
     grade: str = "fast",
     system: str | None = None,
     max_tokens: int = 500,
+    project_id=None,
+    tenant_id=None,
 ) -> str:
-    kwargs: dict = {
-        "model": ANTHROPIC_MODELS[grade],
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
+    from langchain_core.messages import SystemMessage, HumanMessage
+    messages = []
     if system:
-        kwargs["system"] = system
-    resp = _get_client().messages.create(**kwargs)
-    return resp.content[0].text
+        messages.append(SystemMessage(content=system))
+    messages.append(HumanMessage(content=prompt))
+    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id).invoke(messages)
+    content = resp.content
+    return content if isinstance(content, str) else content[0].text
 
 
-def run_report_from_spec(spec: dict, user_id: str | None = None) -> dict:
+def run_report_from_spec(spec: dict, user_id: str | None = None,
+                         project_id=None, tenant_id=None) -> dict:
     """대화형 보고서 명세(ReportSpec)로부터 보고서를 생성한다."""
     target_month = spec.get("target_month")
     months_back = spec.get("months_back") or 3
@@ -55,7 +57,8 @@ def run_report_from_spec(spec: dict, user_id: str | None = None) -> dict:
             f"기준 데이터 {months_back}개월, 주요 품목 상위 {top_n}개, 이상치 기준 {threshold}."
         ),
     }
-    return run_tool("report", target_month, months_back, intent=intent, user_id=user_id)
+    return run_tool("report", target_month, months_back, intent=intent, user_id=user_id,
+                    project_id=project_id, tenant_id=tenant_id)
 
 
 def run_tool(
@@ -65,6 +68,8 @@ def run_tool(
     history: list[dict] | None = None,
     intent: dict | None = None,
     user_id: str | None = None,
+    project_id=None,
+    tenant_id=None,
 ) -> dict:
     """Execute pipeline tool and return {answer, visualization_type, table_html, chart_image, report_path}."""
     intent = intent or {}
@@ -74,11 +79,14 @@ def run_tool(
     if tool == "health":
         from d2insight.data_source.meta_loader import all_metadata
         meta_keys = list(all_metadata().keys())
+        try:
+            _hm, _, _hv = get_llm_info()
+            llm_info_str = f"LLM: {_hm} ({_hv})"
+        except Exception:
+            llm_info_str = "LLM: 조회 실패"
         result["answer"] = (
             f"서버 상태: 정상 ✓\n"
-            f"LLM 모델(balanced): {ANTHROPIC_MODELS['balanced']}\n"
-            f"LLM 모델(fast): {ANTHROPIC_MODELS['fast']}\n"
-            f"Anthropic API: {'설정됨' if settings.CLAUDE_API_KEY else '미설정'}\n"
+            f"{llm_info_str}\n"
             f"DB 연결: {'설정됨' if all([settings.DB_SERVER, settings.DB_DATABASE, settings.DB_USERNAME]) else '미설정'}\n"
             f"메타 뷰/테이블: {', '.join(meta_keys) if meta_keys else '로드되지 않음'}"
         )
@@ -105,7 +113,8 @@ def run_tool(
             "• '2026-04 경영분석 보고서 작성하려 합니다'\n\n"
             + (f"이전 대화:\n{hist_text}\n\n" if hist_text else "")
         )
-        result["answer"] = _quick_chat(user_message, system=system, grade="fast", max_tokens=600)
+        result["answer"] = _quick_chat(user_message, system=system, grade="fast", max_tokens=600,
+                                       project_id=project_id, tenant_id=tenant_id)
         return result
 
     # ── 이하 report 도구: target_month 필수 ─────────────────────────────────
@@ -116,11 +125,16 @@ def run_tool(
     try:
         if tool == "report":
             from d2insight.report.agent import ReportAgent
+            from d2insight.db.insight_storage import get_project_info
 
             report_type = intent.get("report_type") or "판매분석"
             user_request = intent.get("original_message")
 
-            agent = ReportAgent()
+            _tenant_id = tenant_id
+            _project_id = project_id
+            if user_id and (_project_id is None or _tenant_id is None):
+                _tenant_id, _project_id = get_project_info(user_id)
+            agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id)
             report_result = agent.generate(
                 report_type, target_month, months_back,
                 user_request=user_request,
@@ -135,6 +149,8 @@ def run_tool(
                         f"다음 보고서 내용에서 핵심 내용을 3~4문장으로 요약하세요. 수치 중심으로 간결하게.\n\n{md_text[:4000]}",
                         grade="fast",
                         max_tokens=400,
+                        project_id=project_id,
+                        tenant_id=tenant_id,
                     )
                 except Exception:
                     pass

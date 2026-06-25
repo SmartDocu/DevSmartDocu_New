@@ -13,14 +13,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode
 
-from backend.app.config import settings
+from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
 from d2insight import token_tracker
-from d2insight.config import ANTHROPIC_MODELS, REPORT_MAX_WORKERS
+from d2insight.config import LLM_MODELS, REPORT_MAX_WORKERS
 from d2insight.data_source.generic_sql import GenericSqlSource
 from d2insight.data_source import meta_loader
 from d2insight.report.registry import get_config
@@ -408,16 +407,19 @@ def _build_conclusion_prompt(
 class ReportAgent:
     """LangGraph StateGraph 기반 범용 보고서 생성기 — pr_d2chat MCPAgent 패턴 적용."""
 
-    def __init__(self, connection_url: str | None = None) -> None:
+    def __init__(
+        self,
+        connection_url: str | None = None,
+        project_id: int | None = None,
+        tenant_id: int | None = None,
+    ) -> None:
         src = GenericSqlSource(connection_url)
         self._dialect: str = src._dialect
-        self._model_id = ANTHROPIC_MODELS["balanced"]
-        self._llm = ChatAnthropic(
-            model=self._model_id,
-            max_tokens=8192,
-            api_key=settings.CLAUDE_API_KEY,
-            model_kwargs={"extra_headers": {"anthropic-beta": "prompt-caching-2024-07-31"}},
+        _, self._api_key, self._vendor = get_llm_info(
+            project_id=project_id, tenant_id=tenant_id
         )
+        self._model_id = LLM_MODELS[self._vendor]["balanced"]
+        self._llm = build_langchain_llm(self._vendor, self._api_key, self._model_id)
         self._llm_with_tools = self._llm.bind_tools(ALL_TOOLS)
         self._graph = self._create_graph()
 
@@ -433,8 +435,8 @@ class ReportAgent:
         call_type: str = "",
     ) -> str:
         """단발성 LLM 호출 — bind_tools 없는 일반 텍스트 응답."""
-        model_id = ANTHROPIC_MODELS[grade]
-        llm = ChatAnthropic(model=model_id, max_tokens=max_tokens, api_key=settings.CLAUDE_API_KEY)
+        model_id = LLM_MODELS[self._vendor][grade]
+        llm = build_langchain_llm(self._vendor, self._api_key, model_id)
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
@@ -451,7 +453,7 @@ class ReportAgent:
             input_t, output_t,
             grade=grade, label=label, is_report=True,
             stepnm=stepnm, call_type=call_type,
-            model_id=model_id, provider="anthropic",
+            model_id=model_id, provider=self._vendor.lower(),
             startdts=_start, enddts=_end,
         )
 
@@ -507,7 +509,7 @@ class ReportAgent:
                 steptitle=token_tracker.get_current_section(),
                 call_type=_call_type,
                 model_id=self._model_id,
-                provider="anthropic",
+                provider=self._vendor.lower(),
                 startdts=_start,
                 enddts=_end,
             )
@@ -616,6 +618,8 @@ class ReportAgent:
         """
         token_tracker.reset()
         token_tracker.set_current_section(section_name)
+        from d2insight.report.sql_generator import set_llm_context
+        set_llm_context(self._vendor, self._api_key)
 
         start, end = date_range
         section_msg = (
