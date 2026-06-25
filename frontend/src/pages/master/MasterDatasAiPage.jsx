@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { App, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import {
   useDfDatas, useSaveDfData, useSaveDfvData, useDeleteDfData,
   useAiDataPreview, useDatasSource, useDatacols,
@@ -31,16 +31,7 @@ export default function MasterDatasAiPage() {
   useLangStore((s) => s.translations)
   const translationVersion = useLangStore((s) => s.translationVersion)
 
-  const DATATYPE_OPTIONS = [
-    { value: 'string',     label: t('cod.keycoldatatypecd_string') },
-    { value: 'text',       label: t('cod.keycoldatatypecd_text') },
-    { value: 'number',     label: t('cod.keycoldatatypecd_number') },
-    { value: 'currency',   label: t('cod.keycoldatatypecd_currency') },
-    { value: 'date',       label: t('cod.keycoldatatypecd_date') },
-    { value: 'datetime',   label: t('cod.keycoldatatypecd_datetime') },
-    { value: 'boolean',    label: t('cod.keycoldatatypecd_boolean') },
-    { value: 'identifier', label: t('cod.keycoldatatypecd_identifier') },
-  ]
+  const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -403,8 +394,8 @@ export default function MasterDatasAiPage() {
                             value={col.datatypecd || 'string'}
                             onChange={(e) => updateCol(idx, 'datatypecd', e.target.value)}
                           >
-                            {DATATYPE_OPTIONS.map((o) => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
+                            {datatypeOptions.map((c) => (
+                              <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
                             ))}
                           </select>
                         </td>

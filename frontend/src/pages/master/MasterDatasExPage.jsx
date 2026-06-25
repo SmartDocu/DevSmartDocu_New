@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import {
   useDatasEx, useSaveExData, useDeleteData,
   useDatacols, useCreateDatacols, useSaveDatacols,
@@ -12,16 +12,7 @@ import { useDocs } from '@/hooks/useDocs'
 export default function MasterDatasExPage() {
   useLangStore((s) => s.translations)
 
-  const DATATYPE_OPTIONS = [
-    { value: 'string',     label: t('cod.keycoldatatypecd_string') },
-    { value: 'text',       label: t('cod.keycoldatatypecd_text') },
-    { value: 'number',     label: t('cod.keycoldatatypecd_number') },
-    { value: 'currency',   label: t('cod.keycoldatatypecd_currency') },
-    { value: 'date',       label: t('cod.keycoldatatypecd_date') },
-    { value: 'datetime',   label: t('cod.keycoldatatypecd_datetime') },
-    { value: 'boolean',    label: t('cod.keycoldatatypecd_boolean') },
-    { value: 'identifier', label: t('cod.keycoldatatypecd_identifier') },
-  ]
+  const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -297,7 +288,7 @@ export default function MasterDatasExPage() {
                           value={col.datatypecd || 'string'}
                           onChange={(e) => updateCol(idx, 'datatypecd', e.target.value)}
                         >
-                          {DATATYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          {datatypeOptions.map((c) => <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>)}
                         </select>
                       </td>
                       <td style={{ textAlign: 'center' }}>

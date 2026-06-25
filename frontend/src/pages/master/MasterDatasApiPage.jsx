@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { App, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import {
   useDatasApi, useDatasProjects, useApiConnectors,
   useSaveApiData, useDeleteData,
@@ -20,19 +20,8 @@ const EMPTY_PARAM = {
   is_required: false, testvalue: '', is_fixed: false, fixed_value: '', desc: '',
 }
 
-const PARAM_LOCATIONS = ['query', 'body', 'header', 'path']
-
 export default function MasterDatasApiPage() {
-  const DATATYPE_OPTIONS = [
-    { value: 'string',     label: t('cod.keycoldatatypecd_string') },
-    { value: 'text',       label: t('cod.keycoldatatypecd_text') },
-    { value: 'number',     label: t('cod.keycoldatatypecd_number') },
-    { value: 'currency',   label: t('cod.keycoldatatypecd_currency') },
-    { value: 'date',       label: t('cod.keycoldatatypecd_date') },
-    { value: 'datetime',   label: t('cod.keycoldatatypecd_datetime') },
-    { value: 'boolean',    label: t('cod.keycoldatatypecd_boolean') },
-    { value: 'identifier', label: t('cod.keycoldatatypecd_identifier') },
-  ]
+  const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
   const { message } = App.useApp()
   useLangStore((s) => s.translations)
 
@@ -44,6 +33,7 @@ export default function MasterDatasApiPage() {
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (currentMenu.default_text || '') : t('mnu.master_data.data.api')
 
+  const { data: paramLocations = [] } = useMenuCodes('param_locationcd')
   const { data: datas = [], isLoading } = useDatasApi()
   const { data: projects = [] } = useDatasProjects()
   const { data: connectors = [] } = useApiConnectors()
@@ -319,7 +309,7 @@ export default function MasterDatasApiPage() {
                     <td style={tdStyle}>
                       <select style={inputStyle} value={p.param_locationcd}
                         onChange={(e) => updateParam(i, 'param_locationcd', e.target.value)}>
-                        {PARAM_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+                        {paramLocations.map((c) => <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>)}
                       </select>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -392,8 +382,8 @@ export default function MasterDatasApiPage() {
                     <td style={tdStyle}>
                       <select style={inputStyle} value={col.datatypecd || 'string'}
                         onChange={(e) => updateCol(i, 'datatypecd', e.target.value)}>
-                        {DATATYPE_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
+                        {datatypeOptions.map((c) => (
+                          <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
                         ))}
                       </select>
                     </td>
