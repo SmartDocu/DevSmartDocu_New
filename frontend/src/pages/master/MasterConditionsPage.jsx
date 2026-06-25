@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import {
   useDataParams,
   useConditionDatas,
@@ -24,7 +24,6 @@ const EMPTY_FORM = {
   ordercolnm: '',
 }
 
-const OPERATORS = ['=', '>=', '<=', '>', '<']
 export default function MasterConditionsPage() {
   useLangStore((s) => s.translations)
 
@@ -41,6 +40,7 @@ export default function MasterConditionsPage() {
 
   const location = useLocation()
   const { data: allMenus = [] } = useMenus()
+  const { data: operators = [] } = useMenuCodes('operators')
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
@@ -265,8 +265,8 @@ export default function MasterConditionsPage() {
               value={form.operator}
               onChange={(e) => setForm((f) => ({ ...f, operator: e.target.value }))}
             >
-              {OPERATORS.map((op) => (
-                <option key={op} value={op}>{op}</option>
+              {operators.map((c) => (
+                <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
               ))}
             </select>
           </div>
