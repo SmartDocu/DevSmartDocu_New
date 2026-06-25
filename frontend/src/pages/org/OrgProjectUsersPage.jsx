@@ -7,6 +7,7 @@ import {
   useSaveProjectUser,
   useDeleteProjectUser,
 } from '@/hooks/useOrg'
+import { useMenuCodes } from '@/hooks/useMenus'
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
@@ -26,6 +27,7 @@ export default function OrgProjectUsersPage() {
   const { data = {}, isLoading } = useOrgProjectUsers(selectedProjectid)
   const saveMutation = useSaveProjectUser()
   const deleteMutation = useDeleteProjectUser()
+  const { data: roleCodes = [] } = useMenuCodes('rolecd')
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedUid, setSelectedUid] = useState(null)
@@ -196,18 +198,14 @@ export default function OrgProjectUsersPage() {
           <div className="form-group">
             <label>{t('lbl.rolecd_lbl')}:</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 64, paddingLeft: 60 }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                <input type="radio" name="rolecd" value="M"
-                  checked={form.rolecd === 'M'}
-                  onChange={() => setForm(f => ({ ...f, rolecd: 'M' }))} />
-                <span>{t('cod.rolecd_M')}</span>
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                <input type="radio" name="rolecd" value="U"
-                  checked={form.rolecd === 'U'}
-                  onChange={() => setForm(f => ({ ...f, rolecd: 'U' }))} />
-                <span>{t('cod.rolecd_U')}</span>
-              </span>
+              {roleCodes.map((code) => (
+                <span key={code.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                  <input type="radio" name="rolecd" value={code.codevalue}
+                    checked={form.rolecd === code.codevalue}
+                    onChange={() => setForm(f => ({ ...f, rolecd: code.codevalue }))} />
+                  <span>{t(code.term_key) || code.default_name}</span>
+                </span>
+              ))}
             </div>
           </div>
 

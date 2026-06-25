@@ -10,10 +10,9 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
-AUTH_TYPES    = ["NONE", "API_KEY", "BASIC", "OAUTH2"]
-HTTP_METHODS  = ["GET", "POST"]
-KEY_LOCATIONS = ["header", "query", "body"]
-GRANT_TYPES   = ["client_credentials", "authorization_code", "password", "implicit"]
+HTTP_METHODS  = []  # codes table: http_methods
+KEY_LOCATIONS = []  # codes table: param_locationcd
+GRANT_TYPES   = []  # codes table: grant_types
 
 
 def _get_tenantid(sb, user_id: str) -> Optional[int]:
@@ -119,11 +118,24 @@ def list_connectors(token: str = Depends(get_token)):
         .data
     ) or []
 
+    def _fetch_codes(codegroupcd):
+        return [
+            r["codevalue"] for r in (
+                sb.schema(SUPABASE_SCHEMA).table("codes")
+                .select("codevalue")
+                .eq("codegroupcd", codegroupcd)
+                .eq("useyn", True)
+                .order("orderno")
+                .execute()
+                .data or []
+            )
+        ]
+
     meta = {
-        "authtypes":    AUTH_TYPES,
-        "httpmethods":  HTTP_METHODS,
-        "keylocations": KEY_LOCATIONS,
-        "granttypes":   GRANT_TYPES,
+        "authtypes":    _fetch_codes("authtype"),
+        "httpmethods":  _fetch_codes("http_methods"),
+        "keylocations": _fetch_codes("param_locationcd"),
+        "granttypes":   _fetch_codes("grant_types"),
     }
 
     if not conns:
