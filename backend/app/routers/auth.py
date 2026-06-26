@@ -2,7 +2,7 @@ import hashlib
 import random
 import re
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -825,23 +825,6 @@ def register(body: RegisterRequest):
             "creator": user_id,
         }).execute()
 
-        if body.accounttype == "U":
-            proj_result = service.schema(SCHEMA).table("projects").insert({
-                "tenantid": smartdoc_tenantid,
-                "projectnm": body.email,
-                "projectdesc": "계정에 따른 자동 생성된 프로젝트 입니다.",
-                "useyn": True,
-                "creator": user_id,
-            }).execute()
-            respon_projectid = proj_result.data[0]["projectid"]
-            service.schema(SCHEMA).table("projectusers").insert({
-                "projectid": respon_projectid,
-                "useruid": user_id,
-                "rolecd": "M",
-                "useyn": True,
-                "creator": user_id,
-            }).execute()
-
         if body.tenantid and str(body.tenantid) != str(smartdoc_tenantid):
             service.schema(SCHEMA).table("tenantnewusers").insert({
                 "tenantid": body.tenantid,
@@ -860,10 +843,32 @@ def register(body: RegisterRequest):
             )
             prod_map = {p["productcd"]: p for p in (prod_rows.data or [])}
 
+            created_service_projects: set[str] = set()
+
             for productcd in body.products:
                 product = prod_map.get(productcd)
                 if not product:
                     continue
+
+                servicecd = product["servicecd"]
+                if servicecd not in created_service_projects:
+                    proj_result = service.schema(SCHEMA).table("projects").insert({
+                        "tenantid": smartdoc_tenantid,
+                        "projectnm": f"{body.email}_{servicecd}",
+                        "projectdesc": "계정에 따른 자동 생성된 프로젝트 입니다.",
+                        "servicecd": servicecd,
+                        "useyn": True,
+                        "creator": user_id,
+                    }).execute()
+                    respon_projectid = proj_result.data[0]["projectid"]
+                    service.schema(SCHEMA).table("projectusers").insert({
+                        "projectid": respon_projectid,
+                        "useruid": user_id,
+                        "rolecd": "M",
+                        "useyn": True,
+                        "creator": user_id,
+                    }).execute()
+                    created_service_projects.add(servicecd)
 
                 sub_result = service.schema(SCHEMA).table("subscriptions").insert({
                     "tenantid": smartdoc_tenantid,
@@ -891,6 +896,34 @@ def register(body: RegisterRequest):
                     "total_users": product.get("users", 1),
                     "is_autotopup": False,
                     "creator": user_id,
+                }).execute()
+
+                service.schema(SCHEMA).table("serviceusers").insert({
+                    "accountuid": accountuid,
+                    "servicecd": product["servicecd"],
+                    "useruid": user_id,
+                    "tenantid": smartdoc_tenantid,
+                    "useyn": True,
+                    "creator": user_id,
+                }).execute()
+
+                now_utc = datetime.now(timezone.utc)
+                startdts = now_utc.isoformat()
+                service.schema(SCHEMA).table("CreditBuckets").insert({
+                    "subscriptionuid": subscriptionuid,
+                    "tenantid": smartdoc_tenantid,
+                    "accountuid": accountuid,
+                    "startdt": now_utc.date().isoformat(),
+                    "startdts": startdts,
+                    "servicecd": product["servicecd"],
+                    "creditchargecd": "Ba",
+                    "priorityno": 1,
+                    "creditqty": 100,
+                    "usedqty": 0,
+                    "remainqty": 100,
+                    "granteddts": startdts,
+                    "expiredts": (now_utc + relativedelta(months=1)).isoformat(),
+                    "statuscd": "Active",
                 }).execute()
 
     except Exception as e:
