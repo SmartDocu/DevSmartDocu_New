@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase_auth.errors import AuthApiError
 
@@ -53,6 +53,11 @@ def get_user(token: str):
             detail="유효하지 않은 토큰입니다.",
         )
     return resp.user
+
+
+def get_tenantid(x_tenant_id: Optional[str] = Header(None)) -> Optional[str]:
+    """X-Tenant-ID 헤더에서 현재 선택된 tenantid를 추출한다."""
+    return x_tenant_id
 
 
 def get_supabase(token: str = Depends(get_token)):

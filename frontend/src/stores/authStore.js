@@ -60,6 +60,18 @@ export const useAuthStore = create(
       updateUser: (patch) =>
         set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
 
+      switchTenant: (tenantid) =>
+        set((state) => ({
+          user: state.user ? {
+            ...state.user,
+            tenantid: String(tenantid),
+            docid: null,
+            docnm: null,
+            projectid: null,
+            editbuttonyn: 'N',
+          } : state.user,
+        })),
+
       clearAuth: () => {
         if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null }
         set({ accessToken: null, refreshToken: null, user: null })

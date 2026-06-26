@@ -20,7 +20,6 @@ class DocItem(BaseModel):
     tenantnm: Optional[str] = None
     basetemplatenm: Optional[str] = None
     basetemplateurl: Optional[str] = None
-    sampleyn: Optional[bool] = False
     editbuttonyn: str = "Y"
     docgroupid: Optional[int] = None
     docgroupnm: Optional[str] = None
@@ -49,7 +48,6 @@ class DocSelectResponse(BaseModel):
     tenantmanager: str
     projectmanager: str
     editbuttonyn: str
-    sampledocyn: str
 
 
 class ChapterItem(BaseModel):

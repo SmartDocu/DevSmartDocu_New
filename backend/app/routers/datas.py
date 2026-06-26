@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.datas import (
     AiDataSaveRequest, AiPreviewRequest, DataColItem, DataColsResponse,
     DbConnectorsResponse, DbDataSaveRequest, DatasListResponse,
@@ -370,11 +370,9 @@ def get_data_detail(datauid: str, token: str = Depends(get_token)):
 # ── DB Connectors ──────────────────────────────────────────────────────────────
 
 @router.get("/dbconnectors", response_model=DbConnectorsResponse)
-def list_dbconnectors(token: str = Depends(get_token)):
+def list_dbconnectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
         .select("connuid, connnm")
@@ -387,11 +385,9 @@ def list_dbconnectors(token: str = Depends(get_token)):
 # ── API Connectors ─────────────────────────────────────────────────────────────
 
 @router.get("/api-connectors", response_model=ApiConnectorsResponse)
-def list_apiconnectors(token: str = Depends(get_token)):
+def list_apiconnectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
         .select("connuid, connnm")
@@ -521,11 +517,9 @@ def list_source_datas(projectid: int = None, token: str = Depends(get_token)):
 # ── DB Data Save ────────────────────────────────────────────────────────────────
 
 @router.post("/db")
-def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token)):
+def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     if body.databasiscd == "dbq":
         query_val = body.querybasis
     elif body.databasiscd == "dbt":
@@ -560,11 +554,10 @@ async def save_ex_data(
     datauid: Optional[str] = Form(None),
     excelfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     record: dict = {"tenantid": tenantid, "datanm": datanm}
 
     existing_url = None
@@ -596,11 +589,9 @@ async def save_ex_data(
 # ── AI Data Save ────────────────────────────────────────────────────────────────
 
 @router.post("/ai")
-def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
+def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     record = {
         "tenantid": tenantid,
         "datanm": body.datanm,
@@ -619,11 +610,9 @@ def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token)):
 # ── API Data Save ───────────────────────────────────────────────────────────────
 
 @router.post("/api")
-def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token)):
+def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     record = {
         "datanm":    body.datanm,
         "desc":      body.desc,
@@ -732,11 +721,9 @@ def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
 # ── DF Save ────────────────────────────────────────────────────────────────────
 
 @router.post("/df")
-def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token)):
+def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     record = {
         "tenantid": tenantid,
         "datanm": body.datanm,
@@ -766,11 +753,9 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token)):
 # ── DFV Save ───────────────────────────────────────────────────────────────────
 
 @router.post("/dfv")
-def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token)):
+def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", str(user.id)).execute().data
-    tenantid = row[0]["tenantid"] if row else None
     record = {
         "tenantid": tenantid,
         "datanm": body.datanm,

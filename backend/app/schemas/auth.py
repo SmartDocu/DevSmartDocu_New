@@ -26,9 +26,9 @@ class UserContext(BaseModel):
     projectmanager: Optional[str] = "N"
     myprojectid: Optional[str] = None
     editbuttonyn: Optional[str] = "N"
-    sampledocyn: Optional[str] = "N"
     languagecd: Optional[str] = None
     offsetminutes: Optional[int] = None
+    tenants: Optional[list] = []
 
 
 # ── 기존 LoginResponse → MFA 필드 추가 ──────────────────────────────────────

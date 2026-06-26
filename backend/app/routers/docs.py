@@ -77,7 +77,7 @@ def list_docs(token: str = Depends(get_token)):
     docs_details = (
         sb.schema(SUPABASE_SCHEMA)
         .table("docs")
-        .select("docid, docdesc, createdts, projectid, sampleyn, basetemplatenm, basetemplateurl, docnm, docgroupid")
+        .select("docid, docdesc, createdts, projectid, basetemplatenm, basetemplateurl, docnm, docgroupid")
         .in_("docid", docids)
         .execute()
         .data or []
@@ -102,7 +102,6 @@ def list_docs(token: str = Depends(get_token)):
     project_ids = list({d.get("projectid") for d in docs_details if d.get("projectid")})
     project_map = {}
     tenant_map = {}
-    roleid = None
     manager_project_ids: set = set()
     manager_tenant_ids: set = set()
     if project_ids:
@@ -131,9 +130,6 @@ def list_docs(token: str = Depends(get_token)):
             tenant_map = {t["tenantid"]: t["tenantnm"] for t in tenants_data}
 
         # 5. 편집 권한 조회
-        user_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user_id).maybe_single().execute()
-        roleid = user_row.data.get("roleid") if user_row.data else None
-
         pu_rows = (
             sb.schema(SUPABASE_SCHEMA).table("projectusers")
             .select("projectid").in_("projectid", project_ids)
@@ -163,13 +159,8 @@ def list_docs(token: str = Depends(get_token)):
 
         project = project_map[projectid]
         tenantid = project.get("tenantid")
-        sampleyn = details.get("sampleyn", False)
-
-        if sampleyn:
-            editbuttonyn = "Y" if roleid == 7 else "N"
-        else:
-            is_manager = (projectid in manager_project_ids) or (tenantid in manager_tenant_ids)
-            editbuttonyn = "Y" if is_manager else "N"
+        is_manager = (projectid in manager_project_ids) or (tenantid in manager_tenant_ids)
+        editbuttonyn = "Y" if is_manager else "N"
 
         dgid = details.get("docgroupid")
         result_list.append({
@@ -181,7 +172,6 @@ def list_docs(token: str = Depends(get_token)):
             "tenantnm": tenant_map.get(tenantid, ""),
             "basetemplatenm": details.get("basetemplatenm"),
             "basetemplateurl": details.get("basetemplateurl"),
-            "sampleyn": sampleyn,
             "createdts": details.get("createdts", ""),
             "editbuttonyn": editbuttonyn,
             "docgroupid": dgid,
@@ -194,7 +184,7 @@ def list_docs(token: str = Depends(get_token)):
             ts = datetime.fromisoformat(d["createdts"]).timestamp() if d.get("createdts") else 0
         except Exception:
             ts = 0
-        return (0 if d.get("sampleyn") else 1, -ts)
+        return -ts
 
     result_list.sort(key=sort_key)
 
@@ -209,7 +199,6 @@ def list_docs(token: str = Depends(get_token)):
                 tenantnm=d.get("tenantnm"),
                 basetemplatenm=d.get("basetemplatenm"),
                 basetemplateurl=d.get("basetemplateurl"),
-                sampleyn=d.get("sampleyn", False),
                 editbuttonyn=d.get("editbuttonyn", "N"),
                 docgroupid=d.get("docgroupid"),
                 docgroupnm=d.get("docgroupnm"),
@@ -239,7 +228,6 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
         raise HTTPException(status_code=404, detail="msg.doc.not.found")
 
     projectid = str(docs_rows[0]["projectid"])
-    sampleyn = docs_rows[0].get("sampleyn", False)
 
     # 2. projects 테이블 조회
     projects_rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("projectid", projectid).execute().data
@@ -271,20 +259,8 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
     )
     tenantmanager = "Y" if any(t.get("rolecd") == "M" for t in user_tenant) else "N"
 
-    # 5. roleid 조회
-    user_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user_id).maybe_single().execute()
-    roleid = user_row.data.get("roleid") if user_row.data else None
-
-    # 6. editbuttonyn / sampledocyn 결정
-    if not sampleyn:
-        editbuttonyn = "Y" if (projectmanager == "Y" or tenantmanager == "Y") else "N"
-        sampledocyn = "N"
-    elif sampleyn and roleid == 7:
-        editbuttonyn = "Y"
-        sampledocyn = "Y"
-    else:
-        editbuttonyn = "N"
-        sampledocyn = "Y"
+    # 6. editbuttonyn 결정
+    editbuttonyn = "Y" if (projectmanager == "Y" or tenantmanager == "Y") else "N"
 
     # 7. users 테이블 mydocid 업데이트
     sb.schema(SUPABASE_SCHEMA).table("users").update({"mydocid": docid}).eq("useruid", user_id).execute()
@@ -297,7 +273,6 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
         tenantmanager=tenantmanager,
         projectmanager=projectmanager,
         editbuttonyn=editbuttonyn,
-        sampledocyn=sampledocyn,
     )
 
 

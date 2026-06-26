@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token
@@ -200,7 +201,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         user_row = (
             sd.table("users")
-            .select("roleid,mydocid,myprojectid")
+            .select("roleid,mydocid,myprojectid,default_tenantid")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
@@ -213,29 +214,43 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 2. tenantid + tenanticonurl
+    # 2. tenantid + tenanticonurl + tenants 목록
     try:
-        tenant_rows = (
+        tu_rows = (
             sd.table("tenantusers")
-            .select("tenantid,rolecd")
+            .select("tenantid")
             .eq("useruid", user_id)
+            .eq("useyn", True)
             .execute()
         )
-        if tenant_rows.data:
-            first_tenant = tenant_rows.data[0]
-            tenantid_val = first_tenant.get("tenantid")
-            ctx.tenantid = str(tenantid_val)
+        if tu_rows.data:
+            tenantids = [r["tenantid"] for r in tu_rows.data]
 
-            tenant_info = (
+            tenants_info = (
                 sd.table("tenants")
-                .select("iconfileurl")
-                .eq("tenantid", tenantid_val)
-                .maybe_single()
+                .select("tenantid,tenantnm,iconfileurl")
+                .in_("tenantid", tenantids)
                 .execute()
             )
+            tenants_map = {t["tenantid"]: t for t in (tenants_info.data or [])}
+            ctx.tenants = [
+                {"tenantid": str(t["tenantid"]), "tenantnm": t.get("tenantnm", "")}
+                for t in (tenants_info.data or [])
+            ]
 
-            if tenant_info.data:
-                ctx.tenanticonurl = tenant_info.data.get("iconfileurl")
+            # 기본 tenantid: users.default_tenantid 직접 사용
+            active_tenantid = None
+            if user_row.data and user_row.data.get("default_tenantid"):
+                active_tenantid = user_row.data["default_tenantid"]
+
+            if not active_tenantid and tenantids:
+                active_tenantid = tenantids[0]
+
+            if active_tenantid:
+                ctx.tenantid = str(active_tenantid)
+                t_info = tenants_map.get(active_tenantid)
+                if t_info:
+                    ctx.tenanticonurl = t_info.get("iconfileurl")
 
     except Exception:
         pass
@@ -273,12 +288,11 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
     # 4. doc detail
     projectid = None
-    sampleyn = False
     try:
         if docid:
             doc_detail = (
                 sd.table("docs")
-                .select("projectid,sampleyn")
+                .select("projectid")
                 .eq("docid", docid)
                 .maybe_single()
                 .execute()
@@ -286,9 +300,6 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
             if doc_detail.data:
                 projectid = str(doc_detail.data.get("projectid", ""))
-                sampleyn = doc_detail.data.get("sampleyn", False)
-
-                ctx.sampledocyn = "Y" if sampleyn else "N"
 
     except Exception:
         pass
@@ -345,52 +356,55 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
     # 7. tenantmanager
     try:
-        user_tenant = (
-            sd.table("tenantusers")
-            .select("rolecd, useyn")
-            .eq("useruid", user_id)
-            .execute()
-        )
-
-        ctx.tenantmanager = (
-            "Y"
-            if user_tenant.data
-            and any(t.get("rolecd") == "M" and t.get("useyn") is True for t in user_tenant.data)
-            else "N"
-        )
+        if ctx.tenantid:
+            user_tenant = (
+                sd.table("tenantusers")
+                .select("rolecd, useyn")
+                .eq("useruid", user_id)
+                .eq("tenantid", int(ctx.tenantid))
+                .maybe_single()
+                .execute()
+            )
+            ctx.tenantmanager = (
+                "Y"
+                if user_tenant.data
+                and user_tenant.data.get("rolecd") == "M"
+                and user_tenant.data.get("useyn") is True
+                else "N"
+            )
 
     except Exception:
         pass
 
     # 8. editbuttonyn
-    if not sampleyn and (ctx.projectmanager == "Y" or ctx.tenantmanager == "Y"):
-        ctx.editbuttonyn = "Y"
-    elif sampleyn and ctx.roleid == 7:
+    if ctx.projectmanager == "Y" or ctx.tenantmanager == "Y":
         ctx.editbuttonyn = "Y"
     else:
         ctx.editbuttonyn = "N"
 
     # 9. languagecd: TenantUsers.languagecd → Tenants.languagecd
     try:
-        lang_row = (
-            sd.table("tenantusers")
-            .select("languagecd, tenantid")
-            .eq("useruid", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if lang_row.data and lang_row.data.get("languagecd"):
-            ctx.languagecd = lang_row.data["languagecd"]
-        elif lang_row.data and lang_row.data.get("tenantid"):
-            t_lang = (
-                sd.table("tenants")
+        if ctx.tenantid:
+            lang_row = (
+                sd.table("tenantusers")
                 .select("languagecd")
-                .eq("tenantid", lang_row.data["tenantid"])
+                .eq("useruid", user_id)
+                .eq("tenantid", int(ctx.tenantid))
                 .maybe_single()
                 .execute()
             )
-            if t_lang.data:
-                ctx.languagecd = t_lang.data.get("languagecd")
+            if lang_row.data and lang_row.data.get("languagecd"):
+                ctx.languagecd = lang_row.data["languagecd"]
+            else:
+                t_lang = (
+                    sd.table("tenants")
+                    .select("languagecd")
+                    .eq("tenantid", int(ctx.tenantid))
+                    .maybe_single()
+                    .execute()
+                )
+                if t_lang.data:
+                    ctx.languagecd = t_lang.data.get("languagecd")
     except Exception:
         pass
 
@@ -1066,6 +1080,30 @@ def send_sms(body: SendSmsRequest):
         logging.warning(f"SMS send failed: {e} | code={code}")
 
     return MessageResponse(ok=True, message="인증번호를 발송했습니다.")
+
+
+class SwitchTenantRequest(BaseModel):
+    tenantid: int
+
+
+@router.post("/switch-tenant")
+def switch_tenant(body: SwitchTenantRequest, token: str = Depends(get_token)):
+    """테넌트 전환: users.default_tenantid 업데이트"""
+    supabase = _get_user_client(token)
+    user_resp = supabase.auth.get_user(token)
+    if not user_resp or not user_resp.user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
+    user_id = str(user_resp.user.id)
+    sd = get_service_client().schema(SUPABASE_SCHEMA)
+
+    sd.table("users").update({"default_tenantid": body.tenantid}).eq("useruid", user_id).execute()
+
+    tenant_info = sd.table("tenants").select("tenantnm,iconfileurl").eq("tenantid", body.tenantid).maybe_single().execute()
+    return {
+        "tenantid": str(body.tenantid),
+        "tenantnm": tenant_info.data.get("tenantnm", "") if tenant_info.data else "",
+        "tenanticonurl": tenant_info.data.get("iconfileurl") if tenant_info.data else None,
+    }
 
 
 @router.patch("/language", response_model=MessageResponse)

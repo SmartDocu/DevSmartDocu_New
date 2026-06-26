@@ -14,6 +14,10 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  const tenantid = useAuthStore.getState().user?.tenantid
+  if (tenantid) {
+    config.headers['X-Tenant-ID'] = tenantid
+  }
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type']
   }

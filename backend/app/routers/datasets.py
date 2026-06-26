@@ -3,15 +3,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
-
-def _tenantid(sb, user_id: str) -> Optional[int]:
-    row = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user_id).execute().data
-    return row[0]["tenantid"] if row else None
 
 
 class DatasetSaveRequest(BaseModel):
@@ -41,10 +37,9 @@ class DatasetSaveAllRequest(BaseModel):
 # ── Dataset 목록 ───────────────────────────────────────────────────────────────
 
 @router.get("")
-def list_datasets(token: str = Depends(get_token)):
+def list_datasets(token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
     if not tid:
         return {"datasets": []}
     rows = (
@@ -60,10 +55,9 @@ def list_datasets(token: str = Depends(get_token)):
 # ── Dataset 저장 (create / update) ────────────────────────────────────────────
 
 @router.post("")
-def save_dataset(body: DatasetSaveRequest, token: str = Depends(get_token)):
+def save_dataset(body: DatasetSaveRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
     record = {
         "tenantid":  tid,
         "datasetnm": body.datasetnm,
@@ -95,10 +89,10 @@ def delete_dataset(datasetuid: str, token: str = Depends(get_token)):
 # ── 테넌트 선택 가능 datas 목록 (신규 dataset용) ──────────────────────────────
 
 @router.get("/available-datas")
-def list_available_datas(token: str = Depends(get_token)):
+def list_available_datas(token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
     proj_rows = (
         sb.schema(SUPABASE_SCHEMA).table("projects")
         .select("projectid").eq("tenantid", tid).execute().data or []
@@ -120,10 +114,10 @@ def list_available_datas(token: str = Depends(get_token)):
 # ── 테넌트 프로젝트 목록 (신규 dataset용) ─────────────────────────────────────
 
 @router.get("/available-projects")
-def list_available_projects(token: str = Depends(get_token)):
+def list_available_projects(token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
     projects = (
         sb.schema(SUPABASE_SCHEMA).table("projects")
         .select("projectid, projectnm")
@@ -137,10 +131,10 @@ def list_available_projects(token: str = Depends(get_token)):
 # ── Dataset 멤버 (datas) 조회 ─────────────────────────────────────────────────
 
 @router.get("/{datasetuid}/members")
-def get_dataset_members(datasetuid: str, token: str = Depends(get_token)):
+def get_dataset_members(datasetuid: str, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
 
     # datas 테이블은 projectid 기준 → 테넌트의 프로젝트 목록 먼저 조회
     proj_rows = (
@@ -175,10 +169,10 @@ def get_dataset_members(datasetuid: str, token: str = Depends(get_token)):
 # ── Dataset 멤버 저장 (전체 교체) ─────────────────────────────────────────────
 
 @router.post("/{datasetuid}/members")
-def save_dataset_members(datasetuid: str, body: MembersSaveRequest, token: str = Depends(get_token)):
+def save_dataset_members(datasetuid: str, body: MembersSaveRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
 
     sb.schema(SUPABASE_SCHEMA).table("datasetmembers").delete().eq("datasetuid", datasetuid).execute()
     if body.datauids:
@@ -192,10 +186,10 @@ def save_dataset_members(datasetuid: str, body: MembersSaveRequest, token: str =
 # ── Dataset 프로젝트 매핑 조회 ────────────────────────────────────────────────
 
 @router.get("/{datasetuid}/projects")
-def get_dataset_projects(datasetuid: str, token: str = Depends(get_token)):
+def get_dataset_projects(datasetuid: str, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
 
     projects = (
         sb.schema(SUPABASE_SCHEMA).table("projects")
@@ -218,10 +212,10 @@ def get_dataset_projects(datasetuid: str, token: str = Depends(get_token)):
 # ── Dataset 프로젝트 매핑 저장 (전체 교체) ────────────────────────────────────
 
 @router.post("/{datasetuid}/projects")
-def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, token: str = Depends(get_token)):
+def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
 
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete().eq("datasetuid", datasetuid).execute()
     if body.projectids:
@@ -235,10 +229,10 @@ def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, token: str
 # ── Dataset + 멤버 + 프로젝트 통합 저장 ──────────────────────────────────────
 
 @router.post("/save-all")
-def save_dataset_all(body: DatasetSaveAllRequest, token: str = Depends(get_token)):
+def save_dataset_all(body: DatasetSaveAllRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tid = _tenantid(sb, str(user.id))
+
 
     # 1. dataset 기본 정보
     record = {"tenantid": tid, "datasetnm": body.datasetnm, "desc": body.desc, "useyn": body.useyn}

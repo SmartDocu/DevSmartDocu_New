@@ -1,5 +1,6 @@
 import { Outlet, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover } from 'antd'
+import apiClient from '@/api/client'
 import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
@@ -33,8 +34,8 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const { appcd } = useParams()
   const { token: cssToken } = theme.useToken()
-  const { user, clearAuth, updateUser } = useAuthStore()
-  const { message } = App.useApp()
+  const { user, clearAuth, updateUser, switchTenant } = useAuthStore()
+  const { message, modal } = App.useApp()
 
   const location = useLocation()
   const [docModalOpen, setDocModalOpen] = useState(false)
@@ -123,6 +124,30 @@ export default function AppLayout() {
     resetLang()
     clearAuth()
     navigate('/')
+  }
+
+  const handleTenantChange = (tenantid) => {
+    const tenant = user?.tenants?.find((t) => String(t.tenantid) === String(tenantid))
+    modal.confirm({
+      title: t('msg.tenant.switch.confirm'),
+      content: t('msg.tenant.switch.desc'),
+      okText: t('btn.confirm'),
+      cancelText: t('btn.cancel'),
+      onOk: async () => {
+        try {
+          const res = await apiClient.post('/auth/switch-tenant', { tenantid })
+          switchTenant(tenantid)
+          updateUser({
+            tenantnm: res.data.tenantnm ?? tenant?.tenantnm,
+            tenanticonurl: res.data.tenanticonurl ?? tenant?.tenanticonurl,
+          })
+          clearTabs()
+          navigate('/launcher')
+        } catch (e) {
+          message.error(t('msg.tenant.switch.error'))
+        }
+      },
+    })
   }
 
   return (
@@ -263,6 +288,22 @@ export default function AppLayout() {
 
           {/* 사용자 영역 */}
           <div style={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {/* 테넌트 선택 (멀티테넌트 사용자만) */}
+            {isLoggedIn && user?.tenants?.length >= 2 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 8 }}>
+                <Select
+                  value={user?.tenantid || undefined}
+                  onChange={handleTenantChange}
+                  size="small"
+                  variant="borderless"
+                  style={{ minWidth: 120, color: '#fff' }}
+                  popupMatchSelectWidth={false}
+                  options={user.tenants.map((t) => ({ value: t.tenantid, label: t.tenantnm }))}
+                  className="lang-select"
+                />
+              </div>
+            )}
+
             {/* 프로젝트 선택 */}
             {isLoggedIn && projectList.length > 0 && (appcd === 'D2CHAT' || appcd === 'D2INSIGHT') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>

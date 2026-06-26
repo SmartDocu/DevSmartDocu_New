@@ -9,14 +9,10 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
-
-def _get_tenantid(sb, user_id: str) -> Optional[str]:
-    rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).execute().data
-    return rows[0]["tenantid"] if rows else None
 
 
 def _decrypt(val: str) -> str:
@@ -122,10 +118,9 @@ def _fetch_db_secret(secret_path: Optional[str], tenantid: Optional[str], connui
 
 
 @router.get("/servers")
-def list_servers(token: str = Depends(get_token)):
+def list_servers(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -167,12 +162,11 @@ class ServerSaveRequest(BaseModel):
 
 
 @router.post("/servers")
-def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
+def save_server(body: ServerSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.secrets_cache import save_connector_secret
 
     user = _get_user(token)
     sb = _sb(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     if body.connuid:
         existing = (
@@ -247,12 +241,11 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token)):
 
 
 @router.delete("/servers/{connuid}")
-def delete_server(connuid: str, token: str = Depends(get_token)):
+def delete_server(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.secrets_cache import delete_connector_secret
 
     user = _get_user(token)
     sb = _sb(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -270,10 +263,9 @@ def delete_server(connuid: str, token: str = Depends(get_token)):
 # ══════════════════════════════════════════════════════
 
 @router.get("/projects")
-def list_projects(token: str = Depends(get_token)):
+def list_projects(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).order("createdts", desc=True).execute().data or []
     tenant_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
@@ -299,10 +291,9 @@ class ProjectSaveRequest(BaseModel):
 
 
 @router.post("/projects")
-def save_project(body: ProjectSaveRequest, token: str = Depends(get_token)):
+def save_project(body: ProjectSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     data = {
         "projectnm": body.projectnm,
@@ -425,7 +416,7 @@ def delete_tenant(tenantid: str, token: str = Depends(get_token)):
 # ══════════════════════════════════════════════════════
 
 @router.get("/myinfo")
-def get_myinfo(token: str = Depends(get_token)):
+def get_myinfo(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
@@ -434,10 +425,9 @@ def get_myinfo(token: str = Depends(get_token)):
     user_info = sb.schema(SUPABASE_SCHEMA).table("users").select("*").eq("useruid", user_id).execute().data
     user_info = user_info[0] if user_info else {}
 
-    # tenantusers
-    tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("useruid", user_id).execute().data
+    # tenantusers (현재 선택된 tenant 기준)
+    tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("useruid", user_id).eq("tenantid", tenantid).execute().data if tenantid else []
     tenantuser = tu[0] if tu else {}
-    tenantid = tenantuser.get("tenantid")
 
     # tenant
     tenant = {}
@@ -512,10 +502,13 @@ class UpdateTimezoneRequest(BaseModel):
 
 
 @router.post("/myinfo/timezone")
-def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token)):
+def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("tenantusers").update({"timezone": body.timezone}).eq("useruid", user.id).execute()
+    q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").update({"timezone": body.timezone}).eq("useruid", user.id)
+    if tenantid:
+        q = q.eq("tenantid", tenantid)
+    q.execute()
     offsetminutes = None
     if body.timezone:
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", body.timezone).maybe_single().execute()

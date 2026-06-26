@@ -6,15 +6,11 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
 
-
-def _get_tenantid(sb, user_id: str) -> Optional[str]:
-    rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).execute().data
-    return rows[0]["tenantid"] if rows else None
 
 
 def _fmt_dt(raw) -> str:
@@ -47,14 +43,15 @@ def _get_usernm_email(sb, useruid: str):
 def list_tenant_users(
     tenantid: Optional[str] = Query(None),
     token: str = Depends(get_token),
+    header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
 
-    # tenantid 결정: 파라미터 > 세션 tenantid
+    # tenantid 결정: Query 파라미터 > X-Tenant-ID 헤더
     if not tenantid:
-        tenantid = _get_tenantid(sb, user_id)
+        tenantid = header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
 
@@ -153,14 +150,6 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
                 "approvedts": datetime.now().isoformat(),
             }).execute()
     else:
-        # 다른 기업 소속 확인
-        other_check = (
-            sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*")
-            .neq("tenantid", other_tenantid).eq("useruid", useruid).execute()
-        )
-        if other_check.data:
-            raise HTTPException(status_code=400, detail="해당 사용자는 다른 기업에 이미 소속되어 있습니다.")
-
         # tenantnewusers 확인
         sep = body.sep
         tenantnewuid = body.tenantnewuid
@@ -190,19 +179,6 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
                 "approveuseruid": user_id,
                 "approvedts": datetime.now().isoformat(),
             }).execute()
-
-        # SmartDoc 공용 테넌트에서 제거
-        if other_tenantid and other_tenantid != tenantid:
-            sb.schema(SUPABASE_SCHEMA).table("tenantusers").delete().eq("tenantid", other_tenantid).eq("useruid", useruid).execute()
-            pub_proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("tenantid", other_tenantid).eq("projectnm", "public").execute().data
-            if pub_proj:
-                sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", pub_proj[0]["projectid"]).eq("useruid", useruid).execute()
-            email_proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("tenantid", other_tenantid).eq("projectnm", body.email).execute().data
-            if email_proj:
-                ep_id = email_proj[0]["projectid"]
-                sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", ep_id).eq("useruid", useruid).execute()
-                sb.schema(SUPABASE_SCHEMA).table("docs").delete().eq("projectid", ep_id).execute()
-                sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", ep_id).execute()
 
     return {"result": "success", "message": "사용자가 성공적으로 저장되었습니다."}
 
@@ -264,12 +240,10 @@ def _get_llmmodel_info(sb, llmmodelnm: str) -> dict:
 
 
 @router.get("/tenant-llms")
-def list_tenant_llms(token: str = Depends(get_token)):
+def list_tenant_llms(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
-
-    tenantid = _get_tenantid(sb, user_id)
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
 
@@ -388,12 +362,13 @@ def delete_tenant_llm(body: TenantLlmDeleteRequest, token: str = Depends(get_tok
 def list_org_projects(
     tenantid: Optional[str] = Query(None),
     token: str = Depends(get_token),
+    header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
 
     if not tenantid:
-        tenantid = _get_tenantid(sb, user.id)
+        tenantid = header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
 
@@ -421,11 +396,11 @@ class OrgProjectSaveRequest(BaseModel):
 
 
 @router.post("/projects")
-def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token)):
+def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
 
-    tenantid = body.tenantid or _get_tenantid(sb, user.id)
+    tenantid = body.tenantid or header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
 
@@ -466,16 +441,18 @@ def delete_org_project(projectid: str, token: str = Depends(get_token)):
 def list_project_users(
     projects: Optional[str] = Query(None),   # projectid
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
 
-    tenantid = _get_tenantid(sb, user_id)
-
     # ── 프로젝트 목록 (드롭다운용) ──────────────────────────────
     # tenantmanager=Y → 기업 전체 프로젝트 / 그 외 → 사용자가 속한 프로젝트(manager)
-    tu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("rolecd,tenantid").eq("useruid", user_id).eq("useyn", True).execute().data or []
+    tu_q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("rolecd,tenantid").eq("useruid", user_id).eq("useyn", True)
+    if tenantid:
+        tu_q = tu_q.eq("tenantid", tenantid)
+    tu_rows = tu_q.execute().data or []
     is_tenant_manager = any(r.get("rolecd") == "M" for r in tu_rows)
 
     if is_tenant_manager and tenantid:

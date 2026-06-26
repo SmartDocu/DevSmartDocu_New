@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
@@ -14,18 +14,6 @@ HTTP_METHODS  = []  # codes table: http_methods
 KEY_LOCATIONS = []  # codes table: param_locationcd
 GRANT_TYPES   = []  # codes table: grant_types
 
-
-def _get_tenantid(sb, user_id: str) -> Optional[int]:
-    rows = (
-        sb.schema(SUPABASE_SCHEMA)
-        .table("tenantusers")
-        .select("tenantid")
-        .eq("useruid", user_id)
-        .eq("useyn", True)
-        .execute()
-        .data
-    )
-    return rows[0]["tenantid"] if rows else None
 
 
 def _parse_secret(secret_json: Optional[str]) -> dict:
@@ -103,10 +91,9 @@ class ConnectorSaveRequest(BaseModel):
 
 
 @router.get("")
-def list_connectors(token: str = Depends(get_token)):
+def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     conns = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -192,10 +179,9 @@ def list_connectors(token: str = Depends(get_token)):
 
 
 @router.post("")
-def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token)):
+def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     # ── connectors ──────────────────────────────────────────────────────────
     if body.connuid:
@@ -287,12 +273,11 @@ def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token)):
 
 
 @router.delete("/{connuid}")
-def delete_connector(connuid: str, token: str = Depends(get_token)):
+def delete_connector(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.secrets_cache import delete_secret, invalidate_tenant
 
     sb   = _sb(token)
     user = _get_user(token)
-    tenantid = _get_tenantid(sb, user.id)
 
     exists = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -386,10 +371,10 @@ def test_auth_inline(body: InlineAuthRequest, token: str = Depends(get_token)):
 
 
 @router.post("/{connuid}/test-health")
-def test_health(connuid: str, token: str = Depends(get_token)):
+def test_health(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
-    _verify_connector(sb, connuid, _get_tenantid(sb, user.id))
+    _verify_connector(sb, connuid, tenantid)
 
     api_rows = (
         sb.schema(SUPABASE_SCHEMA).table("conn_apis")
@@ -412,10 +397,10 @@ def test_health(connuid: str, token: str = Depends(get_token)):
 
 
 @router.post("/{connuid}/test-auth")
-def test_auth(connuid: str, token: str = Depends(get_token)):
+def test_auth(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
-    _verify_connector(sb, connuid, _get_tenantid(sb, user.id))
+    _verify_connector(sb, connuid, tenantid)
 
     api_rows = (
         sb.schema(SUPABASE_SCHEMA).table("conn_apis")

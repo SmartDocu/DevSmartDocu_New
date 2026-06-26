@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { App, Modal, Tabs, Spin, Divider } from 'antd'
+import { App, Modal, Spin } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,7 +16,6 @@ export default function DocSelectModal({ open, onClose }) {
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState('doc')
   const [selectedDoc, setSelectedDoc] = useState(null)
   const [hoveredDocId, setHoveredDocId] = useState(null)
 
@@ -26,7 +25,6 @@ export default function DocSelectModal({ open, onClose }) {
     setLoading(true)
     setDocs([])
     setSelectedDoc(null)
-    setActiveTab('doc')
 
     apiClient
       .get('/docs')
@@ -43,10 +41,6 @@ export default function DocSelectModal({ open, onClose }) {
       })
       .finally(() => setLoading(false))
   }, [open])
-
-  const filtered = docs.filter((d) =>
-    activeTab === 'doc' ? !d.sampleyn : !!d.sampleyn,
-  )
 
   const handleSelect = (doc) => setSelectedDoc(doc)
 
@@ -74,7 +68,6 @@ export default function DocSelectModal({ open, onClose }) {
         tenantmanager: data.tenantmanager,
         projectmanager: data.projectmanager,
         editbuttonyn: data.editbuttonyn,
-        sampledocyn: data.sampledocyn,
       })
 
       onClose()
@@ -99,11 +92,6 @@ export default function DocSelectModal({ open, onClose }) {
     }
   }
 
-  const tabItems = [
-    { key: 'doc', label: t('lbl.doc') },
-    { key: 'sample', label: t('lbl.sample') },
-  ]
-
   const modalFooter = (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 20, paddingTop: 8 }}>
       <button type="button" className="icon-btn" onClick={handleOk} disabled={saving}>
@@ -124,27 +112,18 @@ export default function DocSelectModal({ open, onClose }) {
       width={520}
       styles={{ body: { maxHeight: '60vh', overflowY: 'auto', padding: '8px 0' } }}
     >
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={tabItems}
-        centered
-        size="small"
-        style={{ marginBottom: 8 }}
-      />
-
       {loading ? (
         <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
           <div style={{ marginTop: 8, color: '#888' }}>{t('msg.doc.loading')}</div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : docs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 24, color: '#888' }}>
-          {activeTab === 'doc' ? t('msg.doc.empty') : t('msg.sample.empty')}
+          {t('msg.doc.empty')}
         </div>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {filtered.map((doc) => {
+          {docs.map((doc) => {
             const isCurrent = user?.docid != null && String(user.docid) === String(doc.docid)
             const isSelected = selectedDoc?.docid === doc.docid
             const isHovered = hoveredDocId === doc.docid
