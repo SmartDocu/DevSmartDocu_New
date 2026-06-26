@@ -335,7 +335,9 @@ export default function AppLayout() {
                   style={{ width: 20, height: 20, cursor: 'pointer', filter: 'invert(100%) brightness(250%) contrast(150%)' }}
                 />
                 {user?.docnm && (
-                  <Text style={{ color: '#fff' }}>{user.docnm}</Text>
+                  <span style={{ color: '#fff', fontSize: 14, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user.docnm}
+                  </span>
                 )}
               </div>
             )}

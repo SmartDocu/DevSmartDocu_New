@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.auth import MessageResponse
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 from backend.app.schemas.docs import (
@@ -55,7 +55,7 @@ def list_projects(token: str = Depends(get_token)):
 # ─── 문서 목록 (문서 선택 모달용) ─────────────────────────────────────────────
 
 @router.get("", response_model=DocsListResponse)
-def list_docs(token: str = Depends(get_token)):
+def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -105,15 +105,16 @@ def list_docs(token: str = Depends(get_token)):
     manager_project_ids: set = set()
     manager_tenant_ids: set = set()
     if project_ids:
-        projects_data = (
+        q = (
             sb.schema(SUPABASE_SCHEMA)
             .table("projects")
             .select("projectid, projectnm, tenantid, useyn")
             .in_("projectid", project_ids)
             .eq("useyn", True)
-            .execute()
-            .data or []
         )
+        if tenantid:
+            q = q.eq("tenantid", tenantid)
+        projects_data = q.execute().data or []
         project_map = {p["projectid"]: p for p in projects_data}
 
         # 4. 테넌트 정보 조회
