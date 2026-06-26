@@ -909,7 +909,7 @@ def register(body: RegisterRequest):
 
                 now_utc = datetime.now(timezone.utc)
                 startdts = now_utc.isoformat()
-                service.schema(SCHEMA).table("CreditBuckets").insert({
+                service.schema(SCHEMA).table("creditbuckets").insert({
                     "subscriptionuid": subscriptionuid,
                     "tenantid": smartdoc_tenantid,
                     "accountuid": accountuid,
