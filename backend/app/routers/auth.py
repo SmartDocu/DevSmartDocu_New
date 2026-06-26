@@ -513,9 +513,9 @@ def mfa_verify(body: MfaVerifyRequest):
             {"factor_id": body.factor_id}
         )
         challenge_id = challenge_resp.id
-        print(f"[MFA-VERIFY] challenge 발급 성공: challenge_id={challenge_id}")
+        # print(f"[MFA-VERIFY] challenge 발급 성공: challenge_id={challenge_id}")
     except Exception as e:
-        print(f"[MFA-VERIFY] challenge 실패: {type(e).__name__}: {e}")
+        # print(f"[MFA-VERIFY] challenge 실패: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"MFA challenge 실패: {str(e)}",
@@ -528,9 +528,9 @@ def mfa_verify(body: MfaVerifyRequest):
             "challenge_id": challenge_id,
             "code": body.code,
         })
-        print(f"[MFA-VERIFY] verify 성공")
+        # print(f"[MFA-VERIFY] verify 성공")
     except Exception as e:
-        print(f"[MFA-VERIFY] verify 실패: {type(e).__name__}: {e}")
+        # print(f"[MFA-VERIFY] verify 실패: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="인증 코드가 올바르지 않습니다.",
@@ -538,7 +538,7 @@ def mfa_verify(body: MfaVerifyRequest):
 
     access_token = getattr(verify_resp, "access_token", None)
     refresh_token = getattr(verify_resp, "refresh_token", None)
-    print(f"[MFA-VERIFY] verify_resp attrs: {vars(verify_resp)}")
+    # print(f"[MFA-VERIFY] verify_resp attrs: {vars(verify_resp)}")
 
     if not access_token:
         raise HTTPException(
@@ -659,6 +659,8 @@ def get_products():
         .eq("producttype", "Service")
         .eq("useyn", True)
         .eq("is_sales", True)
+        .order("users")
+        .order("productcd")
         .execute()
     )
     return {"products": result.data or []}
