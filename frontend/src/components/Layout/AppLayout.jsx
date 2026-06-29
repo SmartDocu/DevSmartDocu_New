@@ -80,8 +80,9 @@ export default function AppLayout() {
   const showSidebar = isLoggedIn && location.pathname !== '/launcher'
 
   const openMyInfoInTab = () => {
-    const tabPath = appcd ? `app/${appcd}/myinfo` : 'myinfo'
-    const navPath = appcd ? `/app/${appcd}/myinfo` : '/myinfo'
+    const effectiveAppcd = appcd || apps[0]?.appcd
+    const tabPath = effectiveAppcd ? `app/${effectiveAppcd}/myinfo` : 'myinfo'
+    const navPath = effectiveAppcd ? `/app/${effectiveAppcd}/myinfo` : '/myinfo'
     const menu = allMenus.find((m) => m.route_path === 'myinfo')
     if (menu) {
       openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), labelKey: `mnu.${menu.menucd}`, path: tabPath })
@@ -140,6 +141,7 @@ export default function AppLayout() {
           updateUser({
             tenantnm: res.data.tenantnm ?? tenant?.tenantnm,
             tenanticonurl: res.data.tenanticonurl ?? tenant?.tenanticonurl,
+            accountuid: res.data.accountuid ?? null,
           })
           clearTabs()
           navigate('/launcher')

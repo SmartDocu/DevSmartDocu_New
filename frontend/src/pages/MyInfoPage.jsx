@@ -10,8 +10,6 @@ import { useLangStore, t } from '@/stores/langStore'
 
 const { Title } = Typography
 
-const APPROVE_LABELS = () => ({ A: t('cod.approve_pending'), D: t('cod.approve_rejected') })
-
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
   const navigate = useNavigate()
@@ -29,7 +27,6 @@ export default function MyInfoPage() {
   const tenant = data.tenant || {}
   const tenantuser = data.tenantuser || {}
   const projectUsers = data.project_users || []
-  const tenantChange = data.tenant_change || null
   const timezones = data.timezones || []
   const currentTimezone = data.timezone || null
 
@@ -198,22 +195,6 @@ export default function MyInfoPage() {
         />
       </Card>
 
-      {/* 기업 변경 이력 */}
-      <Card size="small" title={t('ttl.myinfo.tenant.history')} loading={isLoading}>
-        {tenantChange ? (
-          <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label={t('lbl.tenantnm')}>{tenantChange.tenantnm || '-'}</Descriptions.Item>
-            <Descriptions.Item label={t('lbl.status')}>
-              {APPROVE_LABELS()[tenantChange.approvecd] || tenantChange.approvecd || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label={t('lbl.note')}>
-              {tenantChange.approvecd === 'D' ? tenantChange.approvenote || '-' : '-'}
-            </Descriptions.Item>
-          </Descriptions>
-        ) : (
-          <span style={{ color: '#aaa', fontSize: 13 }}>{t('msg.no.change.history')}</span>
-        )}
-      </Card>
     </div>
   )
 }

@@ -382,7 +382,21 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     else:
         ctx.editbuttonyn = "N"
 
-    # 9. languagecd: TenantUsers.languagecd → Tenants.languagecd
+    # 9. accountuid (issystemtenant 여부에 따라 조회 기준 다름)
+    try:
+        if ctx.tenantid:
+            t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+            if issystemtenant:
+                acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+            else:
+                acc = sd.table("accounts").select("accountuid").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
+            if acc.data:
+                ctx.accountuid = str(acc.data["accountuid"])
+    except Exception:
+        pass
+
+    # 10. languagecd: TenantUsers.languagecd → Tenants.languagecd
     try:
         if ctx.tenantid:
             lang_row = (
@@ -659,8 +673,8 @@ def get_products():
         .eq("producttype", "Service")
         .eq("useyn", True)
         .eq("is_sales", True)
-        .order("users")
-        .order("productcd")
+        .eq("plancd", "Fr")
+        .order("orderno")
         .execute()
     )
     return {"products": result.data or []}
@@ -759,23 +773,6 @@ def register(body: RegisterRequest):
             detail=f"DB 저장 실패: {str(e)}",
         )
 
-    # accounts 테이블에 User 타입 계정 생성 (개인 가입자만)
-    accountuid = None
-    if body.accounttype == "U":
-        try:
-            account_result = service.schema(SCHEMA).table("accounts").insert({
-                "accounttype": "U",
-                "useruid": user_id,
-                "accountstatus": "Active",
-                "creator": user_id,
-            }).execute()
-            accountuid = account_result.data[0]["accountuid"]
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"DB 저장 실패 (accounts): {str(e)}",
-            )
-
     # SmartDoc 기본 tenantid 조회
     smartdoc_row = (
         service.schema(SCHEMA)
@@ -793,21 +790,23 @@ def register(body: RegisterRequest):
 
     effective_tenantid = body.tenantid if body.tenantid else smartdoc_tenantid
 
-    # SmartDoc public 프로젝트 조회
-    public_proj_row = (
-        service.schema(SCHEMA)
-        .table("projects")
-        .select("projectid")
-        .eq("projectnm", "public")
-        .eq("tenantid", smartdoc_tenantid)
-        .execute()
-    )
-    if not public_proj_row.data:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="DB 저장 실패: public 프로젝트를 찾을 수 없습니다.",
-        )
-    public_projectid = public_proj_row.data[0]["projectid"]
+    # accounts 테이블에 User 타입 계정 생성 (개인 가입자만)
+    accountuid = None
+    if body.accounttype == "U":
+        try:
+            account_result = service.schema(SCHEMA).table("accounts").insert({
+                "accounttype": "U",
+                "useruid": user_id,
+                "tenantid": smartdoc_tenantid,
+                "accountstatus": "Active",
+                "creator": user_id,
+            }).execute()
+            accountuid = account_result.data[0]["accountuid"]
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"DB 저장 실패 (accounts): {str(e)}",
+            )
 
     # 공통 권한 부여 + 추가 처리
     try:
@@ -819,27 +818,11 @@ def register(body: RegisterRequest):
             "creator": user_id,
         }).execute()
 
-        service.schema(SCHEMA).table("projectusers").insert({
-            "projectid": public_projectid,
-            "useruid": user_id,
-            "rolecd": "U",
-            "useyn": True,
-            "creator": user_id,
-        }).execute()
-
-        if body.tenantid and str(body.tenantid) != str(smartdoc_tenantid):
-            service.schema(SCHEMA).table("tenantnewusers").insert({
-                "tenantid": body.tenantid,
-                "useruid": user_id,
-                "creator": user_id,
-                "approvecd": "A",
-            }).execute()
-
         if body.accounttype == "U" and accountuid and body.products:
             prod_rows = (
                 service.schema(SCHEMA)
                 .table("products")
-                .select("productcd,plancd,servicecd,billingtermcd,users,is_customeraikey")
+                .select("productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey")
                 .in_("productcd", body.products)
                 .execute()
             )
@@ -893,7 +876,7 @@ def register(body: RegisterRequest):
                     "productcd": product["productcd"],
                     "plancd": product.get("plancd"),
                     "is_customerAIKey": product.get("is_customeraikey", False),
-                    "is_postpaid": True,
+                    "is_postpaid": False,
                     "included_users": product.get("users", 1),
                     "total_users": product.get("users", 1),
                     "is_autotopup": False,
@@ -920,9 +903,9 @@ def register(body: RegisterRequest):
                     "servicecd": product["servicecd"],
                     "creditchargecd": "Ba",
                     "priorityno": 1,
-                    "creditqty": 100,
+                    "creditqty": product.get("credit", 0),
                     "usedqty": 0,
-                    "remainqty": 100,
+                    "remainqty": product.get("credit", 0),
                     "granteddts": startdts,
                     "expiredts": (now_utc + relativedelta(months=1)).isoformat(),
                     "statuscd": "Active",
@@ -1133,11 +1116,25 @@ def switch_tenant(body: SwitchTenantRequest, token: str = Depends(get_token)):
 
     sd.table("users").update({"default_tenantid": body.tenantid}).eq("useruid", user_id).execute()
 
-    tenant_info = sd.table("tenants").select("tenantnm,iconfileurl").eq("tenantid", body.tenantid).maybe_single().execute()
+    tenant_info = sd.table("tenants").select("tenantnm,iconfileurl,issystemtenant").eq("tenantid", body.tenantid).maybe_single().execute()
+
+    accountuid = None
+    try:
+        issystemtenant = tenant_info.data.get("issystemtenant", True) if tenant_info.data else True
+        if issystemtenant:
+            acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+        else:
+            acc = sd.table("accounts").select("accountuid").eq("tenantid", body.tenantid).maybe_single().execute()
+        if acc.data:
+            accountuid = str(acc.data["accountuid"])
+    except Exception:
+        pass
+
     return {
         "tenantid": str(body.tenantid),
         "tenantnm": tenant_info.data.get("tenantnm", "") if tenant_info.data else "",
         "tenanticonurl": tenant_info.data.get("iconfileurl") if tenant_info.data else None,
+        "accountuid": accountuid,
     }
 
 

@@ -29,6 +29,7 @@ class UserContext(BaseModel):
     languagecd: Optional[str] = None
     offsetminutes: Optional[int] = None
     tenants: Optional[list] = []
+    accountuid: Optional[str] = None
 
 
 # ── 기존 LoginResponse → MFA 필드 추가 ──────────────────────────────────────
