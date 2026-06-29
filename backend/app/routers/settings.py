@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 
 router = APIRouter()
 
@@ -425,27 +425,43 @@ def get_myinfo(token: str = Depends(get_token), tenantid: Optional[str] = Depend
     user_info = sb.schema(SUPABASE_SCHEMA).table("users").select("*").eq("useruid", user_id).execute().data
     user_info = user_info[0] if user_info else {}
 
-    # tenantusers (현재 선택된 tenant 기준)
-    tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("useruid", user_id).eq("tenantid", tenantid).execute().data if tenantid else []
-    tenantuser = tu[0] if tu else {}
+    # tenantusers — 내 모든 테넌트 (현재 테넌트 필터 제거)
+    tu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid,rolecd").eq("useruid", user_id).eq("useyn", True).execute().data or []
+    my_tenantids = [r["tenantid"] for r in tu_rows]
+    tu_map = {r["tenantid"]: r for r in tu_rows}
 
-    # tenant
+    # 현재 선택 테넌트 기준 단일값 (timezone 등 기존 호환용)
+    tenantuser = tu_map.get(int(tenantid)) if tenantid else {}
     tenant = {}
     if tenantid:
         t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
         tenant = t[0] if t else {}
 
-    # projects the user belongs to
-    pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("useruid", user_id).execute().data or []
-    if pu_rows and tenantid:
-        projects = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).execute().data or []
-        proj_map = {p["projectid"]: p for p in projects}
+    # 내 모든 테넌트 정보
+    all_tenants = {}
+    if my_tenantids:
+        t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid,tenantnm").in_("tenantid", my_tenantids).execute().data or []
+        all_tenants = {r["tenantid"]: r for r in t_rows}
+
+    # projects — 내 모든 테넌트의 프로젝트
+    pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("projectid,rolecd").eq("useruid", user_id).execute().data or []
+    project_users = []
+    if pu_rows and my_tenantids:
+        proj_rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm,tenantid").in_("tenantid", my_tenantids).execute().data or []
+        proj_map = {p["projectid"]: p for p in proj_rows}
         for pu in pu_rows:
             pid = pu.get("projectid")
-            pu["projectnm"] = proj_map[pid]["projectnm"] if pid in proj_map else ""
-        project_users = [pu for pu in pu_rows if pu.get("projectnm")]
-    else:
-        project_users = []
+            proj = proj_map.get(pid)
+            if proj:
+                tid = proj["tenantid"]
+                project_users.append({
+                    "projectid": pid,
+                    "projectnm": proj["projectnm"],
+                    "rolecd": pu.get("rolecd"),
+                    "tenantid": tid,
+                    "tenantnm": all_tenants.get(tid, {}).get("tenantnm", ""),
+                    "tenant_rolecd": tu_map.get(tid, {}).get("rolecd"),
+                })
 
     # timezones 목록 (useyn=true)
     tz_rows = sb.schema(SUPABASE_SCHEMA).table("timezones").select("timezone").eq("useyn", True).execute().data or []
@@ -483,6 +499,43 @@ def update_username(body: UpdateUsernameRequest, token: str = Depends(get_token)
 
 class UpdateTimezoneRequest(BaseModel):
     timezone: Optional[str] = None
+
+
+@router.get("/myinfo/subscriptions")
+def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    # issystemtenant 에 따라 accountuid 조회 기준 분기
+    accountuid = None
+    if tenantid:
+        t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+        issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+        if issystemtenant:
+            acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+        else:
+            acc = svc.table("accounts").select("accountuid").eq("tenantid", int(tenantid)).maybe_single().execute()
+        if acc and acc.data:
+            accountuid = acc.data["accountuid"]
+
+    if not accountuid:
+        return {"subscriptions": []}
+
+    subs = svc.table("subscriptions").select("productcd,plancd").eq("accountuid", accountuid).eq("subscription_status", "Paid").execute()
+    if not subs.data:
+        return {"subscriptions": []}
+
+    productcds = [s["productcd"] for s in subs.data]
+    prods = svc.table("products").select("productcd,productnm").in_("productcd", productcds).execute()
+    name_map = {p["productcd"]: p.get("productnm", p["productcd"]) for p in (prods.data or [])}
+
+    return {
+        "subscriptions": [
+            {"productcd": s["productcd"], "productnm": name_map.get(s["productcd"], s["productcd"]), "plancd": s.get("plancd", "")}
+            for s in subs.data
+        ]
+    }
 
 
 @router.post("/myinfo/timezone")

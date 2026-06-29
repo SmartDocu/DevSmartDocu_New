@@ -227,64 +227,87 @@ def delete_tenant_user(body: TenantUserDeleteRequest, token: str = Depends(get_t
 # ══════════════════════════════════════════════════════
 
 def _get_llmmodel_info(sb, llmmodelnm: str) -> dict:
-    """llmmodels 테이블에서 닉네임/활성 여부 조회"""
+    """llmmodels 테이블에서 활성 여부 조회"""
     if not llmmodelnm:
-        return {"llmmodelnicknm": "", "llmmodelactiveyn": False}
+        return {"llmmodelfullnm": "", "llmmodelactiveyn": False}
     try:
-        rows = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnicknm,useyn").eq("llmmodelnm", llmmodelnm).execute().data
+        rows = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("useyn").eq("llmmodelnm", llmmodelnm).execute().data
         if rows:
-            return {"llmmodelnicknm": rows[0].get("llmmodelnicknm", llmmodelnm), "llmmodelactiveyn": rows[0].get("useyn", False)}
+            return {"llmmodelfullnm": llmmodelnm, "llmmodelactiveyn": rows[0].get("useyn", False)}
     except Exception:
         pass
-    return {"llmmodelnicknm": llmmodelnm, "llmmodelactiveyn": False}
+    return {"llmmodelfullnm": llmmodelnm, "llmmodelactiveyn": False}
 
 
 @router.get("/tenant-llms")
-def list_tenant_llms(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    user = _get_user(token)
+def list_tenant_llms(
+    token: str = Depends(get_token),
+    accountuid: Optional[str] = None,
+):
+    import traceback as _tb
+    try:
+     return _list_tenant_llms_impl(token, accountuid)
+    except Exception:
+     print("[tenant-llms 500]\n" + _tb.format_exc())
+     raise
+
+def _list_tenant_llms_impl(token: str, accountuid: Optional[str]):
     sb = _sb(token)
-    user_id = user.id
-    if not tenantid:
-        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    if not accountuid:
+        return {"projects": [], "llmmodels": [], "account_projects": []}
 
-    # 기업 정보
-    t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
-    tenant = t_rows[0] if t_rows else {}
-    if tenant.get("llmmodelnm"):
-        info = _get_llmmodel_info(sb, tenant["llmmodelnm"])
-        tenant["llmmodelnicknm"] = info["llmmodelnicknm"]
-        tenant["llmmodelactiveyn"] = info["llmmodelactiveyn"]
-    else:
-        tenant["llmmodelnicknm"] = ""
-        tenant["llmmodelactiveyn"] = False
-    # llmmodeluseyn: 고객사 키 사용 여부 (encapikey 유무로 판단)
-    tenant["llmmodeluseyn"] = bool(tenant.get("encapikey"))
-    tenant.pop("encapikey", None)  # 보안상 제거
-
-    # 프로젝트 목록
-    projects = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).order("projectnm").execute().data or []
-    for p in projects:
+    # 프로젝트 목록 (accountuid 기준)
+    rows = (
+        sb.schema(SUPABASE_SCHEMA)
+        .table("projects")
+        .select("projectid,projectnm,projectdesc,servicecd,llmmodelnm,encapikey")
+        .eq("accountuid", accountuid)
+        .order("projectnm")
+        .execute()
+        .data or []
+    )
+    projects = []
+    for p in rows:
         if p.get("llmmodelnm"):
             info = _get_llmmodel_info(sb, p["llmmodelnm"])
-            p["llmmodelnicknm"] = info["llmmodelnicknm"]
+            p["llmmodelfullnm"] = info["llmmodelfullnm"]
             p["llmmodelactiveyn"] = info["llmmodelactiveyn"]
         else:
-            p["llmmodelnicknm"] = ""
+            p["llmmodelfullnm"] = ""
             p["llmmodelactiveyn"] = False
-        p.pop("encapikey", None)  # 보안상 제거
+        p.pop("encapikey", None)
+        projects.append(p)
 
     # LLM 모델 목록 (드롭다운용)
-    llmmodels = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm,llmmodelnicknm,useyn").eq("useyn", True).order("llmmodelnm").execute().data or []
+    llmmodels = (
+        sb.schema(SUPABASE_SCHEMA)
+        .table("llmmodels")
+        .select("llmmodelnm,useyn")
+        .eq("useyn", True)
+        .order("llmmodelnm")
+        .execute()
+        .data or []
+    )
+
+    # 우측 셀렉트박스용 — 동일 데이터에서 파생
+    account_projects = [
+        {
+            "projectid": p["projectid"],
+            "projectnm": p["projectnm"],
+            "projectdesc": p.get("projectdesc") or "",
+            "servicecd": p.get("servicecd") or "",
+        }
+        for p in projects
+    ]
 
     return {
-        "tenant": tenant,
         "projects": projects,
         "llmmodels": llmmodels,
+        "account_projects": account_projects,
     }
 
 
 class TenantLlmSaveRequest(BaseModel):
-    tenantid: Optional[str] = None
     projectid: Optional[str] = None
     llmmodelnm: Optional[str] = None
     apikey: Optional[str] = None  # 빈 문자열이면 기존 키 유지
@@ -294,8 +317,8 @@ class TenantLlmSaveRequest(BaseModel):
 def save_tenant_llm(body: TenantLlmSaveRequest, token: str = Depends(get_token)):
     sb = _sb(token)
 
-    if not body.tenantid and not body.projectid:
-        raise HTTPException(status_code=400, detail="tenantid 또는 projectid가 필요합니다.")
+    if not body.projectid:
+        raise HTTPException(status_code=400, detail="projectid가 필요합니다.")
 
     from utilsPrj.crypto_helper import encrypt_value, decrypt_value
 
@@ -303,10 +326,7 @@ def save_tenant_llm(body: TenantLlmSaveRequest, token: str = Depends(get_token))
 
     # API Key 가 비어 있으면 기존 키 유지
     if not apikey:
-        if body.tenantid:
-            row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("encapikey").eq("tenantid", body.tenantid).execute().data
-        else:
-            row = sb.schema(SUPABASE_SCHEMA).table("projects").select("encapikey").eq("projectid", body.projectid).execute().data
+        row = sb.schema(SUPABASE_SCHEMA).table("projects").select("encapikey").eq("projectid", body.projectid).execute().data
         if row and row[0].get("encapikey"):
             apikey = decrypt_value(row[0]["encapikey"])
 
@@ -318,20 +338,13 @@ def save_tenant_llm(body: TenantLlmSaveRequest, token: str = Depends(get_token))
         llmmodelnm = None
         encapikey = None
 
-    data = {"llmmodelnm": llmmodelnm, "encapikey": encapikey}
-
-    if body.tenantid:
-        data["tenantid"] = body.tenantid
-        sb.schema(SUPABASE_SCHEMA).table("tenants").upsert(data).execute()
-    else:
-        data["projectid"] = body.projectid
-        sb.schema(SUPABASE_SCHEMA).table("projects").upsert(data).execute()
+    data = {"projectid": body.projectid, "llmmodelnm": llmmodelnm, "encapikey": encapikey}
+    sb.schema(SUPABASE_SCHEMA).table("projects").upsert(data).execute()
 
     return {"result": "success", "message": "성공적으로 저장되었습니다."}
 
 
 class TenantLlmDeleteRequest(BaseModel):
-    tenantid: Optional[str] = None
     projectid: Optional[str] = None
 
 
@@ -339,17 +352,11 @@ class TenantLlmDeleteRequest(BaseModel):
 def delete_tenant_llm(body: TenantLlmDeleteRequest, token: str = Depends(get_token)):
     sb = _sb(token)
 
-    if not body.tenantid and not body.projectid:
-        raise HTTPException(status_code=400, detail="tenantid 또는 projectid가 필요합니다.")
+    if not body.projectid:
+        raise HTTPException(status_code=400, detail="projectid가 필요합니다.")
 
-    data = {"llmmodelnm": None, "encapikey": None}
-
-    if body.tenantid:
-        data["tenantid"] = body.tenantid
-        sb.schema(SUPABASE_SCHEMA).table("tenants").upsert(data).execute()
-    else:
-        data["projectid"] = body.projectid
-        sb.schema(SUPABASE_SCHEMA).table("projects").upsert(data).execute()
+    data = {"projectid": body.projectid, "llmmodelnm": None, "encapikey": None}
+    sb.schema(SUPABASE_SCHEMA).table("projects").upsert(data).execute()
 
     return {"result": "success", "message": "LLM 정보가 삭제되었습니다."}
 

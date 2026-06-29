@@ -17,5 +17,5 @@ export const useLangStore = create((set) => ({
  */
 export function t(key, menuFallback) {
   const { translations, defaults } = useLangStore.getState()
-  return translations[key] ?? defaults[key] ?? menuFallback ?? key
+  return translations[key] || defaults[key] || menuFallback || key
 }

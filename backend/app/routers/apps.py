@@ -17,25 +17,43 @@ class AppItem(BaseModel):
     orderno: Optional[int] = None
     rolecd: Optional[str] = None
     routepath: Optional[str] = None
+    servicecd: Optional[str] = None
 
 
 class AppsListResponse(BaseModel):
     apps: list[AppItem]
+    subscribed_servicecds: list[str] = []
 
 
 @router.get("", response_model=AppsListResponse)
-def list_apps(token: str = Depends(get_token)):
+def list_apps(token: str = Depends(get_token), accountuid: Optional[str] = None):
     try:
         sb = _sb(token)
         rows = (
             sb.schema(SUPABASE_SCHEMA)
             .table("apps")
-            .select("appcd, appnm, iconurl, desc, useyn, orderno, rolecd, routepath")
+            .select("appcd, appnm, iconurl, desc, useyn, orderno, rolecd, routepath, servicecd")
             .eq("useyn", True)
             .order("orderno")
             .execute()
             .data or []
         )
-        return AppsListResponse(apps=[AppItem(**r) for r in rows])
+
+        subscribed_servicecds = []
+        if accountuid:
+            subs = (
+                sb.schema(SUPABASE_SCHEMA)
+                .table("subscriptions")
+                .select("servicecd")
+                .eq("accountuid", accountuid)
+                .execute()
+                .data or []
+            )
+            subscribed_servicecds = list({s["servicecd"] for s in subs if s.get("servicecd")})
+
+        return AppsListResponse(
+            apps=[AppItem(**r) for r in rows],
+            subscribed_servicecds=subscribed_servicecds,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

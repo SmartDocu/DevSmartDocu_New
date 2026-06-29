@@ -5,24 +5,30 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useApps } from '@/hooks/useApps'
 
-function canSeeApp(rolecd, user) {
-  if (!rolecd || rolecd === 'P') return true
+function canSeeApp(app, user, subscribedServicecds) {
+  const { rolecd, servicecd } = app
   if (!user) return false
-  if (rolecd === 'U') return true
-  if (rolecd === 'PM') return user.projectmanager === 'Y'
-  if (rolecd === 'TM') return user.tenantmanager === 'Y'
+  // 1. servicecd가 있으면 구독 여부로 판단
+  if (servicecd) return subscribedServicecds.includes(servicecd)
+  // 2. 시스템 관리자 전용
   if (rolecd === 'S') return user.roleid === 7
+  // 3. rolecd 없음 → PM, TM, AM 중 하나라도 Y
+  if (!rolecd) {
+    return user.projectmanager === 'Y' || user.tenantmanager === 'Y' || user.accountmanager === 'Y'
+  }
   return false
 }
 
 export default function AppLauncher() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const { data: apps = [], isLoading } = useApps()
+  const accountuid = useAuthStore((s) => s.user?.accountuid)
+  const { data = {}, isLoading } = useApps({ accountuid })
+  const { apps = [], subscribed_servicecds = [] } = data
 
   useLangStore((s) => s.translations)
 
-  const visibleApps = apps.filter((app) => canSeeApp(app.rolecd, user))
+  const visibleApps = apps.filter((app) => canSeeApp(app, user, subscribed_servicecds))
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 0' }}>

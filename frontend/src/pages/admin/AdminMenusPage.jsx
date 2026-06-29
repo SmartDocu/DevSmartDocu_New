@@ -34,7 +34,7 @@ export default function AdminMenusPage() {
   const { data: languages = [] } = useLanguages()
   const { data: roleCodes = [] } = useMenuCodes('menu_rolecd')
   const user = useAuthStore((s) => s.user)
-  const { data: apps = [] } = useApps({ enabled: !!user })
+  const { data: { apps = [] } = {} } = useApps({ enabled: !!user })
 
   const [selectedMenu, setSelectedMenu] = useState(null)
   const [isNew, setIsNew] = useState(true)

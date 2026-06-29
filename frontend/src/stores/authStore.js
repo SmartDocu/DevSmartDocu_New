@@ -70,6 +70,7 @@ export const useAuthStore = create(
             projectid: null,
             editbuttonyn: 'N',
             accountuid: null,
+            accountmanager: 'N',
           } : state.user,
         })),
 

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography, Alert,
+  Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
-import { useMyInfo, useUpdateUsername, useUpdateTimezone } from '@/hooks/useSettings'
+import { useMyInfo, useUpdateUsername, useUpdateTimezone, useMySubscriptions } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useLangStore, t } from '@/stores/langStore'
 
@@ -18,6 +18,7 @@ export default function MyInfoPage() {
   const updateTimezone = useUpdateTimezone()
   
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
+  const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
   const [timezoneVal, setTimezoneVal] = useState(null)
@@ -31,6 +32,7 @@ export default function MyInfoPage() {
   const currentTimezone = data.timezone || null
 
   const isMfaEnabled = factorsData?.mfa_enabled ?? false
+  const subscriptions = subsData?.subscriptions || []
 
   const isAgreed = (v) => v === 'Y' || v === true
 
@@ -53,27 +55,21 @@ export default function MyInfoPage() {
     updateTimezone.mutate({ timezone: timezoneVal }, { onSuccess: () => setEditingTimezone(false) })
   }
 
+  const roleLabel = (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-'
+
   const projectColumns = [
     { title: t('thd.projectnm_thd'), dataIndex: 'projectnm', key: 'projectnm' },
-    {
-      title: t('thd.rolecd_thd'),
-      dataIndex: 'rolecd',
-      key: 'rolecd',
-      width: 100,
-      render: (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-',
-    },
+    { title: t('thd.rolecd_thd'), dataIndex: 'rolecd', key: 'rolecd', width: 100, render: roleLabel },
   ]
-
-  const createdts = tenant.createdts || '-'
 
   return (
     <div>
       <Title level={4} style={{ marginBottom: 16 }}>{t('ttl.myinfo.personal')}</Title>
 
-      <Row gutter={16}>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
         {/* 개인 정보 */}
         <Col span={12}>
-          <Card size="small" title={t('ttl.myinfo.personal')} loading={isLoading} style={{ marginBottom: 16 }}>
+          <Card size="small" title={t('ttl.myinfo.personal')} loading={isLoading} style={{ height: '100%' }}>
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={t('lbl.email')}>{userInfo.email || '-'}</Descriptions.Item>
               <Descriptions.Item label={t('lbl.usernm')}>
@@ -95,7 +91,7 @@ export default function MyInfoPage() {
                     <Button size="small" icon={<EditOutlined />} onClick={handleEditName} type="text" />
                   </Space>
                 )}
-              </Descriptions.Item>              
+              </Descriptions.Item>
               <Descriptions.Item label={t('lbl.timezone')}>
                 {editingTimezone ? (
                   <Space>
@@ -123,16 +119,34 @@ export default function MyInfoPage() {
           </Card>
         </Col>
 
-        {/* 기업(테넌트) 정보 */}
+        {/* 요금제 */}
         <Col span={12}>
-          <Card size="small" title={t('ttl.myinfo.tenant')} loading={isLoading} style={{ marginBottom: 16 }}>
-            <Descriptions column={1} size="small" bordered>
-              <Descriptions.Item label={t('lbl.tenantnm')}>{tenant.tenantnm || '-'}</Descriptions.Item>
-              <Descriptions.Item label={t('lbl.myrole')}>
-                {tenantuser.rolecd === 'M' ? t('cod.rolecd_M') : tenantuser.rolecd === 'U' ? t('cod.rolecd_U') : tenantuser.rolecd || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('lbl.joindt')}>{createdts}</Descriptions.Item>
-            </Descriptions>
+          <Card size="small" title={t('ttl.myinfo.plan')} loading={subsLoading} style={{ height: '100%' }}>
+            <Table
+              size="small"
+              pagination={false}
+              dataSource={subscriptions}
+              rowKey="productcd"
+              columns={[
+                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
+                {
+                  title: t('lbl.upgrade'),
+                  key: 'actions',
+                  render: (_, row) => {
+                    if (row.plancd === 'Fr') return (
+                      <Space>
+                        <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.pro')}</Button>
+                        <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.group')}</Button>
+                      </Space>
+                    )
+                    if (row.plancd === 'Pr') return (
+                      <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.group')}</Button>
+                    )
+                    return null
+                  },
+                },
+              ]}
+            />
           </Card>
         </Col>
       </Row>
@@ -184,12 +198,33 @@ export default function MyInfoPage() {
         </Descriptions>
       </Card>
 
-      {/* 소속 프로젝트 */}
-      <Card size="small" title={t('ttl.myinfo.projects')} loading={isLoading} style={{ marginBottom: 16 }}>
+      {/* 소속 */}
+      <Card size="small" title={t('ttl.myinfo.belong')} loading={isLoading} style={{ marginBottom: 16 }}>
         <Table
-          columns={projectColumns}
-          dataSource={projectUsers}
-          rowKey={(row) => row.projectid || Math.random()}
+          columns={[
+            {
+              title: t('lbl.tenantnm'), dataIndex: 'tenantnm', key: 'tenantnm',
+              onCell: (_, idx) => {
+                if (idx === 0 || projectUsers[idx]?.tenantid !== projectUsers[idx - 1]?.tenantid)
+                  return { rowSpan: projectUsers.filter(r => r.tenantid === projectUsers[idx]?.tenantid).length }
+                return { rowSpan: 0 }
+              },
+              render: (v) => v || '-',
+            },
+            {
+              title: t('lbl.myrole'), key: 'tenantrole', width: 100,
+              onCell: (_, idx) => {
+                if (idx === 0 || projectUsers[idx]?.tenantid !== projectUsers[idx - 1]?.tenantid)
+                  return { rowSpan: projectUsers.filter(r => r.tenantid === projectUsers[idx]?.tenantid).length }
+                return { rowSpan: 0 }
+              },
+              render: (_, row) => roleLabel(row.tenant_rolecd),
+            },
+            { title: t('thd.projectnm_thd'), dataIndex: 'projectnm', key: 'projectnm' },
+            { title: t('thd.rolecd_thd'), dataIndex: 'rolecd', key: 'rolecd', width: 100, render: roleLabel },
+          ]}
+          dataSource={projectUsers.length > 0 ? projectUsers : [{ tenantnm: tenant.tenantnm, tenant_rolecd: tenantuser.rolecd }]}
+          rowKey={(_, idx) => idx}
           size="small"
           pagination={false}
         />

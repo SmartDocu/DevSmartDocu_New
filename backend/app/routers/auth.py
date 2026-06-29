@@ -376,25 +376,29 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 8. editbuttonyn
-    if ctx.projectmanager == "Y" or ctx.tenantmanager == "Y":
-        ctx.editbuttonyn = "Y"
-    else:
-        ctx.editbuttonyn = "N"
-
-    # 9. accountuid (issystemtenant 여부에 따라 조회 기준 다름)
+    # 8. accountuid + accountmanager (issystemtenant 여부에 따라 조회 기준 다름)
     try:
         if ctx.tenantid:
             t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
             issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
             if issystemtenant:
                 acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+                ctx.accountmanager = "Y"  # 개인 계정 = 본인이 account 소유자
             else:
                 acc = sd.table("accounts").select("accountuid").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
-            if acc.data:
+                # 기업 테넌트: tenantusers.rolecd = "M" 이면 accountmanager
+                tu_row = sd.table("tenantusers").select("rolecd").eq("tenantid", int(ctx.tenantid)).eq("useruid", user_id).maybe_single().execute()
+                ctx.accountmanager = "Y" if tu_row.data and tu_row.data.get("rolecd") == "M" else "N"
+            if acc and acc.data:
                 ctx.accountuid = str(acc.data["accountuid"])
     except Exception:
         pass
+
+    # 9. editbuttonyn (accountmanager 세팅 이후 판단)
+    if ctx.projectmanager == "Y" or ctx.tenantmanager == "Y" or ctx.accountmanager == "Y":
+        ctx.editbuttonyn = "Y"
+    else:
+        ctx.editbuttonyn = "N"
 
     # 10. languagecd: TenantUsers.languagecd → Tenants.languagecd
     try:
@@ -839,6 +843,7 @@ def register(body: RegisterRequest):
                 if servicecd not in created_service_projects:
                     proj_result = service.schema(SCHEMA).table("projects").insert({
                         "tenantid": smartdoc_tenantid,
+                        "accountuid": accountuid,
                         "projectnm": f"{body.email}_{servicecd}",
                         "projectdesc": "계정에 따른 자동 생성된 프로젝트 입니다.",
                         "servicecd": servicecd,

@@ -127,6 +127,13 @@ export function useUpdateTimezone() {
   })
 }
 
+export function useMySubscriptions() {
+  return useQuery({
+    queryKey: ['myinfo-subscriptions'],
+    queryFn: () => apiClient.get('/settings/myinfo/subscriptions').then((r) => r.data),
+  })
+}
+
 // ─── Connectors ───────────────────────────────────────────────────────────────
 
 export function useConnectors() {

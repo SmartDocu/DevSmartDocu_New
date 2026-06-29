@@ -1,70 +1,67 @@
 import { useState } from 'react'
 import { App, Modal } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useOrgTenantLlms, useSaveTenantLlm, useDeleteTenantLlm } from '@/hooks/useOrg'
 
-const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
-
-const EMPTY_FORM = { jobnm: '', llmmodelnm: '', apikey: '' }
+const EMPTY_FORM = { projectnm: '', llmmodelnm: '', apikey: '' }
 
 export default function OrgTenantLlmsPage() {
   const { message } = App.useApp()
   useLangStore((s) => s.translations)
-  const { data = {}, isLoading } = useOrgTenantLlms()
+  const accountuid = useAuthStore((s) => s.user?.accountuid)
+  const { data = {}, isLoading } = useOrgTenantLlms(accountuid)
   const saveMutation = useSaveTenantLlm()
   const deleteMutation = useDeleteTenantLlm()
 
   const [form, setForm] = useState(EMPTY_FORM)
-  const [selectedType, setSelectedType] = useState(null)  // 'tenant' | 'project'
-  const [selectedId,   setSelectedId]   = useState(null)
-  const [selectedRow,  setSelectedRow]  = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
 
-  const { tenant = {}, projects = [], llmmodels = [] } = data
+  const { projects = [], llmmodels = [], account_projects = [] } = data
 
-  const handleTenantRowClick = (row) => {
-    setSelectedType('tenant')
-    setSelectedId(row.tenantid?.toString())
-    setSelectedRow(row)
-    setForm({ jobnm: row.tenantnm || '', llmmodelnm: row.llmmodelnm || '', apikey: '' })
-  }
-
-  const handleProjectRowClick = (row) => {
-    setSelectedType('project')
+  const handleRowClick = (row) => {
     setSelectedId(row.projectid?.toString())
-    setSelectedRow(row)
-    setForm({ jobnm: row.projectnm || '', llmmodelnm: row.llmmodelnm || '', apikey: '' })
+    setForm({ projectnm: row.projectnm || '', llmmodelnm: row.llmmodelnm || '', apikey: '' })
   }
 
-  const handleSave = () => {
-    if (!selectedType) { message.warning(t('msg.select')); return }
-    const body = selectedType === 'tenant'
-      ? { tenantid: selectedId, llmmodelnm: form.llmmodelnm || null, apikey: form.apikey || '' }
-      : { projectid: selectedId, llmmodelnm: form.llmmodelnm || null, apikey: form.apikey || '' }
-    saveMutation.mutate(body, {
-      onSuccess: () => message.success(t('msg.save.success')),
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+  const handleProjectSelect = (pid) => {
+    setSelectedId(pid || null)
+    const found = projects.find((p) => p.projectid?.toString() === pid)
+    setForm({
+      projectnm: found?.projectnm || '',
+      llmmodelnm: found?.llmmodelnm || '',
+      apikey: '',
     })
   }
 
+  const handleSave = () => {
+    if (!selectedId) { message.warning(t('msg.select')); return }
+    saveMutation.mutate(
+      { projectid: selectedId, llmmodelnm: form.llmmodelnm || null, apikey: form.apikey || '' },
+      {
+        onSuccess: () => message.success(t('msg.save.success')),
+        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+      }
+    )
+  }
+
   const handleDelete = () => {
-    if (!selectedType) return
+    if (!selectedId) return
     Modal.confirm({
       title: t('btn.delete'),
       content: t('msg.confirm.delete'),
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => {
-        const body = selectedType === 'tenant' ? { tenantid: selectedId } : { projectid: selectedId }
-        deleteMutation.mutate(body, {
-          onSuccess: () => { message.success(t('msg.delete.success')); setSelectedType(null); setSelectedId(null); setForm(EMPTY_FORM) },
-          onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
-        })
+        deleteMutation.mutate(
+          { projectid: selectedId },
+          {
+            onSuccess: () => { message.success(t('msg.delete.success')); setSelectedId(null); setForm(EMPTY_FORM) },
+            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+          }
+        )
       },
     })
   }
-
-  const jobnmLabel = selectedType === 'tenant' ? t('lbl.tenantnm')
-    : selectedType === 'project' ? t('lbl.projectnm_lbl')
-    : t('lbl.jobnm')
 
   return (
     <div>
@@ -76,46 +73,9 @@ export default function OrgTenantLlmsPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
-        {/* 좌측 패널: 기업 + 프로젝트 테이블 */}
+        {/* 좌측 패널: 프로젝트 테이블 */}
         <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-
-          {/* 기업 LLM */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.tenant.llm')}</h3>
-            <div />
-          </div>
-          <div className="table-container" style={{ height: 100 }}>
-            <table id="tenant-table" className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: '30%' }}>{t('thd.tenantnm_thd')}</th>
-                  <th style={{ width: '35%' }}>{t('thd.llmmodelnm_thd')}</th>
-                  <th style={{ width: '20%' }}>{t('thd.llmmodeluseyn_thd')}</th>
-                  <th style={{ width: '15%' }}>{t('thd.activeyn_thd')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
-                ) : tenant.tenantid ? (
-                  <tr
-                    className={selectedType === 'tenant' && selectedId === tenant.tenantid?.toString() ? 'selected-row' : ''}
-                    onClick={() => handleTenantRowClick(tenant)}
-                  >
-                    <td>{tenant.tenantnm}</td>
-                    <td>{tenant.llmmodelnicknm || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{tenant.llmmodeluseyn ? t('cod.llmmodeluseyn_C') : t('cod.llmmodeluseyn_S')}</td>
-                    <td style={{ textAlign: 'center' }}>{tenant.llmmodelactiveyn ? '✔' : ''}</td>
-                  </tr>
-                ) : (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* 프로젝트 LLM */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, marginTop: 24 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.project.llm')}</h3>
             <div />
           </div>
@@ -130,16 +90,18 @@ export default function OrgTenantLlmsPage() {
                 </tr>
               </thead>
               <tbody>
-                {projects.length === 0 ? (
+                {isLoading ? (
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                ) : projects.length === 0 ? (
                   <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : projects.map((p) => (
                   <tr key={p.projectid}
-                    className={selectedType === 'project' && selectedId === p.projectid?.toString() ? 'selected-row' : ''}
-                    onClick={() => handleProjectRowClick(p)}
+                    className={selectedId === p.projectid?.toString() ? 'selected-row' : ''}
+                    onClick={() => handleRowClick(p)}
                   >
                     <td>{p.projectnm}</td>
                     <td>{p.projectdesc || ''}</td>
-                    <td>{p.llmmodelnicknm || ''}</td>
+                    <td>{p.llmmodelfullnm || ''}</td>
                     <td style={{ textAlign: 'center' }}>{p.llmmodelactiveyn ? '✔' : ''}</td>
                   </tr>
                 ))}
@@ -156,7 +118,7 @@ export default function OrgTenantLlmsPage() {
               <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
                 {t('btn.save')}
               </button>
-              {selectedType && (
+              {selectedId && (
                 <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteMutation.isPending}>
                   {t('btn.delete')}
                 </button>
@@ -165,8 +127,16 @@ export default function OrgTenantLlmsPage() {
           </div>
 
           <div className="form-group">
-            <label>{jobnmLabel}:</label>
-            <input type="text" value={form.jobnm} readOnly style={roStyle} />
+            <label htmlFor="projectid">{t('lbl.projectnm_lbl')}:</label>
+            <select id="projectid" value={selectedId || ''}
+              onChange={(e) => handleProjectSelect(e.target.value)}>
+              <option value="">{t('msg.select')}</option>
+              {account_projects.map((p) => (
+                <option key={p.projectid} value={p.projectid?.toString()}>
+                  {p.projectnm}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="form-group">
@@ -175,7 +145,7 @@ export default function OrgTenantLlmsPage() {
               onChange={(e) => setForm(f => ({ ...f, llmmodelnm: e.target.value }))}>
               <option value="">{t('msg.select')}</option>
               {llmmodels.map((m) => (
-                <option key={m.llmmodelnm} value={m.llmmodelnm}>{m.llmmodelnicknm}</option>
+                <option key={m.llmmodelnm} value={m.llmmodelnm}>{m.llmmodelnm}</option>
               ))}
             </select>
           </div>

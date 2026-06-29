@@ -5,10 +5,10 @@ import apiClient from '@/api/client'
 
 // ─── Tenant LLMs ──────────────────────────────────────────────────────────────
 
-export function useOrgTenantLlms() {
+export function useOrgTenantLlms(accountuid) {
   return useQuery({
-    queryKey: ['org-tenant-llms'],
-    queryFn: () => apiClient.get('/org/tenant-llms').then((r) => r.data),
+    queryKey: ['org-tenant-llms', accountuid],
+    queryFn: () => apiClient.get('/org/tenant-llms', { params: { accountuid } }).then((r) => r.data),
   })
 }
 

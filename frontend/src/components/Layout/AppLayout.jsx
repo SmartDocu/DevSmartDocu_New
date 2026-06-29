@@ -17,13 +17,12 @@ import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
 import { useApps } from '@/hooks/useApps'
 
-function canSeeApp(rolecd, user) {
-  if (!rolecd || rolecd === 'P') return true
+function canSeeApp(app, user, subscribedServicecds) {
+  const { rolecd, servicecd } = app
   if (!user) return false
-  if (rolecd === 'U') return true
-  if (rolecd === 'PM') return user.projectmanager === 'Y'
-  if (rolecd === 'TM') return user.tenantmanager === 'Y'
+  if (servicecd) return subscribedServicecds.includes(servicecd)
   if (rolecd === 'S') return user.roleid === 7
+  if (!rolecd) return user.projectmanager === 'Y' || user.tenantmanager === 'Y' || user.accountmanager === 'Y'
   return false
 }
 
@@ -59,7 +58,7 @@ export default function AppLayout() {
   const updateMyProject = useUpdateMyProject()
   const [selectedProjectId, setSelectedProjectId] = useState(null)
   const [appLauncherOpen, setAppLauncherOpen] = useState(false)
-  const { data: apps = [] } = useApps({ enabled: !!user })
+  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, accountuid: user?.accountuid })
 
   useEffect(() => {
     if (projectList.length === 0) return
@@ -85,9 +84,9 @@ export default function AppLayout() {
     const navPath = effectiveAppcd ? `/app/${effectiveAppcd}/myinfo` : '/myinfo'
     const menu = allMenus.find((m) => m.route_path === 'myinfo')
     if (menu) {
-      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text), labelKey: `mnu.${menu.menucd}`, path: tabPath })
+      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text || 'My Info'), labelKey: `mnu.${menu.menucd}`, path: tabPath })
     } else {
-      openTab({ key: 'myinfo', label: t('ttl.myinfo.personal'), labelKey: 'ttl.myinfo.personal', path: tabPath })
+      openTab({ key: 'myinfo', label: t('ttl.myinfo.personal', 'My Info') || 'My Info', labelKey: 'ttl.myinfo.personal', path: tabPath })
     }
     navigate(navPath)
   }
@@ -372,7 +371,7 @@ export default function AppLayout() {
                   content={
                     <div style={{ width: 340, padding: 4 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                        {apps.filter((a) => canSeeApp(a.rolecd, user)).map((app) => (
+                        {apps.filter((a) => canSeeApp(a, user, subscribed_servicecds)).map((app) => (
                           <div
                             key={app.appcd}
                             onClick={() => {

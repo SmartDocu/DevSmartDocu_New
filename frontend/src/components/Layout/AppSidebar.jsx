@@ -25,6 +25,7 @@ function canSee(rolecd, user, isAuthenticated) {
   if (rolecd === 'U') return true
   if (rolecd === 'PM') return user?.projectmanager === 'Y'
   if (rolecd === 'TM') return user?.tenantmanager === 'Y'
+  if (rolecd === 'AM') return user?.accountmanager === 'Y'
   if (rolecd === 'S') return user?.roleid === 7
   return false
 }
@@ -140,11 +141,20 @@ export default function AppSidebar({ collapsed = false, isDark = false, appcd = 
   const { data: favoritesData = [] } = useFavorites()
   const toggleFavorite = useToggleFavorite()
 
-  /* ── 권한 필터링된 메뉴 목록 ── */
-  const visibleMenus = useMemo(
-    () => allMenus.filter((m) => canSee(m.rolecd, user, isAuthenticated)),
-    [allMenus, user, isAuthenticated],
-  )
+  /* ── 권한 필터링된 메뉴 목록 (자식이 보이면 부모도 자동 포함) ── */
+  const visibleMenus = useMemo(() => {
+    const visibleCds = new Set(
+      allMenus.filter((m) => canSee(m.rolecd, user, isAuthenticated)).map((m) => m.menucd)
+    )
+    // 보이는 메뉴의 모든 조상 menucd 추가
+    visibleCds.forEach((cd) => {
+      const parts = cd.split('.')
+      for (let i = 1; i < parts.length; i++) {
+        visibleCds.add(parts.slice(0, i).join('.'))
+      }
+    })
+    return allMenus.filter((m) => visibleCds.has(m.menucd))
+  }, [allMenus, user, isAuthenticated])
 
   /* ── 즐겨찾기 Set (menucd) ── */
   const favoriteSet = useMemo(
