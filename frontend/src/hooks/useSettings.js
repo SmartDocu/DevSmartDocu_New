@@ -134,6 +134,24 @@ export function useMySubscriptions() {
   })
 }
 
+export function useUpgradeProducts(servicecd, plancd = 'Pr') {
+  return useQuery({
+    queryKey: ['upgrade-products', servicecd, plancd],
+    queryFn: () => apiClient.get('/settings/upgrade-products', { params: { servicecd, plancd } }).then((r) => r.data),
+    enabled: !!servicecd,
+  })
+}
+
+export function useUpgradePlan() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/upgrade-plan', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myinfo-subscriptions'] })
+    },
+  })
+}
+
 // ─── Connectors ───────────────────────────────────────────────────────────────
 
 export function useConnectors() {

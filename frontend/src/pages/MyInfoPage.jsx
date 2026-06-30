@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
   Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography,
 } from 'antd'
@@ -13,6 +14,7 @@ const { Title } = Typography
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
   const navigate = useNavigate()
+  const openInTab = useOpenInTab()
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
@@ -135,7 +137,7 @@ export default function MyInfoPage() {
                   render: (_, row) => {
                     if (row.plancd === 'Fr') return (
                       <Space>
-                        <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.pro')}</Button>
+                        <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`)}>{t('btn.upgrade.pro')}</Button>
                         <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.group')}</Button>
                       </Space>
                     )

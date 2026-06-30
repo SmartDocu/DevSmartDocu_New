@@ -522,20 +522,188 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
     if not accountuid:
         return {"subscriptions": []}
 
-    subs = svc.table("subscriptions").select("productcd,plancd").eq("accountuid", accountuid).eq("subscription_status", "Paid").execute()
-    if not subs.data:
+    svcs = svc.table("accountservices").select(
+        "productcd,plancd,servicecd,servicestatus"
+    ).eq("accountuid", accountuid).eq("servicestatus", "Active").execute()
+    if not svcs.data:
         return {"subscriptions": []}
 
-    productcds = [s["productcd"] for s in subs.data]
+    # servicecd 정렬 순서 — codes 테이블 orderno 기준
+    code_order = svc.table("codes").select("codevalue,orderno").eq(
+        "codegroupcd", "servicecd"
+    ).execute().data or []
+    order_map = {r["codevalue"]: r.get("orderno", 999) for r in code_order}
+
+    productcds = [s["productcd"] for s in svcs.data]
     prods = svc.table("products").select("productcd,productnm").in_("productcd", productcds).execute()
     name_map = {p["productcd"]: p.get("productnm", p["productcd"]) for p in (prods.data or [])}
 
+    sorted_svcs = sorted(svcs.data, key=lambda s: order_map.get(s.get("servicecd", ""), 999))
+
     return {
         "subscriptions": [
-            {"productcd": s["productcd"], "productnm": name_map.get(s["productcd"], s["productcd"]), "plancd": s.get("plancd", "")}
-            for s in subs.data
+            {
+                "productcd": s["productcd"],
+                "productnm": name_map.get(s["productcd"], s["productcd"]),
+                "plancd": s.get("plancd", ""),
+                "servicecd": s.get("servicecd", ""),
+            }
+            for s in sorted_svcs
         ]
     }
+
+
+@router.get("/upgrade-products")
+def get_upgrade_products(
+    servicecd: str,
+    plancd: str = "Pr",
+    token: str = Depends(get_token),
+):
+    """업그레이드 플랜 상품 목록 — servicecd + plancd 기준, orderno 정렬."""
+    _get_user(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    rows = (
+        svc.table("products")
+        .select("productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey,orderno,useyn")
+        .eq("servicecd", servicecd)
+        .eq("plancd", plancd)
+        .eq("useyn", True)
+        .order("orderno")
+        .execute()
+        .data or []
+    )
+    return {"products": rows}
+
+
+class UpgradePlanRequest(BaseModel):
+    productcd: str
+    servicecd: str
+
+
+@router.post("/upgrade-plan")
+def upgrade_plan(
+    body: UpgradePlanRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """Free → Pro 업그레이드: subscriptions / accountservices / subscription_credits / creditbuckets 처리."""
+    from datetime import datetime, timezone, timedelta
+    from dateutil.relativedelta import relativedelta
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    # tenantid & accountuid 조회
+    if not tenantid:
+        tu = svc.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
+        if not tu.data:
+            raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+        tenantid = str(tu.data["tenantid"])
+
+    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    if issystemtenant:
+        acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    else:
+        acc = svc.table("accounts").select("accountuid").eq("tenantid", int(tenantid)).maybe_single().execute()
+    if not acc or not acc.data:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+    accountuid = acc.data["accountuid"]
+
+    # 선택한 product 조회
+    prod_row = svc.table("products").select(
+        "productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
+    ).eq("productcd", body.productcd).maybe_single().execute()
+    if not prod_row.data:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    product = prod_row.data
+
+    # [과거_sub] 조회 — accountuid & servicecd 기반 최신 Paid subscription
+    past_rows = svc.table("subscriptions").select(
+        "subscriptionuid,productcd,plancd"
+    ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).eq(
+        "subscription_status", "Paid"
+    ).order("createdts", desc=True).limit(1).execute().data or []
+    if not past_rows:
+        raise HTTPException(status_code=404, detail="기존 구독 정보를 찾을 수 없습니다.")
+    past_sub = past_rows[0]
+
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
+
+    # ① subscriptions 신규 행 삽입 ([갱신_sub])
+    new_sub_resp = svc.table("subscriptions").insert({
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "productcd": product["productcd"],
+        "plancd": product["plancd"],
+        "servicecd": product["servicecd"],
+        "billingtermcd": product.get("billingtermcd"),
+        "old_productcd": past_sub["productcd"],
+        "subscription_status": "Paid",
+        "creator": user_id,
+    }).execute()
+    if not new_sub_resp.data:
+        raise HTTPException(status_code=500, detail="구독 저장에 실패했습니다.")
+    new_sub = new_sub_resp.data[0]
+    new_subscriptionuid = new_sub["subscriptionuid"]
+
+    # ② accountservices 기존 행 갱신
+    svc.table("accountservices").update({
+        "old_subscriptionuid": past_sub["subscriptionuid"],
+        "old_productcd": past_sub["productcd"],
+        "old_plancd": past_sub["plancd"],
+        "subscriptionuid": new_subscriptionuid,
+        "productcd": product["productcd"],
+        "plancd": product["plancd"],
+        "is_customerAIKey": product.get("is_customeraikey", False),
+        "billingfirstdt": today.isoformat(),
+        "billingday": today.day,
+        "included_users": 1,
+        "add_users": 0,
+        "total_users": 1,
+        "is_autotopup": False,
+        "creator": user_id,
+    }).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
+
+    # ③ subscription_credits 신규 행 삽입
+    svc.table("subscription_credits").insert({
+        "subscriptionuid": new_subscriptionuid,
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "productcd": product["productcd"],
+        "servicecd": product["servicecd"],
+        "quantity": product.get("credit", 0),
+        "credittypecd": "SC",
+        "creditdesc": "Subscription Credit",
+        "creator": user_id,
+    }).execute()
+
+    # ④ creditbuckets — [과거_sub] 기존 행 Expired 처리
+    svc.table("creditbuckets").update({
+        "statuscd": "Expired",
+    }).eq("subscriptionuid", past_sub["subscriptionuid"]).execute()
+
+    # creditbuckets 신규 행 삽입
+    expiredts = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
+    svc.table("creditbuckets").insert({
+        "subscriptionuid": new_subscriptionuid,
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "servicecd": product["servicecd"],
+        "creditqty": product.get("credit", 0),
+        "creditchargecd": "Ba",
+        "priorityno": 1,
+        "usedqty": 0,
+        "remainqty": product.get("credit", 0),
+        "granteddts": now_utc.isoformat(),
+        "expiredts": expiredts,
+        "statuscd": "Active",
+        "startdt": today.isoformat(),
+    }).execute()
+
+    return {"result": "success", "message": "업그레이드가 완료되었습니다."}
 
 
 @router.post("/myinfo/timezone")

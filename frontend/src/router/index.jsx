@@ -36,6 +36,7 @@ import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
 import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
 import SettingsDatasetsPage from '@/pages/settings/SettingsDatasetsPage'
 import SettingsLlmKeysPage from '@/pages/settings/SettingsLlmKeysPage'
+import UpgradePlanPage from '@/pages/upgrade/UpgradePlanPage'
 import MyInfoPage from '@/pages/MyInfoPage'
 import MfaSetupPage from '@/pages/settings/MfaSetupPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
@@ -152,6 +153,7 @@ export const router = createBrowserRouter([
       { path: 'settings/datasets', element: <SettingsDatasetsPage /> },
       { path: 'settings/llm-keys', element: <SettingsLlmKeysPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
+      { path: 'upgrade', element: <UpgradePlanPage /> },
       { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },
 
