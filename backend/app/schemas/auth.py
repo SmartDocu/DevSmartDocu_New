@@ -69,6 +69,16 @@ class RegisterRequest(BaseModel):
     products: Optional[list[str]] = None
 
 
+class RegisterInviteRequest(BaseModel):
+    req: str
+    usernm: str
+    password: str
+    password_confirm: Optional[str] = None
+    termsofuseyn: str = "Y"
+    userinfoyn: str = "Y"
+    marketingyn: str = "N"
+
+
 class SendResetEmailRequest(BaseModel):
     email: EmailStr
 
