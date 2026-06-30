@@ -6,6 +6,7 @@ import AppLauncher from '@/pages/AppLauncher'
 import AppIndex from '@/pages/AppIndex'
 import { useAuthStore } from '@/stores/authStore'
 import PasswordResetPage from '@/pages/auth/PasswordResetPage'
+import RegisterInvitePage from '@/pages/auth/RegisterInvitePage'
 import ServicePage from '@/pages/public/ServicePage'
 import AboutPage from '@/pages/public/AboutPage'
 import UsagePage from '@/pages/public/UsagePage'
@@ -40,6 +41,7 @@ import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
 import OrgTenantLlmsPage from '@/pages/org/OrgTenantLlmsPage'
 import OrgProjectsPage from '@/pages/org/OrgProjectsPage'
 import OrgProjectUsersPage from '@/pages/org/OrgProjectUsersPage'
+import OrgInviteMembersPage from '@/pages/org/OrgInviteMembersPage'
 import AdminUserRolePage from '@/pages/admin/AdminUserRolePage'
 import AdminSamplePromptPage from '@/pages/admin/AdminSamplePromptPage'
 import AdminHelpsPage from '@/pages/admin/AdminHelpsPage'
@@ -74,6 +76,7 @@ export const router = createBrowserRouter([
 
   // ── 인증 불필요 ───────────────────────────────────────────────────────────
   { path: '/password-reset', element: <PasswordResetPage /> },
+  { path: '/register-invite', element: <RegisterInvitePage /> },
   {
     path: '/',
     element: <AppLayout />,
@@ -155,6 +158,7 @@ export const router = createBrowserRouter([
       { path: 'org/tenant-llms', element: <OrgTenantLlmsPage /> },
       { path: 'org/projects', element: <OrgProjectsPage /> },
       { path: 'org/project-users', element: <OrgProjectUsersPage /> },
+      { path: 'org/invite-members', element: <OrgInviteMembersPage /> },
 
       // AI LLM 설정 (CA/SA/TA)
       { path: 'master/ai-charts', element: <MasterAiChartsPage /> },

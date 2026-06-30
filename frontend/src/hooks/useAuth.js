@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -66,5 +66,20 @@ export function useRegister() {
       const detail = err.response?.data?.detail || t('msg.register.failed')
       alert(detail)
     },
+  })
+}
+
+export function useInviteInfo(req) {
+  return useQuery({
+    queryKey: ['invite-info', req],
+    queryFn: () => apiClient.get('/auth/invite-info', { params: { req } }).then((r) => r.data),
+    enabled: !!req,
+    retry: false,
+  })
+}
+
+export function useRegisterInvite() {
+  return useMutation({
+    mutationFn: (data) => apiClient.post('/auth/register-invite', data).then((r) => r.data),
   })
 }

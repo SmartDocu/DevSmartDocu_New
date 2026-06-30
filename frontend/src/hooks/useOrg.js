@@ -108,6 +108,26 @@ export function useDeleteProjectUser() {
   })
 }
 
+// ─── Invite Members ───────────────────────────────────────────────────────────
+
+export function useOrgInvitations() {
+  return useQuery({
+    queryKey: ['org-invitations'],
+    queryFn: () => apiClient.get('/org/invite-members').then((r) => r.data),
+  })
+}
+
+export function useSendInvitation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/org/invite-members', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['org-invitations'] })
+    },
+    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+  })
+}
+
 // ─── Tenant Users ─────────────────────────────────────────────────────────────
 
 export function useOrgTenantUsers(tenantid) {

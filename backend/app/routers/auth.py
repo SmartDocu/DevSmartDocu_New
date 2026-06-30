@@ -5,7 +5,7 @@ import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from backend.app.config import settings
@@ -21,6 +21,7 @@ from backend.app.schemas.auth import (
     MfaEnrollVerifyRequest,
     MfaUnenrollRequest,
     RefreshRequest,
+    RegisterInviteRequest,
     RegisterRequest,
     SendResetEmailRequest,
     SendSmsRequest,
@@ -1200,3 +1201,121 @@ def verify_sms(body: VerifySmsRequest):
 
     _sms_storage.pop(phone, None)
     return MessageResponse(ok=True, message="인증이 완료되었습니다.")
+
+
+# ─── 초대 회원가입 ────────────────────────────────────────────────────────────
+
+def _resolve_invite(req_uuid: str) -> dict:
+    """userregreqs에서 초대 정보를 조회하고 servicecd → productcd 변환."""
+    svc = _get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+
+    row = sd.table("userregreqs").select("*").eq("userregreqsuid", req_uuid).maybe_single().execute()
+    if not row.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="유효하지 않은 초대 링크입니다.")
+
+    invite = row.data
+    email = invite.get("email", "")
+    tenantid = invite.get("tenantid")
+    servicecds = invite.get("servicecds") or []
+    if isinstance(servicecds, str):
+        import json as _json
+        try:
+            servicecds = _json.loads(servicecds)
+        except Exception:
+            servicecds = []
+
+    # servicecd → productcd (Free 플랜 기준)
+    productcds = []
+    for scd in servicecds:
+        prod_rows = (
+            sd.table("products")
+            .select("productcd")
+            .eq("servicecd", scd)
+            .eq("plancd", "Fr")
+            .eq("useyn", True)
+            .eq("is_sales", True)
+            .execute()
+            .data
+        )
+        if prod_rows:
+            productcds.append(prod_rows[0]["productcd"])
+
+    t_row = sd.table("tenants").select("tenantnm").eq("tenantid", tenantid).maybe_single().execute()
+    tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
+
+    return {
+        "email": email,
+        "tenantid": str(tenantid) if tenantid else None,
+        "tenantid_int": int(tenantid) if tenantid else None,
+        "tenantnm": tenantnm,
+        "servicecds": servicecds,
+        "productcds": productcds,
+    }
+
+
+@router.get("/invite-info")
+def get_invite_info(req: str = Query(...)):
+    """초대 링크 정보 조회 (이메일·서비스 자동 채움용)."""
+    invite = _resolve_invite(req)
+    return {
+        "email": invite["email"],
+        "tenantid": invite["tenantid"],
+        "tenantnm": invite["tenantnm"],
+        "servicecds": invite["servicecds"],
+        "productcds": invite["productcds"],
+    }
+
+
+@router.post("/register-invite", response_model=MessageResponse)
+def register_invite(body: RegisterInviteRequest):
+    """초대 링크를 통한 회원가입: 기존 register 로직 + 초대 테넌트에 자동 추가."""
+    invite = _resolve_invite(body.req)
+
+    # 기존 register 함수에 위임 (코드 재사용)
+    register_body = RegisterRequest(
+        email=invite["email"],
+        password=body.password,
+        password_confirm=body.password_confirm,
+        usernm=body.usernm,
+        termsofuseyn=body.termsofuseyn,
+        userinfoyn=body.userinfoyn,
+        marketingyn=body.marketingyn,
+        accounttype="U",
+        products=invite["productcds"],
+    )
+    register(register_body)
+
+    # 초대한 테넌트에 사용자 추가
+    tenantid_invite = invite["tenantid_int"]
+    if tenantid_invite:
+        svc = _get_service_client()
+        sd = svc.schema(SUPABASE_SCHEMA)
+
+        smartdoc_row = sd.table("tenants").select("tenantid").eq("issystemtenant", True).execute().data
+        smartdoc_tenantid = smartdoc_row[0]["tenantid"] if smartdoc_row else None
+
+        if smartdoc_tenantid and tenantid_invite != smartdoc_tenantid:
+            user_row = sd.table("users").select("useruid").eq("email", invite["email"]).execute().data
+            if user_row:
+                user_id = user_row[0]["useruid"]
+                existing = sd.table("tenantusers").select("useruid").eq("tenantid", tenantid_invite).eq("useruid", user_id).execute().data
+                if not existing:
+                    sd.table("tenantusers").insert({
+                        "tenantid": tenantid_invite,
+                        "useruid": user_id,
+                        "rolecd": "U",
+                        "useyn": True,
+                        "creator": user_id,
+                    }).execute()
+                    pub_proj = sd.table("projects").select("projectid").eq("tenantid", tenantid_invite).eq("projectnm", "public").execute().data
+                    if pub_proj:
+                        sd.table("projectusers").insert({
+                            "projectid": pub_proj[0]["projectid"],
+                            "useruid": user_id,
+                            "rolecd": "U",
+                            "useyn": True,
+                            "creator": user_id,
+                        }).execute()
+
+    return MessageResponse(ok=True, message="회원가입이 완료되었습니다.\n이메일 인증 후 로그인 가능합니다.")

@@ -1,4 +1,4 @@
-"""Org router — Tenant Users, Tenant LLMs, Projects, Project Users"""
+"""Org router — Tenant Users, Tenant LLMs, Projects, Project Users, Invite Members"""
 import json
 from typing import Optional
 from datetime import datetime
@@ -6,8 +6,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
+from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 
 router = APIRouter()
 
@@ -561,3 +562,128 @@ def delete_project_user(body: ProjectUserDeleteRequest, token: str = Depends(get
     sb = _sb(token)
     sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", body.projectid).eq("useruid", body.useruid).execute()
     return {"result": "success", "message": "사용자가 성공적으로 삭제되었습니다."}
+
+
+# ══════════════════════════════════════════════════════
+#  INVITE MEMBERS (테넌트 매니저 전용)
+# ══════════════════════════════════════════════════════
+
+def _get_tenant_manager_tenantid(user_id: str) -> int:
+    """로그인 사용자가 매니저인 tenantid 반환. 권한 없으면 403."""
+    svc = get_service_client()
+    tu_rows = (
+        svc.schema(SUPABASE_SCHEMA)
+        .table("tenantusers")
+        .select("rolecd,tenantid")
+        .eq("useruid", user_id)
+        .eq("useyn", True)
+        .execute()
+        .data or []
+    )
+    manager_row = next((r for r in tu_rows if r.get("rolecd") == "M"), None)
+    if not manager_row:
+        raise HTTPException(status_code=403, detail="테넌트 매니저 권한이 필요합니다.")
+    return int(manager_row["tenantid"])
+
+
+@router.get("/invite-members")
+def list_invite_members(token: str = Depends(get_token)):
+    user = _get_user(token)
+    user_id = str(user.id)
+    tenantid = _get_tenant_manager_tenantid(user_id)
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+
+    rows = (
+        sd.table("userregreqs")
+        .select("*")
+        .eq("tenantid", tenantid)
+        .order("createdts", desc=True)
+        .execute()
+        .data or []
+    )
+    for row in rows:
+        row["createdts"] = _fmt_dt(row.get("createdts"))
+        scds = row.get("servicecds")
+        if isinstance(scds, str):
+            try:
+                row["servicecds"] = json.loads(scds)
+            except Exception:
+                row["servicecds"] = []
+
+    return {"invitations": rows, "tenantid": str(tenantid)}
+
+
+class InviteMembersRequest(BaseModel):
+    email: str
+    servicecds: list[str]
+
+
+@router.post("/invite-members")
+def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
+    import smtplib
+    from email.mime.text import MIMEText
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    tenantid = _get_tenant_manager_tenantid(user_id)
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+
+    # userregreqs 삽입
+    result = sd.table("userregreqs").insert({
+        "tenantid": tenantid,
+        "email": body.email,
+        "servicecds": body.servicecds,
+        "creator": user_id,
+    }).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=500, detail="초대 요청 저장에 실패했습니다.")
+
+    regreqsuid = result.data[0].get("userregreqsuid") or result.data[0].get("id", "")
+
+    # 테넌트명 조회
+    t_row = sd.table("tenants").select("tenantnm").eq("tenantid", tenantid).maybe_single().execute()
+    tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
+
+    # 서비스명 조회
+    service_names = []
+    for scd in body.servicecds:
+        code_rows = (
+            sd.table("codes")
+            .select("default_name")
+            .eq("codegroupcd", "servicecd")
+            .eq("codevalue", scd)
+            .execute()
+            .data
+        )
+        service_names.append(code_rows[0].get("default_name", scd) if code_rows else scd)
+
+    invite_link = f"https://dev-smart-doc.azurewebsites.net/register-invite?req={regreqsuid}"
+
+    subject = f"[D2Doc] {tenantnm} 서비스 초대"
+    mail_body = (
+        f"안녕하세요,\n\n"
+        f"{tenantnm}의 관리자로부터 D2Doc 서비스에 초대되었습니다.\n\n"
+        f"초대된 서비스: {', '.join(service_names)}\n\n"
+        f"아래 링크를 클릭하여 회원가입을 완료해주세요:\n"
+        f"{invite_link}\n\n"
+        f"감사합니다.\nD2Doc 팀"
+    )
+
+    login_user = settings.EMAIL_HOST_USER
+    try:
+        msg = MIMEText(mail_body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = login_user
+        msg["To"] = body.email
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(login_user, settings.EMAIL_HOST_PASSWORD)
+            smtp.sendmail(login_user, [body.email], msg.as_string())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"메일 전송 실패: {str(e)}")
+
+    return {"ok": True, "message": "초대 메일이 발송되었습니다."}

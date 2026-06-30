@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOrgTenantUsers, useSaveTenantUser, useDeleteTenantUser } from '@/hooks/useOrg'
 import { useMenuCodes } from '@/hooks/useMenus'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
@@ -29,6 +30,8 @@ export default function OrgTenantUsersPage() {
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedUid, setSelectedUid] = useState(null)
+
+  const openInTab = useOpenInTab()
 
   const [sepFilter,    setSepFilter]    = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -138,6 +141,16 @@ export default function OrgTenantUsersPage() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
           <div>{pageTitle}</div>
+          {user?.tenantmanager === 'Y' && (
+            <button
+              className="btn btn-primary"
+              type="button"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => openInTab('org/invite-members')}
+            >
+              {t('btn.invite.members.manage')}
+            </button>
+          )}
         </div>
       </div>
 
