@@ -22,8 +22,8 @@ function canSeeApp(app, user, subscribedServicecds) {
 export default function AppLauncher() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const accountuid = useAuthStore((s) => s.user?.accountuid)
-  const { data = {}, isLoading } = useApps({ accountuid })
+  const tenantid = useAuthStore((s) => s.user?.tenantid)
+  const { data = {}, isLoading } = useApps({ tenantid })
   const { apps = [], subscribed_servicecds = [] } = data
 
   useLangStore((s) => s.translations)

@@ -58,7 +58,7 @@ export default function AppLayout() {
   const updateMyProject = useUpdateMyProject()
   const [selectedProjectId, setSelectedProjectId] = useState(null)
   const [appLauncherOpen, setAppLauncherOpen] = useState(false)
-  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, accountuid: user?.accountuid })
+  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid })
 
   useEffect(() => {
     if (projectList.length === 0) return

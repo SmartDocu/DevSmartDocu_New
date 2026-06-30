@@ -899,20 +899,18 @@ def register(body: RegisterRequest):
                 }).execute()
 
                 now_utc = datetime.now(timezone.utc)
-                startdts = now_utc.isoformat()
                 service.schema(SCHEMA).table("creditbuckets").insert({
                     "subscriptionuid": subscriptionuid,
                     "tenantid": smartdoc_tenantid,
                     "accountuid": accountuid,
                     "startdt": now_utc.date().isoformat(),
-                    "startdts": startdts,
                     "servicecd": product["servicecd"],
                     "creditchargecd": "Ba",
                     "priorityno": 1,
                     "creditqty": product.get("credit", 0),
                     "usedqty": 0,
                     "remainqty": product.get("credit", 0),
-                    "granteddts": startdts,
+                    "granteddts": now_utc.isoformat(),
                     "expiredts": (now_utc + relativedelta(months=1)).isoformat(),
                     "statuscd": "Active",
                 }).execute()

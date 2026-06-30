@@ -26,7 +26,7 @@ class AppsListResponse(BaseModel):
 
 
 @router.get("", response_model=AppsListResponse)
-def list_apps(token: str = Depends(get_token), accountuid: Optional[str] = None):
+def list_apps(token: str = Depends(get_token), tenantid: Optional[str] = None):
     try:
         sb = _sb(token)
         rows = (
@@ -40,16 +40,21 @@ def list_apps(token: str = Depends(get_token), accountuid: Optional[str] = None)
         )
 
         subscribed_servicecds = []
-        if accountuid:
-            subs = (
-                sb.schema(SUPABASE_SCHEMA)
-                .table("subscriptions")
-                .select("servicecd")
-                .eq("accountuid", accountuid)
-                .execute()
-                .data or []
-            )
-            subscribed_servicecds = list({s["servicecd"] for s in subs if s.get("servicecd")})
+        if tenantid:
+            user_resp = sb.auth.get_user(token)
+            if user_resp and user_resp.user:
+                user_id = str(user_resp.user.id)
+                subs = (
+                    sb.schema(SUPABASE_SCHEMA)
+                    .table("serviceusers")
+                    .select("servicecd")
+                    .eq("useruid", user_id)
+                    .eq("tenantid", tenantid)
+                    .eq("useyn", True)
+                    .execute()
+                    .data or []
+                )
+                subscribed_servicecds = list({s["servicecd"] for s in subs if s.get("servicecd")})
 
         return AppsListResponse(
             apps=[AppItem(**r) for r in rows],
