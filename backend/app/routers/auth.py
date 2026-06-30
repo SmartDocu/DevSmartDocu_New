@@ -202,16 +202,28 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         user_row = (
             sd.table("users")
-            .select("roleid,mydocid,myprojectid,default_tenantid")
+            .select("roleid,default_tenantid")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
         )
         if user_row.data:
             ctx.roleid = user_row.data.get("roleid")
-            mydocid = user_row.data.get("mydocid")
-            if user_row.data.get("myprojectid"):
-                ctx.myprojectid = str(user_row.data["myprojectid"])
+    except Exception:
+        pass
+
+    try:
+        svc_row = (
+            sd.table("serviceusers")
+            .select("mydocid,myprojectid")
+            .eq("useruid", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if svc_row.data:
+            mydocid = svc_row.data.get("mydocid")
+            if svc_row.data.get("myprojectid"):
+                ctx.myprojectid = str(svc_row.data["myprojectid"])
     except Exception:
         pass
 
@@ -280,7 +292,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
             # mydocid가 실제 선택 docid와 다를 때 DB 동기화
             if str(docid) != str(mydocid or ""):
                 try:
-                    sd.table("users").update({"mydocid": docid}).eq("useruid", user_id).execute()
+                    sd.table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).execute()
                 except Exception:
                     pass
 

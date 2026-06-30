@@ -264,7 +264,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
     editbuttonyn = "Y" if (projectmanager == "Y" or tenantmanager == "Y") else "N"
 
     # 7. users 테이블 mydocid 업데이트
-    sb.schema(SUPABASE_SCHEMA).table("users").update({"mydocid": docid}).eq("useruid", user_id).execute()
+    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).execute()
 
     return DocSelectResponse(
         docid=docid,

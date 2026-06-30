@@ -136,7 +136,7 @@ class MyProjectRequest(BaseModel):
 def update_my_project(body: MyProjectRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("users").update({"myprojectid": body.myprojectid}).eq("useruid", str(user.id)).execute()
+    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"myprojectid": body.myprojectid}).eq("useruid", str(user.id)).execute()
     return {"status": "ok"}
 
 

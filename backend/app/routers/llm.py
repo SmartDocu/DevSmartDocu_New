@@ -57,16 +57,21 @@ class FakeLlmRequest:
 
 
 def _get_user_info(sb, token: str) -> tuple[str, dict]:
-    """user_id와 users 테이블 기본 정보 반환.
-    users 테이블 실제 컬럼: roleid, mydocid
+    """user_id와 users/serviceusers 테이블 기본 정보 반환.
+    roleid: users 테이블, mydocid: serviceusers 테이블
     projectid/tenantid는 docs/projects 테이블을 통해 별도 조회 필요.
     """
     user_id = str(get_user(token).id)
     rows = sb.schema(SUPABASE_SCHEMA).table("users").select(
-        "roleid, mydocid"
+        "roleid"
     ).eq("useruid", user_id).execute().data or []
-    # 행이 없어도 user_id는 반환 (preview/save에서 user_id가 주로 필요)
-    return user_id, rows[0] if rows else {}
+    info = rows[0] if rows else {}
+    svc_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select(
+        "mydocid"
+    ).eq("useruid", user_id).execute().data or []
+    if svc_rows:
+        info["mydocid"] = svc_rows[0].get("mydocid")
+    return user_id, info
 
 
 def _get_llm_model(sb, projectid, tenantid):
@@ -84,8 +89,12 @@ def _get_llm_model(sb, projectid, tenantid):
     print(f"[_get_llm_model] projects fetch → projectid={projectid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
 
     if not llm_model:
-        llm_model, enc_key = _fetch("tenants", {"tenantid": tenantid})
-        print(f"[_get_llm_model] tenants fetch → tenantid={tenantid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
+        llmkey_data = svc.schema(SUPABASE_SCHEMA).table("llmapikeys").select(
+            "llmmodelnm, encapikey"
+        ).eq("tenantid", tenantid).eq("useyn", True).order("orderno").execute().data or []
+        llm_model = llmkey_data[0].get("llmmodelnm") if llmkey_data else None
+        enc_key = llmkey_data[0].get("encapikey") if llmkey_data else None
+        print(f"[_get_llm_model] llmapikeys fetch → tenantid={tenantid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
 
         if not llm_model:
             llm_data = svc.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm, creator").eq("useyn", True).execute().data or []
