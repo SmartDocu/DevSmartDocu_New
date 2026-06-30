@@ -35,6 +35,7 @@ import SettingsServersPage from '@/pages/settings/SettingsServersPage'
 import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
 import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
 import SettingsDatasetsPage from '@/pages/settings/SettingsDatasetsPage'
+import SettingsLlmKeysPage from '@/pages/settings/SettingsLlmKeysPage'
 import MyInfoPage from '@/pages/MyInfoPage'
 import MfaSetupPage from '@/pages/settings/MfaSetupPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
@@ -149,6 +150,7 @@ export const router = createBrowserRouter([
       { path: 'settings/tenants', element: <SettingsTenantsPage /> },
       { path: 'settings/connectors', element: <SettingsConnectorsPage /> },
       { path: 'settings/datasets', element: <SettingsDatasetsPage /> },
+      { path: 'settings/llm-keys', element: <SettingsLlmKeysPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
       { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },
