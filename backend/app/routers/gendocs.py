@@ -1125,6 +1125,9 @@ def _build_context(sb, variables: list, req, docid) -> dict:
                         row[query] = rec[disp]
                 enriched.append(row)
             context[f"@{v}"] = enriched
+        else:
+            import sys
+            print(f"[_build_context] @{v} 데이터 비어있음 (sourcedatauid={sourcedatauid})", file=sys.stderr)
     return context
 
 
@@ -1173,7 +1176,7 @@ _DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
 
 def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None):
     """req_chapters_read.py의 _upsert_genobjects와 동일"""
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     dfv_datauids = []
     if docid:
         dfv_rows = sb.schema(SUPABASE_SCHEMA).table("datas") \
@@ -1199,6 +1202,6 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "createdts": now_iso,
         })
 
+    sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
     if rows:
-        sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
         sb.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()

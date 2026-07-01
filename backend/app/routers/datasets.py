@@ -94,8 +94,9 @@ def list_available_datas(token: str = Depends(get_token), tid: Optional[str] = D
     sb = _sb(token)
 
     proj_rows = (
-        sb.schema(SUPABASE_SCHEMA).table("projects")
-        .select("projectid").eq("tenantid", tid).execute().data or []
+        sb.schema(SUPABASE_SCHEMA)
+        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
+        .execute().data or []
     )
     project_ids = [p["projectid"] for p in proj_rows]
     datas = []
@@ -118,13 +119,22 @@ def list_available_projects(token: str = Depends(get_token), tid: Optional[str] 
     user = _get_user(token)
     sb = _sb(token)
 
-    projects = (
-        sb.schema(SUPABASE_SCHEMA).table("projects")
-        .select("projectid, projectnm")
-        .eq("tenantid", tid).eq("useyn", True)
-        .order("projectnm")
+    proj_rows = (
+        sb.schema(SUPABASE_SCHEMA)
+        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
         .execute().data or []
     )
+    project_ids = [p["projectid"] for p in proj_rows]
+    projects = []
+    if project_ids:
+        projects = (
+            sb.schema(SUPABASE_SCHEMA).table("projects")
+            .select("projectid, projectnm")
+            .in_("projectid", project_ids)
+            .eq("useyn", True)
+            .order("projectnm")
+            .execute().data or []
+        )
     return {"projects": projects}
 
 
@@ -136,11 +146,9 @@ def get_dataset_members(datasetuid: str, token: str = Depends(get_token), tid: O
     sb = _sb(token)
 
 
-    # datas 테이블은 projectid 기준 → 테넌트의 프로젝트 목록 먼저 조회
     proj_rows = (
-        sb.schema(SUPABASE_SCHEMA).table("projects")
-        .select("projectid")
-        .eq("tenantid", tid)
+        sb.schema(SUPABASE_SCHEMA)
+        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
         .execute().data or []
     )
     project_ids = [p["projectid"] for p in proj_rows]
@@ -191,14 +199,22 @@ def get_dataset_projects(datasetuid: str, token: str = Depends(get_token), tid: 
     sb = _sb(token)
 
 
-    projects = (
-        sb.schema(SUPABASE_SCHEMA).table("projects")
-        .select("projectid, projectnm")
-        .eq("tenantid", tid)
-        .eq("useyn", True)
-        .order("projectnm")
+    proj_rows = (
+        sb.schema(SUPABASE_SCHEMA)
+        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
         .execute().data or []
     )
+    project_ids = [p["projectid"] for p in proj_rows]
+    projects = []
+    if project_ids:
+        projects = (
+            sb.schema(SUPABASE_SCHEMA).table("projects")
+            .select("projectid, projectnm")
+            .in_("projectid", project_ids)
+            .eq("useyn", True)
+            .order("projectnm")
+            .execute().data or []
+        )
     mappings = (
         sb.schema(SUPABASE_SCHEMA).table("project_datasets")
         .select("projectid")

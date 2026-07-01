@@ -549,7 +549,6 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenan
 
 @router.post("/ex")
 async def save_ex_data(
-    projectid: int = Form(...),
     datanm: str = Form(...),
     datauid: Optional[str] = Form(None),
     excelfile: Optional[UploadFile] = File(None),
@@ -571,7 +570,7 @@ async def save_ex_data(
         content = await excelfile.read()
         ext = os.path.splitext(excelfile.filename)[1]
         fname = f"{uuid.uuid4()}{ext}"
-        path = f"source/{projectid}/{fname}"
+        path = f"source/ex/{tenantid or 'common'}/{fname}"
         sb.storage.from_("sdoc").upload(path, content, {"content-type": excelfile.content_type})
         public_url = sb.storage.from_("sdoc").get_public_url(path).split("?")[0]
         record["excelurl"] = public_url
