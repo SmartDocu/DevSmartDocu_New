@@ -1,5 +1,6 @@
 """LLM AI 설정/미리보기 라우터 (CA/SA/TA 항목)"""
 import random
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -297,12 +298,14 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     # ② doc → projectid
     projectid = None
     tenantid = None
+    docnm = ""
     if docid:
-        doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid").eq(
+        doc_rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid, docnm").eq(
             "docid", docid
         ).execute().data or []
         if doc_rows:
             projectid = doc_rows[0].get("projectid")
+            docnm = doc_rows[0].get("docnm", "")
 
     # ③ project → tenantid
     if projectid:
@@ -311,6 +314,16 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         ).execute().data or []
         if proj_rows:
             tenantid = proj_rows[0].get("tenantid")
+
+    # objectuid 조회 (llm_api_logs.qauid 용)
+    objectuid = None
+    try:
+        obj_uid_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectuid").eq(
+            "chapteruid", body.chapteruid
+        ).eq("objectnm", body.objectnm).execute().data or []
+        objectuid = obj_uid_rows[0]["objectuid"] if obj_uid_rows else None
+    except Exception:
+        pass
 
     # ④ FakeLlmRequest — Django request.session 구조 모방
     req = FakeLlmRequest(
@@ -374,15 +387,39 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
 
     # ⑩ 체인 실행 — Django full_chain.invoke 와 동일
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, body.objecttypecd)
+    _llm_start_dts = datetime.now()
     try:
         response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
+    _llm_end_dts = datetime.now()
 
     if not isinstance(response, dict):
         raise HTTPException(status_code=500, detail="LLM 응답 형식 오류")
+
+    from d2shared.llm_logger import log_llm_call
+    _tokens = response.get("tokens", {})
+    _STEPNM_MAP = {"CA": "chart", "SA": "sentence", "TA": "table"}
+    log_llm_call(
+        log_ctx={
+            "qauid":          objectuid,
+            "servicecd":      "Do",
+            "questiontypecd": "P",
+            "tenant_id":      tenantid,
+            "project_id":     projectid,
+            "session_uid":    body.chapteruid,
+            "creator":        user_id,
+        },
+        stepnm=_STEPNM_MAP.get(body.objecttypecd, body.objecttypecd),
+        steptitle=docnm,
+        llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
+        inputtoken=_tokens.get("input_tokens", 0),
+        outputtoken=_tokens.get("output_tokens", 0),
+        startdts=_llm_start_dts,
+        enddts=_llm_end_dts,
+    )
 
     # ⑪ 응답 포맷 — Django ai_llm_click_preview_button 반환 구조 동일
     status = response.get("status")
