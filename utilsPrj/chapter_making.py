@@ -40,6 +40,7 @@ from utilsPrj.docx_read import convert_docx_to_html_2    # 업로드 용
 from utilsPrj.chapter_making_ai_table import render_preview_table
 
 from utilsPrj.supabase_client import get_thread_supabase, cleanup_thread_client, SUPABASE_SCHEMA
+from d2shared.llm_logger import log_llm_call
 # from utilsPrj.supabase_client import supabase
 
 from collections import defaultdict
@@ -306,12 +307,39 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 "message": "객체(object) 타입이 분류되지 않는 타입입니다."
             }            
 
+        _llm_start_dts = datetime.now()
         full_chain = get_full_chain(llm, result_df, prompt, question, column_dict, object_type)
         response = full_chain.invoke({"question": question, "column_dict": column_dict})
+        _llm_end_dts = datetime.now()
 
         if isinstance(response, dict) and "tokens" in response:
             total_tokens["input_tokens"] = response["tokens"]["input_tokens"]
             total_tokens["output_tokens"] = response["tokens"]["output_tokens"]
+
+        try:
+            _doc_rows = supabase.schema(SUPABASE_SCHEMA).table("docs").select("docnm").eq("docid", docid).execute().data or []
+            _docnm = _doc_rows[0]["docnm"] if _doc_rows else ""
+        except Exception:
+            _docnm = ""
+        _STEPNM_MAP = {"CA": "chart", "SA": "sentence", "TA": "table"}
+        log_llm_call(
+            log_ctx={
+                "qauid": genobjectuid,
+                "servicecd": "Do",
+                "questiontypecd": "P",
+                "tenant_id": tenant_id,
+                "project_id": request.session.get("user", {}).get("projectid"),
+                "session_uid": gen_chapter_uid,
+                "creator": user_id,
+            },
+            stepnm=_STEPNM_MAP.get(object_type, object_type),
+            steptitle=_docnm,
+            llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
+            inputtoken=total_tokens["input_tokens"],
+            outputtoken=total_tokens["output_tokens"],
+            startdts=_llm_start_dts,
+            enddts=_llm_end_dts,
+        )
 
         run_start_dts = datetime.now().isoformat()
         queue_genobject_run_log(data_item['genobjectuid'], data_item['objecttypecd'], data_item['sourcebase'], total_tokens["input_tokens"], tenant_id, user_id, run_start_dts)

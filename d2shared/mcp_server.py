@@ -186,8 +186,14 @@ DB 정보:
         if not api_key or not vendor_name:
             _project_id = (log_ctx or {}).get("project_id")
             _tenant_id = (log_ctx or {}).get("tenant_id")
+            _user_uid = (log_ctx or {}).get("creator")
+            _account_uid = (log_ctx or {}).get("account_uid")
+            # servicecd 단일문자(C/I/D) → service_code 두 글자 코드 변환
+            _SVC_MAP = {"C": "Ch", "I": "In", "D": "Do"}
+            _svc_code = _SVC_MAP.get((log_ctx or {}).get("servicecd", ""), None)
             model, api_key, vendor_name = get_llm_info(
-                project_id=_project_id, tenant_id=_tenant_id
+                project_id=_project_id, tenant_id=_tenant_id,
+                user_uid=_user_uid, account_uid=_account_uid, service_code=_svc_code,
             )
 
         llm = build_langchain_llm(vendor_name, api_key, model)

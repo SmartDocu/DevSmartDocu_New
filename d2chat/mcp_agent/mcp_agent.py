@@ -56,7 +56,7 @@ class MCPAgent:
             self.llm_model = _model
             self._api_key = _api_key
             self._vendor = _vendor
-            self.llm = build_langchain_llm(_vendor, _api_key, _model)
+            self.llm = build_langchain_llm(self._vendor, self._api_key, self.llm_model)
         except Exception as _e:
             print(f"[MCPAgent] LLM 초기화 실패 (ask() 호출 시 재시도): {_e}")
             self.llm_model = None
@@ -233,7 +233,12 @@ class MCPAgent:
 
         _project_id = (log_ctx or {}).get("project_id")
         _tenant_id = (log_ctx or {}).get("tenant_id")
-        _model, _api_key, _vendor = get_llm_info(project_id=_project_id, tenant_id=_tenant_id)
+        _user_uid = (log_ctx or {}).get("creator")
+        _account_uid = (log_ctx or {}).get("account_uid")
+        _model, _api_key, _vendor = get_llm_info(
+            project_id=_project_id, tenant_id=_tenant_id,
+            user_uid=_user_uid, account_uid=_account_uid, service_code="Ch",
+        )
         self.llm_model = _model
         self._api_key = _api_key
         self._vendor = _vendor

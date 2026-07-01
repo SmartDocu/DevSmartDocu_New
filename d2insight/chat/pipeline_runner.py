@@ -10,10 +10,13 @@ from d2insight.config import LLM_MODELS
 _llm_cache: dict = {}
 
 
-def _get_llm(grade: str = "fast", project_id=None, tenant_id=None):
-    key = (grade, project_id, tenant_id)
+def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
+    key = (grade, project_id, tenant_id, user_uid, account_uid)
     if key not in _llm_cache:
-        _, _api_key, _vendor = get_llm_info(project_id=project_id, tenant_id=tenant_id)
+        _, _api_key, _vendor = get_llm_info(
+            project_id=project_id, tenant_id=tenant_id,
+            user_uid=user_uid, account_uid=account_uid, service_code="In",
+        )
         _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
     return _llm_cache[key]
 
@@ -26,19 +29,22 @@ def _quick_chat(
     max_tokens: int = 500,
     project_id=None,
     tenant_id=None,
+    user_uid=None,
+    account_uid=None,
 ) -> str:
     from langchain_core.messages import SystemMessage, HumanMessage
     messages = []
     if system:
         messages.append(SystemMessage(content=system))
     messages.append(HumanMessage(content=prompt))
-    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id).invoke(messages)
+    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id,
+                    user_uid=user_uid, account_uid=account_uid).invoke(messages)
     content = resp.content
     return content if isinstance(content, str) else content[0].text
 
 
 def run_report_from_spec(spec: dict, user_id: str | None = None,
-                         project_id=None, tenant_id=None) -> dict:
+                         project_id=None, tenant_id=None, account_uid=None) -> dict:
     """대화형 보고서 명세(ReportSpec)로부터 보고서를 생성한다."""
     target_month = spec.get("target_month")
     months_back = spec.get("months_back") or 3
@@ -58,7 +64,7 @@ def run_report_from_spec(spec: dict, user_id: str | None = None,
         ),
     }
     return run_tool("report", target_month, months_back, intent=intent, user_id=user_id,
-                    project_id=project_id, tenant_id=tenant_id)
+                    project_id=project_id, tenant_id=tenant_id, user_uid=user_id, account_uid=account_uid)
 
 
 def run_tool(
@@ -70,6 +76,8 @@ def run_tool(
     user_id: str | None = None,
     project_id=None,
     tenant_id=None,
+    user_uid: str | None = None,
+    account_uid: str | None = None,
 ) -> dict:
     """Execute pipeline tool and return {answer, visualization_type, table_html, chart_image, report_path}."""
     intent = intent or {}
@@ -114,7 +122,8 @@ def run_tool(
             + (f"이전 대화:\n{hist_text}\n\n" if hist_text else "")
         )
         result["answer"] = _quick_chat(user_message, system=system, grade="fast", max_tokens=600,
-                                       project_id=project_id, tenant_id=tenant_id)
+                                       project_id=project_id, tenant_id=tenant_id,
+                                       user_uid=user_uid, account_uid=account_uid)
         return result
 
     # ── 이하 report 도구: target_month 필수 ─────────────────────────────────
@@ -134,7 +143,8 @@ def run_tool(
             _project_id = project_id
             if user_id and (_project_id is None or _tenant_id is None):
                 _tenant_id, _project_id = get_project_info(user_id)
-            agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id)
+            agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id,
+                                user_uid=user_id or user_uid, account_uid=account_uid)
             report_result = agent.generate(
                 report_type, target_month, months_back,
                 user_request=user_request,
@@ -151,6 +161,8 @@ def run_tool(
                         max_tokens=400,
                         project_id=project_id,
                         tenant_id=tenant_id,
+                        user_uid=user_uid,
+                        account_uid=account_uid,
                     )
                 except Exception:
                     pass

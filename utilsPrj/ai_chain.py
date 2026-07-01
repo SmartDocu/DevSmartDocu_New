@@ -81,10 +81,14 @@ def get_llm_model(request):
         """테이블에서 LLM 설정 조회"""
         data = process_data_in_supabase(supabase, table_name, "select", {}, conditions, "llmmodelnm, encapikey, tenantid")
         return data[0]["llmmodelnm"], data[0]["encapikey"]
+    
+    # print("jeff001 user: ", request.session.get("user"))
+    # user_uid = process_data_in_supabase(supabase, "users", "select", {}, )
 
     llm_model, enc_api_key = fetch_llm_config("projects", {"projectid": project_id})
     if not llm_model:
-        llm_model, enc_api_key = fetch_llm_config("tenants", {"tenantid": tenant_id})
+        # llm_model, enc_api_key = fetch_llm_config("tenants", {"tenantid": tenant_id})
+        llm_model, enc_api_key = fetch_llm_config("llmapikeys", {"tenantid": tenant_id})
 
         if not llm_model:
             llm_data = process_data_in_supabase(supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm, creator")
@@ -176,12 +180,17 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
     raise ValueError(f"지원하지 않는 LLM 벤더: {vendor_name}")
 
 
-def get_llm_info(supabase=None, project_id=None, tenant_id=None):
-    """Supabase에서 프로젝트/테넌트 LLM 설정을 조회해 (model, dec_api_key, vendor_name) 반환.
+def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, service_code=None, account_uid=None):
+    """Supabase에서 LLM 설정을 조회해 (model, dec_api_key, vendor_name) 반환.
 
     supabase 미전달 시 서비스 역할 클라이언트를 자동 사용.
-    우선순위: 프로젝트 설정 → 테넌트 설정 → 기본값(useyn=True 무작위 선택)
-    FastAPI 라우터에서 사용 가능 (Django request 불필요).
+    service_code: 앱 구분 ("Do"=d2doc, "Ch"=d2chat, "In"=d2insight)
+    account_uid 전달 시 serviceusers 조회를 건너뛰고 바로 subscriptions 조회.
+    user_uid 전달 시(account_uid 없을 때) serviceusers에서 account_uid 조회.
+    구독 플랜(is_customeraikey)에 따라 키 조회 경로가 분기된다:
+      - is_customeraikey=True  → 고객 등록 키: projects → llmapikeys(accountuid+servicecd)
+      - is_customeraikey=False → 서비스 제공 키: 시스템 테넌트의 llmapikeys 사용
+    user_uid/account_uid 미전달 시 기본 fallback(llmmodels/llmapis) 사용.
     """
     import random as _random
 
@@ -196,13 +205,61 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None):
             return data[0]["llmmodelnm"], data[0]["encapikey"]
         return None, None
 
+    # ── 구독 플랜으로 is_customeraikey 판단 ─────────────────────────────
+    is_customeraikey = True
+
+    if account_uid or user_uid:
+        try:
+            if not account_uid:
+                # account_uid 미전달 시 serviceusers에서 조회 (service_code로 필터)
+                su_cond = {"useruid": user_uid}
+                if service_code:
+                    su_cond["servicecd"] = service_code
+                su = process_data_in_supabase(
+                    supabase, "serviceusers", "select", {}, su_cond, "accountuid"
+                )
+                if su:
+                    account_uid = su[0]["accountuid"]
+
+            if account_uid:
+                sub = process_data_in_supabase(
+                    supabase, "subscriptions", "select", {}, {"accountuid": account_uid}, "productcd"
+                )
+                if sub:
+                    product_cd = sub[0]["productcd"]
+                    prod = process_data_in_supabase(
+                        supabase, "products", "select", {}, {"productcd": product_cd}, "is_customeraikey"
+                    )
+                    if prod:
+                        is_customeraikey = bool(prod[0]["is_customeraikey"])
+        except Exception as _e:
+            print(f"[get_llm_info] 구독 플랜 조회 실패, 기본값(is_customeraikey=True) 사용: {_e}")
+
     llm_model, enc_api_key = None, None
 
-    if project_id:
-        llm_model, enc_api_key = _fetch("projects", {"projectid": project_id})
-
-    if not llm_model and tenant_id:
-        llm_model, enc_api_key = _fetch("tenants", {"tenantid": tenant_id})
+    if is_customeraikey:
+        # 고객 등록 키: projects 우선, 없으면 llmapikeys(accountuid+servicecd), 없으면 tenantid 폴백
+        if project_id:
+            llm_model, enc_api_key = _fetch("projects", {"projectid": project_id})
+        if not llm_model and account_uid and service_code:
+            llm_model, enc_api_key = _fetch("llmapikeys", {"accountuid": account_uid, "servicecd": service_code})
+        if not llm_model and tenant_id:
+            llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id})
+    else:
+        # 서비스 제공 키: 시스템 테넌트의 llmapikeys 사용
+        try:
+            sys_tenant = process_data_in_supabase(
+                supabase, "tenants", "select", {}, {"issystemtenant": True}, "tenantid"
+            )
+            if sys_tenant:
+                tenant_id_supplier = sys_tenant[0]["tenantid"]
+                au = process_data_in_supabase(
+                    supabase, "accounts", "select", {}, {"tenantid": tenant_id_supplier, "accounttype": "T"}, "accountuid"
+                )
+                account_uid_supplier = au[0]["accountuid"]
+                llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id_supplier, "accountuid": account_uid_supplier})
+        except Exception as _e:
+            print(f"[get_llm_info] 서비스 제공 키 조회 실패: {_e}")
 
     if not llm_model:
         try:
@@ -211,7 +268,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None):
             )
             llm_model = _random.choice(llm_data)["llmmodelnm"]
             key_data = process_data_in_supabase(
-                supabase, "llmapis", "select", {}, {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey"
+                supabase, "llmapikeys", "select", {}, {"llmmodelnm": llm_model, "useyn": True}, "encapikey"
             )
             enc_api_key = _random.choice(key_data)["encapikey"]
         except Exception:

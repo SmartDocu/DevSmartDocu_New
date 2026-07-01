@@ -97,7 +97,7 @@ def append_qa(
     fileurl: str | None = None,
     inputtoken: int | None = None,
     outputtoken: int | None = None,
-    servicecd: str = "I",
+    servicecd: str = "In",
 ) -> str:
     """QA를 insight_qas에 저장하고 qauid를 반환한다.
 
@@ -192,7 +192,7 @@ def insert_llm_api_logs(
         _end = c.get("enddts")
         rows.append({
             "qauid": qauid,
-            "servicecd": "I",
+            "servicecd": "In",
             "questiontypecd": questiontypecd,
             "tenantid": tenant_id or None,
             "projectid": project_id or None,

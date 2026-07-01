@@ -13,18 +13,22 @@ _KST = ZoneInfo("Asia/Seoul")
 _llm_cache: dict = {}
 
 
-def _get_llm(grade: str = "fast", project_id=None, tenant_id=None):
-    key = (grade, project_id, tenant_id)
+def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
+    key = (grade, project_id, tenant_id, user_uid, account_uid)
     if key not in _llm_cache:
-        _, _api_key, _vendor = get_llm_info(project_id=project_id, tenant_id=tenant_id)
+        _, _api_key, _vendor = get_llm_info(
+            project_id=project_id, tenant_id=tenant_id,
+            user_uid=user_uid, account_uid=account_uid, service_code="In",
+        )
         _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
     return _llm_cache[key]
 
 
 def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 200,
-                project_id=None, tenant_id=None) -> str:
+                project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> str:
     from langchain_core.messages import SystemMessage, HumanMessage
-    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id).invoke(
+    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id,
+                    user_uid=user_uid, account_uid=account_uid).invoke(
         [SystemMessage(content=system), HumanMessage(content=prompt)]
     )
     content = resp.content
@@ -89,7 +93,7 @@ mode 선택 기준 (tool이 "report"일 때):
 - "어떤 분석을 할 수 있나요?" → {{"tool": "chat", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}"""
 
 
-def parse_intent(message: str, project_id=None, tenant_id=None) -> dict:
+def parse_intent(message: str, project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> dict:
     """Return {{tool, target_month, months_back, report_type, mode}} from user message."""
     today = datetime.now(tz=_KST).strftime("%Y-%m-%d")
     try:
@@ -100,6 +104,8 @@ def parse_intent(message: str, project_id=None, tenant_id=None) -> dict:
             max_tokens=200,
             project_id=project_id,
             tenant_id=tenant_id,
+            user_uid=user_uid,
+            account_uid=account_uid,
         )
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
         if m:

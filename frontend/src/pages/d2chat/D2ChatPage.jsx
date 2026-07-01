@@ -250,7 +250,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.post(
         '/d2chat/ask',
-        { question, session_id: sessionIdRef.current, project_id: user?.projectid ?? null },
+        { question, session_id: sessionIdRef.current, project_id: user?.projectid ?? null, account_uid: user?.accountuid ?? null },
         ASK_TIMEOUT,
       )
 

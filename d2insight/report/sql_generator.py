@@ -18,11 +18,17 @@ from d2shared.mcp_server import MCPServer
 
 _vendor_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_vendor', default=None)
 _apikey_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_apikey', default=None)
+_useruid_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_useruid', default=None)
+_accountuid_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_accountuid', default=None)
 
 
-def set_llm_context(vendor: str, api_key: str) -> None:
+def set_llm_context(vendor: str, api_key: str, user_uid: str | None = None, account_uid: str | None = None) -> None:
     _vendor_ctx.set(vendor)
     _apikey_ctx.set(api_key)
+    if user_uid is not None:
+        _useruid_ctx.set(user_uid)
+    if account_uid is not None:
+        _accountuid_ctx.set(account_uid)
 
 _AGG_RULES = (
     "🔥 집계 규칙 (필수):\n"
@@ -46,7 +52,9 @@ class SqlGenerator:
             self._api_key = _k
         else:
             from utilsPrj.ai_chain import get_llm_info
-            _, self._api_key, self._vendor = get_llm_info()
+            _, self._api_key, self._vendor = get_llm_info(
+                user_uid=_useruid_ctx.get(), account_uid=_accountuid_ctx.get(), service_code="In",
+            )
 
     def execute_natural_language_query(
         self,

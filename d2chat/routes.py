@@ -19,6 +19,7 @@ class QuestionRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
     project_id: Optional[int] = None
+    account_uid: Optional[str] = None  # 프론트 authStore에서 전달 (serviceusers 조회 생략용)
 
 class InjectRequest(BaseModel):
     session_id: Optional[str] = None
@@ -70,12 +71,13 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
 
     log_ctx = {
         "qauid":          pre_qauid,
-        "servicecd":      "C",
+        "servicecd":      "Ch",
         "questiontypecd": "S",
         "creator":        user_id,
         "tenant_id":      info.get("tenantid"),
         "project_id":     info.get("projectid"),
         "session_uid":    session_id,
+        "account_uid":    body.account_uid,
     }
 
     try:

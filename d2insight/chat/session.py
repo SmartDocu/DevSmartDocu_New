@@ -31,7 +31,7 @@ def append_qa(
     fileurl: str | None = None,
     inputtoken: int | None = None,
     outputtoken: int | None = None,
-    servicecd: str = "I",
+    servicecd: str = "In",
 ) -> str:
     """QA 한 쌍을 insight_qas에 저장하고 qauid를 반환한다."""
     creator = user_id or None

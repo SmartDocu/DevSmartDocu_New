@@ -31,7 +31,7 @@ def log_llm_call(
     try:
         _q("llm_api_logs").insert({
             "qauid":          log_ctx.get("qauid"),
-            "servicecd":      log_ctx.get("servicecd", "C"),
+            "servicecd":      log_ctx.get("servicecd", "Ch"),
             "questiontypecd": log_ctx.get("questiontypecd", "S"),
             "tenantid":       log_ctx.get("tenant_id"),
             "projectid":      log_ctx.get("project_id"),

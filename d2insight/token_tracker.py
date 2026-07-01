@@ -25,6 +25,18 @@ _local = threading.local()
 # asyncio.run_in_executor (LangGraph ToolNode) 스레드에도 provider 값이 전파되도록 ContextVar 사용
 _provider_var: ContextVar[str] = ContextVar("llm_provider", default="")
 
+# LLM 즉시 로깅용 컨텍스트 — ThreadPoolExecutor 워커 스레드에도 자동 복사됨
+_log_ctx_var: ContextVar[dict | None] = ContextVar("llm_log_ctx", default=None)
+
+
+def set_log_ctx(ctx: dict | None) -> None:
+    """요청 시작 시 호출 — log_llm_call에 전달할 컨텍스트를 설정한다."""
+    _log_ctx_var.set(ctx)
+
+
+def get_log_ctx() -> dict | None:
+    return _log_ctx_var.get()
+
 
 def reset() -> None:
     """요청 시작 시 호출 — 현재 스레드의 카운터와 호출 목록을 초기화한다."""
@@ -100,6 +112,24 @@ def add(
         "startdts": startdts,
         "enddts": enddts,
     })
+
+    # 즉시 로깅 — ContextVar가 설정된 경우 각 LLM 호출 완료 시점에 DB에 기록
+    _ctx = _log_ctx_var.get()
+    if _ctx:
+        try:
+            from d2shared.llm_logger import log_llm_call
+            log_llm_call(
+                log_ctx={**_ctx, "questiontypecd": "R" if is_report else "S"},
+                stepnm=stepnm,
+                steptitle=steptitle,
+                llmmodelnm=model_id or grade,
+                inputtoken=input_tokens,
+                outputtoken=output_tokens,
+                startdts=startdts,
+                enddts=enddts,
+            )
+        except Exception as _e:
+            print(f"[token_tracker] llm_api_logs 즉시 로깅 실패 (건너뜀): {_e}")
 
 
 def get() -> dict:

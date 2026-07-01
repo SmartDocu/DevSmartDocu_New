@@ -412,11 +412,16 @@ class ReportAgent:
         connection_url: str | None = None,
         project_id: int | None = None,
         tenant_id: int | None = None,
+        user_uid: str | None = None,
+        account_uid: str | None = None,
     ) -> None:
         src = GenericSqlSource(connection_url)
         self._dialect: str = src._dialect
+        self._user_uid = user_uid
+        self._account_uid = account_uid
         _, self._api_key, self._vendor = get_llm_info(
-            project_id=project_id, tenant_id=tenant_id
+            project_id=project_id, tenant_id=tenant_id,
+            user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
         self._model_id = LLM_MODELS[self._vendor]["balanced"]
         self._llm = build_langchain_llm(self._vendor, self._api_key, self._model_id)
@@ -619,7 +624,7 @@ class ReportAgent:
         token_tracker.reset()
         token_tracker.set_current_section(section_name)
         from d2insight.report.sql_generator import set_llm_context
-        set_llm_context(self._vendor, self._api_key)
+        set_llm_context(self._vendor, self._api_key, user_uid=self._user_uid, account_uid=self._account_uid)
 
         start, end = date_range
         section_msg = (

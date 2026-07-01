@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     user_id: str | None = None
     project_id: int | None = None
+    account_uid: str | None = None  # 프론트 authStore에서 전달 (serviceusers 조회 생략용)
 
 
 class FavoriteQARequest(BaseModel):
@@ -85,15 +86,28 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
         except Exception:
             pass
 
+    # 파이프라인 실행 전 log_ctx 설정 — token_tracker.add()에서 LLM 호출마다 즉시 DB 기록
+    token_tracker.set_log_ctx({
+        "qauid": None,
+        "servicecd": "In",
+        "tenant_id": _tenant_id,
+        "project_id": _project_id,
+        "session_uid": sid,
+        "creator": req.user_id,
+        "account_uid": req.account_uid,
+    })
+
     # ── 대화형 보고서 작성 진행 중 ───────────────────────────────────────
     active_spec = _spec_mod.get_spec(sid)
     if active_spec:
         updated_spec, bot_response = _spec_mod.advance_spec(
-            sid, req.message, history=hist, project_id=_project_id, tenant_id=_tenant_id
+            sid, req.message, history=hist, project_id=_project_id, tenant_id=_tenant_id,
+            user_uid=req.user_id, account_uid=req.account_uid,
         )
         if bot_response == "__EXECUTE__":
             result = run_report_from_spec(updated_spec, req.user_id,
-                                          project_id=_project_id, tenant_id=_tenant_id)
+                                          project_id=_project_id, tenant_id=_tenant_id,
+                                          account_uid=req.account_uid)
             _spec_mod.clear_spec(sid)
         elif bot_response == "__CANCEL__":
             result = {
@@ -109,7 +123,8 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
             }
     else:
         # ── 기존 플로우 ────────────────────────────────────────────────────
-        intent = parse_intent(req.message, project_id=_project_id, tenant_id=_tenant_id)
+        intent = parse_intent(req.message, project_id=_project_id, tenant_id=_tenant_id,
+                              user_uid=req.user_id, account_uid=req.account_uid)
         intent["original_message"] = req.message
         tool = intent.get("tool", "chat")
         target_month = intent.get("target_month")
@@ -133,7 +148,8 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
             }
         else:
             result = run_tool(tool, target_month, months_back, history=hist, intent=intent,
-                              user_id=req.user_id, project_id=_project_id, tenant_id=_tenant_id)
+                              user_id=req.user_id, project_id=_project_id, tenant_id=_tenant_id,
+                              user_uid=req.user_id, account_uid=req.account_uid)
 
     tokens = token_tracker.get()
 
@@ -154,28 +170,14 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
             fileurl=result.get("fileurl"),
             inputtoken=tokens["input"] or None,
             outputtoken=tokens["output"] or None,
-            servicecd="I",
+            servicecd="In",
         )
     except Exception as e:
         print(f"[session] append_qa 실패 (저장 건너뜀): {e}")
 
     if qauid and (tokens["input"] or tokens["output"]):
         token_tracker.record_turn(sid, qauid, tokens)
-
-    if qauid and calls:
-        try:
-            tenant_id, project_id = storage.get_project_info(req.user_id) if req.user_id else (None, None)
-            storage.insert_llm_api_logs(
-                calls=calls,
-                qauid=qauid,
-                session_uid=sid,
-                tenant_id=tenant_id,
-                project_id=project_id,
-                creator=req.user_id,
-                questiontypecd=questiontypecd,
-            )
-        except Exception as e:
-            print(f"[session] insert_llm_api_logs 실패 (저장 건너뜀): {e}")
+    token_tracker.set_log_ctx(None)
 
     return ChatResponse(session_id=sid, qauid=qauid, **result)
 

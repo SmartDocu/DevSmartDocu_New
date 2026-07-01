@@ -14,18 +14,22 @@ _KST = ZoneInfo("Asia/Seoul")
 _llm_cache: dict = {}
 
 
-def _get_llm(grade: str = "fast", project_id=None, tenant_id=None):
-    key = (grade, project_id, tenant_id)
+def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
+    key = (grade, project_id, tenant_id, user_uid, account_uid)
     if key not in _llm_cache:
-        _, _api_key, _vendor = get_llm_info(project_id=project_id, tenant_id=tenant_id)
+        _, _api_key, _vendor = get_llm_info(
+            project_id=project_id, tenant_id=tenant_id,
+            user_uid=user_uid, account_uid=account_uid, service_code="In",
+        )
         _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
     return _llm_cache[key]
 
 
 def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 150,
-                project_id=None, tenant_id=None) -> str:
+                project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> str:
     from langchain_core.messages import SystemMessage, HumanMessage
-    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id).invoke(
+    resp = _get_llm(grade, project_id=project_id, tenant_id=tenant_id,
+                    user_uid=user_uid, account_uid=account_uid).invoke(
         [SystemMessage(content=system), HumanMessage(content=prompt)]
     )
     content = resp.content
@@ -134,7 +138,7 @@ def build_confirmation(spec: dict) -> str:
 
 
 def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
-                    project_id=None, tenant_id=None) -> dict:
+                    project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> dict:
     defaults = {
         "target_month": None, "report_type": None, "months_back": None, "top_n": None,
         "threshold": None, "accepted_default": False, "bulk": False, "confirmed": False, "cancel": False,
@@ -160,6 +164,8 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
             max_tokens=150,
             project_id=project_id,
             tenant_id=tenant_id,
+            user_uid=user_uid,
+            account_uid=account_uid,
         )
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
         if m:
@@ -170,7 +176,7 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
 
 
 def advance_spec(session_id: str, message: str, history: list[dict] | None = None,
-                 project_id=None, tenant_id=None) -> tuple[dict, str]:
+                 project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> tuple[dict, str]:
     """사용자 메시지로 spec을 진행시키고 (updated_spec, bot_response)를 반환.
 
     bot_response 특수값:
@@ -181,7 +187,8 @@ def advance_spec(session_id: str, message: str, history: list[dict] | None = Non
     if not spec:
         return {}, "__CANCEL__"
 
-    params = _extract_params(message, spec, history=history, project_id=project_id, tenant_id=tenant_id)
+    params = _extract_params(message, spec, history=history, project_id=project_id, tenant_id=tenant_id,
+                             user_uid=user_uid, account_uid=account_uid)
 
     if params.get("cancel"):
         clear_spec(session_id)
