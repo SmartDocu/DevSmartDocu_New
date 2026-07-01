@@ -40,7 +40,7 @@ def list_projects(token: str = Depends(get_token)):
     active_ids = {
         p["projectid"]
         for p in (
-            sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("useyn", True).eq("servicecd", "doc").execute().data or []
+            sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("useyn", True).eq("servicecd", "Do").execute().data or []
         )
     }
     return ProjectsResponse(
