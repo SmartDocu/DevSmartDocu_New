@@ -9,6 +9,8 @@ import {
 } from '@/hooks/useDatas'
 import { useDocs } from '@/hooks/useDocs'
 
+const EMPTY_COLS = []
+
 export default function MasterDatasExPage() {
   useLangStore((s) => s.translations)
 
@@ -41,7 +43,7 @@ export default function MasterDatasExPage() {
 
   // Columns state (editable in-place)
   const [selectedColDatauid, setSelectedColDatauid] = useState(null)
-  const { data: rawCols = [] } = useDatacols(selectedColDatauid)
+  const { data: rawCols = EMPTY_COLS } = useDatacols(selectedColDatauid)
   const [editCols, setEditCols] = useState([])
 
   useEffect(() => {

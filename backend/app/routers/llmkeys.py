@@ -91,12 +91,13 @@ def list_llmkeys(
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
-    tenantid, _ = _get_tenant_and_account(sd, user_id, header_tenantid)
+    tenantid, accountuid = _get_tenant_and_account(sd, user_id, header_tenantid)
 
     rows = (
         sd.table("llmapikeys")
         .select("*")
         .eq("tenantid", int(tenantid))
+        .eq("accountuid", accountuid)
         .order("orderno")
         .execute()
         .data or []
