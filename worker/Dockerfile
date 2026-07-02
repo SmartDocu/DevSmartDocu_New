@@ -15,6 +15,11 @@ COPY utilsPrj/ utilsPrj/
 COPY worker/ worker/
 COPY static/ static/
 
+# Chat Insight
+COPY d2chat/ d2chat/
+COPY d2insight/ d2insight/
+COPY d2shared/ d2shared/
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
