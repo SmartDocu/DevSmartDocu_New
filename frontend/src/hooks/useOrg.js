@@ -39,12 +39,17 @@ export function useDeleteTenantLlm() {
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
-export function useOrgProjects(tenantid) {
+export function useOrgProjects(tenantid, accountuid) {
   return useQuery({
-    queryKey: ['org-projects', tenantid],
+    queryKey: ['org-projects', tenantid, accountuid],
     queryFn: () =>
       apiClient
-        .get('/org/projects', { params: tenantid ? { tenantid } : {} })
+        .get('/org/projects', {
+          params: {
+            ...(tenantid ? { tenantid } : {}),
+            ...(accountuid ? { accountuid } : {}),
+          },
+        })
         .then((r) => r.data),
   })
 }
@@ -54,11 +59,9 @@ export function useSaveOrgProject() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/projects', body).then((r) => r.data),
     onSuccess: (_, vars) => {
-      message.success(t('msg.save.success'))
-      qc.invalidateQueries({ queryKey: ['org-projects', vars.tenantid] })
+      qc.invalidateQueries({ queryKey: ['org-projects', vars.tenantid, vars.accountuid] })
       qc.invalidateQueries({ queryKey: ['org-projects'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
   })
 }
 

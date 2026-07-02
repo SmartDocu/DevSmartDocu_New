@@ -369,6 +369,7 @@ def delete_tenant_llm(body: TenantLlmDeleteRequest, token: str = Depends(get_tok
 @router.get("/projects")
 def list_org_projects(
     tenantid: Optional[str] = Query(None),
+    accountuid: Optional[str] = Query(None),
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -392,7 +393,12 @@ def list_org_projects(
         else:
             row["creatornm"] = ""
 
-    return {"projects": rows, "tenantnm": tenantnm, "tenantid": tenantid}
+    available_servicecds = []
+    if accountuid:
+        svc_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+        available_servicecds = [r["servicecd"] for r in svc_rows if r.get("servicecd")]
+
+    return {"projects": rows, "tenantnm": tenantnm, "tenantid": tenantid, "available_servicecds": available_servicecds}
 
 
 class OrgProjectSaveRequest(BaseModel):
@@ -401,6 +407,8 @@ class OrgProjectSaveRequest(BaseModel):
     projectnm: str
     projectdesc: Optional[str] = None
     useyn: bool = True
+    servicecd: Optional[str] = None
+    accountuid: Optional[str] = None
 
 
 @router.post("/projects")
@@ -415,12 +423,34 @@ def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token
     if not body.projectnm:
         raise HTTPException(status_code=400, detail="프로젝트명은 필수입니다.")
 
+    # 신규 생성 시 플랜 제한 체크
+    is_new = not body.projectid
+    if is_new and body.accountuid and body.servicecd:
+        svc = sb.schema(SUPABASE_SCHEMA).table("accountservices") \
+            .select("plancd").eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
+            .maybe_single().execute()
+        plancd = svc.data.get("plancd") if svc.data else None
+        if plancd:
+            cfg = sb.schema(SUPABASE_SCHEMA).table("config_plans") \
+                .select("value").eq("configcd", "project_limit").eq("plancd", plancd) \
+                .maybe_single().execute()
+            limit = int(cfg.data["value"]) if cfg.data and cfg.data.get("value") else None
+            if limit is not None:
+                cnt = sb.schema(SUPABASE_SCHEMA).table("projects") \
+                    .select("projectid", count="exact") \
+                    .eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
+                    .execute()
+                if (cnt.count or 0) >= limit:
+                    raise HTTPException(status_code=400, detail=f"프로젝트는 최대 {limit}개까지 생성할 수 있습니다.")
+
     data = {
         "projectnm": body.projectnm,
         "projectdesc": body.projectdesc,
         "useyn": body.useyn,
         "tenantid": tenantid,
         "creator": user.id,
+        "servicecd": body.servicecd,
+        "accountuid": body.accountuid,
     }
 
     if body.projectid:

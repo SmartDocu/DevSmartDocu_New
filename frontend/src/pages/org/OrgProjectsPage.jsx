@@ -4,12 +4,13 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOrgProjects, useSaveOrgProject, useDeleteOrgProject } from '@/hooks/useOrg'
+import { useMenuCodes } from '@/hooks/useMenus'
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
 const EMPTY_FORM = {
   projectid: '', projectnm: '', projectdesc: '',
-  useyn: true, creatornm: '', createdts: '',
+  useyn: true, creatornm: '', createdts: '', servicecd: '',
 }
 
 export default function OrgProjectsPage() {
@@ -18,17 +19,25 @@ export default function OrgProjectsPage() {
   const { user } = useAuthStore()
   useLangStore((s) => s.translations)
   const roleid = user?.roleid
+  const accountuid = user?.accountuid
 
   const paramTenantid = roleid === 7 ? searchParams.get('tenantid') : null
 
-  const { data = {}, isLoading } = useOrgProjects(paramTenantid)
+  const { data = {}, isLoading } = useOrgProjects(paramTenantid, accountuid)
+  const { data: allServiceCodes = [] } = useMenuCodes('servicecd')
   const saveMutation = useSaveOrgProject()
   const deleteMutation = useDeleteOrgProject()
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedRow, setSelectedRow] = useState(null)
 
-  const { projects = [], tenantnm, tenantid } = data
+  const { projects = [], tenantnm, tenantid, available_servicecds = [] } = data
+  const serviceCodes = allServiceCodes.filter((c) => available_servicecds.includes(c.codevalue))
+
+  const serviceLabel = (scd) => {
+    const found = serviceCodes.find((c) => c.codevalue === scd)
+    return found ? (t(found.term_key) || found.default_name) : scd
+  }
 
   const handleRowClick = (row) => {
     setSelectedRow(row)
@@ -39,6 +48,7 @@ export default function OrgProjectsPage() {
       useyn:       !!row.useyn,
       creatornm:   row.creatornm || '',
       createdts:   row.createdts || '',
+      servicecd:   row.servicecd || '',
     })
   }
 
@@ -53,6 +63,8 @@ export default function OrgProjectsPage() {
         projectnm:   form.projectnm,
         projectdesc: form.projectdesc || null,
         useyn:       form.useyn ?? true,
+        servicecd:   form.servicecd || null,
+        accountuid:  accountuid || null,
       },
       {
         onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
@@ -99,21 +111,23 @@ export default function OrgProjectsPage() {
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '40%' }}>{t('thd.projectnm_thd')}</th>
-                  <th style={{ width: '45%' }}>{t('thd.projectdesc_thd')}</th>
-                  <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '20%' }}>{t('thd.servicecd_thd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.projectnm_thd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.projectdesc_thd')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : projects.length === 0 ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : projects.map((p) => (
                   <tr key={p.projectid}
                     className={selectedRow?.projectid === p.projectid ? 'selected-row' : ''}
                     onClick={() => handleRowClick(p)}
                   >
+                    <td>{serviceLabel(p.servicecd)}</td>
                     <td>{p.projectnm}</td>
                     <td style={{ whiteSpace: 'pre-wrap' }}>{p.projectdesc || ''}</td>
                     <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
@@ -146,6 +160,16 @@ export default function OrgProjectsPage() {
                 </Popconfirm>
               )}
             </div>
+          </div>
+
+          <div className="form-group">
+            <label>{t('lbl.servicecd')}:</label>
+            <select value={form.servicecd} onChange={(e) => setForm(f => ({ ...f, servicecd: e.target.value }))}>
+              <option value="">{t('lbl.select')}</option>
+              {serviceCodes.map((c) => (
+                <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="form-group">
