@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Spin } from 'antd'
 import { useGenchapters } from '@/hooks/useGendocs'
 import { useAuthStore } from '@/stores/authStore'
@@ -39,6 +39,7 @@ export default function ReqDocWritePage() {
   useLangStore((s) => s.translations)
 
   const navigate = useNavigate()
+  const { appcd } = useParams()
   const [searchParams] = useSearchParams()
   const gendocuid = searchParams.get('gendocs')
   const { accessToken, user } = useAuthStore()
@@ -126,7 +127,7 @@ export default function ReqDocWritePage() {
                   setGenerating(false)
                   setTimeout(() => {
                     alert(`${t('msg.doc.write.complete')}: ${data.docnm || ''}`)
-                    navigate(`/req/doc-read?gendocs=${gendocuid}&type=auto`)
+                    navigate(`/app/${appcd}/req/doc-read?gendocs=${gendocuid}&type=auto`)
                   }, 1000)
                 } else if (data.status === 'error') {
                   setGenerating(false)
@@ -148,7 +149,7 @@ export default function ReqDocWritePage() {
   const handleBack = () => {
     const stored = sessionStorage.getItem('chapter_read_gendocuid')
     const target = stored || gendocuid
-    navigate(`/req/chapters-read?gendocs=${target}`)
+    navigate(`/app/${appcd}/req/chapters-read?gendocs=${target}`)
   }
 
   const percentage = progress && progress.total > 0

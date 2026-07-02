@@ -2,7 +2,7 @@
  * ReqChaptersReadPage — 챕터 목록
  */
 import { useRef, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { App, Select, Spin } from 'antd'
 import dayjs from 'dayjs'
 import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
@@ -19,6 +19,7 @@ export default function ReqChaptersReadPage() {
 
   const { message } = App.useApp()
   const navigate = useNavigate()
+  const { appcd } = useParams()
   const { accessToken, user } = useAuthStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
 
@@ -319,7 +320,7 @@ export default function ReqChaptersReadPage() {
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => navigate(`/req/write?gendocs=${selectedGendocuid}`)}
+              onClick={() => navigate(`/app/${appcd}/req/write?gendocs=${selectedGendocuid}`)}
             >
               {t('btn.doc.write.combine')}
             </button>
