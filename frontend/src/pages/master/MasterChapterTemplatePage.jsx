@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { App, Spin, Select, Modal } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
@@ -875,6 +875,7 @@ export default function MasterChapterTemplatePage() {
   const { message, modal } = App.useApp()
   const openInTab = useOpenInTab()
   const navigate = useNavigate()
+  const { appcd } = useParams()
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)  // ✅ 추가
   const chapteruid = searchParams.get('chapteruid')
@@ -926,9 +927,9 @@ export default function MasterChapterTemplatePage() {
   useEffect(() => {
     if (!chapteruid && chaptersList.length > 0) {
       const first = chaptersList[0]
-      navigate(`/master/chapter-template?chapteruid=${first.chapteruid}&docid=${docid || ''}`, { replace: true })
+      navigate(`/app/${appcd}/master/chapter-template?chapteruid=${first.chapteruid}&docid=${docid || ''}`, { replace: true })
     }
-  }, [chapteruid, chaptersList, docid, navigate])
+  }, [chapteruid, chaptersList, docid, appcd, navigate])
 
   const chapter    = data?.chapter    || {}
   const tbl_params = data?.tbl_params || []
@@ -1260,7 +1261,7 @@ export default function MasterChapterTemplatePage() {
           <span style={{ fontSize: 13, color: '#555' }}>{t('thd.chapternm')}</span>
           <Select
             value={chapteruid}
-            onChange={(uid) => navigate(`/master/chapter-template?chapteruid=${uid}&docid=${docid || ''}`)}
+            onChange={(uid) => navigate(`/app/${appcd}/master/chapter-template?chapteruid=${uid}&docid=${docid || ''}`)}
             style={{ width: 200 }}
             size="small"
             options={chaptersList.map(c => ({ value: c.chapteruid, label: c.chapternm }))}

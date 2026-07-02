@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
@@ -302,6 +303,51 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
             # print(f'Datas: {data}')
 
             sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").upsert(data).execute()
+
+    # 3. doc_objectcounts 갱신 — 챕터 기준
+    chap_row = sb_svc.schema(SUPABASE_SCHEMA).table("chapters").select("docid").eq("chapteruid", chapteruid).execute().data
+    docid = chap_row[0]["docid"] if chap_row else None
+
+    if docid is not None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        chapter_objectcount = len(body.formats)
+
+        existing_chap_cnt = sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").select("docid") \
+            .eq("doccontenttype", "chapter").eq("docid", docid).eq("chapteruid", chapteruid).execute().data
+        if existing_chap_cnt:
+            sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").update({
+                "objectcount": chapter_objectcount,
+                "updatedts": now_iso,
+            }).eq("doccontenttype", "chapter").eq("docid", docid).eq("chapteruid", chapteruid).execute()
+        else:
+            sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").insert({
+                "doccontenttype": "chapter",
+                "docid": docid,
+                "chapteruid": chapteruid,
+                "objectcount": chapter_objectcount,
+                "updatedts": now_iso,
+            }).execute()
+
+        # 4. doc_objectcounts 갱신 — 문서 기준 (해당 docid의 챕터별 objectcount 총합)
+        chap_cnt_rows = sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").select("objectcount") \
+            .eq("doccontenttype", "chapter").eq("docid", docid).execute().data or []
+        doc_objectcount = sum(r.get("objectcount") or 0 for r in chap_cnt_rows)
+
+        existing_doc_cnt = sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").select("docid") \
+            .eq("doccontenttype", "doc").eq("docid", docid).execute().data
+        if existing_doc_cnt:
+            sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").update({
+                "objectcount": doc_objectcount,
+                "updatedts": now_iso,
+            }).eq("doccontenttype", "doc").eq("docid", docid).execute()
+        else:
+            sb_svc.schema(SUPABASE_SCHEMA).table("doc_objectcounts").insert({
+                "doccontenttype": "doc",
+                "docid": docid,
+                "chapteruid": None,
+                "objectcount": doc_objectcount,
+                "updatedts": now_iso,
+            }).execute()
 
     return {"ok": True}
 
