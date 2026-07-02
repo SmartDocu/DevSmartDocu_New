@@ -161,7 +161,9 @@ export default function ReqChaptersReadPage() {
   const handleRewrite = async () => {
     if (!selectedChap) return
     try {
-      const res = await apiClient.post(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`)
+      const res = await apiClient.post(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`, {
+        projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
+      })
       if (res.data.locked) {
         message.warning(res.data.message || t('msg.chapter.already.writing'))
         return
@@ -213,7 +215,9 @@ export default function ReqChaptersReadPage() {
     if (!selectedGendocuid) return
     const results = chapters.map((c) => ({ genchapteruid: c.genchapteruid, mode: 'all' }))
     try {
-      const res = await apiClient.post(`/gendocs/${selectedGendocuid}/generate`, { results })
+      const res = await apiClient.post(`/gendocs/${selectedGendocuid}/generate`, {
+        results, projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
+      })
       if (res.data.locked) {
         message.warning(res.data.message || t('msg.doc.already.writing'))
         return

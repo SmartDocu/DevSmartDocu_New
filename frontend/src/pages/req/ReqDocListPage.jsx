@@ -313,7 +313,7 @@ export default function ReqDocListPage() {
         }
 
         createGendoc.mutate(
-          { docid, docnm: docnmInput, params },
+          { docid, docnm: docnmInput, params, projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid },
           {
             onSuccess: (data) => {
               hideLoading()

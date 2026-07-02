@@ -245,6 +245,9 @@ class GendocCreateRequest(BaseModel):
     docid: int
     docnm: str
     params: list[dict]
+    projectid: Optional[int] = None
+    tenantid: Optional[int] = None
+    accountuid: Optional[str] = None
 
 
 @router.post("")
@@ -259,6 +262,9 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
         "docid": body.docid,
         "gendocnm": body.docnm,
         "creator": user_id,
+        "projectid": body.projectid,
+        "tenantid": body.tenantid,
+        "accountuid": body.accountuid,
     }).execute()
     gendocuid = result.data[0]["gendocuid"]
 
@@ -292,6 +298,9 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
                 "createfilestartdts": now,
                 "creator": user_id,
                 "createdts": now,
+                "projectid": body.projectid,
+                "tenantid": body.tenantid,
+                "accountuid": body.accountuid,
             }
             for c in chapters
         ]
@@ -727,8 +736,14 @@ def get_chapter_content(
 
 # ── Chapter Rewrite (SQS 비동기) ─────────────────────────────────────────────────
 
+class RewriteChapterRequest(BaseModel):
+    projectid: Optional[int] = None
+    tenantid: Optional[int] = None
+    accountuid: Optional[str] = None
+
+
 @router.post("/genchapters/{genchapteruid}/rewrite")
-def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
+def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteChapterRequest(), token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -797,6 +812,9 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
         "gendocjobuid": None,
     }).execute()
     genchapterjobuid = res.data[0]["genchapterjobuid"]
+    sb_svc.schema(SUPABASE_SCHEMA).table("genchapters").update({
+        "genchapterjobuid": genchapterjobuid,
+    }).eq("genchapteruid", genchapteruid).execute()
 
     # SQS 메시지 전송
     sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
@@ -809,8 +827,9 @@ def rewrite_chapter(genchapteruid: str, token: str = Depends(get_token)):
             "gendocjobuid": None,
             "chapteruid": chapteruid,
             "docid": docid,
-            "tenantid": ctx.get("tenantid"),
-            "projectid": ctx.get("projectid"),
+            "tenantid": body.tenantid,
+            "projectid": body.projectid,
+            "accountuid": body.accountuid,
             "user_id": user_id,
             "access_token": token,
             "is_start_doc": False,
@@ -971,6 +990,9 @@ async def upload_file(
 
 class GenerateRequest(BaseModel):
     results: list[dict]
+    projectid: Optional[int] = None
+    tenantid: Optional[int] = None
+    accountuid: Optional[str] = None
 
 
 @router.post("/{gendocuid}/generate")
@@ -1042,6 +1064,9 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
         "creator": user_id,
     }).execute()
     gendocjobuid = res.data[0]["gendocjobuid"]
+    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").update({
+        "gendocjobuid": gendocjobuid,
+    }).eq("gendocuid", gendocuid).execute()
 
     # SQS 메시지 전송
     sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
@@ -1054,8 +1079,9 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
             "access_token": token,
             "results": results,
             "docid": docid,
-            "tenantid": ctx.get("tenantid"),
-            "projectid": ctx.get("projectid"),
+            "tenantid": body.tenantid,
+            "projectid": body.projectid,
+            "accountuid": body.accountuid,
             "gendocnm": gendocnm,
         }, ensure_ascii=False),
     )
@@ -1174,7 +1200,8 @@ _DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
                    "CA": "charts", "TA": "tables", "SA": "sentences"}
 
 
-def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None):
+def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None,
+                        projectid=None, tenantid=None, accountuid=None):
     """req_chapters_read.py의 _upsert_genobjects와 동일"""
     now_iso = datetime.now(timezone.utc).isoformat()
     dfv_datauids = []
@@ -1200,6 +1227,9 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "replacestring": item["replacestring"],
             "creator": user_id,
             "createdts": now_iso,
+            "projectid": projectid,
+            "tenantid": tenantid,
+            "accountuid": accountuid,
         })
 
     sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()

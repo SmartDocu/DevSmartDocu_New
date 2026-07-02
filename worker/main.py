@@ -99,7 +99,8 @@ _DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
                    "CA": "charts", "TA": "tables", "SA": "sentences"}
 
 
-def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None):
+def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None,
+                        projectid=None, tenantid=None, accountuid=None):
     now_iso = datetime.now(timezone.utc).isoformat()
     dfv_datauids = []
     if docid:
@@ -124,6 +125,9 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "replacestring": item["replacestring"],
             "creator": user_id,
             "createdts": now_iso,
+            "projectid": projectid,
+            "tenantid": tenantid,
+            "accountuid": accountuid,
         })
     sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
     if rows:
@@ -296,6 +300,7 @@ def process_message(msg):
     docid = body.get("docid")
     tenantid = body.get("tenantid")
     projectid = body.get("projectid")
+    accountuid = body.get("accountuid")
     gendocnm = body.get("gendocnm", "")
     receipt_handle = msg["ReceiptHandle"]
 
@@ -326,6 +331,9 @@ def process_message(msg):
                 "gendocjobuid": gendocjobuid,
             }).execute()
             genchapterjobuid = res.data[0]["genchapterjobuid"]
+            sb_svc.schema(SUPABASE_SCHEMA).table("genchapters").update({
+                "genchapterjobuid": genchapterjobuid,
+            }).eq("genchapteruid", genchapteruid).execute()
             sqs.send_message(
                 QueueUrl=SQS_CHAPTER_QUEUE_URL,
                 MessageBody=json.dumps({
@@ -337,6 +345,7 @@ def process_message(msg):
                     "docid": docid,
                     "tenantid": tenantid,
                     "projectid": projectid,
+                    "accountuid": accountuid,
                     "user_id": user_id,
                     "access_token": access_token,
                     "gendocnm": gendocnm,
@@ -383,6 +392,7 @@ def process_chapter_message(msg):
     docid = body.get("docid")
     tenantid = body.get("tenantid")
     projectid = body.get("projectid")
+    accountuid = body.get("accountuid")
     user_id = body["user_id"]
     access_token = body["access_token"]
     gendocnm = body.get("gendocnm", "")
@@ -411,7 +421,8 @@ def process_chapter_message(msg):
         _flat = process_template(_tt, _ctx, _reg, True)
         sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
         _extracted = extract_from_processed_html(_flat)
-        _upsert_genobjects(sb, _extracted, genchapteruid, chapteruid, user_id, docid=docid)
+        _upsert_genobjects(sb, _extracted, genchapteruid, chapteruid, user_id, docid=docid,
+                           projectid=projectid, tenantid=tenantid, accountuid=accountuid)
 
         # LLM 콘텐츠 생성
         gen_chapter_direct = not is_start_doc
