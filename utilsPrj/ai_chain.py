@@ -277,7 +277,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
         except Exception:
             raise ValueError(
                 "LLM 설정을 찾을 수 없습니다. "
-                "projects 또는 tenants 테이블에 llmmodelnm/encapikey를 설정하세요."
+                "projects 또는 llmapikeys 테이블에 llmmodelnm/encapikey를 설정하세요."
             )
 
     dec_api_key = decrypt_value(enc_api_key)
