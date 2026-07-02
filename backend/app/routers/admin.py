@@ -227,6 +227,7 @@ class SamplePromptPreviewRequest(BaseModel):
     objecttypecd: str          # CA / SA / TA
     datauid: Optional[str] = None
     displaytype: Optional[str] = None
+    account_uid: Optional[str] = None  # 프론트 authStore에서 전달 (get_llm_info의 serviceusers 조회 생략용)
 
 
 @router.post("/sample-prompts/preview")
@@ -242,7 +243,7 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
     from utilsPrj.process_data import process_data
     from utilsPrj.ai_chain import (
         get_charts_prompt, get_sentences_prompt, get_tables_prompt,
-        get_full_chain, get_llm_model,
+        get_full_chain, get_llm_info, build_langchain_llm,
     )
     from backend.app.routers.llm import FakeLlmRequest, _get_user_info
 
@@ -296,20 +297,63 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
 
     try:
-        llm = get_llm_model(req)
+        _llm_model_nm, _dec_api_key, _vendor_name, is_customeraikey, account_uid = get_llm_info(
+            project_id=projectid, tenant_id=tenantid, user_uid=user_id,
+            account_uid=body.account_uid, service_code="Do",
+        )
+        llm = build_langchain_llm(_vendor_name, _dec_api_key, _llm_model_nm)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM 모델 로드 오류: {str(e)}")
 
+    from d2shared.llm_logger import log_doc_llm_call
+
+    def _write_doc_log(is_success, errormessage, inputtoken, outputtoken, start_dts, end_dts):
+        log_doc_llm_call(
+            log_ctx={
+                "tenant_id":         tenantid,
+                "account_uid":       account_uid,
+                "project_id":        projectid,
+                "gencontenttypecd":  None,  # 단독(Definition) — admin 샘플 프롬프트 테스트
+                "objectuid":         None,
+                "is_customeraikey":  is_customeraikey,
+                "creator":           user_id,
+            },
+            llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
+            inputtoken=inputtoken,
+            outputtoken=outputtoken,
+            is_success=is_success,
+            errormessage=errormessage,
+            startdts=start_dts,
+            enddts=end_dts,
+        )
+
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, ot)
+    from datetime import datetime
+    _llm_start_dts = datetime.now()
     try:
         response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
     except Exception as e:
+        _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now())
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
+    _llm_end_dts = datetime.now()
 
     if not isinstance(response, dict):
+        _write_doc_log(False, "LLM 응답 형식 오류", 0, 0, _llm_start_dts, _llm_end_dts)
         raise HTTPException(status_code=500, detail="LLM 응답 형식 오류")
 
     status_val = response.get("status")
+
+    _tokens = response.get("tokens", {})
+    _is_success = status_val in ("chart_drawn", "analysis_comment", "data_table")
+    _write_doc_log(
+        _is_success,
+        None if _is_success else str(response.get("error") or status_val),
+        _tokens.get("input_tokens", 0),
+        _tokens.get("output_tokens", 0),
+        _llm_start_dts,
+        _llm_end_dts,
+    )
+
     if status_val == "chart_drawn":
         return {"message_type": "image", "image_data": response["image_bytes"],
                 "question": response.get("question", "")}

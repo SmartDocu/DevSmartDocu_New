@@ -419,10 +419,16 @@ class ReportAgent:
         self._dialect: str = src._dialect
         self._user_uid = user_uid
         self._account_uid = account_uid
-        _, self._api_key, self._vendor = get_llm_info(
+        _, self._api_key, self._vendor, _is_customeraikey, _account_uid = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
+        # token_tracker.add()가 사용하는 공유 log_ctx에 반영 — 이후 이 요청 내 모든 LLM 로그에 적용됨
+        _ctx = token_tracker.get_log_ctx()
+        if _ctx is not None:
+            _ctx["is_customeraikey"] = _is_customeraikey
+            if not _ctx.get("account_uid"):
+                _ctx["account_uid"] = _account_uid
         self._model_id = LLM_MODELS[self._vendor]["balanced"]
         self._llm = build_langchain_llm(self._vendor, self._api_key, self._model_id)
         self._llm_with_tools = self._llm.bind_tools(ALL_TOOLS)

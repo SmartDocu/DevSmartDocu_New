@@ -52,7 +52,7 @@ class SqlGenerator:
             self._api_key = _k
         else:
             from utilsPrj.ai_chain import get_llm_info
-            _, self._api_key, self._vendor = get_llm_info(
+            _, self._api_key, self._vendor, _, _ = get_llm_info(
                 user_uid=_useruid_ctx.get(), account_uid=_accountuid_ctx.get(), service_code="In",
             )
 

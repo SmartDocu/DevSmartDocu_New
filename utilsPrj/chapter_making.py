@@ -40,7 +40,7 @@ from utilsPrj.docx_read import convert_docx_to_html_2    # 업로드 용
 from utilsPrj.chapter_making_ai_table import render_preview_table
 
 from utilsPrj.supabase_client import get_thread_supabase, cleanup_thread_client, SUPABASE_SCHEMA
-from d2shared.llm_logger import log_llm_call
+from d2shared.llm_logger import log_doc_llm_call
 # from utilsPrj.supabase_client import supabase
 
 from collections import defaultdict
@@ -239,8 +239,24 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
     access_token = request.session.get("access_token")
     refresh_token = request.session.get("refresh_token")
     supabase = get_thread_supabase(access_token, refresh_token)
-    
-    llm = get_llm_model(request)
+
+    gendocjobuid = kwargs.get("gendocjobuid")
+    genchapterjobuid = kwargs.get("genchapterjobuid")
+    project_id = request.session.get("user", {}).get("projectid")
+
+    # gencontenttypecd: 문서 전체 생성(D) > 챕터 재작성(C) > 단일 항목 재작성(O)
+    # process_ai_object는 genchapteruid 기준으로만 호출되므로(정의 단계에서는 호출되지 않음) else는 항상 "O"
+    if gendocjobuid:
+        gencontenttypecd = "D"
+    elif genchapterjobuid:
+        gencontenttypecd = "C"
+    else:
+        gencontenttypecd = "O"
+
+    _llm_model_nm, _dec_api_key, _vendor_name, is_customeraikey, account_uid = get_llm_info(
+        project_id=project_id, tenant_id=tenant_id, user_uid=user_id, service_code="Do",
+    )
+    llm = build_langchain_llm(_vendor_name, _dec_api_key, _llm_model_nm)
     total_tokens = {"input_tokens": 0, "output_tokens": 0}
 
     try:
@@ -262,7 +278,30 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts)
 
         data_item['genobjectuid'] = genobjectuid
-        
+
+        def _write_doc_log(is_success, errormessage, inputtoken, outputtoken, start_dts, end_dts):
+            log_doc_llm_call(
+                log_ctx={
+                    "tenant_id": tenant_id,
+                    "account_uid": account_uid,
+                    "project_id": project_id,
+                    "gencontenttypecd": gencontenttypecd,
+                    "gendocjobuid": gendocjobuid,
+                    "genchapterjobuid": genchapterjobuid,
+                    "genobjectuid": genobjectuid,
+                    "objectuid": data_item['objectuid'],
+                    "is_customeraikey": is_customeraikey,
+                    "creator": user_id,
+                },
+                llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
+                inputtoken=inputtoken,
+                outputtoken=outputtoken,
+                is_success=is_success,
+                errormessage=errormessage,
+                startdts=start_dts,
+                enddts=end_dts,
+            )
+
         query = data_item['query'] or ""
         params = re.findall(r'@(\w+)', query)
         
@@ -309,37 +348,27 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
 
         _llm_start_dts = datetime.now()
         full_chain = get_full_chain(llm, result_df, prompt, question, column_dict, object_type)
-        response = full_chain.invoke({"question": question, "column_dict": column_dict})
+        try:
+            response = full_chain.invoke({"question": question, "column_dict": column_dict})
+        except Exception as _invoke_err:
+            _write_doc_log(False, str(_invoke_err), 0, 0, _llm_start_dts, datetime.now())
+            raise
         _llm_end_dts = datetime.now()
 
         if isinstance(response, dict) and "tokens" in response:
             total_tokens["input_tokens"] = response["tokens"]["input_tokens"]
             total_tokens["output_tokens"] = response["tokens"]["output_tokens"]
 
-        try:
-            _doc_rows = supabase.schema(SUPABASE_SCHEMA).table("docs").select("docnm").eq("docid", docid).execute().data or []
-            _docnm = _doc_rows[0]["docnm"] if _doc_rows else ""
-        except Exception:
-            _docnm = ""
-        _STEPNM_MAP = {"CA": "chart", "SA": "sentence", "TA": "table"}
-        log_llm_call(
-            log_ctx={
-                "qauid": genobjectuid,
-                "servicecd": "Do",
-                "questiontypecd": "P",
-                "tenant_id": tenant_id,
-                "project_id": request.session.get("user", {}).get("projectid"),
-                "session_uid": gen_chapter_uid,
-                "creator": user_id,
-            },
-            stepnm=_STEPNM_MAP.get(object_type, object_type),
-            steptitle=_docnm,
-            llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
-            inputtoken=total_tokens["input_tokens"],
-            outputtoken=total_tokens["output_tokens"],
-            startdts=_llm_start_dts,
-            enddts=_llm_end_dts,
-        )
+        # is_success는 status 파라미터 기본값이 아니라 실제 응답 결과로 판별한다
+        _is_success = isinstance(response, dict) and response.get("status") in ("chart_drawn", "analysis_comment", "data_table")
+        if _is_success:
+            _error_message = None
+        elif isinstance(response, dict):
+            _error_message = f'알 수 없는 응답 상태: {response.get("status")}'
+        else:
+            _error_message = '응답 형식이 딕셔너리가 아닙니다.'
+
+        _write_doc_log(_is_success, _error_message, total_tokens["input_tokens"], total_tokens["output_tokens"], _llm_start_dts, _llm_end_dts)
 
         run_start_dts = datetime.now().isoformat()
         queue_genobject_run_log(data_item['genobjectuid'], data_item['objecttypecd'], data_item['sourcebase'], total_tokens["input_tokens"], tenant_id, user_id, run_start_dts)
@@ -662,11 +691,11 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
 # import time
 # from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def process_ai_object_with_tracking(data_item, request, docid, gendoc_uid, chapter_uid, 
-                                    user_id, original_idx, datas_len, gen_chapter_uid, 
-                                    tenant_id):
+def process_ai_object_with_tracking(data_item, request, docid, gendoc_uid, chapter_uid,
+                                    user_id, original_idx, datas_len, gen_chapter_uid,
+                                    tenant_id, gendocjobuid=None, genchapterjobuid=None):
     """AI 객체 처리 (재시도 없이 결과만 반환)"""
-    
+
     result_data = process_ai_object(
         data_item,
         request,
@@ -677,28 +706,30 @@ def process_ai_object_with_tracking(data_item, request, docid, gendoc_uid, chapt
         original_idx,
         datas_len,
         gen_chapter_uid,
-        tenant_id
+        tenant_id,
+        gendocjobuid=gendocjobuid,
+        genchapterjobuid=genchapterjobuid,
     )
-    
+
     return result_data
 
 
 
 #####
 def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, chapter_uid,
-                                   user_id, datas_len, gen_chapter_uid, tenant_id, 
-                                   max_retries=3):
+                                   user_id, datas_len, gen_chapter_uid, tenant_id,
+                                   gendocjobuid=None, genchapterjobuid=None, max_retries=3):
     """오류난 항목들을 순차적으로 재시도"""
-    
+
     retry_results = {}
-    
+
     for original_idx, data_item in failed_items:
         last_error = None
-        
+
         for attempt in range(1, max_retries + 1):
             try:
                 print(f"[순차 재시도 {attempt}/{max_retries}] {data_item.get('objectnm', '')}")
-                
+
                 result_data = process_ai_object_with_tracking(
                     data_item,
                     request,
@@ -710,6 +741,8 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
                     datas_len,
                     gen_chapter_uid,
                     tenant_id,
+                    gendocjobuid=gendocjobuid,
+                    genchapterjobuid=genchapterjobuid,
                 )
                 
                 # 성공한 경우
@@ -742,10 +775,11 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
     return retry_results
 
 
-def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid, 
+def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                                 chapter_uid, user_id, gen_chapter_uid, sep,
-                                tenant_id, 
-                                progress_lock, completed_count, ui_count):
+                                tenant_id,
+                                progress_lock, completed_count, ui_count,
+                                gendocjobuid=None, genchapterjobuid=None):
     """AI 객체들을 병렬로 처리 후 오류 항목들만 순차적으로 재시도"""
     
     if not ai_objects:
@@ -774,6 +808,8 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                     len(datas),
                     gen_chapter_uid,
                     tenant_id,
+                    gendocjobuid,
+                    genchapterjobuid,
                 )
                 future_to_index[future] = (original_idx, data_item)
 
@@ -839,7 +875,9 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
             len(datas),
             gen_chapter_uid,
             tenant_id,
-            max_retries=3
+            gendocjobuid=gendocjobuid,
+            genchapterjobuid=genchapterjobuid,
+            max_retries=3,
         )
         
         # 재시도 결과 처리
@@ -955,6 +993,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
     try:
         divide = kwargs.get("divide", "")
         doc_write = kwargs.get("doc_write", False)
+        gendocjobuid = kwargs.get("gendocjobuid")
+        genchapterjobuid = kwargs.get("genchapterjobuid")
 
         ## genchapter 추출
         read_genchapter = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('*').eq('genchapteruid', gen_chapter_uid).execute().data
@@ -1090,7 +1130,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             request, ai_objects, datas, docid, gendoc_uid,
                             chapter_uid, user_id, gen_chapter_uid, sep,
                             tenant_id,
-                            progress_lock, completed_count, len(ui_objects)
+                            progress_lock, completed_count, len(ui_objects),
+                            gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid,
                         ):
                             if progress_item['type'] == 'ai_complete':
                                 ai_results = progress_item['ai_results']

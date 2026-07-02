@@ -16,7 +16,7 @@ _llm_cache: dict = {}
 def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
     key = (grade, project_id, tenant_id, user_uid, account_uid)
     if key not in _llm_cache:
-        _, _api_key, _vendor = get_llm_info(
+        _, _api_key, _vendor, _, _ = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )

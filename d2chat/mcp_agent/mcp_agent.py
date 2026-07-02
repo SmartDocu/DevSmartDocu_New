@@ -52,7 +52,7 @@ class MCPAgent:
 
         # LLM 초기화 실패 시 ask() 첫 호출에서 재시도
         try:
-            _model, _api_key, _vendor = get_llm_info()
+            _model, _api_key, _vendor, _, _ = get_llm_info()
             self.llm_model = _model
             self._api_key = _api_key
             self._vendor = _vendor
@@ -176,6 +176,7 @@ class MCPAgent:
                 llmmodelnm=self.llm_model,
                 inputtoken=in_tok,
                 outputtoken=out_tok,
+                is_success=True,
                 startdts=start,
                 enddts=end,
             )
@@ -235,7 +236,7 @@ class MCPAgent:
         _tenant_id = (log_ctx or {}).get("tenant_id")
         _user_uid = (log_ctx or {}).get("creator")
         _account_uid = (log_ctx or {}).get("account_uid")
-        _model, _api_key, _vendor = get_llm_info(
+        _model, _api_key, _vendor, _is_customeraikey, _resolved_account_uid = get_llm_info(
             project_id=_project_id, tenant_id=_tenant_id,
             user_uid=_user_uid, account_uid=_account_uid, service_code="Ch",
         )
@@ -243,6 +244,12 @@ class MCPAgent:
         self._api_key = _api_key
         self._vendor = _vendor
         self.llm = build_langchain_llm(_vendor, _api_key, _model)
+
+        # log_ctx는 이후 모든 log_llm_call(log_ctx=self._current_log_ctx, ...) 호출에서 재사용됨
+        if log_ctx is not None:
+            log_ctx["is_customeraikey"] = _is_customeraikey
+            if not log_ctx.get("account_uid"):
+                log_ctx["account_uid"] = _resolved_account_uid
 
         for attempt in range(1, max_retries + 1):
             try:

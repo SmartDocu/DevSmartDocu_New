@@ -7,7 +7,7 @@ import json
 from langchain_anthropic import ChatAnthropic
 
 from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
-from utilsPrj.ai_chain import get_tables_prompt, create_python_code, get_full_chain, get_llm_model
+from utilsPrj.ai_chain import get_tables_prompt, create_python_code, get_full_chain, get_llm_info, build_langchain_llm
 from utilsPrj.process_data_db import process_data_db
 from utilsPrj.process_data_excel import process_data_excel
 from utilsPrj.process_data_api import process_data_api
@@ -55,7 +55,20 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
 
     try:
         # jeff 20251224 수정할 부분
-        llm = get_llm_model(request)
+        if hasattr(request, "projectid"):
+            _project_id = request.projectid
+            _tenant_rows = supabase.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", _project_id).execute().data
+            _tenant_id = _tenant_rows[0]["tenantid"] if _tenant_rows else None
+            _user_id = None
+        else:
+            _user = request.session.get("user") or {}
+            _project_id = _user.get("projectid")
+            _tenant_id = _user.get("tenantid")
+            _user_id = _user.get("id")
+        _llm_model_nm, _dec_api_key, _vendor_name, _, _ = get_llm_info(
+            project_id=_project_id, tenant_id=_tenant_id, user_uid=_user_id, service_code="Do",
+        )
+        llm = build_langchain_llm(_vendor_name, _dec_api_key, _llm_model_nm)
         prompt = get_tables_prompt(df, column_dict, gensentence)
         full_chain = get_full_chain(llm, df, prompt, gensentence, column_dict, chain_mode)
 

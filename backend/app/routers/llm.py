@@ -1,5 +1,4 @@
 """LLM AI 설정/미리보기 라우터 (CA/SA/TA 항목)"""
-import random
 from datetime import datetime
 from typing import Optional
 
@@ -8,7 +7,7 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb, get_user
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
-from utilsPrj.crypto_helper import decrypt_value
+from utilsPrj.ai_chain import get_llm_info, build_langchain_llm
 
 router = APIRouter()
 
@@ -75,57 +74,13 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
     return user_id, info
 
 
-def _get_llm_model(sb, projectid, tenantid):
-    """Get LLM instance using project/tenant config."""
-    import sys
-    svc = get_service_client()
-
-    def _fetch(table_name, conditions):
-        data = svc.schema(SUPABASE_SCHEMA).table(table_name).select("llmmodelnm, encapikey, tenantid").match(conditions).execute().data or []
-        if data:
-            return data[0].get("llmmodelnm"), data[0].get("encapikey")
-        return None, None
-
-    llm_model, enc_key = _fetch("projects", {"projectid": projectid})
-    print(f"[_get_llm_model] projects fetch → projectid={projectid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
-
-    if not llm_model:
-        llmkey_data = svc.schema(SUPABASE_SCHEMA).table("llmapikeys").select(
-            "llmmodelnm, encapikey"
-        ).eq("tenantid", tenantid).eq("useyn", True).order("orderno").execute().data or []
-        llm_model = llmkey_data[0].get("llmmodelnm") if llmkey_data else None
-        enc_key = llmkey_data[0].get("encapikey") if llmkey_data else None
-        print(f"[_get_llm_model] llmapikeys fetch → tenantid={tenantid}, llm_model={llm_model}, has_key={enc_key is not None}", file=sys.stderr, flush=True)
-
-        if not llm_model:
-            llm_data = svc.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmmodelnm, creator").eq("useyn", True).execute().data or []
-            print(f"[_get_llm_model] llmmodels fallback → count={len(llm_data)}", file=sys.stderr, flush=True)
-            choice_model = random.choice(llm_data)
-            llm_model = choice_model["llmmodelnm"]
-
-            key_data = svc.schema(SUPABASE_SCHEMA).table("llmapis").select("encapikey").eq("usetypecd", "R").eq("llmmodelnm", llm_model).execute().data or []
-            print(f"[_get_llm_model] llmapis fallback → llm_model={llm_model}, key_count={len(key_data)}", file=sys.stderr, flush=True)
-            choice_key = random.choice(key_data)
-            enc_key = choice_key["encapikey"]
-
-    dec_key = decrypt_value(enc_key).strip()
-
-    vendor_data = svc.schema(SUPABASE_SCHEMA).table("llmmodels").select("llmvendornm").eq("llmmodelnm", llm_model).execute().data or []
-    llm_vendor_name = vendor_data[0]["llmvendornm"] if vendor_data else "Anthropic"
-
-    print(f"[_get_llm_model] final → model={llm_model}, vendor={llm_vendor_name}, key_len={len(dec_key)}, key_prefix={dec_key[:8] if dec_key else 'EMPTY'}", file=sys.stderr, flush=True)
-
-    if llm_vendor_name == "Anthropic":
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(anthropic_api_key=dec_key, model=llm_model, temperature=0, max_tokens=8192)
-
-    if llm_vendor_name == "OpenAI":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=llm_model, api_key=dec_key, temperature=0, max_tokens=8192)
-
-    elif llm_vendor_name == "Google":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model=llm_model, temperature=0, google_api_key=dec_key, max_output_tokens=8192)
+def _get_llm_model(projectid, tenantid, user_id=None):
+    """get_llm_info()로 LLM 설정을 조회해 (llm, is_customeraikey, account_uid)를 반환한다."""
+    llm_model, dec_key, vendor_name, is_customeraikey, account_uid = get_llm_info(
+        project_id=projectid, tenant_id=tenantid, user_uid=user_id, service_code="Do",
+    )
+    llm = build_langchain_llm(vendor_name, dec_key, llm_model)
+    return llm, is_customeraikey, account_uid
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -315,7 +270,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         if proj_rows:
             tenantid = proj_rows[0].get("tenantid")
 
-    # objectuid 조회 (llm_api_logs.qauid 용)
+    # objectuid 조회 (llmdoclogs.objectuid 용)
     objectuid = None
     try:
         obj_uid_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectuid").eq(
@@ -379,11 +334,33 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
 
     # ⑨ LLM 모델 로드
     try:
-        llm = _get_llm_model(sb, projectid, tenantid)
+        llm, is_customeraikey, account_uid = _get_llm_model(projectid, tenantid, user_id)
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"LLM 모델 로드 오류: {str(e)}")
+
+    from d2shared.llm_logger import log_doc_llm_call
+
+    def _write_doc_log(is_success, errormessage, inputtoken, outputtoken, start_dts, end_dts):
+        log_doc_llm_call(
+            log_ctx={
+                "tenant_id":         tenantid,
+                "account_uid":       account_uid,
+                "project_id":        projectid,
+                "gencontenttypecd":  None,  # 단독(Definition) 미리보기 — 챕터/문서 생성 잡과 무관
+                "objectuid":         objectuid,
+                "is_customeraikey":  is_customeraikey,
+                "creator":           user_id,
+            },
+            llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
+            inputtoken=inputtoken,
+            outputtoken=outputtoken,
+            is_success=is_success,
+            errormessage=errormessage,
+            startdts=start_dts,
+            enddts=end_dts,
+        )
 
     # ⑩ 체인 실행 — Django full_chain.invoke 와 동일
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, body.objecttypecd)
@@ -393,36 +370,28 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
+        _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now())
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
     _llm_end_dts = datetime.now()
 
     if not isinstance(response, dict):
+        _write_doc_log(False, "LLM 응답 형식 오류", 0, 0, _llm_start_dts, _llm_end_dts)
         raise HTTPException(status_code=500, detail="LLM 응답 형식 오류")
-
-    from d2shared.llm_logger import log_llm_call
-    _tokens = response.get("tokens", {})
-    _STEPNM_MAP = {"CA": "chart", "SA": "sentence", "TA": "table"}
-    log_llm_call(
-        log_ctx={
-            "qauid":          objectuid,
-            "servicecd":      "Do",
-            "questiontypecd": "P",
-            "tenant_id":      tenantid,
-            "project_id":     projectid,
-            "session_uid":    body.chapteruid,
-            "creator":        user_id,
-        },
-        stepnm=_STEPNM_MAP.get(body.objecttypecd, body.objecttypecd),
-        steptitle=docnm,
-        llmmodelnm=getattr(llm, "model", None) or getattr(llm, "model_name", None) or "",
-        inputtoken=_tokens.get("input_tokens", 0),
-        outputtoken=_tokens.get("output_tokens", 0),
-        startdts=_llm_start_dts,
-        enddts=_llm_end_dts,
-    )
 
     # ⑪ 응답 포맷 — Django ai_llm_click_preview_button 반환 구조 동일
     status = response.get("status")
+
+    _tokens = response.get("tokens", {})
+    _is_success = status in ("chart_drawn", "analysis_comment", "data_table")
+    _write_doc_log(
+        _is_success,
+        None if _is_success else str(response.get("error") or status),
+        _tokens.get("input_tokens", 0),
+        _tokens.get("output_tokens", 0),
+        _llm_start_dts,
+        _llm_end_dts,
+    )
+
     if status == "chart_drawn":
         return {
             "message_type": "image",
@@ -648,7 +617,7 @@ def experience_preview(body: ExperiencePreviewRequest):
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
 
     try:
-        llm = _get_llm_model(sb_svc, projectid, tenantid)
+        llm, _, _ = _get_llm_model(projectid, tenantid)
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[experience/preview] LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)

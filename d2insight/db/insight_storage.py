@@ -182,8 +182,10 @@ def insert_llm_api_logs(
     project_id: int | None,
     creator: str | None,
     questiontypecd: str,
+    account_uid: str | None = None,
+    is_customeraikey: bool | None = None,
 ) -> None:
-    """LLM 호출 명세를 llm_api_logs에 일괄 삽입한다."""
+    """LLM 호출 명세를 llminsightlogs에 일괄 삽입한다."""
     if not calls:
         return
     rows = []
@@ -192,9 +194,9 @@ def insert_llm_api_logs(
         _end = c.get("enddts")
         rows.append({
             "qauid": qauid,
-            "servicecd": "In",
             "questiontypecd": questiontypecd,
             "tenantid": tenant_id or None,
+            "accountuid": account_uid or None,
             "projectid": project_id or None,
             "sessionuid": session_uid,
             "stepnm": c.get("stepnm") or None,
@@ -202,13 +204,14 @@ def insert_llm_api_logs(
             "llmmodelnm": c.get("model_id") or c.get("model") or None,
             "inputtoken": c.get("input", 0),
             "outputtoken": c.get("output", 0),
-            "status": "C",
+            "is_success": True,
+            "is_customeraikey": is_customeraikey,
             "creator": creator or None,
             "startdts": _start.isoformat() if _start else None,
             "enddts": _end.isoformat() if _end else None,
         })
     try:
-        _sc.table("llm_api_logs").insert(rows).execute()
+        _sc.table("llminsightlogs").insert(rows).execute()
     except Exception as e:
         print(f"[insight_storage] insert_llm_api_logs 오류: {e}")
 

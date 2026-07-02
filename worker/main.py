@@ -417,7 +417,8 @@ def process_chapter_message(msg):
         gen_chapter_direct = not is_start_doc
         for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
                                           genChapterDirectYn=gen_chapter_direct, divide="Chapter",
-                                          doc_write=is_start_doc):
+                                          doc_write=is_start_doc,
+                                          gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid):
             if progress_data.get("type") == "error":
                 raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
 

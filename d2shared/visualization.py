@@ -99,6 +99,7 @@ def detect_visualization_type_with_llm(question: str, llm, log_ctx: dict = None)
             llmmodelnm=getattr(llm, 'model', 'unknown'),
             inputtoken=usage.get('input_tokens', 0),
             outputtoken=usage.get('output_tokens', 0),
+            is_success=True,
             startdts=start,
             enddts=end,
         )

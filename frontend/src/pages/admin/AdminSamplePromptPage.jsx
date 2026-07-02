@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { App, Input, Modal, Spin } from 'antd'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils/colorData'
 import {
@@ -38,6 +39,7 @@ const EMPTY_MODAL = { translated_title: '', translated_text1: '', translated_tex
 export default function AdminSamplePromptPage() {
   const { modal } = App.useApp()
   useLangStore((s) => s.translations)
+  const user = useAuthStore((s) => s.user)
 
   const { data: prompts = [] } = useAdminPrompts()
   const { data: sampleDatas = [] } = usePromptSampleDatas()
@@ -149,6 +151,7 @@ export default function AdminSamplePromptPage() {
         objecttypecd: form.tag1 || null,
         datauid: form.datauid || null,
         displaytype: form.tag2 || null,
+        account_uid: user?.accountuid ?? null,
       }, { timeout: 180000 })
       setPreviewResult(resp.data)
     } catch (e) {

@@ -56,102 +56,104 @@ def process_data_in_supabase(supabase, table_name: str, process_type: str, proce
     return data.data
 
 
-def get_llm_model(request):
-    access_token = request.session.get("access_token")
-    refresh_token = request.session.get("refresh_token")
-    supabase = get_supabase_client(access_token, refresh_token)
+# get_llm_model(request)는 get_llm_info() + build_langchain_llm() 조합으로 대체되어 제거됨.
+# 아래는 참고용으로 남겨둔 이전 구현 원본(주석).
+# def get_llm_model(request):
+#     access_token = request.session.get("access_token")
+#     refresh_token = request.session.get("refresh_token")
+#     supabase = get_supabase_client(access_token, refresh_token)
 
-    if hasattr(request, "projectid"):
-        project_id = request.projectid
-        rows = process_data_in_supabase(supabase, "projects", "select", {}, {"projectid": project_id}, "tenantid")
-        tenant_id = rows[0]["tenantid"]
-    else:
-        user = request.session.get("user")
-        if user:
-            project_id = user.get("projectid")
-            tenant_id = user.get("tenantid")
-        else:
-            rows_t = process_data_in_supabase(supabase, "tenants", "select", {}, {"issystemtenant": True}, "tenantid")
-            tenant_id = rows_t[0]["tenantid"]
+#     if hasattr(request, "projectid"):
+#         project_id = request.projectid
+#         rows = process_data_in_supabase(supabase, "projects", "select", {}, {"projectid": project_id}, "tenantid")
+#         tenant_id = rows[0]["tenantid"]
+#     else:
+#         user = request.session.get("user")
+#         if user:
+#             project_id = user.get("projectid")
+#             tenant_id = user.get("tenantid")
+#         else:
+#             rows_t = process_data_in_supabase(supabase, "tenants", "select", {}, {"issystemtenant": True}, "tenantid")
+#             tenant_id = rows_t[0]["tenantid"]
 
-            rows_p = process_data_in_supabase(supabase, "projects", "select", {}, {"tenantid": tenant_id, "projectnm": "public"}, "projectid")
-            project_id = rows_p[0]["projectid"]
+#             rows_p = process_data_in_supabase(supabase, "projects", "select", {}, {"tenantid": tenant_id, "projectnm": "public"}, "projectid")
+#             project_id = rows_p[0]["projectid"]
 
-    def fetch_llm_config(table_name, conditions):
-        """테이블에서 LLM 설정 조회"""
-        data = process_data_in_supabase(supabase, table_name, "select", {}, conditions, "llmmodelnm, encapikey, tenantid")
-        return data[0]["llmmodelnm"], data[0]["encapikey"]
+#     def fetch_llm_config(table_name, conditions):
+#         """테이블에서 LLM 설정 조회"""
+#         data = process_data_in_supabase(supabase, table_name, "select", {}, conditions, "llmmodelnm, encapikey, tenantid")
+#         return data[0]["llmmodelnm"], data[0]["encapikey"]
     
-    # print("jeff001 user: ", request.session.get("user"))
-    # user_uid = process_data_in_supabase(supabase, "users", "select", {}, )
+#     # print("jeff001 user: ", request.session.get("user"))
+#     # user_uid = process_data_in_supabase(supabase, "users", "select", {}, )
 
-    llm_model, enc_api_key = fetch_llm_config("projects", {"projectid": project_id})
-    if not llm_model:
-        # llm_model, enc_api_key = fetch_llm_config("tenants", {"tenantid": tenant_id})
-        llm_model, enc_api_key = fetch_llm_config("llmapikeys", {"tenantid": tenant_id})
+#     llm_model, enc_api_key = fetch_llm_config("projects", {"projectid": project_id})
+#     if not llm_model:
+#         # llm_model, enc_api_key = fetch_llm_config("tenants", {"tenantid": tenant_id})
+#         llm_model, enc_api_key = fetch_llm_config("llmapikeys", {"tenantid": tenant_id})
 
-        if not llm_model:
-            llm_data = process_data_in_supabase(supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm, creator")
-            choice_model = random.choice(llm_data)
-            llm_model = choice_model["llmmodelnm"]
+#         if not llm_model:
+#             llm_data = process_data_in_supabase(supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm, creator")
+#             choice_model = random.choice(llm_data)
+#             llm_model = choice_model["llmmodelnm"]
 
-            key_data = process_data_in_supabase(supabase, "llmapis", "select", {}, {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey")
-            choice_key = random.choice(key_data)
-            enc_api_key = choice_key["encapikey"]
+#             key_data = process_data_in_supabase(supabase, "llmapis", "select", {}, {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey")
+#             choice_key = random.choice(key_data)
+#             enc_api_key = choice_key["encapikey"]
 
-    dec_api_key = decrypt_value(enc_api_key)
+#     dec_api_key = decrypt_value(enc_api_key)
 
-    llm_vendor_name = process_data_in_supabase(
-        supabase, "llmmodels", "select", {},
-        {'llmmodelnm': llm_model}, "llmvendornm"
-    )[0]["llmvendornm"]
+#     llm_vendor_name = process_data_in_supabase(
+#         supabase, "llmmodels", "select", {},
+#         {'llmmodelnm': llm_model}, "llmvendornm"
+#     )[0]["llmvendornm"]
 
-    if llm_vendor_name == "Anthropic":
-        from anthropic import Anthropic
-        from langchain_anthropic import ChatAnthropic
+#     if llm_vendor_name == "Anthropic":
+#         from anthropic import Anthropic
+#         from langchain_anthropic import ChatAnthropic
 
-        llm = ChatAnthropic(
-            anthropic_api_key=dec_api_key,
-            model=llm_model,
-            temperature=0,
-            max_tokens=8192
-        )
+#         llm = ChatAnthropic(
+#             anthropic_api_key=dec_api_key,
+#             model=llm_model,
+#             temperature=0,
+#             max_tokens=8192
+#         )
 
-    if llm_vendor_name == "OpenAI":
-        from langchain_openai import ChatOpenAI
+#     if llm_vendor_name == "OpenAI":
+#         from langchain_openai import ChatOpenAI
 
-        llm = ChatOpenAI(
-            model=llm_model,
-            api_key=dec_api_key,
-            temperature=0,
-            max_tokens=8192
-        )
+#         llm = ChatOpenAI(
+#             model=llm_model,
+#             api_key=dec_api_key,
+#             temperature=0,
+#             max_tokens=8192
+#         )
     
-    elif llm_vendor_name == "Google":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        llm = ChatGoogleGenerativeAI(
-            model=llm_model,
-            temperature=0,
-            google_api_key=dec_api_key,
-            max_output_tokens=8192
-        )
+#     elif llm_vendor_name == "Google":
+#         from langchain_google_genai import ChatGoogleGenerativeAI
+#         llm = ChatGoogleGenerativeAI(
+#             model=llm_model,
+#             temperature=0,
+#             google_api_key=dec_api_key,
+#             max_output_tokens=8192
+#         )
 
-    # # llm model test
-    # from langchain_openai import ChatOpenAI
+#     # # llm model test
+#     # from langchain_openai import ChatOpenAI
 
-    # llm_model = "gpt-4o-mini"
-    # dec_api_key = "sk-proj-xxx"
-    # llm = ChatOpenAI(
-    #     model=llm_model,
-    #     api_key=dec_api_key,
-    #     temperature=0,
-    #     max_tokens=8192
-    # )
-    # #####
+#     # llm_model = "gpt-4o-mini"
+#     # dec_api_key = "sk-proj-xxx"
+#     # llm = ChatOpenAI(
+#     #     model=llm_model,
+#     #     api_key=dec_api_key,
+#     #     temperature=0,
+#     #     max_tokens=8192
+#     # )
+#     # #####
 
-    # print("jeff llm model: ", llm)
+#     # print("jeff llm model: ", llm)
 
-    return llm
+#     return llm
 
 
 def build_langchain_llm(vendor_name: str, api_key: str, model: str):
@@ -181,7 +183,7 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
 
 
 def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, service_code=None, account_uid=None):
-    """Supabase에서 LLM 설정을 조회해 (model, dec_api_key, vendor_name) 반환.
+    """Supabase에서 LLM 설정을 조회해 (model, dec_api_key, vendor_name, is_customeraikey, account_uid) 반환.
 
     supabase 미전달 시 서비스 역할 클라이언트를 자동 사용.
     service_code: 앱 구분 ("Do"=d2doc, "Ch"=d2chat, "In"=d2insight)
@@ -191,6 +193,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
       - is_customeraikey=True  → 고객 등록 키: projects → llmapikeys(accountuid+servicecd)
       - is_customeraikey=False → 서비스 제공 키: 시스템 테넌트의 llmapikeys 사용
     user_uid/account_uid 미전달 시 기본 fallback(llmmodels/llmapis) 사용.
+    반환되는 is_customeraikey/account_uid는 llmdoclogs/llmchatlogs/llminsightlogs 기록에 사용된다.
     """
     import random as _random
 
@@ -282,7 +285,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
         supabase, "llmmodels", "select", {}, {"llmmodelnm": llm_model}, "llmvendornm"
     )[0]["llmvendornm"]
 
-    return llm_model, dec_api_key, vendor_name
+    return llm_model, dec_api_key, vendor_name, is_customeraikey, account_uid
 
 
 def calculate_capability_indices(data, spec_lower=None, spec_upper=None):

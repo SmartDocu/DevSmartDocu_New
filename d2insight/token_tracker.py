@@ -87,7 +87,7 @@ def add(
     stepnm: 보고서 스텝명 (예: "섹션 계획", "본문", "종합")
     steptitle: 섹션 타이틀 (예: "월별 매출 추이")
     call_type: 호출 유형 (예: "툴 호출", "쿼리 생성", "항목 작성(차트)")
-    model_id: 실제 모델 ID (예: "claude-haiku-4-5-20251001") — llm_api_logs.llmmodelnm 저장용
+    model_id: 실제 모델 ID (예: "claude-haiku-4-5-20251001") — llmchatlogs/llminsightlogs.llmmodelnm 저장용
     provider: "anthropic" | "openai" — 표시명 분기 및 로그 기록용
     startdts / enddts: LLM 호출 시작·완료 datetime (datetime.now() 기준)
     """
@@ -125,11 +125,12 @@ def add(
                 llmmodelnm=model_id or grade,
                 inputtoken=input_tokens,
                 outputtoken=output_tokens,
+                is_success=True,
                 startdts=startdts,
                 enddts=enddts,
             )
         except Exception as _e:
-            print(f"[token_tracker] llm_api_logs 즉시 로깅 실패 (건너뜀): {_e}")
+            print(f"[token_tracker] LLM 로그 즉시 기록 실패 (건너뜀): {_e}")
 
 
 def get() -> dict:

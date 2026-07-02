@@ -29,7 +29,7 @@ def classify_with_llm(
         prompt       : LLM에 전달할 분류 프롬프트
         llm          : LangChain LLM 객체 (with_structured_output 지원)
         output_schema: 결과를 담을 Pydantic BaseModel 서브클래스
-        log_ctx      : llm_api_logs 기록용 컨텍스트 dict (없으면 로그 생략)
+        log_ctx      : llmchatlogs/llminsightlogs 기록용 컨텍스트 dict (없으면 로그 생략)
         stepnm       : 로그 step 이름
         steptitle    : 로그 step 제목
     Returns:
@@ -52,6 +52,7 @@ def classify_with_llm(
         llmmodelnm=getattr(llm, 'model', 'unknown'),
         inputtoken=usage.get('input_tokens', 0),
         outputtoken=usage.get('output_tokens', 0),
+        is_success=True,
         startdts=start,
         enddts=end,
     )

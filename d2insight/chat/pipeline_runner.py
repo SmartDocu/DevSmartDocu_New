@@ -13,7 +13,7 @@ _llm_cache: dict = {}
 def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
     key = (grade, project_id, tenant_id, user_uid, account_uid)
     if key not in _llm_cache:
-        _, _api_key, _vendor = get_llm_info(
+        _, _api_key, _vendor, _, _ = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
@@ -88,7 +88,7 @@ def run_tool(
         from d2insight.data_source.meta_loader import all_metadata
         meta_keys = list(all_metadata().keys())
         try:
-            _hm, _, _hv = get_llm_info()
+            _hm, _, _hv, _, _ = get_llm_info()
             llm_info_str = f"LLM: {_hm} ({_hv})"
         except Exception:
             llm_info_str = "LLM: 조회 실패"

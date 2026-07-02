@@ -188,13 +188,15 @@ DB 정보:
             _tenant_id = (log_ctx or {}).get("tenant_id")
             _user_uid = (log_ctx or {}).get("creator")
             _account_uid = (log_ctx or {}).get("account_uid")
-            # servicecd 단일문자(C/I/D) → service_code 두 글자 코드 변환
-            _SVC_MAP = {"C": "Ch", "I": "In", "D": "Do"}
-            _svc_code = _SVC_MAP.get((log_ctx or {}).get("servicecd", ""), None)
-            model, api_key, vendor_name = get_llm_info(
+            _svc_code = (log_ctx or {}).get("servicecd") or None
+            model, api_key, vendor_name, _is_customeraikey, _resolved_account_uid = get_llm_info(
                 project_id=_project_id, tenant_id=_tenant_id,
                 user_uid=_user_uid, account_uid=_account_uid, service_code=_svc_code,
             )
+            if log_ctx is not None:
+                log_ctx["is_customeraikey"] = _is_customeraikey
+                if not log_ctx.get("account_uid"):
+                    log_ctx["account_uid"] = _resolved_account_uid
 
         llm = build_langchain_llm(vendor_name, api_key, model)
         start = datetime.now()
@@ -208,6 +210,7 @@ DB 정보:
             log_ctx=log_ctx, stepnm="sql_generate", steptitle="SQL 생성", llmmodelnm=model,
             inputtoken=usage.get("input_tokens", 0),
             outputtoken=usage.get("output_tokens", 0),
+            is_success=True,
             startdts=start, enddts=end,
         )
         content = response.content
