@@ -405,10 +405,19 @@ def list_datas(
     datasourcecd: Optional[str] = None,
     chapteruid: Optional[str] = None,
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     import sys
     user = _get_user(token)
     sb = _sb(token)
+
+    # ex 타입은 dataunits가 projectid 없이 tenantid로만 스코핑되므로 datas/project 경유 없이 직접 조회
+    if datasourcecd == "ex" and not chapteruid:
+        rows = sb.schema(SUPABASE_SCHEMA).table("dataunits") \
+            .select("*").eq("tenantid", tenantid).eq("datasourcecd", "ex").eq("creator", str(user.id)) \
+            .execute().data or []
+        rows.sort(key=lambda r: (r.get("datanm") or "").lower())
+        return {"datas": rows}
 
     # chapteruid가 있으면 해당 챕터의 projectid로 직접 필터 (llm/init 방식과 동일)
     single_pid = None
