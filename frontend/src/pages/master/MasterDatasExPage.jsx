@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
@@ -7,11 +8,11 @@ import {
   useDatasEx, useSaveExData, useDeleteData,
   useDatacols, useCreateDatacols, useSaveDatacols,
 } from '@/hooks/useDatas'
-import { useDocs } from '@/hooks/useDocs'
 
 const EMPTY_COLS = []
 
 export default function MasterDatasExPage() {
+  const { message } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
@@ -24,19 +25,13 @@ export default function MasterDatasExPage() {
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
   const { data: datas = [] } = useDatasEx()
-  const { data: docs = [] } = useDocs()
   const saveData = useSaveExData()
   const deleteData = useDeleteData('ex')
   const createCols = useCreateDatacols()
   const saveCols = useSaveDatacols()
 
-  // Derive project list with manager info from docs
-  const projects = docs
-    .map((d) => ({ projectid: d.projectid, projectnm: d.projectnm, rolecd: d.rolecd }))
-    .filter((p, i, arr) => p.projectid && arr.findIndex((x) => x.projectid === p.projectid) === i)
-
   const [selectedData, setSelectedData] = useState(null)
-  const [form, setForm] = useState({ datauid: '', datanm: '', projectid: '', projectnm: '', excelnm: '', excelurl: '' })
+  const [form, setForm] = useState({ datauid: '', datanm: '', excelnm: '', excelurl: '' })
   const [excelFile, setExcelFile] = useState(null)
   const [fileName, setFileName] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -50,16 +45,10 @@ export default function MasterDatasExPage() {
     setEditCols(rawCols.map((c) => ({ ...c })))
   }, [rawCols])
 
-  const isManager = (projectid) => {
-    const p = projects.find((x) => String(x.projectid) === String(projectid))
-    return p?.rolecd === 'M'
-  }
-
   const selectData = (d) => {
     setSelectedData(d)
     setForm({
       datauid: d.datauid, datanm: d.datanm,
-      projectid: d.projectid, projectnm: d.projectnm,
       excelnm: d.excelnm || '', excelurl: d.excelurl || '',
     })
     setExcelFile(null)
@@ -69,51 +58,62 @@ export default function MasterDatasExPage() {
 
   const handleNew = () => {
     setSelectedData(null)
-    setForm({ datauid: '', datanm: '', projectid: projects[0]?.projectid || '', projectnm: '', excelnm: '', excelurl: '' })
+    setForm({ datauid: '', datanm: '', excelnm: '', excelurl: '' })
     setExcelFile(null)
     setFileName(null)
     setSelectedColDatauid(null)
     setEditCols([])
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.datanm) { alert(t('msg.datanm.required')); return }
     if (!excelFile && !form.datauid) { alert(t('msg.file.required')); return }
     if (excelFile && form.datauid && !window.confirm(t('msg.confirm.file.overwrite'))) return
     setSaving(true)
     const fd = new FormData()
-    fd.append('projectid', form.projectid)
     fd.append('datanm', form.datanm)
     if (form.datauid) fd.append('datauid', form.datauid)
+    if (user?.accountuid) fd.append('accountuid', user.accountuid)
     if (excelFile) fd.append('excelfile', excelFile)
-    saveData.mutate(fd, {
-      onSuccess: (res) => {
-        setSaving(false)
-        const newUid = res?.datauid || form.datauid
-        if (newUid) {
-          createCols.mutate({ datauid: newUid })
-        }
-      },
-      onError: () => setSaving(false),
-    })
+    try {
+      const res = await saveData.mutateAsync(fd)
+      message.success(t('msg.save.success'))
+      const newUid = res?.datauid || form.datauid
+      if (newUid) {
+        createCols.mutate({ datauid: newUid })
+      }
+    } catch (err) {
+      message.error(err.response?.data?.detail || t('msg.save.error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!form.datauid) { alert(t('msg.select.data')); return }
     if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteData.mutate(form.datauid, { onSuccess: handleNew })
+    try {
+      await deleteData.mutateAsync(form.datauid)
+      message.success(t('msg.delete.success'))
+      handleNew()
+    } catch (err) {
+      message.error(err.response?.data?.detail || t('msg.delete.error'))
+    }
   }
 
-  const handleSaveCols = () => {
+  const handleSaveCols = async () => {
     if (editCols.length === 0) { alert(t('msg.no.data.to.save')); return }
-    saveCols.mutate(editCols.map((c) => ({ ...c, datauid: selectedColDatauid })))
+    try {
+      await saveCols.mutateAsync(editCols.map((c) => ({ ...c, datauid: selectedColDatauid })))
+      message.success(t('msg.save.success'))
+    } catch (err) {
+      message.error(err.response?.data?.detail || t('msg.save.error'))
+    }
   }
 
   const updateCol = (idx, field, value) => {
     setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c))
   }
-
-  const showSaveDelete = form.datauid && isManager(form.projectid)
 
   return (
     <div>
@@ -136,12 +136,11 @@ export default function MasterDatasExPage() {
               <thead>
                 <tr>
                   <th>{t('thd.datanm_thd')}</th>
-                  <th style={{ width: '35%' }}>{t('thd.projectnm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {datas.length === 0 ? (
-                  <tr><td colSpan={2} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={1} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
                 ) : datas.map((d) => (
                   <tr
                     key={d.datauid}
@@ -149,7 +148,6 @@ export default function MasterDatasExPage() {
                     style={{ cursor: 'pointer', background: selectedData?.datauid === d.datauid ? '#e6f4ff' : '' }}
                   >
                     <td>{d.datanm}</td>
-                    <td>{d.projectnm}</td>
                   </tr>
                 ))}
               </tbody>
@@ -171,23 +169,6 @@ export default function MasterDatasExPage() {
                 </button>
               )}
             </div>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="ex-projectid">
-              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:
-            </label>
-            {form.datauid ? (
-              <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.projectnm}</span>
-            ) : (
-              <select
-                id="ex-projectid"
-                value={form.projectid}
-                onChange={(e) => setForm((f) => ({ ...f, projectid: e.target.value }))}
-              >
-                {projects.map((p) => <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>)}
-              </select>
-            )}
           </div>
 
           <div className="form-group">

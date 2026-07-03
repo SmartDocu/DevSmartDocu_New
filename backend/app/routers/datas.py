@@ -551,6 +551,7 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenan
 async def save_ex_data(
     datanm: str = Form(...),
     datauid: Optional[str] = Form(None),
+    accountuid: Optional[str] = Form(None),
     excelfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
@@ -566,8 +567,30 @@ async def save_ex_data(
             existing_url = res.data[0].get("excelurl")
 
     if excelfile:
-        _delete_storage(sb, existing_url)
         content = await excelfile.read()
+
+        plancd = None
+        if accountuid:
+            svc = sb.schema(SUPABASE_SCHEMA).table("accountservices") \
+                .select("plancd").eq("accountuid", accountuid).eq("servicecd", "Do") \
+                .maybe_single().execute()
+            plancd = svc.data.get("plancd") if svc.data else None
+
+        limit_mb = None
+        if plancd:
+            cfg = sb.schema(SUPABASE_SCHEMA).table("config_plans") \
+                .select("value").eq("configcd", "Excel_Size_Limit").eq("plancd", plancd).eq("servicecd", "Do") \
+                .execute()
+            values = [float(r["value"]) for r in (cfg.data or []) if r.get("value") is not None]
+            if values:
+                limit_mb = max(values)
+
+        if limit_mb is None:
+            raise HTTPException(status_code=400, detail="업로드 용량 제한 정보를 확인할 수 없어 업로드할 수 없습니다.")
+        if len(content) > limit_mb * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"엑셀 파일 크기는 최대 {limit_mb:g}MB까지 업로드할 수 있습니다.")
+
+        _delete_storage(sb, existing_url)
         ext = os.path.splitext(excelfile.filename)[1]
         fname = f"{uuid.uuid4()}{ext}"
         path = f"source/ex/{tenantid or 'common'}/{fname}"

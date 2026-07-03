@@ -108,7 +108,7 @@ export function useSaveDbData() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'db'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -121,7 +121,7 @@ export function useSaveExData() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'ex'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -133,7 +133,7 @@ export function useSaveAiData() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -145,7 +145,7 @@ export function useDeleteData(datasourcecd) {
       message.success(t('msg.delete.success'))
       if (datasourcecd) qc.invalidateQueries({ queryKey: ['datas', datasourcecd] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }
 
@@ -157,7 +157,7 @@ export function useCreateDatacols() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datacols', body.datauid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -169,7 +169,7 @@ export function useSaveDatacols() {
       message.success(t('msg.save.success'))
       if (cols.length > 0) qc.invalidateQueries({ queryKey: ['datacols', cols[0].datauid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -189,7 +189,7 @@ export function useSaveDfData() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.docid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -201,14 +201,14 @@ export function useSaveDfvData() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.dfv_docid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
 export function useAiDataPreview() {
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/ai-preview', body).then((r) => r.data),
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.preview.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.preview.error')) },
   })
 }
 
@@ -233,7 +233,7 @@ export function useSaveApiData() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['datas', 'api'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -253,6 +253,6 @@ export function useDeleteDfData() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', docid] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }

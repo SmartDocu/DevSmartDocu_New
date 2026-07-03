@@ -90,6 +90,26 @@ const mutation = useMutation({
 
 ---
 
+## ⚠️ mutation `onError`/`onSuccess`는 절대 화살표 함수 암묵적 반환으로 `message.xxx()`를 호출하지 말 것
+
+```jsx
+// ❌ 금지 — mutation이 영원히 멈추는 버그 발생
+onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+
+// ✅ 올바른 방법 — 블록 바디로 감싸서 반환값을 undefined로 만들 것
+onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+```
+
+**원인**: antd의 `message.error()`/`message.success()`는 `MessageType`(= `PromiseLike<boolean>`, 메시지가 닫힐 때 resolve됨)을 반환한다.
+TanStack Query v5의 mutation 내부 코드는 `await this.options.onError?.call(...)` 형태로 **콜백의 반환값을 그대로 await** 한다.
+`onError`/`onSuccess`를 화살표 함수 암묵적 반환(`(err) => message.error(...)`)으로 작성하면 `message.xxx()`가 반환한 `MessageType`이 그대로 반환값이 되고, 이게 **영원히 resolve 안 되는 경우**(React19/antd 렌더링 이슈 등으로 메시지가 정상적으로 닫히지 않는 경우) mutation의 `execute()`가 끝까지 진행되지 못한다.
+
+**증상**: 실제 API 요청/응답은 정상인데 화면에 아무 반응도 없고, 버튼이 `disabled` 상태로 영원히 멈춘다 (`isPending`이 계속 `true`). `mutate()`에 전달한 로컬 `onSuccess`/`onError`는 물론 `mutateAsync()`를 `await`하는 코드도 전부 무한 대기하게 된다.
+
+**발견 경위**: `master/datas/ex` 화면에서 엑셀 업로드 용량 제한 에러가 화면에 안 뜨는 버그를 추적하다 `useDatas.js`의 `onError: (err) => message.error(...)` 패턴이 원인임을 확인 (2026-07-03). 같은 패턴이 다른 훅 파일(`useAdmin.js`, `useCodes.js`, `useGendocs.js`, `useMenus.js`, `useMessages.js`, `useOrg.js`, `useSettings.js`, `useTerms.js`)과 일부 페이지 컴포넌트에도 남아있을 수 있으니, **다른 화면을 수정하게 되면 해당 화면이 참조하는 훅의 `onSuccess`/`onError`도 블록 바디인지 확인할 것.**
+
+---
+
 ## 신규 화면 템플릿
 
 신규 마스터/관리 화면을 만들 때 **`frontend/src/pages/master/MasterDocsPage.jsx`** (frontend) 와 **`backend/app/routers/docs.py`** (backend) 를 표준으로 사용한다.
