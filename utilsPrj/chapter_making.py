@@ -631,6 +631,10 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             result, result_text_template = process_ui_object(data_item, final_html, text_template, gen_chapter_uid, user_id, sep, replacestring)
             text_template = result_text_template
 
+            # 성공 시 이전 실패 흔적(errorcd/errormessage) 제거
+            result['is_success'] = True
+            result['errorcd'] = None
+            result['errormessage'] = None
             update_genobjects(supabase, [result])
 
             if sep == "Not":
@@ -665,7 +669,19 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
         except Exception as e:
             print(f"UI 객체 처리 실패: {data_item.get('objectnm', '')} - {str(e)}")
             traceback.print_exc()
-            
+
+            _fail_uid = genobjectuid or data_item.get('genobjectuid')
+            if _fail_uid:
+                try:
+                    update_genobjects(supabase, [{
+                        'genobjectuid': _fail_uid,
+                        'is_success': False,
+                        'errorcd': 'ERR',
+                        'errormessage': str(e)[:2000],
+                    }])
+                except Exception:
+                    pass
+
             yield {
                 'type': 'item_error',
                 'chapter_name': '',
@@ -942,12 +958,21 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
             # gen_object_uid = result_data["result"]["genobjectuid"]
             result_inner = result_data.get("result") or {}
             gen_object_uid = result_inner.get("genobjectuid") if isinstance(result_inner, dict) else None
-    
+            if not gen_object_uid:
+                gen_object_uid = data_item.get('genobjectuid')
+
             if not result_data.get('success', False):
                 final_result = ""
 
             if not result_data["success"]:
                 result_data["result"] = ""
+                if gen_object_uid:
+                    update_genobjects(supabase, [{
+                        'genobjectuid': gen_object_uid,
+                        'is_success': False,
+                        'errorcd': 'ERR',
+                        'errormessage': str(result_data.get('error') or '')[:2000],
+                    }])
             else:
                 # place_holder = f"{{{{{data_item['objectnm']}}}}}"
                 # place_holder_with_p = f"<p>{place_holder}</p>"
@@ -972,8 +997,12 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                     }, gen_chapter_uid)
 
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
+                # 성공 시 이전 실패 흔적(errorcd/errormessage) 제거
+                result_data['result']['is_success'] = True
+                result_data['result']['errorcd'] = None
+                result_data['result']['errormessage'] = None
                 update_genobjects(supabase, [result_data['result']])
-        
+
     return text_template
 
 

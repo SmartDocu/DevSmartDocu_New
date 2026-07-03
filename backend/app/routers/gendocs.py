@@ -768,12 +768,12 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
         upd = {}
         if lock.get("doclocked") and lock.get("docstartdts"):
             start = datetime.fromisoformat(lock["docstartdts"].replace("Z", "+00:00"))
-            if user_id == lock.get("useruid") or now_dt - start > timeout:
+            if now_dt - start > timeout:
                 upd["doclocked"] = False
                 upd["docenddts"] = now_iso
         if lock.get("chapterlocked") and lock.get("chapterstartdts"):
             start = datetime.fromisoformat(lock["chapterstartdts"].replace("Z", "+00:00"))
-            if user_id == lock.get("useruid") or now_dt - start > timeout:
+            if now_dt - start > timeout:
                 upd["chapterlocked"] = False
                 upd["chapterenddts"] = now_iso
         if upd:
@@ -1016,14 +1016,14 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
             start = datetime.fromisoformat(lock["docstartdts"])
             if start.tzinfo is None:
                 start = start.replace(tzinfo=timezone.utc)
-            if user_id == lock.get("useruid") or now_dt - start > timeout:
+            if now_dt - start > timeout:
                 upd["doclocked"] = False
                 upd["docenddts"] = now_iso
         if lock.get("chapterlocked") and lock.get("chapterstartdts"):
             start = datetime.fromisoformat(lock["chapterstartdts"])
             if start.tzinfo is None:
                 start = start.replace(tzinfo=timezone.utc)
-            if user_id == lock.get("useruid") or now_dt - start > timeout:
+            if now_dt - start > timeout:
                 upd["chapterlocked"] = False
                 upd["chapterenddts"] = now_iso
         if upd:
