@@ -427,7 +427,9 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             'resulttext': final_result,
             'progressrate': 100,
             'creator': user_id,
-            'createdts': run_start_dts
+            'createdts': run_start_dts,
+            'gendocjobuid': gendocjobuid,
+            'genchapterjobuid': genchapterjobuid,
         }
         
         return {
@@ -581,9 +583,9 @@ def process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, da
     return final_html
 
 
-def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid, gendoc_uid, 
-                                    gen_chapter_uid, chapter_uid, user_id, text_template, 
-                                    sep):
+def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid, gendoc_uid,
+                                    gen_chapter_uid, chapter_uid, user_id, text_template,
+                                    sep, gendocjobuid=None, genchapterjobuid=None):
     """UI 객체들을 순차적으로 처리"""
     
     replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
@@ -635,6 +637,8 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             result['is_success'] = True
             result['errorcd'] = None
             result['errormessage'] = None
+            result['gendocjobuid'] = gendocjobuid
+            result['genchapterjobuid'] = genchapterjobuid
             update_genobjects(supabase, [result])
 
             if sep == "Not":
@@ -678,6 +682,8 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                         'is_success': False,
                         'errorcd': 'ERR',
                         'errormessage': str(e)[:2000],
+                        'gendocjobuid': gendocjobuid,
+                        'genchapterjobuid': genchapterjobuid,
                     }])
                 except Exception:
                     pass
@@ -942,7 +948,8 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
     yield {'type': 'ai_complete', 'ai_results': ai_results, 'summary': summary}
 
 
-def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template, gen_chapter_uid, user_id, sep):
+def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template, gen_chapter_uid, user_id, sep,
+                                  gendocjobuid=None, genchapterjobuid=None):
     """AI 결과를 템플릿에 순서대로 적용"""
     replace_dict = {}
     replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
@@ -972,6 +979,8 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                         'is_success': False,
                         'errorcd': 'ERR',
                         'errormessage': str(result_data.get('error') or '')[:2000],
+                        'gendocjobuid': gendocjobuid,
+                        'genchapterjobuid': genchapterjobuid,
                     }])
             else:
                 # place_holder = f"{{{{{data_item['objectnm']}}}}}"
@@ -1142,7 +1151,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         for progress_item in process_ui_objects_sequentially(
                             request, supabase, ui_objects, datas, docid, gendoc_uid,
                             gen_chapter_uid, chapter_uid, user_id, text_template,
-                            sep
+                            sep,
+                            gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid,
                         ):
                             if progress_item['type'] == 'ui_complete':
                                 text_template = progress_item['text_template']
@@ -1170,7 +1180,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         # AI 결과를 템플릿에 적용
                         ai_text_template = apply_ai_results_to_template(
                             supabase, ai_objects, ai_results, text_template,
-                            gen_chapter_uid, user_id, sep
+                            gen_chapter_uid, user_id, sep,
+                            gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid,
                         )
 
                         genchapters = {

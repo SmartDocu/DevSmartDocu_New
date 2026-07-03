@@ -100,7 +100,8 @@ _DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
 
 
 def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None,
-                        projectid=None, tenantid=None, accountuid=None):
+                        projectid=None, tenantid=None, accountuid=None,
+                        gendocjobuid=None, genchapterjobuid=None):
     now_iso = datetime.now(timezone.utc).isoformat()
     dfv_datauids = []
     if docid:
@@ -128,6 +129,8 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "projectid": projectid,
             "tenantid": tenantid,
             "accountuid": accountuid,
+            "gendocjobuid": gendocjobuid,
+            "genchapterjobuid": genchapterjobuid,
         })
     sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
     if rows:
@@ -434,7 +437,8 @@ def process_chapter_message(msg):
         sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
         _extracted = extract_from_processed_html(_flat)
         _upsert_genobjects(sb, _extracted, genchapteruid, chapteruid, user_id, docid=docid,
-                           projectid=projectid, tenantid=tenantid, accountuid=accountuid)
+                           projectid=projectid, tenantid=tenantid, accountuid=accountuid,
+                           gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid)
 
         # LLM 콘텐츠 생성
         gen_chapter_direct = not is_start_doc

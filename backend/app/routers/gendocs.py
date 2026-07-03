@@ -1201,7 +1201,8 @@ _DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
 
 
 def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None,
-                        projectid=None, tenantid=None, accountuid=None):
+                        projectid=None, tenantid=None, accountuid=None,
+                        gendocjobuid=None, genchapterjobuid=None):
     """req_chapters_read.py의 _upsert_genobjects와 동일"""
     now_iso = datetime.now(timezone.utc).isoformat()
     dfv_datauids = []
@@ -1230,6 +1231,8 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "projectid": projectid,
             "tenantid": tenantid,
             "accountuid": accountuid,
+            "gendocjobuid": gendocjobuid,
+            "genchapterjobuid": genchapterjobuid,
         })
 
     sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
