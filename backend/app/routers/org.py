@@ -432,7 +432,7 @@ def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token
         plancd = svc.data.get("plancd") if svc.data else None
         if plancd:
             cfg = sb.schema(SUPABASE_SCHEMA).table("config_plans") \
-                .select("value").eq("configcd", "project_limit").eq("plancd", plancd) \
+                .select("value").eq("configcd", "project_limit").eq("plancd", plancd).eq("servicecd", body.servicecd) \
                 .maybe_single().execute()
             limit = int(cfg.data["value"]) if cfg.data and cfg.data.get("value") else None
             if limit is not None:
