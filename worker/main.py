@@ -405,6 +405,18 @@ def process_chapter_message(msg):
 
     logger.info("챕터 처리 시작: %s (is_start_doc=%s)", genchapteruid, is_start_doc)
 
+    # SQS 재배달 중복 처리 방지 — 같은 genchapterjobuid는 최초 한 번만 'S'→'P' 선점 성공
+    claim = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes") \
+        .update({"jobstatuscd": "P"}) \
+        .eq("genchapterjobuid", genchapterjobuid).eq("jobstatuscd", "S").execute()
+    if not claim.data:
+        logger.info("챕터 중복 처리 스킵 (이미 선점됨): %s", genchapteruid)
+        try:
+            sqs.delete_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, ReceiptHandle=receipt_handle)
+        except Exception:
+            logger.exception("SQS 챕터 메시지 삭제 실패 (중복 스킵): %s", genchapteruid)
+        return
+
     try:
         from utilsPrj.template_parser import process_template, FunctionRegistry, extract_at_variables
         from utilsPrj.template_extracter import extract_from_processed_html
@@ -432,6 +444,15 @@ def process_chapter_message(msg):
                                           gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid):
             if progress_data.get("type") == "error":
                 raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
+
+        # AI/UI 객체 처리가 모두 끝난 시점을 확정적으로 genchapters.createfiledts에 반영
+        # (chapter_making.py 내부 갱신이 누락되는 경우에 대한 안전장치)
+        try:
+            sb_svc.schema(SUPABASE_SCHEMA).table("genchapters").update({
+                "createfiledts": datetime.now(timezone.utc).isoformat(),
+            }).eq("genchapteruid", genchapteruid).execute()
+        except Exception:
+            logger.exception("genchapters.createfiledts 갱신 실패: %s", genchapteruid)
 
         try:
             sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
