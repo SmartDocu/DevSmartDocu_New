@@ -1210,6 +1210,16 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
         dfv_rows = sb.schema(SUPABASE_SCHEMA).table("datas") \
             .select("datauid").eq("datasourcecd", "dfv").eq("dfv_docid", docid).execute().data
         dfv_datauids = [r["datauid"] for r in dfv_rows]
+
+    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
+    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
+    if genchapterjobuid:
+        gencontenttypecd = "C"
+    elif gendocjobuid:
+        gencontenttypecd = "D"
+    else:
+        gencontenttypecd = "O"
+
     rows = []
     for item in extracted:
         object_data = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("objectnm", item["objectNm"]).execute().data
@@ -1233,6 +1243,7 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "accountuid": accountuid,
             "gendocjobuid": gendocjobuid,
             "genchapterjobuid": genchapterjobuid,
+            "gencontenttypecd": gencontenttypecd,
         })
 
     sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()

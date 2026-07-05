@@ -50,7 +50,7 @@ from queue import Queue
 _log_queue = Queue()
 _log_lock = threading.Lock()
 
-def queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, objectuid, objecttypecd, user_id, progressrate, run_start_dts):
+def queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, objectuid, objecttypecd, user_id, progressrate, run_start_dts, gencontenttypecd=None):
     """로그를 큐에 추가 (즉시 DB 호출 안 함)"""
     log_data = {
         'type': 'genobject',
@@ -61,7 +61,8 @@ def queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, objectuid, o
         'objecttypecd': objecttypecd,
         'user_id': user_id,
         'progressrate': progressrate,
-        'timestamp': run_start_dts
+        'timestamp': run_start_dts,
+        'gencontenttypecd': gencontenttypecd
     }
     _log_queue.put(log_data)
 
@@ -121,7 +122,8 @@ def flush_logs_to_db(supabase, log_source="AI"):
                     "objecttypecd": log['objecttypecd'],
                     "progressrate": log['progressrate'],
                     "creator": log['user_id'],
-                    "createdts": log['timestamp']
+                    "createdts": log['timestamp'],
+                    "gencontenttypecd": log.get('gencontenttypecd')
                 })
             else:
                 uid = log['genobjectuid']
@@ -244,12 +246,12 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
     genchapterjobuid = kwargs.get("genchapterjobuid")
     project_id = request.session.get("user", {}).get("projectid")
 
-    # gencontenttypecd: 문서 전체 생성(D) > 챕터 재작성(C) > 단일 항목 재작성(O)
-    # process_ai_object는 genchapteruid 기준으로만 호출되므로(정의 단계에서는 호출되지 않음) else는 항상 "O"
-    if gendocjobuid:
-        gencontenttypecd = "D"
-    elif genchapterjobuid:
+    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
+    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
+    if genchapterjobuid:
         gencontenttypecd = "C"
+    elif gendocjobuid:
+        gencontenttypecd = "D"
     else:
         gencontenttypecd = "O"
 
@@ -275,7 +277,8 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             genobjectuid = str(uuid.uuid4())
             run_start_dts = datetime.now().isoformat()
             queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
-                            data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts)
+                            data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts,
+                            gencontenttypecd=gencontenttypecd)
 
         data_item['genobjectuid'] = genobjectuid
 
@@ -430,8 +433,9 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             'createdts': run_start_dts,
             'gendocjobuid': gendocjobuid,
             'genchapterjobuid': genchapterjobuid,
+            'gencontenttypecd': gencontenttypecd,
         }
-        
+
         return {
             'success': True,
             'result': result,
@@ -587,7 +591,16 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                                     gen_chapter_uid, chapter_uid, user_id, text_template,
                                     sep, gendocjobuid=None, genchapterjobuid=None):
     """UI 객체들을 순차적으로 처리"""
-    
+
+    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
+    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
+    if genchapterjobuid:
+        gencontenttypecd = "C"
+    elif gendocjobuid:
+        gencontenttypecd = "D"
+    else:
+        gencontenttypecd = "O"
+
     replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
     replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data}
 
@@ -612,8 +625,9 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             else:
                 genobjectuid = str(uuid.uuid4())
                 run_start_dts = datetime.now().isoformat()
-                queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
-                                data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts)
+                queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
+                                data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts,
+                                gencontenttypecd=gencontenttypecd)
 
             data_item['genobjectuid'] = genobjectuid
             
@@ -639,6 +653,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             result['errormessage'] = None
             result['gendocjobuid'] = gendocjobuid
             result['genchapterjobuid'] = genchapterjobuid
+            result['gencontenttypecd'] = gencontenttypecd
             update_genobjects(supabase, [result])
 
             if sep == "Not":
