@@ -109,8 +109,8 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             .select("datauid").eq("datasourcecd", "dfv").eq("dfv_docid", docid).execute().data
         dfv_datauids = [r["datauid"] for r in dfv_rows]
 
-    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
-    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
+    # gencontenttypecd: 챕터 작성(C) > 문서 전체 작성(D) > 단일 항목 재작성(O)
+    # 문서 전체 작성(fan-out) 호출 시에는 genchapterjobuid를 넘기지 않으므로 gendocjobuid만으로 D가 판별된다
     if genchapterjobuid:
         gencontenttypecd = "C"
     elif gendocjobuid:
@@ -447,16 +447,19 @@ def process_chapter_message(msg):
         _flat = process_template(_tt, _ctx, _reg, True)
         sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
         _extracted = extract_from_processed_html(_flat)
+        # 문서 전체 작성(fan-out) 시에는 gendocjobuid만, 단일 챕터 작성 시에는 둘 다 genobjects에 기록
         _upsert_genobjects(sb, _extracted, genchapteruid, chapteruid, user_id, docid=docid,
                            projectid=projectid, tenantid=tenantid, accountuid=accountuid,
-                           gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid)
+                           gendocjobuid=gendocjobuid,
+                           genchapterjobuid=None if is_start_doc else genchapterjobuid)
 
         # LLM 콘텐츠 생성
         gen_chapter_direct = not is_start_doc
         for progress_data in replace_doc(req, sb, user_id, genchapteruid, "create", "rewrite", "Not",
                                           genChapterDirectYn=gen_chapter_direct, divide="Chapter",
                                           doc_write=is_start_doc,
-                                          gendocjobuid=gendocjobuid, genchapterjobuid=genchapterjobuid):
+                                          gendocjobuid=gendocjobuid,
+                                          genchapterjobuid=None if is_start_doc else genchapterjobuid):
             if progress_data.get("type") == "error":
                 raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
 

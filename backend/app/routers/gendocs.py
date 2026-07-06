@@ -755,8 +755,9 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
 
-    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,gendocjobuid").eq("gendocuid", gendocuid).execute().data
     docid = docid_row[0]["docid"] if docid_row else ctx.get("docid")
+    doc_gendocjobuid = docid_row[0]["gendocjobuid"] if docid_row else None
 
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()
@@ -824,7 +825,7 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
             "genchapteruid": genchapteruid,
             "genchapterjobuid": genchapterjobuid,
             "gendocuid": gendocuid,
-            "gendocjobuid": None,
+            "gendocjobuid": doc_gendocjobuid,
             "chapteruid": chapteruid,
             "docid": docid,
             "tenantid": body.tenantid,
