@@ -1214,7 +1214,10 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             'createuserid': user_id,
                             'createfiledts': datetime.now(timezone.utc).isoformat()
                         }
-                    
+
+                        # AI 결과가 반영된 템플릿을 반환값에도 반영 (프런트에 즉시 표시되도록)
+                        text_template = ai_text_template
+
                     cleanup_thread_client()
                     
             elif obj == 'write':    # jeff 20260706 1305
