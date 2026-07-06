@@ -1067,6 +1067,12 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
             if obj == 'rewrite':
                 # sep == 'Not'이면 전체, 아니면 개별 작성용 texttemplate 가져오기
                 if sep == 'Not':
+                    # 챕터 재작성 시작 시각 기록 (완료 시각은 createfiledts에 별도 기록)
+                    update_genchapters(supabase, {
+                        'genchapteruid': gen_chapter_uid,
+                        'createfilestartdts': now,
+                    }, gen_chapter_uid)
+
                     objects_erase_resulttext = supabase.schema(SUPABASE_SCHEMA).table("genobjects")\
                         .select("genobjectuid, resulttext, filterjson")\
                         .eq("genchapteruid", gen_chapter_uid)\
@@ -1211,7 +1217,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     
                     cleanup_thread_client()
                     
-            elif obj == 'write':
+            elif obj == 'write':    # jeff 20260706 1305
                 gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
                 text_template = gen_text_template[0]['gentexttemplate']
 
