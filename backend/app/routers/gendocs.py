@@ -553,7 +553,44 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    _increment_genobjectcount(sb, genchapteruid, objectuid)
+
     return {"success": True}
+
+
+def _increment_genobjectcount(sb, genchapteruid: str, objectuid: str):
+    """단일 항목 재작성(gencontenttypecd='O') 1회당 genobjectcounts에 시간당(1시간 버킷) 사용량 1건 집계"""
+    try:
+        row = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("accountuid,tenantid") \
+            .eq("genchapteruid", genchapteruid).eq("objectuid", objectuid).execute().data
+        if not row or not row[0].get("accountuid") or row[0].get("tenantid") is None:
+            return
+        accountuid = row[0]["accountuid"]
+        tenantid = row[0]["tenantid"]
+
+        now = datetime.now(timezone.utc)
+        usedts = now.replace(minute=0, second=0, microsecond=0).isoformat()
+        now_iso = now.isoformat()
+
+        sb_svc = get_service_client()
+        existing = sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").select("countuid,count") \
+            .eq("accountuid", accountuid).eq("tenantid", tenantid).eq("usedts", usedts).execute().data
+        if existing:
+            sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").update({
+                "count": existing[0]["count"] + 1,
+                "updatedts": now_iso,
+            }).eq("countuid", existing[0]["countuid"]).execute()
+        else:
+            sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").insert({
+                "countuid": str(uuid.uuid4()),
+                "usedts": usedts,
+                "accountuid": accountuid,
+                "tenantid": tenantid,
+                "count": 1,
+                "updatedts": now_iso,
+            }).execute()
+    except Exception:
+        pass
 
 
 # ── Apply Objects to Chapter ─────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 # 20250926
 
 import json, re, io, uuid, os, tempfile, subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pathlib import Path
 import time
@@ -216,7 +216,7 @@ def process_ui_object(data_item, html_result, text_template, gen_chapter_uid, us
 
     gen_uuid = data_item['genobjectuid'] if data_item['genobjectuid'] else str(uuid.uuid4())
 
-    run_start_dts = datetime.now().isoformat()
+    run_start_dts = datetime.now(timezone.utc).isoformat()
     
     result = {
         'genobjectuid': gen_uuid,
@@ -275,7 +275,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
         else:
             filter_json = {}
             genobjectuid = str(uuid.uuid4())
-            run_start_dts = datetime.now().isoformat()
+            run_start_dts = datetime.now(timezone.utc).isoformat()
             queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts,
                             gencontenttypecd=gencontenttypecd)
@@ -326,7 +326,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
 
         column_dict = {item['querycolnm']: item['dispcolnm'] for item in result_datacols}
 
-        run_start_dts = datetime.now().isoformat()
+        run_start_dts = datetime.now(timezone.utc).isoformat()
         queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
                         data_item['objectuid'], data_item['objecttypecd'], user_id, 40, run_start_dts)
         
@@ -349,14 +349,14 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 "message": "객체(object) 타입이 분류되지 않는 타입입니다."
             }            
 
-        _llm_start_dts = datetime.now()
+        _llm_start_dts = datetime.now(timezone.utc)
         full_chain = get_full_chain(llm, result_df, prompt, question, column_dict, object_type)
         try:
             response = full_chain.invoke({"question": question, "column_dict": column_dict})
         except Exception as _invoke_err:
-            _write_doc_log(False, str(_invoke_err), 0, 0, _llm_start_dts, datetime.now())
+            _write_doc_log(False, str(_invoke_err), 0, 0, _llm_start_dts, datetime.now(timezone.utc))
             raise
-        _llm_end_dts = datetime.now()
+        _llm_end_dts = datetime.now(timezone.utc)
 
         if isinstance(response, dict) and "tokens" in response:
             total_tokens["input_tokens"] = response["tokens"]["input_tokens"]
@@ -373,7 +373,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
 
         _write_doc_log(_is_success, _error_message, total_tokens["input_tokens"], total_tokens["output_tokens"], _llm_start_dts, _llm_end_dts)
 
-        run_start_dts = datetime.now().isoformat()
+        run_start_dts = datetime.now(timezone.utc).isoformat()
         queue_genobject_run_log(data_item['genobjectuid'], data_item['objecttypecd'], data_item['sourcebase'], total_tokens["input_tokens"], tenant_id, user_id, run_start_dts)
         queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
                         data_item['objectuid'], data_item['objecttypecd'], user_id, 60, run_start_dts)
@@ -417,7 +417,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             }
 
         gen_uuid = data_item['genobjectuid'] if data_item['genobjectuid'] else str(uuid.uuid4())
-        run_start_dts = datetime.now().isoformat()
+        run_start_dts = datetime.now(timezone.utc).isoformat()
         
         result = {
             'genobjectuid': gen_uuid,
@@ -624,7 +624,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                 genobjectuid = data_item['genobjectuid']
             else:
                 genobjectuid = str(uuid.uuid4())
-                run_start_dts = datetime.now().isoformat()
+                run_start_dts = datetime.now(timezone.utc).isoformat()
                 queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
                                 data_item['objectuid'], data_item['objecttypecd'], user_id, 20, run_start_dts,
                                 gencontenttypecd=gencontenttypecd)
@@ -633,13 +633,13 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             
             params = re.findall(r'@(\w+)', query)
 
-            run_start_dts = datetime.now().isoformat()
+            run_start_dts = datetime.now(timezone.utc).isoformat()
             queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid,
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 40, run_start_dts)
 
             final_html = process_single_ui_object(request, supabase, data_item, docid, gendoc_uid, data_uid, params, query)
                 
-            run_start_dts = datetime.now().isoformat()
+            run_start_dts = datetime.now(timezone.utc).isoformat()
             queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
                             data_item['objectuid'], data_item['objecttypecd'], user_id, 60, run_start_dts)
 
@@ -661,7 +661,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                     'genchapteruid': gen_chapter_uid,
                     'gentexttemplate': result_text_template,
                     'createuserid': result['creator'],
-                    'createfiledts': datetime.now().isoformat()
+                    'createfiledts': datetime.now(timezone.utc).isoformat()
                 }
             else:
                 genchapters = {
@@ -1060,7 +1060,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
         read_chapter = supabase.schema(SUPABASE_SCHEMA).table('chapters').select('texttemplate').eq('chapteruid', chapter_uid).execute().data
         # read_chapter = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('flattexttemplate').eq('chapteruid', chapter_uid).execute().data
 
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         # 자동 작성 기준
         if make_type == 'create':
@@ -1206,7 +1206,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             'texttemplate': text_template,
                             'gentexttemplate': ai_text_template,
                             'createuserid': user_id,
-                            'createfiledts': datetime.now().isoformat()
+                            'createfiledts': datetime.now(timezone.utc).isoformat()
                         }
                     
                     cleanup_thread_client()
@@ -1241,7 +1241,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         'texttemplate': text_template,
                         'gentexttemplate': text_template,
                         'createuserid': user_id,
-                        'createfiledts': datetime.now().isoformat()
+                        'createfiledts': datetime.now(timezone.utc).isoformat()
                     }
                 update_genchapters(supabase, genchapters, gen_chapter_uid)
 
@@ -1351,7 +1351,7 @@ def make_genobject(supabase, genobjectuid, gen_chapter_uid, chapter_uid, objectu
                 "objecttypecd": objecttypecd,
                 "progressrate": progressrate,
                 "creator": user_id,
-                "createdts": datetime.now().isoformat()
+                "createdts": datetime.now(timezone.utc).isoformat()
             }
             supabase.schema(SUPABASE_SCHEMA).table('genobjects').insert(genobject).execute()
         else:
