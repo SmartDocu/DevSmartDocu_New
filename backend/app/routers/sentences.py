@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -46,7 +46,7 @@ def save_sentence(body: SentenceSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("sentences")

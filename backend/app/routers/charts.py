@@ -1,6 +1,6 @@
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -76,7 +76,7 @@ def save_chart(body: ChartSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     chartjson = json.dumps(body.chartjson or {})
 
     existing = (

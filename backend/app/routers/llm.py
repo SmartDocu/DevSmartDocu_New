@@ -1,5 +1,5 @@
 """LLM AI 설정/미리보기 라우터 (CA/SA/TA 항목)"""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -364,15 +364,15 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
 
     # ⑩ 체인 실행 — Django full_chain.invoke 와 동일
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, body.objecttypecd)
-    _llm_start_dts = datetime.now()
+    _llm_start_dts = datetime.now(timezone.utc)
     try:
         response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
-        _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now())
+        _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now(timezone.utc))
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
-    _llm_end_dts = datetime.now()
+    _llm_end_dts = datetime.now(timezone.utc)
 
     if not isinstance(response, dict):
         _write_doc_log(False, "LLM 응답 형식 오류", 0, 0, _llm_start_dts, _llm_end_dts)
@@ -426,7 +426,7 @@ class SaveRequest(BaseModel):
 
 @router.post("/save")
 def llm_save(body: SaveRequest, token: str = Depends(get_token)):
-    from datetime import datetime
+    from datetime import datetime, timezone
     sb = get_sb(token)
     user_id, _ = _get_user_info(sb, token)
 
@@ -443,7 +443,7 @@ def llm_save(body: SaveRequest, token: str = Depends(get_token)):
 
     object_uid = obj_rows[0]["objectuid"]
     object_creator = obj_rows[0]["creator"]
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Check existing
     existing = sb.schema(SUPABASE_SCHEMA).table(table_name).select("datauid").eq(
