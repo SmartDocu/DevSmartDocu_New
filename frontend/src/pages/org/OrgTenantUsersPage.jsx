@@ -10,8 +10,9 @@ import { useOpenInTab } from '@/hooks/useOpenInTab'
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
 const EMPTY_FORM = {
-  sep: '', tenantnewuid: '', useruid: '',
+  useruid: '',
   email: '', usernm: '', rolecd: 'U', useyn: true, creatornm: '', createdts: '',
+  servicecds: [],
 }
 
 export default function OrgTenantUsersPage() {
@@ -20,42 +21,54 @@ export default function OrgTenantUsersPage() {
   const { user } = useAuthStore()
   useLangStore((s) => s.translations)
   const roleid = user?.roleid
+  const accountuid = user?.accountuid
 
   const paramTenantid = roleid === 7 ? searchParams.get('tenantid') : null
 
-  const { data = {}, isLoading } = useOrgTenantUsers(paramTenantid)
+  const { data = {}, isLoading } = useOrgTenantUsers(paramTenantid, accountuid)
   const saveMutation = useSaveTenantUser()
   const deleteMutation = useDeleteTenantUser()
   const { data: roleCodes = [] } = useMenuCodes('rolecd')
+  const { data: allServiceCodes = [] } = useMenuCodes('servicecd')
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedUid, setSelectedUid] = useState(null)
 
   const openInTab = useOpenInTab()
 
-  const [sepFilter,    setSepFilter]    = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [roleFilter,   setRoleFilter]   = useState('all')
+  const [statusFilter,   setStatusFilter]   = useState('all')
+  const [roleFilter,     setRoleFilter]     = useState('all')
+  const [serviceFilters, setServiceFilters] = useState([])
 
-  const { tenantid, tenantnm, users = [] } = data
+  const { tenantid, tenantnm, users = [], available_servicecds = [] } = data
+  const serviceCodes = allServiceCodes.filter((c) => available_servicecds.includes(c.codevalue))
 
   const filteredUsers = useMemo(() => {
     return [...users]
       .sort((a, b) => (a.email || '').toLowerCase().localeCompare((b.email || '').toLowerCase()))
       .filter((u) => {
-        if (sepFilter !== 'all' && u.sep !== sepFilter) return false
         if (statusFilter === 'active' && !u.useyn) return false
         if (statusFilter === 'inactive' && u.useyn) return false
         if (roleFilter !== 'all' && u.rolecd !== roleFilter) return false
+        if (serviceFilters.length > 0 && !(u.servicecds || []).some((s) => serviceFilters.includes(s))) return false
         return true
       })
-  }, [users, sepFilter, statusFilter, roleFilter])
+  }, [users, statusFilter, roleFilter, serviceFilters])
+
+  const toggleServiceFilter = (v) => {
+    setServiceFilters((f) => (f.includes(v) ? f.filter((x) => x !== v) : [...f, v]))
+  }
+
+  const toggleFormServicecd = (v) => {
+    setForm((f) => ({
+      ...f,
+      servicecds: f.servicecds.includes(v) ? f.servicecds.filter((x) => x !== v) : [...f.servicecds, v],
+    }))
+  }
 
   const handleRowClick = (row) => {
-    setSelectedUid(row.useruid || row.tenantnewuid)
+    setSelectedUid(row.useruid)
     setForm({
-      sep:          row.sep || '',
-      tenantnewuid: row.tenantnewuid || '',
       useruid:      row.useruid || '',
       email:        row.email || '',
       usernm:       row.usernm || '',
@@ -63,6 +76,7 @@ export default function OrgTenantUsersPage() {
       useyn:        !!row.useyn,
       creatornm:    row.creatornm || '',
       createdts:    row.createdts || '',
+      servicecds:   row.servicecds || [],
     })
   }
 
@@ -70,15 +84,16 @@ export default function OrgTenantUsersPage() {
 
   const handleSave = () => {
     if (!form.email.trim()) { message.warning(t('msg.email.required')); return }
+    if (form.servicecds.length === 0) { message.warning(t('msg.servicecd.required')); return }
     saveMutation.mutate(
       {
-        sep: form.sep || null,
-        tenantnewuid: form.tenantnewuid || null,
         tenantid: tenantid?.toString(),
         useruid: form.useruid || null,
         email: form.email,
         rolecd: form.rolecd || 'U',
         useyn: form.useyn ?? true,
+        servicecds: form.servicecds,
+        accountuid: accountuid || null,
       },
       {
         onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
@@ -88,48 +103,23 @@ export default function OrgTenantUsersPage() {
   }
 
   const handleDelete = () => {
-    if (!form.useruid && !form.tenantnewuid) { message.warning(t('msg.select.delete')); return }
+    if (!form.useruid) { message.warning(t('msg.select.delete')); return }
 
-    const doDelete = (approvenote) => {
-      deleteMutation.mutate(
+    Modal.confirm({
+      title: t('btn.delete'), content: t('msg.confirm.delete'),
+      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutate(
         {
-          sep: form.sep,
-          tenantnewuid: form.tenantnewuid || null,
           tenantid: tenantid?.toString(),
           useruid: form.useruid,
-          approvenote: approvenote || null,
+          accountuid: accountuid || null,
         },
         {
           onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
           onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
         },
-      )
-    }
-
-    if (form.sep === 'newusers') {
-      let note = ''
-      Modal.confirm({
-        title: t('ttl.tenant.user.reject'),
-        content: (
-          <div>
-            <p>{t('msg.tenant.user.reject.reason')}</p>
-            <textarea rows={3} style={{ width: '100%' }}
-              onChange={(e) => { note = e.target.value }} />
-          </div>
-        ),
-        okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
-        onOk: () => {
-          if (!note.trim()) { Modal.error({ title: t('msg.reject.reason.required') }); return Promise.reject() }
-          doDelete(note.trim())
-        },
-      })
-    } else {
-      Modal.confirm({
-        title: t('btn.delete'), content: t('msg.confirm.delete'),
-        okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
-        onOk: () => doDelete(null),
-      })
-    }
+      ),
+    })
   }
 
   const pageTitle = roleid === 7 && tenantnm
@@ -157,16 +147,6 @@ export default function OrgTenantUsersPage() {
       {/* 필터 */}
       <div className="form-filter-group">
         <div className="filter-item">
-          <label>{t('lbl.newuser')}:</label>
-          {[['all', t('cod.filter_all')], ['newusers', t('cod.sep_newusers')]].map(([v, lbl]) => (
-            <span key={v}>
-              <input type="radio" id={`sep_${v}`} name="sepFilter" value={v}
-                checked={sepFilter === v} onChange={() => setSepFilter(v)} />
-              <label className="radio-label" htmlFor={`sep_${v}`}>{lbl}</label>
-            </span>
-          ))}
-        </div>
-        <div className="filter-item">
           <label>{t('lbl.status')}:</label>
           {[['all', t('cod.filter_all')], ['active', t('cod.status_active')], ['inactive', t('cod.status_inactive')]].map(([v, lbl]) => (
             <span key={v}>
@@ -186,6 +166,17 @@ export default function OrgTenantUsersPage() {
             </span>
           ))}
         </div>
+        <div className="filter-item">
+          <label>{t('lbl.servicecd')}:</label>
+          {serviceCodes.map((c) => (
+            <span key={c.codevalue}>
+              <input type="checkbox" id={`svcf_${c.codevalue}`}
+                checked={serviceFilters.includes(c.codevalue)}
+                onChange={() => toggleServiceFilter(c.codevalue)} />
+              <label className="radio-label" htmlFor={`svcf_${c.codevalue}`}>{t(c.term_key) || c.default_name}</label>
+            </span>
+          ))}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
@@ -199,33 +190,28 @@ export default function OrgTenantUsersPage() {
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '35%' }}>{t('thd.email_thd')}</th>
-                  <th style={{ width: '25%' }}>{t('thd.usernm_thd')}</th>
+                  <th style={{ width: '40%' }}>{t('thd.email_thd')}</th>
+                  <th style={{ width: '30%' }}>{t('thd.usernm_thd')}</th>
                   <th style={{ width: '15%' }}>{t('thd.rolecd_thd')}</th>
                   <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
-                  <th style={{ width: '10%' }}>{t('lbl.newuser')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : filteredUsers.length === 0 ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
-                ) : filteredUsers.map((u) => {
-                  const key = u.useruid || u.tenantnewuid
-                  return (
-                    <tr key={key}
-                      className={selectedUid === key ? 'selected-row' : ''}
-                      onClick={() => handleRowClick(u)}
-                    >
-                      <td>{u.email}</td>
-                      <td>{u.usernm}</td>
-                      <td>{u.rolecd === 'M' ? t('cod.rolecd_M') : t('cod.rolecd_U')}</td>
-                      <td style={{ textAlign: 'center' }}>{u.useyn ? '✔' : ''}</td>
-                      <td>{u.sep === 'newusers' ? t('cod.sep_newusers') : ''}</td>
-                    </tr>
-                  )
-                })}
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                ) : filteredUsers.map((u) => (
+                  <tr key={u.useruid}
+                    className={selectedUid === u.useruid ? 'selected-row' : ''}
+                    onClick={() => handleRowClick(u)}
+                  >
+                    <td>{u.email}</td>
+                    <td>{u.usernm}</td>
+                    <td>{u.rolecd === 'M' ? t('cod.rolecd_M') : t('cod.rolecd_U')}</td>
+                    <td style={{ textAlign: 'center' }}>{u.useyn ? '✔' : ''}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -285,6 +271,19 @@ export default function OrgTenantUsersPage() {
             <div style={{ paddingLeft: 60 }}>
               <input type="checkbox" checked={form.useyn}
                 onChange={(e) => setForm(f => ({ ...f, useyn: e.target.checked }))} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.servicecd')}:</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap', paddingLeft: 60 }}>
+              {serviceCodes.map((c) => (
+                <span key={c.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={form.servicecds.includes(c.codevalue)}
+                    onChange={() => toggleFormServicecd(c.codevalue)} />
+                  <span>{t(c.term_key) || c.default_name}</span>
+                </span>
+              ))}
             </div>
           </div>
 

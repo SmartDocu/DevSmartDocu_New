@@ -413,9 +413,17 @@ def list_datas(
 
     # ex 타입은 dataunits가 projectid 없이 tenantid로만 스코핑되므로 datas/project 경유 없이 직접 조회
     if datasourcecd == "ex" and not chapteruid:
-        rows = sb.schema(SUPABASE_SCHEMA).table("dataunits") \
-            .select("*").eq("tenantid", tenantid).eq("datasourcecd", "ex").eq("creator", str(user.id)) \
-            .execute().data or []
+        query = sb.schema(SUPABASE_SCHEMA).table("dataunits") \
+            .select("*").eq("tenantid", tenantid).eq("datasourcecd", "ex")
+
+        issystemtenant = True
+        if tenantid:
+            t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+        if issystemtenant:
+            query = query.eq("creator", str(user.id))
+
+        rows = query.execute().data or []
         rows.sort(key=lambda r: (r.get("datanm") or "").lower())
         return {"datas": rows}
 

@@ -43,12 +43,12 @@ def _get_usernm_email(sb, useruid: str):
 @router.get("/tenant-users")
 def list_tenant_users(
     tenantid: Optional[str] = Query(None),
+    accountuid: Optional[str] = Query(None),
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    user = _get_user(token)
+    _get_user(token)
     sb = _sb(token)
-    user_id = user.id
 
     # tenantid 결정: Query 파라미터 > X-Tenant-ID 헤더
     if not tenantid:
@@ -60,10 +60,21 @@ def list_tenant_users(
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
     tenantnm = t_rows[0]["tenantnm"] if t_rows else ""
 
+    # 계정이 구독 중인 서비스 목록 (서비스 조건 radio 옵션)
+    available_servicecds = []
+    if accountuid:
+        svc_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+        available_servicecds = [r["servicecd"] for r in svc_rows if r.get("servicecd")]
+
+    # 사용자별 가입 서비스 매핑 (서비스 조건 필터링용)
+    su_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid,servicecd").eq("tenantid", tenantid).execute().data or []
+    svc_map = {}
+    for r in su_rows:
+        svc_map.setdefault(r["useruid"], []).append(r["servicecd"])
+
     # tenantusers 조회
     tu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).order("useruid", desc=True).execute().data or []
     for row in tu_rows:
-        row["sep"] = "users"
         nm, email = _get_usernm_email(sb, row.get("useruid", ""))
         row["usernm"] = nm
         row["email"] = email
@@ -73,24 +84,9 @@ def list_tenant_users(
         else:
             row["creatornm"] = ""
         row["createdts"] = _fmt_dt(row.get("createdts"))
+        row["servicecds"] = svc_map.get(row.get("useruid"), [])
 
-    # tenantnewusers (미승인 대기) 조회
-    tn_rows = sb.schema(SUPABASE_SCHEMA).table("tenantnewusers").select("*").eq("tenantid", tenantid).eq("approvecd", "A").execute().data or []
-    for row in tn_rows:
-        row["sep"] = "newusers"
-        row["rolecd"] = "U"
-        nm, email = _get_usernm_email(sb, row.get("useruid", ""))
-        row["usernm"] = nm
-        row["email"] = email
-        if row.get("creator"):
-            cnm, _ = _get_usernm_email(sb, row["creator"])
-            row["creatornm"] = cnm
-        else:
-            row["creatornm"] = ""
-        row["useyn"] = False
-        row["createdts"] = _fmt_dt(row.get("createdts"))
-
-    all_users = tu_rows + tn_rows
+    all_users = tu_rows
     # 이메일 기준 정렬
     all_users.sort(key=lambda x: (x.get("email") or "").lower())
 
@@ -98,17 +94,18 @@ def list_tenant_users(
         "tenantid": tenantid,
         "tenantnm": tenantnm,
         "users": all_users,
+        "available_servicecds": available_servicecds,
     }
 
 
 class TenantUserSaveRequest(BaseModel):
-    sep: Optional[str] = None
-    tenantnewuid: Optional[str] = None
     tenantid: str
     useruid: Optional[str] = None
     email: str
     rolecd: str = "U"
     useyn: bool = True
+    servicecds: list[str] = []
+    accountuid: Optional[str] = None
 
 
 @router.post("/tenant-users")
@@ -117,6 +114,9 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     sb = _sb(token)
     user_id = user.id
     tenantid = int(body.tenantid)
+
+    if not body.accountuid or not body.servicecds:
+        raise HTTPException(status_code=400, detail="서비스를 선택해야 합니다.")
 
     # 이메일로 사용자 조회
     pub_users = sb.schema("public").table("users").select("*").eq("email", body.email).execute().data
@@ -129,6 +129,22 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     # SmartDoc 테넌트 id 조회
     sd_tenant = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid").eq("issystemtenant", True).execute().data
     other_tenantid = int(sd_tenant[0]["tenantid"]) if sd_tenant else None
+
+    # 선택된 서비스 집합을 사용자의 가입 상태로 동기화 (신규 가입 / 유지 / 탈퇴 구분)
+    current_su_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("servicecd").eq("accountuid", body.accountuid).eq("useruid", useruid).execute().data or []
+    current_servicecds = {r["servicecd"] for r in current_su_rows}
+    desired_servicecds = set(body.servicecds)
+    to_add = desired_servicecds - current_servicecds
+    to_remove = current_servicecds - desired_servicecds
+
+    # 신규로 추가되는 서비스만 인원 제한 검사
+    for scd in to_add:
+        acc_svc = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("total_users").eq("accountuid", body.accountuid).eq("servicecd", scd).maybe_single().execute()
+        total_users = acc_svc.data.get("total_users") if acc_svc.data else None
+        if total_users is not None:
+            cnt = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid", count="exact").eq("accountuid", body.accountuid).eq("servicecd", scd).execute()
+            if (cnt.count or 0) >= total_users:
+                raise HTTPException(status_code=400, detail=f"{scd} 서비스는 최대 {total_users}명까지 가입할 수 있습니다.")
 
     # 기존 tenantusers 레코드 확인
     existing_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).eq("useruid", useruid).execute().data
@@ -143,60 +159,38 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
 
     if existing:
         sb.schema(SUPABASE_SCHEMA).table("tenantusers").update(save_data).eq("tenantid", tenantid).eq("useruid", useruid).execute()
-        if body.sep == "newusers" and body.tenantnewuid:
-            sb.schema(SUPABASE_SCHEMA).table("tenantnewusers").upsert({
-                "tenantnewuid": body.tenantnewuid,
-                "approvecd": "S",
-                "approveuseruid": user_id,
-                "approvedts": datetime.now().isoformat(),
-            }).execute()
     else:
-        # tenantnewusers 확인
-        sep = body.sep
-        tenantnewuid = body.tenantnewuid
-        tn_res = sb.schema(SUPABASE_SCHEMA).table("tenantnewusers").select("tenantnewuid").eq("useruid", useruid).eq("tenantid", tenantid).eq("approvecd", "A").execute()
-        if tn_res.data:
-            tenantnewuid = tn_res.data[0]["tenantnewuid"]
-            sep = "newusers"
-
         save_data["creator"] = user_id
         sb.schema(SUPABASE_SCHEMA).table("tenantusers").insert(save_data).execute()
 
-        # public 프로젝트에 추가
-        proj_res = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("tenantid", tenantid).eq("projectnm", "public").execute().data
-        if proj_res:
-            sb.schema(SUPABASE_SCHEMA).table("projectusers").insert({
-                "projectid": proj_res[0]["projectid"],
-                "useruid": useruid,
-                "rolecd": body.rolecd,
-                "useyn": body.useyn,
-                "creator": user_id,
-            }).execute()
-
-        if sep == "newusers" and tenantnewuid:
-            sb.schema(SUPABASE_SCHEMA).table("tenantnewusers").upsert({
-                "tenantnewuid": tenantnewuid,
-                "approvecd": "S",
-                "approveuseruid": user_id,
-                "approvedts": datetime.now().isoformat(),
-            }).execute()
+    # serviceusers 동기화: 신규 가입 insert / 유지 서비스 useyn update / 탈퇴 서비스 delete
+    for scd in to_add:
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").insert({
+            "accountuid": body.accountuid,
+            "servicecd": scd,
+            "useruid": useruid,
+            "tenantid": tenantid,
+            "useyn": body.useyn,
+            "creator": user_id,
+        }).execute()
+    for scd in (desired_servicecds & current_servicecds):
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"useyn": body.useyn}).eq("accountuid", body.accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
+    for scd in to_remove:
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", body.accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
 
     return {"result": "success", "message": "사용자가 성공적으로 저장되었습니다."}
 
 
 class TenantUserDeleteRequest(BaseModel):
-    sep: Optional[str] = None
-    tenantnewuid: Optional[str] = None
     tenantid: str
     useruid: str
-    approvenote: Optional[str] = None
+    accountuid: Optional[str] = None
 
 
 @router.delete("/tenant-users")
 def delete_tenant_user(body: TenantUserDeleteRequest, token: str = Depends(get_token)):
-    user = _get_user(token)
+    _get_user(token)
     sb = _sb(token)
-    user_id = user.id
     tenantid = body.tenantid
     useruid = body.useruid
 
@@ -210,15 +204,9 @@ def delete_tenant_user(body: TenantUserDeleteRequest, token: str = Depends(get_t
         if pid:
             sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", pid).eq("useruid", useruid).execute()
 
-    # tenantnewusers 처리
-    if body.tenantnewuid:
-        sb.schema(SUPABASE_SCHEMA).table("tenantnewusers").upsert({
-            "tenantnewuid": body.tenantnewuid,
-            "approvecd": "D",
-            "approvenote": body.approvenote,
-            "approveuseruid": user_id,
-            "approvedts": datetime.now().isoformat(),
-        }).execute()
+    # 해당 계정의 서비스 가입 정보 전체 삭제 (모든 servicecd)
+    if body.accountuid:
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", body.accountuid).eq("useruid", useruid).execute()
 
     return {"result": "success", "message": "사용자 및 관련 프로젝트 사용자 정보가 모두 삭제되었습니다."}
 
