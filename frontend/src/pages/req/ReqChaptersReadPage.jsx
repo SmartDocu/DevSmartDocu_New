@@ -93,7 +93,8 @@ export default function ReqChaptersReadPage() {
     chapterPollingRef.current = setInterval(() => {
       apiClient.get(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite/status`)
         .then((res) => {
-          if (res.data.JobStatusCD !== 'S') {
+          // if (res.data.JobStatusCD !== 'S') {    //jeff 20260706 1340 아랫줄처럼 수정
+          if (res.data.JobStatusCD === 'E' || res.data.ErrorCD) {  // jeff 20260707 'S'->'P'(워커 선점)->'E' 순서로 바뀌므로 'E'(또는 에러)일 때만 완료로 판단
             setRewriting(false)
             clearInterval(chapterPollingRef.current)
             chapterPollingRef.current = null
@@ -114,7 +115,8 @@ export default function ReqChaptersReadPage() {
     pollingRef.current = setInterval(() => {
       apiClient.get(`/gendocs/${selectedGendocuid}/generate/status`)
         .then((res) => {
-          if (res.data.JobStatusCD !== 'S') {
+          // if (res.data.JobStatusCD !== 'S') {
+          if (res.data.JobStatusCD === 'E' || res.data.ErrorCD) {  // jeff 20260707 'S'->'merging'->'E' 순서로 바뀌므로 'E'(또는 에러)일 때만 완료로 판단
             setGenerating(false)
             clearInterval(pollingRef.current)
             pollingRef.current = null

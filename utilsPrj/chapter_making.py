@@ -202,7 +202,7 @@ def process_ui_object(data_item, html_result, text_template, gen_chapter_uid, us
         place_holder = replacestring
         if place_holder is None:
             place_holder = f"{{{data_item['objectnm']}}}"
-
+        
         place_holder_with_p = f"<p>{place_holder}</p>"
         result_html = html_result if data_item['type'] != 'UI_sentence' else html_result.replace('\n', '<br>')
 
@@ -232,7 +232,7 @@ def process_ui_object(data_item, html_result, text_template, gen_chapter_uid, us
         'creator': user_id,
         'createdts': run_start_dts
     }
-    
+
     return result, text_template
 
 
@@ -863,7 +863,7 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                         result_data['attempt'] = 1  # 첫 시도에서 성공
                         ai_results[original_idx] = result_data
                         
-                        print(f"✓ {data_item.get('objectnm', '')} - 첫 시도에서 성공")
+                        print(f"{data_item.get('objectnm', '')} - 첫 시도에서 성공")
                         
                         with progress_lock:
                             completed_count[0] += 1
@@ -878,14 +878,14 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                     else:
                         # 오류난 항목은 리스트에 저장
                         failed_items.append((original_idx, data_item))
-                        print(f"⚠ {data_item.get('objectnm', '')} - 오류 발생, 나중에 재시도 예정")
+                        print(f"{data_item.get('objectnm', '')} - 오류 발생, 나중에 재시도 예정")
                         
                         with progress_lock:
                             completed_count[0] += 1
 
                 except Exception as e:
                     failed_items.append((original_idx, data_item))
-                    print(f"⚠ {data_item.get('objectnm', '')} - 예외 발생: {str(e)}")
+                    print(f"{data_item.get('objectnm', '')} - 예외 발생: {str(e)}")
                     
                     with progress_lock:
                         completed_count[0] += 1
@@ -1001,6 +1001,7 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                 # place_holder = f"{{{{{data_item['objectnm']}}}}}"
                 # place_holder_with_p = f"<p>{place_holder}</p>"
                 place_holder = replace_dict.get(gen_object_uid)
+
                 if place_holder is None:
                     continue
                 # place_holder = f"{replace_dict[gen_object_uid]}"
@@ -1026,7 +1027,7 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                 result_data['result']['errorcd'] = None
                 result_data['result']['errormessage'] = None
                 update_genobjects(supabase, [result_data['result']])
-
+            
     return text_template
 
 
