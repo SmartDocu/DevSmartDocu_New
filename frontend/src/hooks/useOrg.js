@@ -133,12 +133,14 @@ export function useSendInvitation() {
 
 // ─── Tenant Users ─────────────────────────────────────────────────────────────
 
-export function useOrgTenantUsers(tenantid) {
+export function useOrgTenantUsers(tenantid, accountuid) {
   return useQuery({
-    queryKey: ['org-tenant-users', tenantid],
+    queryKey: ['org-tenant-users', tenantid, accountuid],
     queryFn: () =>
       apiClient
-        .get('/org/tenant-users', { params: tenantid ? { tenantid } : {} })
+        .get('/org/tenant-users', {
+          params: { ...(tenantid ? { tenantid } : {}), ...(accountuid ? { accountuid } : {}) },
+        })
         .then((r) => r.data),
   })
 }
