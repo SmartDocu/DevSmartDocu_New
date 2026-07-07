@@ -1098,7 +1098,7 @@ def send_sms(body: SendSmsRequest):
     code = "".join(random.choices(string.digits, k=6))
     _sms_storage[phone] = {
         "code": code,
-        "expires_at": datetime.now() + timedelta(minutes=_SMS_EXPIRE_MINUTES),
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=_SMS_EXPIRE_MINUTES),
         "attempts": 0,
     }
 
@@ -1188,7 +1188,7 @@ def verify_sms(body: VerifySmsRequest):
             detail="인증번호를 먼저 요청해주세요.",
         )
 
-    if datetime.now() > record["expires_at"]:
+    if datetime.now(timezone.utc) > record["expires_at"]:
         _sms_storage.pop(phone, None)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

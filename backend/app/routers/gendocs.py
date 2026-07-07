@@ -121,7 +121,7 @@ def list_gendocs(
     if not docid:
         return {"gendocs": [], "docnm": None, "dataparams": []}
 
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
     sd = start_date or (today - timedelta(days=10)).strftime("%Y-%m-%d")
     ed = end_date or today.strftime("%Y-%m-%d")
     offsetminutes = _get_offsetminutes(sb, str(user.id))
@@ -255,7 +255,7 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # 1. Create gendocs
     result = sb.schema(SUPABASE_SCHEMA).table("gendocs").insert({
@@ -628,7 +628,7 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
         if replace_key:
             texttemplate = texttemplate.replace(replace_key, html)
 
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Update genchapters
     sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
@@ -948,7 +948,7 @@ async def upload_chapter_file(
     content = await file.read()
     sb.storage.from_("sdoc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
     public_url = sb.storage.from_("sdoc").get_public_url(path)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
         "updatefileurl": public_url,
@@ -1000,7 +1000,7 @@ async def upload_file(
     content = await file.read()
     sb.storage.from_("sdoc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
     public_url = sb.storage.from_("sdoc").get_public_url(path)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
         "updatefileurl": public_url,

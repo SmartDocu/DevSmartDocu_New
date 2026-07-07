@@ -328,14 +328,14 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
         )
 
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, ot)
-    from datetime import datetime
-    _llm_start_dts = datetime.now()
+    from datetime import datetime, timezone
+    _llm_start_dts = datetime.now(timezone.utc)
     try:
         response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
     except Exception as e:
-        _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now())
+        _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now(timezone.utc))
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
-    _llm_end_dts = datetime.now()
+    _llm_end_dts = datetime.now(timezone.utc)
 
     if not isinstance(response, dict):
         _write_doc_log(False, "LLM 응답 형식 오류", 0, 0, _llm_start_dts, _llm_end_dts)

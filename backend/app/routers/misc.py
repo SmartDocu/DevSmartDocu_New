@@ -245,7 +245,7 @@ class HidePopupRequest(BaseModel):
 def hide_popup(body: HidePopupRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb_svc()
-    enddt = (datetime.utcnow() + timedelta(days=body.days)).isoformat()
+    enddt = (datetime.now(timezone.utc) + timedelta(days=body.days)).isoformat()
     existing = sb.schema(SUPABASE_SCHEMA).table("popupdeactivates").select("*").eq("useruid", str(user.id)).eq("popupid", body.popupid).execute().data
     if existing:
         sb.schema(SUPABASE_SCHEMA).table("popupdeactivates").update({"enddt": enddt}).eq("useruid", str(user.id)).eq("popupid", body.popupid).execute()

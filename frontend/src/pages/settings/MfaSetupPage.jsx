@@ -130,9 +130,7 @@ export default function MfaSetupPage() {
         </Descriptions.Item>
         {verifiedFactor && (
           <Descriptions.Item label={t('lbl.mfa.registered_at')}>
-            {verifiedFactor.created_at
-              ? new Date(verifiedFactor.created_at).toLocaleDateString()
-              : '-'}
+            {verifiedFactor.created_at || '-'}
           </Descriptions.Item>
         )}
       </Descriptions>
