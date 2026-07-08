@@ -172,6 +172,39 @@ def _get_user_client(access_token: str, refresh_token: Optional[str] = None):
     return get_thread_supabase(access_token=access_token, refresh_token=refresh_token)
 
 
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
+    if not raw:
+        return ""
+    try:
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(raw)
+
+
 def _check_mfa_required(user_client) -> tuple[bool, Optional[str]]:
     """
     MFA 필요 여부와 factor_id를 반환한다.
@@ -957,6 +990,8 @@ def get_mfa_factors(token: str = Depends(get_token)):
             detail="유효하지 않은 토큰입니다.",
         )
 
+    offsetminutes = _get_offsetminutes(user_client, user_id)
+
     # Admin REST API로 factor 목록 조회 (set_session 없이도 동작)
     try:
         headers = {
@@ -977,7 +1012,7 @@ def get_mfa_factors(token: str = Depends(get_token)):
             "factor_id": f.get("id"),
             "status": f.get("status"),
             "friendly_name": f.get("friendly_name", ""),
-            "created_at": f.get("created_at", ""),
+            "created_at": _fmt_dt(f.get("created_at"), offsetminutes),
         }
         for f in factors
         if f.get("factor_type") == "totp"

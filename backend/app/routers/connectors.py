@@ -1,5 +1,6 @@
 """Connectors router — API connector management"""
 import json
+from datetime import timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +10,39 @@ from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
+
+
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
+    if not raw:
+        return ""
+    try:
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(raw)
 
 HTTP_METHODS  = []  # codes table: http_methods
 KEY_LOCATIONS = []  # codes table: param_locationcd
@@ -94,6 +128,7 @@ class ConnectorSaveRequest(BaseModel):
 def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     conns = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -155,6 +190,7 @@ def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = D
     for c in conns:
         uid = c["connuid"]
         row = dict(c)
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         api = apis.get(uid, {})
         cred = creds.get(uid, {})
 

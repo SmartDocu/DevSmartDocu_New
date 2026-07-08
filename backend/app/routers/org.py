@@ -1,7 +1,7 @@
 """Org router — Tenant Users, Tenant LLMs, Projects, Project Users, Invite Members"""
 import json
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -14,12 +14,34 @@ router = APIRouter()
 
 
 
-def _fmt_dt(raw) -> str:
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
     if not raw:
         return ""
     try:
         from dateutil import parser as dtparser
         dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
@@ -47,8 +69,9 @@ def list_tenant_users(
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    _get_user(token)
+    user = _get_user(token)
     sb = _sb(token)
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     # tenantid 결정: Query 파라미터 > X-Tenant-ID 헤더
     if not tenantid:
@@ -83,7 +106,7 @@ def list_tenant_users(
             row["creatornm"] = cnm
         else:
             row["creatornm"] = ""
-        row["createdts"] = _fmt_dt(row.get("createdts"))
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         row["servicecds"] = svc_map.get(row.get("useruid"), [])
 
     all_users = tu_rows
@@ -363,6 +386,7 @@ def list_org_projects(
 ):
     user = _get_user(token)
     sb = _sb(token)
+    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     if not tenantid:
         tenantid = header_tenantid
@@ -374,7 +398,7 @@ def list_org_projects(
 
     rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).order("createdts", desc=True).execute().data or []
     for row in rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"))
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         if row.get("creator"):
             nm, _ = _get_usernm_email(sb, row["creator"])
             row["creatornm"] = nm
@@ -472,6 +496,7 @@ def list_project_users(
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
+    offsetminutes = _get_offsetminutes(sb, str(user_id))
 
     # ── 프로젝트 목록 (드롭다운용) ──────────────────────────────
     # tenantmanager=Y → 기업 전체 프로젝트 / 그 외 → 사용자가 속한 프로젝트(manager)
@@ -500,7 +525,7 @@ def list_project_users(
     # ── 선택된 프로젝트 사용자 ──────────────────────────────────
     pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", projectid).order("useruid", desc=True).execute().data or []
     for row in pu_rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"))
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         nm, email = _get_usernm_email(sb, row.get("useruid", ""))
         row["usernm"] = nm
         row["email"] = email
@@ -612,6 +637,7 @@ def list_invite_members(token: str = Depends(get_token)):
 
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
+    offsetminutes = _get_offsetminutes(svc, user_id)
 
     rows = (
         sd.table("userregreqs")
@@ -622,7 +648,7 @@ def list_invite_members(token: str = Depends(get_token)):
         .data or []
     )
     for row in rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"))
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         scds = row.get("servicecds")
         if isinstance(scds, str):
             try:

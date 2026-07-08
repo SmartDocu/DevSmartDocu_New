@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import timedelta, timezone
 from typing import Optional, Any
 from urllib.parse import urlparse
 
@@ -22,6 +23,37 @@ from backend.app.schemas.docs import (
 router = APIRouter()
 
 
+def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+    try:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
+        if not tu.data:
+            return None
+        tz = tu.data.get("timezone")
+        if not tz and tu.data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
+            if t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
+    if not raw:
+        return ""
+    try:
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(raw)
 
 
 # ─── 프로젝트 목록 (문서 생성 폼용) ──────────────────────────────────────────
@@ -59,6 +91,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
+    offsetminutes = _get_offsetminutes(sb, user_id)
 
     # 1. 사용자가 열람 가능한 문서 목록 (Django: fn_docs_filtered__r_user_viewer)
     docs_data = (
@@ -173,7 +206,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
             "tenantnm": tenant_map.get(tenantid, ""),
             "basetemplatenm": details.get("basetemplatenm"),
             "basetemplateurl": details.get("basetemplateurl"),
-            "createdts": details.get("createdts", ""),
+            "createdts": _fmt_dt(details.get("createdts"), offsetminutes),
             "editbuttonyn": editbuttonyn,
             "docgroupid": dgid,
             "docgroupnm": docgroup_map.get(dgid) if dgid else None,
