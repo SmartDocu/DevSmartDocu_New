@@ -1,5 +1,4 @@
 """Org router — Tenant Users, Tenant LLMs, Projects, Project Users, Invite Members"""
-import json
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
@@ -649,19 +648,13 @@ def list_invite_members(token: str = Depends(get_token)):
     )
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
-        scds = row.get("servicecds")
-        if isinstance(scds, str):
-            try:
-                row["servicecds"] = json.loads(scds)
-            except Exception:
-                row["servicecds"] = []
 
     return {"invitations": rows, "tenantid": str(tenantid)}
 
 
 class InviteMembersRequest(BaseModel):
     email: str
-    servicecds: list[str]
+    servicecd: str
 
 
 @router.post("/invite-members")
@@ -680,7 +673,7 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
     result = sd.table("userregreqs").insert({
         "tenantid": tenantid,
         "email": body.email,
-        "servicecds": body.servicecds,
+        "servicecd": body.servicecd,
         "creator": user_id,
     }).execute()
 
@@ -694,17 +687,15 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
     tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
 
     # 서비스명 조회
-    service_names = []
-    for scd in body.servicecds:
-        code_rows = (
-            sd.table("codes")
-            .select("default_name")
-            .eq("codegroupcd", "servicecd")
-            .eq("codevalue", scd)
-            .execute()
-            .data
-        )
-        service_names.append(code_rows[0].get("default_name", scd) if code_rows else scd)
+    code_rows = (
+        sd.table("codes")
+        .select("default_name")
+        .eq("codegroupcd", "servicecd")
+        .eq("codevalue", body.servicecd)
+        .execute()
+        .data
+    )
+    service_name = code_rows[0].get("default_name", body.servicecd) if code_rows else body.servicecd
 
     invite_link = f"https://dev-smart-doc.azurewebsites.net/register-invite?req={regreqsuid}"
 
@@ -712,7 +703,7 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
     mail_body = (
         f"안녕하세요,\n\n"
         f"{tenantnm}의 관리자로부터 D2Doc 서비스에 초대되었습니다.\n\n"
-        f"초대된 서비스: {', '.join(service_names)}\n\n"
+        f"초대된 서비스: {service_name}\n\n"
         f"아래 링크를 클릭하여 회원가입을 완료해주세요:\n"
         f"{invite_link}\n\n"
         f"감사합니다.\nD2Doc 팀"

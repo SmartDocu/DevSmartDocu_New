@@ -4,7 +4,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useOrgInvitations, useSendInvitation } from '@/hooks/useOrg'
 
-const EMPTY_FORM = { email: '', servicecds: [] }
+const EMPTY_FORM = { email: '', servicecd: '' }
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
@@ -28,28 +28,23 @@ export default function OrgInviteMembersPage() {
 
   const handleRowClick = (inv) => {
     setSelectedId(inv.userregreqsuid)
-    setForm({ email: inv.email, servicecds: inv.servicecds || [] })
+    setForm({ email: inv.email, servicecd: inv.servicecd || '' })
   }
 
-  const toggleService = (scd) => {
+  const selectService = (scd) => {
     if (selectedId) return
-    setForm((f) => {
-      const current = f.servicecds || []
-      return current.includes(scd)
-        ? { ...f, servicecds: current.filter((s) => s !== scd) }
-        : { ...f, servicecds: [...current, scd] }
-    })
+    setForm((f) => ({ ...f, servicecd: scd }))
   }
 
   const handleSend = () => {
     if (!form.email.trim()) { message.warning(t('msg.email.required')); return }
-    if (!(form.servicecds || []).length) { message.warning(t('msg.invite.service.required')); return }
+    if (!form.servicecd) { message.warning(t('msg.invite.service.required')); return }
 
     sendMutation.mutate(
-      { email: form.email, servicecds: form.servicecds },
+      { email: form.email, servicecd: form.servicecd },
       {
         onSuccess: () => { message.success(t('msg.invite.sent')); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
       },
     )
   }
@@ -91,7 +86,7 @@ export default function OrgInviteMembersPage() {
                     onClick={() => handleRowClick(inv)}
                   >
                     <td>{inv.email}</td>
-                    <td>{(inv.servicecds || []).join(', ')}</td>
+                    <td>{inv.servicecd}</td>
                     <td>{inv.createdts}</td>
                   </tr>
                 ))}
@@ -137,9 +132,10 @@ export default function OrgInviteMembersPage() {
                   style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: selectedId ? 'default' : 'pointer' }}
                 >
                   <input
-                    type="checkbox"
-                    checked={(form.servicecds || []).includes(code.codevalue)}
-                    onChange={() => toggleService(code.codevalue)}
+                    type="radio"
+                    name="servicecd"
+                    checked={form.servicecd === code.codevalue}
+                    onChange={() => selectService(code.codevalue)}
                     disabled={!!selectedId}
                   />
                   <span>{t(code.term_key) || code.default_name}</span>

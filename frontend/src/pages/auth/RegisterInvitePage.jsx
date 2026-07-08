@@ -109,9 +109,9 @@ export default function RegisterInvitePage() {
               borderRadius: 6, padding: '10px 14px', marginBottom: 20, fontSize: 13,
             }}>
               <strong>{invite.tenantnm}</strong>{t('inf.invite.from')}
-              {invite.servicecds?.length > 0 && (
+              {invite.servicecd && (
                 <span style={{ marginLeft: 4 }}>
-                  ({invite.servicecds.join(', ')})
+                  ({invite.servicecd})
                 </span>
               )}
             </div>

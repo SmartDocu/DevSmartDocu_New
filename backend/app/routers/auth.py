@@ -1262,21 +1262,15 @@ def _resolve_invite(req_uuid: str) -> dict:
     invite = row.data
     email = invite.get("email", "")
     tenantid = invite.get("tenantid")
-    servicecds = invite.get("servicecds") or []
-    if isinstance(servicecds, str):
-        import json as _json
-        try:
-            servicecds = _json.loads(servicecds)
-        except Exception:
-            servicecds = []
+    servicecd = invite.get("servicecd")
 
     # servicecd → productcd (Free 플랜 기준)
     productcds = []
-    for scd in servicecds:
+    if servicecd:
         prod_rows = (
             sd.table("products")
             .select("productcd")
-            .eq("servicecd", scd)
+            .eq("servicecd", servicecd)
             .eq("plancd", "Fr")
             .eq("useyn", True)
             .eq("is_sales", True)
@@ -1294,7 +1288,7 @@ def _resolve_invite(req_uuid: str) -> dict:
         "tenantid": str(tenantid) if tenantid else None,
         "tenantid_int": int(tenantid) if tenantid else None,
         "tenantnm": tenantnm,
-        "servicecds": servicecds,
+        "servicecd": servicecd,
         "productcds": productcds,
     }
 
@@ -1307,7 +1301,7 @@ def get_invite_info(req: str = Query(...)):
         "email": invite["email"],
         "tenantid": invite["tenantid"],
         "tenantnm": invite["tenantnm"],
-        "servicecds": invite["servicecds"],
+        "servicecd": invite["servicecd"],
         "productcds": invite["productcds"],
     }
 
