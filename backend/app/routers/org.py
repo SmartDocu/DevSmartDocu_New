@@ -653,7 +653,7 @@ def list_invite_members(token: str = Depends(get_token)):
 
 
 class InviteMembersRequest(BaseModel):
-    email: str
+    emails: list[str]
     servicecd: str
 
 
@@ -666,25 +666,104 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
     user_id = str(user.id)
     tenantid = _get_tenant_manager_tenantid(user_id)
 
+    seen = set()
+    emails = [e.strip() for e in body.emails if e and e.strip()]
+    emails = [e for e in emails if not (e in seen or seen.add(e))]
+    if not emails:
+        raise HTTPException(status_code=400, detail="초대할 이메일을 입력해주세요.")
+
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
-    # userregreqs 삽입
-    result = sd.table("userregreqs").insert({
-        "tenantid": tenantid,
-        "email": body.email,
-        "servicecd": body.servicecd,
-        "creator": user_id,
-    }).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=500, detail="초대 요청 저장에 실패했습니다.")
-
-    regreqsuid = result.data[0].get("userregreqsuid") or result.data[0].get("id", "")
-
-    # 테넌트명 조회
-    t_row = sd.table("tenants").select("tenantnm").eq("tenantid", tenantid).maybe_single().execute()
+    # 테넌트명 / accountuid 조회 (기존 llmkeys.py의 tenantid→accountuid 해석 패턴과 동일)
+    t_row = sd.table("tenants").select("tenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
     tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    if issystemtenant:
+        acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    else:
+        acc = sd.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
+    accountuid = acc.data["accountuid"] if acc and acc.data else None
+
+    # 이미 public.users에 가입된 이메일 → useruid 매핑
+    user_rows = svc.schema("public").table("users").select("useruid,email").in_("email", emails).execute().data or []
+    email_to_useruid = {r["email"]: r["useruid"] for r in user_rows}
+    existing_useruids = {u for u in email_to_useruid.values() if u}
+
+    # 해당 서비스에 대한 기존 serviceusers 행 전부 조회 (active/inactive 구분 위해 useyn 필터 없이)
+    su_by_useruid = {}
+    if existing_useruids:
+        su_rows = (
+            sd.table("serviceusers")
+            .select("useruid,useyn")
+            .eq("tenantid", tenantid)
+            .eq("servicecd", body.servicecd)
+            .in_("useruid", list(existing_useruids))
+            .execute()
+            .data or []
+        )
+        for r in su_rows:
+            su_by_useruid[r["useruid"]] = r["useyn"]
+
+    skipped = []      # 이미 해당 서비스에 가입되어 있음
+    auto_added = []   # 계정은 있으나 이 서비스엔 미가입 → 자동으로 테넌트/서비스 등록
+    to_invite = []    # 계정 자체가 없음 → 기존 회원가입 초대 메일 발송
+    sent, failed = [], []
+
+    for email in emails:
+        useruid = email_to_useruid.get(email)
+        if not useruid:
+            to_invite.append(email)
+            continue
+
+        if su_by_useruid.get(useruid):
+            skipped.append(email)
+            continue
+
+        # 계정은 있지만 이 서비스엔 미가입 → 초대한 테넌트/서비스에 바로 등록
+        try:
+            existing_tu = sd.table("tenantusers").select("useruid").eq("tenantid", tenantid).eq("useruid", useruid).execute().data
+            if not existing_tu:
+                sd.table("tenantusers").insert({
+                    "tenantid": tenantid,
+                    "useruid": useruid,
+                    "rolecd": "U",
+                    "useyn": True,
+                    "creator": user_id,
+                }).execute()
+
+            if not accountuid:
+                failed.append({"email": email, "error": "계정(accountuid)을 확인할 수 없어 서비스 등록에 실패했습니다."})
+                continue
+
+            if useruid in su_by_useruid:
+                # 과거 탈퇴(useyn=False) 이력이 있으면 재활성화
+                sd.table("serviceusers").update({"useyn": True}).eq("accountuid", accountuid).eq("servicecd", body.servicecd).eq("useruid", useruid).execute()
+            else:
+                sd.table("serviceusers").insert({
+                    "accountuid": accountuid,
+                    "servicecd": body.servicecd,
+                    "useruid": useruid,
+                    "tenantid": tenantid,
+                    "useyn": True,
+                    "creator": user_id,
+                }).execute()
+            auto_added.append(email)
+        except Exception as e:
+            failed.append({"email": email, "error": str(e)})
+
+    if not to_invite:
+        message = ""
+        if auto_added:
+            message += f"{len(auto_added)}명은 이미 가입된 계정이라 바로 서비스에 등록했습니다. "
+        if skipped:
+            message += f"{len(skipped)}명은 이미 가입되어 있어 제외했습니다. "
+        if failed:
+            message += f"{len(failed)}건 처리 실패."
+        return {
+            "ok": len(failed) == 0, "sent": [], "failed": failed, "skipped": skipped, "auto_added": auto_added,
+            "message": message.strip() or "처리할 이메일이 없습니다.",
+        }
 
     # 서비스명 조회
     code_rows = (
@@ -697,28 +776,55 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
     )
     service_name = code_rows[0].get("default_name", body.servicecd) if code_rows else body.servicecd
 
-    invite_link = f"https://dev-smart-doc.azurewebsites.net/register-invite?req={regreqsuid}"
-
-    subject = f"[D2Doc] {tenantnm} 서비스 초대"
-    mail_body = (
-        f"안녕하세요,\n\n"
-        f"{tenantnm}의 관리자로부터 D2Doc 서비스에 초대되었습니다.\n\n"
-        f"초대된 서비스: {service_name}\n\n"
-        f"아래 링크를 클릭하여 회원가입을 완료해주세요:\n"
-        f"{invite_link}\n\n"
-        f"감사합니다.\nD2Doc 팀"
-    )
-
     login_user = settings.EMAIL_HOST_USER
     try:
-        msg = MIMEText(mail_body, "plain", "utf-8")
-        msg["Subject"] = subject
-        msg["From"] = login_user
-        msg["To"] = body.email
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(login_user, settings.EMAIL_HOST_PASSWORD)
-            smtp.sendmail(login_user, [body.email], msg.as_string())
+        smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        smtp.login(login_user, settings.EMAIL_HOST_PASSWORD)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"메일 전송 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"메일 서버 연결 실패: {str(e)}")
 
-    return {"ok": True, "message": "초대 메일이 발송되었습니다."}
+    try:
+        for email in to_invite:
+            try:
+                result = sd.table("userregreqs").insert({
+                    "tenantid": tenantid,
+                    "email": email,
+                    "servicecd": body.servicecd,
+                    "creator": user_id,
+                }).execute()
+                if not result.data:
+                    failed.append({"email": email, "error": "초대 요청 저장에 실패했습니다."})
+                    continue
+
+                regreqsuid = result.data[0].get("userregrequid", "")
+                invite_link = f"https://dev-smart-doc.azurewebsites.net/register-invite?req={regreqsuid}"
+
+                subject = f"[D2Doc] {tenantnm} 서비스 초대"
+                mail_body = (
+                    f"안녕하세요,\n\n"
+                    f"{tenantnm}의 관리자로부터 D2Doc 서비스에 초대되었습니다.\n\n"
+                    f"초대된 서비스: {service_name}\n\n"
+                    f"아래 링크를 클릭하여 회원가입을 완료해주세요:\n"
+                    f"{invite_link}\n\n"
+                    f"감사합니다.\nD2Doc 팀"
+                )
+                msg = MIMEText(mail_body, "plain", "utf-8")
+                msg["Subject"] = subject
+                msg["From"] = login_user
+                msg["To"] = email
+                smtp.sendmail(login_user, [email], msg.as_string())
+                sent.append(email)
+            except Exception as e:
+                failed.append({"email": email, "error": str(e)})
+    finally:
+        smtp.quit()
+
+    message = f"{len(sent)}명에게 초대 메일이 발송되었습니다."
+    if auto_added:
+        message += f" (이미 가입된 계정 {len(auto_added)}명은 바로 서비스에 등록됨)"
+    if skipped:
+        message += f" (이미 가입되어 제외 {len(skipped)}건)"
+    if failed:
+        message += f" ({len(failed)}건 실패)"
+
+    return {"ok": len(failed) == 0, "sent": sent, "failed": failed, "skipped": skipped, "auto_added": auto_added, "message": message}

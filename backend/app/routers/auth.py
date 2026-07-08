@@ -1255,7 +1255,7 @@ def _resolve_invite(req_uuid: str) -> dict:
     svc = _get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
-    row = sd.table("userregreqs").select("*").eq("userregreqsuid", req_uuid).maybe_single().execute()
+    row = sd.table("userregreqs").select("*").eq("userregrequid", req_uuid).maybe_single().execute()
     if not row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="유효하지 않은 초대 링크입니다.")
 

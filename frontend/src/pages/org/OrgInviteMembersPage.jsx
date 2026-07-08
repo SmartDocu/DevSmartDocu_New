@@ -4,15 +4,17 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useOrgInvitations, useSendInvitation } from '@/hooks/useOrg'
 
-const EMPTY_FORM = { email: '', servicecd: '' }
+const EMPTY_FORM = { emails: [], servicecd: '' }
 
-const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_SPLIT_REGEX = /[\s,;\t\r\n]+/
 
 export default function OrgInviteMembersPage() {
   const { message } = App.useApp()
   useLangStore((s) => s.translations)
 
   const [form, setForm] = useState(EMPTY_FORM)
+  const [emailInput, setEmailInput] = useState('')
   const [selectedId, setSelectedId] = useState(null)
 
   const { data: serviceCodes = [] } = useMenuCodes('servicecd')
@@ -24,11 +26,13 @@ export default function OrgInviteMembersPage() {
   const handleNew = () => {
     setSelectedId(null)
     setForm(EMPTY_FORM)
+    setEmailInput('')
   }
 
   const handleRowClick = (inv) => {
-    setSelectedId(inv.userregreqsuid)
-    setForm({ email: inv.email, servicecd: inv.servicecd || '' })
+    setSelectedId(inv.userregrequid)
+    setForm({ emails: inv.email ? [inv.email] : [], servicecd: inv.servicecd || '' })
+    setEmailInput('')
   }
 
   const selectService = (scd) => {
@@ -36,14 +40,58 @@ export default function OrgInviteMembersPage() {
     setForm((f) => ({ ...f, servicecd: scd }))
   }
 
+  const addEmail = () => {
+    if (selectedId) return
+    const email = emailInput.trim()
+    if (!email) return
+    if (!EMAIL_REGEX.test(email)) { message.warning(t('msg.email.invalid')); return }
+    if (form.emails.includes(email)) { setEmailInput(''); return }
+    setForm((f) => ({ ...f, emails: [...f.emails, email] }))
+    setEmailInput('')
+  }
+
+  const removeEmail = (email) => {
+    if (selectedId) return
+    setForm((f) => ({ ...f, emails: f.emails.filter((e) => e !== email) }))
+  }
+
+  const handleEmailKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addEmail()
+    }
+  }
+
+  const handleEmailPaste = (e) => {
+    if (selectedId) return
+    const text = e.clipboardData.getData('text')
+    if (!text) return
+    const candidates = text.split(EMAIL_SPLIT_REGEX).map((s) => s.trim()).filter(Boolean)
+    const validEmails = candidates.filter((c) => EMAIL_REGEX.test(c))
+    if (validEmails.length === 0) return
+
+    e.preventDefault()
+    setForm((f) => {
+      const merged = [...f.emails]
+      for (const email of validEmails) {
+        if (!merged.includes(email)) merged.push(email)
+      }
+      return { ...f, emails: merged }
+    })
+    setEmailInput('')
+
+    const skippedCount = candidates.length - validEmails.length
+    if (skippedCount > 0) message.warning(t('msg.invite.paste.skipped').replace('{n}', skippedCount))
+  }
+
   const handleSend = () => {
-    if (!form.email.trim()) { message.warning(t('msg.email.required')); return }
     if (!form.servicecd) { message.warning(t('msg.invite.service.required')); return }
+    if (!form.emails.length) { message.warning(t('msg.email.required')); return }
 
     sendMutation.mutate(
-      { email: form.email, servicecd: form.servicecd },
+      { emails: form.emails, servicecd: form.servicecd },
       {
-        onSuccess: () => { message.success(t('msg.invite.sent')); handleNew() },
+        onSuccess: (data) => { message.success(data?.message || t('msg.invite.sent')); handleNew() },
         onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
       },
     )
@@ -81,8 +129,8 @@ export default function OrgInviteMembersPage() {
                   <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : invitations.map((inv) => (
                   <tr
-                    key={inv.userregreqsuid}
-                    className={selectedId === inv.userregreqsuid ? 'selected-row' : ''}
+                    key={inv.userregrequid}
+                    className={selectedId === inv.userregrequid ? 'selected-row' : ''}
                     onClick={() => handleRowClick(inv)}
                   >
                     <td>{inv.email}</td>
@@ -113,17 +161,6 @@ export default function OrgInviteMembersPage() {
           </div>
 
           <div className="form-group">
-            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.invite.email')}:</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              disabled={!!selectedId}
-              style={selectedId ? roStyle : {}}
-            />
-          </div>
-
-          <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.invite.services')}:</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, marginTop: 8, paddingLeft: 4 }}>
               {serviceCodes.map((code) => (
@@ -140,6 +177,50 @@ export default function OrgInviteMembersPage() {
                   />
                   <span>{t(code.term_key) || code.default_name}</span>
                 </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.invite.email')}:</label>
+            {!selectedId && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  onKeyDown={handleEmailKeyDown}
+                  onPaste={handleEmailPaste}
+                  placeholder={t('inf.invite.email.placeholder')}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn btn-primary" type="button" onClick={addEmail}>{t('btn.add')}</button>
+              </div>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              {form.emails.length === 0 ? (
+                <span style={{ color: '#888', fontSize: 13 }}>{t('msg.invite.email.empty')}</span>
+              ) : form.emails.map((email) => (
+                <span
+                  key={email}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '4px 10px', borderRadius: 14,
+                    background: selectedId ? '#f0f0f0' : '#e8eaf6',
+                    border: '1px solid #ccc', fontSize: 13,
+                  }}
+                >
+                  {email}
+                  {!selectedId && (
+                    <span
+                      role="button"
+                      onClick={() => removeEmail(email)}
+                      style={{ cursor: 'pointer', color: '#888', fontWeight: 'bold' }}
+                    >
+                      ×
+                    </span>
+                  )}
+                </span>
               ))}
             </div>
           </div>
