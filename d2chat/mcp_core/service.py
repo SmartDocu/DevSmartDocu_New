@@ -1,7 +1,9 @@
 """
 service.py MCP 채팅 서비스 - 싱글톤 패턴으로 MCPAgent 관리
 """
-from typing import Dict
+from typing import Dict, Optional
+
+import pandas as pd
 
 from d2chat.mcp_agent.mcp_agent import MCPAgent
 from d2chat.config import DEFAULT_LLM_MODEL
@@ -56,6 +58,23 @@ class MCPChatService:
                 "query": None,
                 "visualization_type": "none"
             }
+
+    def upload_excel_dataset(
+        self, session_id: str, dataset_key: str, df: pd.DataFrame,
+        filename: str, sheet_name: Optional[str] = None, log_ctx: dict = None,
+    ):
+        """업로드/API로 가져온 DataFrame을 세션에 등록하고 해당 세션을 external 모드로 전환"""
+        if not self._initialized or self._agent is None:
+            raise RuntimeError("MCP 서비스가 초기화되지 않았습니다.")
+
+        return self._agent.register_excel_dataset(
+            session_id=session_id,
+            dataset_key=dataset_key,
+            df=df,
+            filename=filename,
+            sheet_name=sheet_name,
+            log_ctx=log_ctx,
+        )
 
     def seed_session_history(self, session_id: str, question: str, answer: str) -> None:
         """이어하기: 에이전트 인메모리 히스토리에 이전 Q&A 주입"""

@@ -1019,6 +1019,7 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                         'genchapteruid': gen_chapter_uid,
                         'gentexttemplate': text_template,
                         'createuserid': user_id,
+                        'createfiledts': datetime.now(timezone.utc).isoformat()
                     }, gen_chapter_uid)
 
             if result_data.get('result') and isinstance(result_data.get('result'), dict):

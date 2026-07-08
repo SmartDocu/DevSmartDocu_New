@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { App } from 'antd'
-import { CodeOutlined, CloseOutlined } from '@ant-design/icons'
+import { CodeOutlined, CloseOutlined, PaperClipOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import DatasetUploadModal from '@/components/DatasetUploadModal/DatasetUploadModal'
 import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
 import '../d2shared/d2common.css'
@@ -60,6 +61,7 @@ export default function D2ChatPage() {
   const [menuSection, setMenuSection] = useState(null) // 'history' | 'favorites' | 'sent' | 'received'
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [shareTarget, setShareTarget] = useState(null)
+  const [datasetModalOpen, setDatasetModalOpen] = useState(false)
 
   const bottomRef = useRef(null)
 
@@ -290,6 +292,19 @@ export default function D2ChatPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleDatasetUploaded = (data) => {
+    if (data.session_id) updateSessionId(data.session_id)
+    setShowAutoTest(false)
+
+    const summary = data.datasets
+      .map((d) => `- ${d.filename} (행 ${d.row_count}, 컬럼 ${d.columns.length}) : ${d.description || ''}`)
+      .join('\n')
+    addMessage(
+      'assistant',
+      `데이터셋이 등록되었습니다. 이제부터 이 대화는 아래 데이터를 대상으로 답변합니다 (기존 DB 조회는 사용되지 않습니다).\n${summary}`,
+    )
   }
 
   const runAutoTest = async () => {
@@ -588,6 +603,15 @@ export default function D2ChatPage() {
                     <button
                       type="button"
                       className="toggle-query-btn"
+                      title="데이터셋 추가 (파일 업로드 / API 연결)"
+                      onClick={() => setDatasetModalOpen(true)}
+                    >
+                      <PaperClipOutlined style={{ fontSize: 18 }} />
+                      <span>데이터 추가</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="toggle-query-btn"
                       title={queryPanelOpen ? '쿼리 숨기기' : '쿼리 보기'}
                       onClick={() => setQueryPanelOpen((prev) => !prev)}
                     >
@@ -709,6 +733,14 @@ export default function D2ChatPage() {
           onShared={handleShared}
         />
       )}
+
+      {/* 데이터셋 추가(업로드/API) 모달 */}
+      <DatasetUploadModal
+        open={datasetModalOpen}
+        sessionId={sessionId}
+        onClose={() => setDatasetModalOpen(false)}
+        onSuccess={handleDatasetUploaded}
+      />
     </div>
   )
 }

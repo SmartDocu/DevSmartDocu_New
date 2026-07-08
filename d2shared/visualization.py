@@ -213,6 +213,44 @@ def dataframe_to_html_table(df: pd.DataFrame, max_rows: int = 100) -> tuple:
     return styler.to_html(), data_json
 
 
+def _is_ratio_like(col_name: str, series: pd.Series) -> bool:
+    """컬럼명이나 값 범위로 보아 비율/퍼센트류 컬럼인지 판단 (스케일이 다른 지표를 자동으로 분리할 때 사용)"""
+    ratio_keywords = ['율', '률', '비율', '%', 'rate', 'ratio', 'pct', 'percent']
+    col_lower = str(col_name).lower()
+    if any(kw in col_lower for kw in ratio_keywords):
+        return True
+    if len(series) and series.max() <= 100 and series.min() >= 0:
+        return True
+    return False
+
+
+def _needs_dual_axis(values: pd.DataFrame) -> bool:
+    """값 컬럼들의 스케일 차이가 커서 같은 축에 그리면 한쪽이 사실상 안 보이게 되는지 판단.
+    예: 오류건수(0~20만)와 오류율(0~100)을 같은 축에 그리면 오류율 선이 바닥에 눌려 안 보임 —
+    이런 경우를 감지해 명시적으로 "이중축"이라는 말이 없어도 자동으로 보조축을 사용한다."""
+    if len(values.columns) < 2:
+        return False
+    ranges = []
+    for col in values.columns:
+        s = pd.to_numeric(values[col], errors='coerce').dropna()
+        if s.empty:
+            continue
+        span = s.max() - s.min()
+        ranges.append(span if span > 0 else max(abs(s.max()), 1))
+    if len(ranges) < 2:
+        return False
+    return (max(ranges) / max(min(ranges), 1e-9)) >= 20
+
+
+def _split_ratio_columns(values: pd.DataFrame) -> tuple:
+    """값 컬럼들을 (비율성 컬럼, 그 외 컬럼)으로 분리. 한쪽이 비면 이중축 의미가 없으므로 (None, None) 반환."""
+    ratio_cols = [c for c in values.columns if _is_ratio_like(c, values[c])]
+    other_cols = [c for c in values.columns if c not in ratio_cols]
+    if not ratio_cols or not other_cols:
+        return None, None
+    return ratio_cols, other_cols
+
+
 # ── 차트 이미지 변환 ────────────────────────────────────────────
 
 def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = None) -> tuple:
@@ -274,18 +312,8 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 _set_axes(ax, xlabel=df.columns[0], ylabel=values.columns[0], title='비교', rotate_x=True)
                 _format_yaxis(ax)
             else:
-                ratio_keywords = ['율', '률', '비율', '%', 'rate', 'ratio', 'pct', 'percent']
-
-                def is_ratio_col(col_name, series):
-                    col_lower = col_name.lower()
-                    if any(kw in col_lower for kw in ratio_keywords):
-                        return True
-                    if series.max() <= 100 and series.min() >= 0:
-                        return True
-                    return False
-
-                bar_cols = [col for col in values.columns if not is_ratio_col(col, values[col])]
-                line_cols = [col for col in values.columns if is_ratio_col(col, values[col])]
+                bar_cols = [col for col in values.columns if not _is_ratio_like(col, values[col])]
+                line_cols = [col for col in values.columns if _is_ratio_like(col, values[col])]
                 if not bar_cols:
                     bar_cols = [values.columns[0]]
                     line_cols = list(values.columns[1:])
@@ -372,14 +400,41 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             except (ValueError, TypeError):
                 labels_display = labels.astype(str)
             x_pos = list(range(len(labels_display)))
-            for idx, col in enumerate(values.columns):
-                ax.plot(x_pos, values[col].values, marker="o", label=col,
-                        color=cmap(idx / len(values.columns)), linewidth=2)
-            ax.set_xticks(x_pos)
-            ax.set_xticklabels(labels_display)
-            ax.legend(loc="best")
-            _set_axes(ax, xlabel=df.columns[0], ylabel='값', title='추이', rotate_x=True)
-            _format_yaxis(ax)
+
+            ratio_cols, other_cols = (None, None)
+            if _needs_dual_axis(values):
+                ratio_cols, other_cols = _split_ratio_columns(values)
+
+            if ratio_cols and other_cols:
+                # 스케일이 크게 다른 지표들이 섞여 있음 — 한쪽 축에 다 그리면 값이 작은 쪽이 안 보이므로
+                # "이중축" 키워드가 없어도 자동으로 보조축(twinx)을 사용해 둘 다 제대로 보이게 한다.
+                ax2 = ax.twinx()
+                for idx, col in enumerate(other_cols):
+                    ax.plot(x_pos, values[col].values, marker="o", label=col,
+                            color=cmap(idx / len(other_cols)), linewidth=2)
+                ax.set_ylabel(' / '.join(str(c) for c in other_cols), fontsize=11)
+                _format_yaxis(ax)
+                for idx, col in enumerate(ratio_cols):
+                    ax2.plot(x_pos, values[col].values, marker="o", label=col,
+                             color=cmap(0.6 + idx * 0.15), linewidth=2, linestyle='--')
+                ax2.set_ylabel(' / '.join(str(c) for c in ratio_cols), fontsize=11)
+                ax.set_xticks(x_pos)
+                ax.set_xticklabels(labels_display, rotation=45, ha='right')
+                ax.set_xlabel(df.columns[0], fontsize=12)
+                ax.set_title('추이', fontsize=14, fontweight='bold')
+                ax.grid(True, alpha=0.3)
+                lines1, labels1 = ax.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            else:
+                for idx, col in enumerate(values.columns):
+                    ax.plot(x_pos, values[col].values, marker="o", label=col,
+                            color=cmap(idx / len(values.columns)), linewidth=2)
+                ax.set_xticks(x_pos)
+                ax.set_xticklabels(labels_display)
+                ax.legend(loc="best")
+                _set_axes(ax, xlabel=df.columns[0], ylabel='값', title='추이', rotate_x=True)
+                _format_yaxis(ax)
 
         elif any(kw in question_lower for kw in ['산점도', 'scatter']):
             cols = df.columns.tolist()

@@ -125,6 +125,15 @@ class MCPServer:
         else:
             sql_rule = f"- {dialect} 문법 사용"
 
+        sql_rule = (
+            f"{sql_rule}\n"
+            "- 코드값/상태값 등으로 조건절(WHERE)을 작성할 때, 메타데이터의 컬럼 설명이나 예시 쿼리에 그 값이 "
+            "명시되어 있지 않다면 값을 임의로 짐작해서 비교하지 마세요. 짐작한 값으로 조건을 걸면 실제로는 "
+            "존재하지 않는 값이라 결과가 0건이거나 잘못된 값으로 조용히 나올 수 있습니다.\n"
+            "- 확실한 근거 없이 코드값을 짐작해야만 답변 가능한 질문이라면, 정확한 값을 확인할 수 없다는 뜻이므로 "
+            "SELECT 'CANNOT_ANSWER' AS result, '조건에 사용할 정확한 코드값을 확인할 수 없습니다' AS reason 을 반환하세요."
+        )
+
         if extra_rules:
             sql_rule = f"{sql_rule}\n{extra_rules}"
 
