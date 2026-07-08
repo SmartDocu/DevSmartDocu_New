@@ -463,15 +463,6 @@ def process_chapter_message(msg):
             if progress_data.get("type") == "error":
                 raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
 
-        # AI/UI 객체 처리가 모두 끝난 시점을 확정적으로 genchapters.createfiledts에 반영
-        # (chapter_making.py 내부 갱신이 누락되는 경우에 대한 안전장치)
-        try:
-            sb_svc.schema(SUPABASE_SCHEMA).table("genchapters").update({
-                "createfiledts": datetime.now(timezone.utc).isoformat(),
-            }).eq("genchapteruid", genchapteruid).execute()
-        except Exception:
-            logger.exception("genchapters.createfiledts 갱신 실패: %s", genchapteruid)
-
         try:
             sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
                 "gendocuid": gendocuid,
