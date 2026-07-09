@@ -680,9 +680,9 @@ def upgrade_plan(
         "creator": user_id,
     }).execute()
 
-    # ④ creditbuckets — [과거_sub] 기존 행 Expired 처리
+    # ④ creditbuckets — [과거_sub] 기존 행 만료 처리 (status 컬럼이 없어 expiredts를 현재 시각으로 당겨서 만료시킴)
     svc.table("creditbuckets").update({
-        "statuscd": "Expired",
+        "expiredts": now_utc.isoformat(),
     }).eq("subscriptionuid", past_sub["subscriptionuid"]).execute()
 
     # creditbuckets 신규 행 삽입
@@ -699,7 +699,6 @@ def upgrade_plan(
         "remaincredit": product.get("credit", 0),
         "granteddts": now_utc.isoformat(),
         "expiredts": expiredts,
-        "statuscd": "Active",
         "startdt": today.isoformat(),
     }).execute()
 

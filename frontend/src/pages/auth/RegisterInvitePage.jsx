@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLangStore, t } from '@/stores/langStore'
 import { useInviteInfo, useRegisterInvite } from '@/hooks/useAuth'
@@ -10,6 +10,13 @@ export default function RegisterInvitePage() {
   const req = searchParams.get('req')
 
   const { data: invite, isLoading: infoLoading, isError } = useInviteInfo(req)
+
+  useEffect(() => {
+    if (invite?.already_registered) {
+      alert(t('msg.invite.already.registered'))
+      navigate('/')
+    }
+  }, [invite, navigate])
 
   const [usernm, setUsernm] = useState('')
   const [password, setPassword] = useState('')
@@ -101,7 +108,7 @@ export default function RegisterInvitePage() {
           </div>
         )}
 
-        {invite && (
+        {invite && !invite.already_registered && (
           <>
             {/* 초대 안내 배너 */}
             <div style={{

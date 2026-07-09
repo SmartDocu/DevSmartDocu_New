@@ -748,8 +748,12 @@ def get_tenants():
 
 
 @router.post("/register", response_model=MessageResponse)
-def register(body: RegisterRequest):
-    """회원가입: Supabase auth + users 테이블 + 기본 권한 할당."""
+def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
+    """회원가입: Supabase auth + users 테이블 + 기본 권한 할당.
+
+    _invite_tenantid: register_invite()에서 호출 시에만 전달 — 해당 테넌트의
+    초대 건만 가입완료 처리하기 위한 내부 파라미터 (공개 API에는 노출하지 않음).
+    """
     from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
     from dateutil.relativedelta import relativedelta
 
@@ -957,7 +961,6 @@ def register(body: RegisterRequest):
                     "remaincredit": product.get("credit", 0),
                     "granteddts": now_utc.isoformat(),
                     "expiredts": (now_utc + relativedelta(months=1)).isoformat(),
-                    "statuscd": "Active",
                 }).execute()
 
     except Exception as e:
@@ -965,6 +968,19 @@ def register(body: RegisterRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"DB 저장 실패: {str(e)}",
         )
+
+    # 해당 이메일로 대기 중인 초대(userregreqs)가 있으면 가입 완료 처리
+    # (초대 가입인 경우 _invite_tenantid로 실제 처리된 테넌트 건만 범위 제한)
+    try:
+        q = service.schema(SCHEMA).table("userregreqs").update({
+            "is_signup": True,
+            "signupdts": datetime.now(timezone.utc).isoformat(),
+        }).eq("email", body.email)
+        if _invite_tenantid is not None:
+            q = q.eq("tenantid", _invite_tenantid)
+        q.execute()
+    except Exception:
+        pass
 
     return MessageResponse(ok=True, message="회원가입이 완료되었습니다.\n이메일 인증 후 로그인 가능합니다.")
 
@@ -1297,19 +1313,65 @@ def _resolve_invite(req_uuid: str) -> dict:
 def get_invite_info(req: str = Query(...)):
     """초대 링크 정보 조회 (이메일·서비스 자동 채움용)."""
     invite = _resolve_invite(req)
+
+    svc = _get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+    existing_user = sd.table("users").select("useruid").eq("email", invite["email"]).execute().data
+    already_registered = bool(existing_user)
+
     return {
         "email": invite["email"],
         "tenantid": invite["tenantid"],
         "tenantnm": invite["tenantnm"],
         "servicecd": invite["servicecd"],
         "productcds": invite["productcds"],
+        "already_registered": already_registered,
     }
 
 
 @router.post("/register-invite", response_model=MessageResponse)
 def register_invite(body: RegisterInviteRequest):
-    """초대 링크를 통한 회원가입: 기존 register 로직 + 초대 테넌트에 자동 추가."""
+    """초대 링크를 통한 회원가입: 기존 register 로직 + 초대 테넌트에 자동 추가.
+
+    동일 이메일로 같은 테넌트에서 여러 서비스(예: Doc, Chat) 초대가 동시에 대기 중이면,
+    그중 하나의 초대 링크로 가입해도 같은 테넌트의 대기 중인 초대를 모두 함께 처리한다.
+    """
     invite = _resolve_invite(body.req)
+    tenantid_invite = invite["tenantid_int"]
+
+    svc = _get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+
+    # 같은 테넌트 + 같은 이메일로 대기 중인 초대의 servicecd 전체 취합
+    pending_servicecds: list[str] = []
+    if tenantid_invite:
+        pending_rows = (
+            sd.table("userregreqs")
+            .select("servicecd")
+            .eq("email", invite["email"])
+            .eq("tenantid", tenantid_invite)
+            .execute()
+            .data or []
+        )
+        pending_servicecds = sorted({r["servicecd"] for r in pending_rows if r.get("servicecd")})
+    if not pending_servicecds and invite["servicecd"]:
+        pending_servicecds = [invite["servicecd"]]
+
+    # servicecd → productcd (Free 플랜 기준) 전체 취합
+    productcds: list[str] = []
+    for servicecd in pending_servicecds:
+        prod_rows = (
+            sd.table("products")
+            .select("productcd")
+            .eq("servicecd", servicecd)
+            .eq("plancd", "Fr")
+            .eq("useyn", True)
+            .eq("is_sales", True)
+            .execute()
+            .data
+        )
+        if prod_rows:
+            productcds.append(prod_rows[0]["productcd"])
 
     # 기존 register 함수에 위임 (코드 재사용)
     register_body = RegisterRequest(
@@ -1321,16 +1383,12 @@ def register_invite(body: RegisterInviteRequest):
         userinfoyn=body.userinfoyn,
         marketingyn=body.marketingyn,
         accounttype="U",
-        products=invite["productcds"],
+        products=productcds,
     )
-    register(register_body)
+    register(register_body, _invite_tenantid=tenantid_invite)
 
     # 초대한 테넌트에 사용자 추가
-    tenantid_invite = invite["tenantid_int"]
     if tenantid_invite:
-        svc = _get_service_client()
-        sd = svc.schema(SUPABASE_SCHEMA)
-
         smartdoc_row = sd.table("tenants").select("tenantid").eq("issystemtenant", True).execute().data
         smartdoc_tenantid = smartdoc_row[0]["tenantid"] if smartdoc_row else None
 
@@ -1347,14 +1405,61 @@ def register_invite(body: RegisterInviteRequest):
                         "useyn": True,
                         "creator": user_id,
                     }).execute()
-                    pub_proj = sd.table("projects").select("projectid").eq("tenantid", tenantid_invite).eq("projectnm", "public").execute().data
-                    if pub_proj:
-                        sd.table("projectusers").insert({
-                            "projectid": pub_proj[0]["projectid"],
-                            "useruid": user_id,
-                            "rolecd": "U",
-                            "useyn": True,
-                            "creator": user_id,
-                        }).execute()
+
+                # 초대한 테넌트의 계정으로, 대기 중이던 초대 서비스 전체에 가입 처리
+                # (프로젝트는 서비스별로 구분되므로 servicecd마다 해당 프로젝트를 찾아 등록)
+                if pending_servicecds:
+                    acc = sd.table("accounts").select("accountuid").eq("tenantid", tenantid_invite).maybe_single().execute()
+                    invite_accountuid = acc.data["accountuid"] if acc and acc.data else None
+                    if invite_accountuid:
+                        for servicecd in pending_servicecds:
+                            pub_proj = (
+                                sd.table("projects")
+                                .select("projectid")
+                                .eq("tenantid", tenantid_invite)
+                                .eq("servicecd", servicecd)
+                                .eq("projectnm", "public")
+                                .execute()
+                                .data
+                            )
+                            if pub_proj:
+                                pu_existing = (
+                                    sd.table("projectusers")
+                                    .select("useruid")
+                                    .eq("projectid", pub_proj[0]["projectid"])
+                                    .eq("useruid", user_id)
+                                    .execute()
+                                    .data
+                                )
+                                if not pu_existing:
+                                    sd.table("projectusers").insert({
+                                        "projectid": pub_proj[0]["projectid"],
+                                        "useruid": user_id,
+                                        "rolecd": "U",
+                                        "useyn": True,
+                                        "creator": user_id,
+                                    }).execute()
+
+                            su_row = (
+                                sd.table("serviceusers")
+                                .select("useruid,useyn")
+                                .eq("accountuid", invite_accountuid)
+                                .eq("servicecd", servicecd)
+                                .eq("useruid", user_id)
+                                .maybe_single()
+                                .execute()
+                            )
+                            if su_row and su_row.data:
+                                if not su_row.data.get("useyn"):
+                                    sd.table("serviceusers").update({"useyn": True}).eq("accountuid", invite_accountuid).eq("servicecd", servicecd).eq("useruid", user_id).execute()
+                            else:
+                                sd.table("serviceusers").insert({
+                                    "accountuid": invite_accountuid,
+                                    "servicecd": servicecd,
+                                    "useruid": user_id,
+                                    "tenantid": tenantid_invite,
+                                    "useyn": True,
+                                    "creator": user_id,
+                                }).execute()
 
     return MessageResponse(ok=True, message="회원가입이 완료되었습니다.\n이메일 인증 후 로그인 가능합니다.")

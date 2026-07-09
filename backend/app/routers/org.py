@@ -512,7 +512,10 @@ def list_project_users(
         pids = [r["projectid"] for r in pu_rows if r.get("projectid")]
         proj_rows = []
         for pid in pids:
-            p = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm").eq("projectid", pid).execute().data
+            p_q = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm").eq("projectid", pid)
+            if tenantid:
+                p_q = p_q.eq("tenantid", tenantid)
+            p = p_q.execute().data
             if p:
                 proj_rows.append(p[0])
 
@@ -788,6 +791,7 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
             try:
                 result = sd.table("userregreqs").insert({
                     "tenantid": tenantid,
+                    "accountuid": accountuid,
                     "email": email,
                     "servicecd": body.servicecd,
                     "creator": user_id,
