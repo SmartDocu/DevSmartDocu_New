@@ -8,9 +8,11 @@ const { Dragger } = Upload
 
 // 로컬 파일 업로드 또는 외부 API 연결로 세션에 데이터셋을 등록하는 모달.
 // 등록되면 해당 세션은 이후 DB 대신 이 데이터(들)을 대상으로 질의하는 모드로 전환된다.
-export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess }) {
+// apiBase: '/d2chat'(기본, 토큰 인증) | '/d2insight'(인증 없음 — user_id를 body에 직접 포함)
+export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess, apiBase = '/d2chat' }) {
   const { message } = App.useApp()
   const user = useAuthStore((s) => s.user)
+  const isInsight = apiBase === '/d2insight'
 
   const [activeTab, setActiveTab] = useState('file')
   const [fileList, setFileList] = useState([])
@@ -36,8 +38,9 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       if (sessionId) fd.append('session_id', sessionId)
       if (user?.projectid != null) fd.append('project_id', user.projectid)
       if (user?.accountuid) fd.append('account_uid', user.accountuid)
+      if (isInsight && user?.id) fd.append('user_id', user.id)
 
-      const { data } = await apiClient.post('/d2chat/upload-dataset', fd)
+      const { data } = await apiClient.post(`${apiBase}/upload-dataset`, fd)
       message.success(`${data.datasets.length}개 데이터셋이 등록되었습니다.`)
       onSuccess?.(data)
       resetAndClose()
@@ -52,7 +55,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
     try {
       const values = await apiForm.validateFields()
       setSubmitting(true)
-      const { data } = await apiClient.post('/d2chat/upload-dataset-url', {
+      const { data } = await apiClient.post(`${apiBase}/upload-dataset-url`, {
         url: values.url,
         session_id: sessionId || null,
         project_id: user?.projectid ?? null,
@@ -60,6 +63,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
         dataset_name: values.dataset_name || null,
         header_name: values.header_name || null,
         header_value: values.header_value || null,
+        ...(isInsight ? { user_id: user?.id ?? null } : {}),
       })
       message.success(`${data.datasets.length}개 데이터셋이 등록되었습니다.`)
       onSuccess?.(data)

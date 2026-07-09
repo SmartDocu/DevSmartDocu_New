@@ -246,6 +246,7 @@ def _build_system_prompt(
     factor_context: dict | None = None,
     include_plan_instruction: bool = True,
     sales_datasets=None,
+    has_upload: bool = False,
 ) -> str:
     meta_text = json.dumps(meta, ensure_ascii=False, indent=2)
     if len(meta_text) > _MAX_META_CHARS:
@@ -254,6 +255,34 @@ def _build_system_prompt(
         meta_text = meta_text[:_MAX_META_CHARS] + "\n...(메타데이터 일부 생략)"
     sql_rules = _sql_rules(dialect)
     start, end = date_range
+    meta_header = "## 업로드된 데이터셋" if has_upload else "## 사용 가능한 데이터 (메타정보)"
+
+    if has_upload:
+        data_rules_section = (
+            "## 데이터 조회 규칙\n"
+            "- execute_excel_query 툴에 자연어 질문을 전달하면 내부에서 pandas 코드가 자동 생성되어 실행됩니다.\n"
+            "- SQL/pandas 코드를 직접 작성하지 마세요."
+        )
+        query_step = (
+            "2. 각 섹션에 필요한 데이터를 execute_excel_query 툴로 조회하세요.\n"
+            "   - pandas 코드를 직접 작성하지 마세요. question에 자연어로 분석 목적을 설명하면 내부에서 코드가 자동 생성됩니다.\n"
+            "   - table_name 지정은 필요 없습니다 — 등록된 데이터셋 중 적합한 것이 자동 선택됩니다.\n"
+            f"   - question에 분석 기간({start} ~ {end})을 반드시 포함하세요.\n"
+            "   - 반드시 집계 데이터를 요청하세요: \"~별 건수/합계/평균\" 형태로 질문하세요.\n"
+            "   - 조회 결과가 비어 있거나(row_count=0) error가 있으면 해당 섹션을 작성하지 말고 바로 종료하세요.\n"
+            "   - 등록된 데이터셋에 없는 내용은 절대 지어내지 마세요."
+        )
+    else:
+        data_rules_section = f"## SQL 규칙\n{sql_rules}"
+        query_step = (
+            "2. 각 섹션에 필요한 데이터를 execute_query 툴로 조회하세요.\n"
+            "   - SQL을 직접 작성하지 마세요. question에 자연어로 분석 목적을 설명하면 내부에서 SQL이 자동 생성됩니다.\n"
+            "   - table_name에 메타정보에서 확인한 뷰 이름을 반드시 지정하세요. 생략 금지.\n"
+            f"   - question에 분석 기간({start} ~ {end})을 반드시 포함하세요.\n"
+            "   - 반드시 집계 데이터를 요청하세요: \"~별 건수/합계/평균\" 형태로 질문하세요.\n"
+            "   - 조회 결과가 비어 있거나(row_count=0) CANNOT_ANSWER이면 해당 섹션을 작성하지 말고 바로 종료하세요.\n"
+            f"   - 현재 작성 중인 '{report_type}' 보고서와 무관한 데이터 뷰는 절대 사용하지 마세요."
+        )
 
     factor_section = ""
     if factor_context:
@@ -290,23 +319,16 @@ def _build_system_prompt(
 ## 분석 기간
 {start} ~ {end}
 
-## 사용 가능한 데이터 (메타정보)
+{meta_header}
 {meta_text}
 
-## SQL 규칙
-{sql_rules}{factor_section}{dataset_section}{sales_section_plan}
+{data_rules_section}{factor_section}{dataset_section}{sales_section_plan}
 
 ## 보고서 작성 절차
 1. 사용자의 요청을 정확히 파악하고 그에 맞는 보고서 구조(섹션 목차)를 계획하세요.
    - 판매분석의 경우 "판매분석 섹션 계획 지시"에 따라 <plan> 태그로 먼저 계획하고, 계획한 모든 섹션을 순서대로 완성하세요.
    - 사용자가 특정 분석 방법을 요청하면 반드시 해당 방법을 사용하세요.
-2. 각 섹션에 필요한 데이터를 execute_query 툴로 조회하세요.
-   - SQL을 직접 작성하지 마세요. question에 자연어로 분석 목적을 설명하면 내부에서 SQL이 자동 생성됩니다.
-   - table_name에 메타정보에서 확인한 뷰 이름을 반드시 지정하세요. 생략 금지.
-   - question에 분석 기간({start} ~ {end})을 반드시 포함하세요.
-   - 반드시 집계 데이터를 요청하세요: "~별 건수/합계/평균" 형태로 질문하세요.
-   - 조회 결과가 비어 있거나(row_count=0) CANNOT_ANSWER이면 해당 섹션을 작성하지 말고 바로 종료하세요.
-   - 현재 작성 중인 '{report_type}' 보고서와 무관한 데이터 뷰는 절대 사용하지 마세요.
+{query_step}
 3. 필요시 run_stats / run_trend / run_outlier 툴로 추가 분석하세요.
 4. 데이터가 있는 모든 주요 섹션에서 create_chart 툴로 시각화하세요. (의무)
    - create_chart 호출 후 tool result의 markdown_tag 값을 반드시 해당 위치의 텍스트에 삽입하세요.
@@ -414,11 +436,16 @@ class ReportAgent:
         tenant_id: int | None = None,
         user_uid: str | None = None,
         account_uid: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         src = GenericSqlSource(connection_url)
         self._dialect: str = src._dialect
         self._user_uid = user_uid
         self._account_uid = account_uid
+        self._session_id = session_id
+        from d2insight.report.excel_registry import get_excel_server
+        self._excel_server = get_excel_server()
+        self.has_upload = bool(session_id and self._excel_server.has_datasets(session_id))
         _, self._api_key, self._vendor, _is_customeraikey, _account_uid = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
@@ -431,7 +458,14 @@ class ReportAgent:
                 _ctx["account_uid"] = _account_uid
         self._model_id = LLM_MODELS[self._vendor]["balanced"]
         self._llm = build_langchain_llm(self._vendor, self._api_key, self._model_id)
-        self._llm_with_tools = self._llm.bind_tools(ALL_TOOLS)
+
+        self._tools = list(ALL_TOOLS)
+        if self.has_upload:
+            from d2insight.report.tools.excel_query_tool import create_excel_query_tool
+            self._tools = [t for t in self._tools if t.name != "execute_query"]
+            self._tools.append(create_excel_query_tool(self._session_id, self._llm))
+
+        self._llm_with_tools = self._llm.bind_tools(self._tools)
         self._graph = self._create_graph()
 
     def _quick_chat(
@@ -481,7 +515,7 @@ class ReportAgent:
 
     def _create_graph(self):
         """pr_d2chat MCPAgent._create_agent 패턴 — call_model ↔ tools 루프."""
-        tool_node = ToolNode(ALL_TOOLS)
+        tool_node = ToolNode(self._tools)
 
         def call_model(state: MessagesState):
             _start = datetime.now()
@@ -670,6 +704,44 @@ class ReportAgent:
         md = "\n\n".join(p for p in parts if p.strip())
         return md, token_tracker.get()
 
+    def _check_upload_feasibility(
+        self, report_type: str, user_request: str | None, date_range: tuple[str, str],
+    ) -> str | None:
+        """섹션 계획·병렬 섹션 생성(다수 LLM 호출)에 들어가기 전에, 요청 주제/기간에 맞는
+        데이터가 실제로 있는지 업로드된 데이터셋에 가벼운 확인 쿼리를 1회 날려본다.
+
+        요청 기간을 별도로 저장/검증하지 않고, 그 기간을 확인 질문 문장에 그대로 넣어
+        excel_server에 실제 쿼리(분류 + pandas 코드 실행)를 실행시켜 결과로만 판단한다.
+        데이터가 없거나(no_data) 주제가 안 맞으면(not_answerable) 섹션 생성을 아예 시작하지
+        않고 사유를 반환 — 없으면(None) 정상적으로 보고서 생성을 진행한다.
+        """
+        from d2insight.report.classifier import classify_question_and_table
+
+        start, end = date_range
+        probe_question = (
+            f"{user_request or report_type}. "
+            f"{start} ~ {end} 기간에 해당하는 원본 데이터를 최대 3건만 그대로 보여줘 "
+            f"(집계하지 말고 필터링만 하세요)."
+        )
+        try:
+            probe = self._excel_server.execute_natural_language_query(
+                question=probe_question,
+                session_id=self._session_id,
+                llm=self._llm,
+                classifier_fn=classify_question_and_table,
+                log_ctx=token_tracker.get_log_ctx(),
+            )
+        except Exception:
+            return None  # 확인 자체가 실패하면 안전하게 정상 흐름으로 진행(오탐으로 막지 않음)
+
+        status = probe.get("status")
+        if status == "not_answerable":
+            return probe.get("message") or "등록된 데이터셋이 요청하신 내용과 맞지 않습니다."
+        if status in ("no_data", "error", "no_dataset"):
+            detail = probe.get("message") or ""
+            return f"{start} ~ {end} 기간에 해당하는 데이터를 찾지 못했습니다." + (f" ({detail})" if detail else "")
+        return None
+
     def generate(
         self,
         report_type: str,
@@ -685,16 +757,29 @@ class ReportAgent:
         Phase 1: 섹션별 독립 실행 (섹션마다 새 LangGraph 컨텍스트)
         Phase 2: 결론 생성 (quality 1회 호출, 전체 본문 전달)
         """
-        meta_all = meta_loader.all_metadata()
         config_entry = get_config(report_type)
-        view_hints: list[str] = config_entry.get("view_hints", [])
-        if view_hints:
-            meta = {v: meta_all[v] for v in view_hints if v in meta_all} or meta_all
+        if self.has_upload:
+            meta = self._excel_server.get_session_datasets(self._session_id)
         else:
-            meta = meta_all
+            meta_all = meta_loader.all_metadata()
+            view_hints: list[str] = config_entry.get("view_hints", [])
+            if view_hints:
+                meta = {v: meta_all[v] for v in view_hints if v in meta_all} or meta_all
+            else:
+                meta = meta_all
 
         months_back = config_entry.get("months_back", months_back)
         date_range = _date_range(target_month, months_back)
+
+        if self.has_upload:
+            skip_reason = self._check_upload_feasibility(report_type, user_request, date_range)
+            if skip_reason:
+                return {
+                    "md_text": "",
+                    "md_filename": "",
+                    "report_type": report_type,
+                    "skipped_reason": skip_reason,
+                }
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_type = config_entry.get("folder_en") or report_type.replace("/", "_").replace("\\", "_")
@@ -704,6 +789,7 @@ class ReportAgent:
             report_type, meta, self._dialect, date_range, factor_context,
             include_plan_instruction=False,
             sales_datasets=sales_datasets,
+            has_upload=self.has_upload,
         )
 
         _chart_store.reset()

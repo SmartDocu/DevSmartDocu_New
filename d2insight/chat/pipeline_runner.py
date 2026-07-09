@@ -1,11 +1,13 @@
 """Execute analysis pipeline tools and return formatted chat results."""
 from __future__ import annotations
 
+import json
 import traceback
 
 from backend.app.config import settings
 from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
 from d2insight.config import LLM_MODELS
+from d2insight import token_tracker
 
 _llm_cache: dict = {}
 
@@ -43,8 +45,88 @@ def _quick_chat(
     return content if isinstance(content, str) else content[0].text
 
 
+def _answer_from_data(question: str, data: list, llm) -> str:
+    """조회된 실제 데이터에만 근거해 답변 문장을 생성한다 (환각 방지 grounding)."""
+    from langchain_core.messages import HumanMessage
+    prompt = (
+        f"사용자 질문: {question}\n\n"
+        f"실제 조회된 데이터(JSON, 최대 30건): {json.dumps(data[:30], ensure_ascii=False, default=str)}\n\n"
+        "위 데이터에 근거해서만 답변하세요. 데이터에 없는 내용은 절대 지어내지 마세요. "
+        "간결하게 한국어로 답변하세요."
+    )
+    resp = llm.invoke([HumanMessage(content=prompt)])
+    content = resp.content
+    return content if isinstance(content, str) else str(content)
+
+
+def _answer_data_question(
+    user_message: str,
+    session_id: str | None,
+    project_id=None,
+    tenant_id=None,
+    user_uid=None,
+    account_uid=None,
+) -> str | None:
+    """chat 메시지가 데이터 내용을 묻는 질문이면 실제 데이터로 그라운딩한 답을 반환하고,
+    개념/방법론 질문 등 데이터와 무관하면 None을 반환해 지식 기반 답변으로 폴백하게 한다.
+
+    업로드 데이터셋(있으면)과 DB 메타데이터 양쪽 모두에 대칭적으로 적용한다.
+    """
+    from d2insight.report.classifier import classify_question_and_table
+    from d2insight.report.excel_registry import get_excel_server
+
+    excel_server = get_excel_server()
+    has_upload = bool(session_id and excel_server.has_datasets(session_id))
+    llm = _get_llm("fast", project_id=project_id, tenant_id=tenant_id, user_uid=user_uid, account_uid=account_uid)
+
+    if has_upload:
+        probe = excel_server.execute_natural_language_query(
+            question=user_message,
+            session_id=session_id,
+            llm=llm,
+            classifier_fn=classify_question_and_table,
+            log_ctx=token_tracker.get_log_ctx(),
+        )
+        status = probe.get("status")
+        if status == "not_answerable":
+            return None  # 데이터 질문이 아님 — 지식 기반 답변으로 폴백
+        if status in ("no_data", "error", "no_dataset"):
+            return probe.get("message") or "등록된 데이터에서 해당 내용을 찾지 못했습니다."
+        data = probe.get("data")
+        if status == "success" and data:
+            return _answer_from_data(user_message, data, llm)
+        return "등록된 데이터에서 해당 내용을 찾지 못했습니다."
+
+    # DB 모드
+    from d2insight.data_source.meta_loader import all_metadata
+    from d2insight.report.sql_generator import SqlGenerator
+
+    tables_metadata = all_metadata()
+    if not tables_metadata:
+        return None
+
+    classification = classify_question_and_table(user_message, llm, tables_metadata)
+    if not classification.get("is_answerable"):
+        return None  # 데이터 질문이 아님 — 지식 기반 답변으로 폴백
+
+    gen = SqlGenerator()
+    result = gen.execute_natural_language_query(
+        question=user_message,
+        table_name=classification.get("table"),
+        table_metadata=tables_metadata,
+    )
+    if result.get("error"):
+        return f"조회 중 문제가 발생했습니다: {result['error']}"
+
+    rows = result.get("data") or []
+    if not rows or (len(rows) == 1 and str(rows[0].get("result", "")).upper() == "CANNOT_ANSWER"):
+        return "등록된 데이터에서 해당 내용을 찾지 못했습니다."
+    return _answer_from_data(user_message, rows, llm)
+
+
 def run_report_from_spec(spec: dict, user_id: str | None = None,
-                         project_id=None, tenant_id=None, account_uid=None) -> dict:
+                         project_id=None, tenant_id=None, account_uid=None,
+                         session_id: str | None = None) -> dict:
     """대화형 보고서 명세(ReportSpec)로부터 보고서를 생성한다."""
     target_month = spec.get("target_month")
     months_back = spec.get("months_back") or 3
@@ -64,7 +146,8 @@ def run_report_from_spec(spec: dict, user_id: str | None = None,
         ),
     }
     return run_tool("report", target_month, months_back, intent=intent, user_id=user_id,
-                    project_id=project_id, tenant_id=tenant_id, user_uid=user_id, account_uid=account_uid)
+                    project_id=project_id, tenant_id=tenant_id, user_uid=user_id, account_uid=account_uid,
+                    session_id=session_id)
 
 
 def run_tool(
@@ -78,6 +161,7 @@ def run_tool(
     tenant_id=None,
     user_uid: str | None = None,
     account_uid: str | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """Execute pipeline tool and return {answer, visualization_type, table_html, chart_image, report_path}."""
     intent = intent or {}
@@ -104,6 +188,20 @@ def run_tool(
     if tool == "chat":
         hist_text = "\n".join(f"{m['role']}: {m['content']}" for m in (history or [])[-6:])
         user_message = intent.get("original_message") or "도움이 필요합니다."
+
+        try:
+            data_answer = _answer_data_question(
+                user_message, session_id,
+                project_id=project_id, tenant_id=tenant_id, user_uid=user_uid, account_uid=account_uid,
+            )
+        except Exception as e:
+            print(f"[chat] 데이터 질문 응답 시도 실패 (지식 기반으로 폴백): {e}")
+            data_answer = None
+
+        if data_answer:
+            result["answer"] = data_answer
+            return result
+
         system = (
             "당신은 기업 데이터 분석 보고서 에이전트입니다.\n\n"
             "## 응답 방침\n"
@@ -144,11 +242,17 @@ def run_tool(
             if user_id and (_project_id is None or _tenant_id is None):
                 _tenant_id, _project_id = get_project_info(user_id)
             agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id,
-                                user_uid=user_id or user_uid, account_uid=account_uid)
+                                user_uid=user_id or user_uid, account_uid=account_uid,
+                                session_id=session_id)
             report_result = agent.generate(
                 report_type, target_month, months_back,
                 user_request=user_request,
             )
+
+            if report_result.get("skipped_reason"):
+                result["answer"] = report_result["skipped_reason"]
+                return result
+
             md_text = report_result.get("md_text", "")
             md_filename = report_result.get("md_filename", "")
 

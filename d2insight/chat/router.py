@@ -1,10 +1,16 @@
 """Insight Chat API router."""
 from __future__ import annotations
 
+import io
+import re
 import uuid as _uuid
-from typing import Optional
+from typing import List, Optional
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException
+import pandas as pd
+from requests import exceptions as requests_exceptions
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from d2insight.chat.intent_parser import parse_intent
@@ -13,8 +19,39 @@ from d2insight.chat import session as _session
 from d2insight.chat import report_spec as _spec_mod
 from d2insight.db import insight_storage as storage
 from d2insight import token_tracker
+from d2insight.report.excel_registry import get_excel_server
+from d2shared.api_dataset import fetch_json, json_to_dataframe
 
 router = APIRouter()
+
+MAX_UPLOAD_TOTAL_BYTES = 500 * 1024 * 1024  # 한 번에 업로드하는 전체 파일 합산 용량 제한 (500MB)
+
+
+def _sanitize_dataset_key(name: str) -> str:
+    """파일명/데이터셋명을 데이터셋 키(테이블명 대용)로 사용하기 위해 정리"""
+    name = re.sub(r"\.(csv|xlsx|xls)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"[^0-9A-Za-z가-힣_]+", "_", name).strip("_")
+    return name or "dataset"
+
+
+def _dataset_preview(key: str, df: pd.DataFrame, filename: str, metadata: dict) -> dict:
+    return {
+        "dataset_key": key,
+        "filename": filename,
+        "columns": list(df.columns.astype(str)),
+        "row_count": int(len(df)),
+        "description": metadata.get("description"),
+    }
+
+
+def _get_llm(project_id=None, tenant_id=None, user_uid=None, account_uid=None):
+    from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+    from d2insight.config import LLM_MODELS
+    _, api_key, vendor, _, _ = get_llm_info(
+        project_id=project_id, tenant_id=tenant_id,
+        user_uid=user_uid, account_uid=account_uid, service_code="In",
+    )
+    return build_langchain_llm(vendor, api_key, LLM_MODELS[vendor]["fast"])
 
 
 # ── 요청 모델 ─────────────────────────────────────────────────────
@@ -25,6 +62,17 @@ class ChatRequest(BaseModel):
     user_id: str | None = None
     project_id: int | None = None
     account_uid: str | None = None  # 프론트 authStore에서 전달 (serviceusers 조회 생략용)
+
+
+class ApiDatasetRequest(BaseModel):
+    url: str
+    session_id: str | None = None
+    user_id: str | None = None
+    project_id: int | None = None
+    account_uid: str | None = None
+    dataset_name: str | None = None
+    header_name: str | None = None
+    header_value: str | None = None
 
 
 class FavoriteQARequest(BaseModel):
@@ -107,7 +155,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
         if bot_response == "__EXECUTE__":
             result = run_report_from_spec(updated_spec, req.user_id,
                                           project_id=_project_id, tenant_id=_tenant_id,
-                                          account_uid=req.account_uid)
+                                          account_uid=req.account_uid, session_id=sid)
             _spec_mod.clear_spec(sid)
         elif bot_response == "__CANCEL__":
             result = {
@@ -149,7 +197,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
         else:
             result = run_tool(tool, target_month, months_back, history=hist, intent=intent,
                               user_id=req.user_id, project_id=_project_id, tenant_id=_tenant_id,
-                              user_uid=req.user_id, account_uid=req.account_uid)
+                              user_uid=req.user_id, account_uid=req.account_uid, session_id=sid)
 
     tokens = token_tracker.get()
 
@@ -180,6 +228,133 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
     token_tracker.set_log_ctx(None)
 
     return ChatResponse(session_id=sid, qauid=qauid, **result)
+
+
+# ── 데이터셋 업로드: 엑셀/CSV 업로드, API 연결 (세션의 report 생성이 이 데이터를 사용) ──
+
+@router.post("/upload-dataset")
+async def upload_dataset(
+    files: List[UploadFile] = File(...),
+    session_id: Optional[str] = Form(None),
+    user_id: Optional[str] = Form(None),
+    project_id: Optional[int] = Form(None),
+    account_uid: Optional[str] = Form(None),
+):
+    file_entries = []  # (filename, ext, content)
+    total_size = 0
+    for file in files:
+        filename = file.filename or "uploaded"
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in ("csv", "xlsx", "xls"):
+            raise HTTPException(status_code=400, detail=f"{filename}: csv, xlsx, xls 파일만 업로드할 수 있습니다.")
+
+        content = await file.read()
+        total_size += len(content)
+        if total_size > MAX_UPLOAD_TOTAL_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"업로드 파일 전체 용량은 {MAX_UPLOAD_TOTAL_BYTES // (1024 * 1024)}MB를 초과할 수 없습니다.",
+            )
+        file_entries.append((filename, ext, content))
+
+    sid, _hist = _session.get_or_create(session_id, user_id=user_id, project_id=project_id)
+    tenant_id, db_project_id = storage.get_project_info(user_id) if user_id else (None, None)
+    resolved_project_id = project_id if project_id is not None else db_project_id
+    log_ctx = {
+        "qauid": None,
+        "servicecd": "In",
+        "tenant_id": tenant_id,
+        "project_id": resolved_project_id,
+        "session_uid": sid,
+        "creator": user_id,
+        "account_uid": account_uid,
+    }
+    llm = _get_llm(project_id=resolved_project_id, tenant_id=tenant_id, user_uid=user_id, account_uid=account_uid)
+    excel_server = get_excel_server()
+
+    previews = []
+    for filename, ext, content in file_entries:
+        try:
+            if ext == "csv":
+                sheets = {_sanitize_dataset_key(filename): pd.read_csv(io.BytesIO(content))}
+            else:
+                sheets_raw = pd.read_excel(io.BytesIO(content), sheet_name=None)
+                sheets = {
+                    _sanitize_dataset_key(f"{filename}_{sheet_name}"): sheet_df
+                    for sheet_name, sheet_df in sheets_raw.items()
+                }
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"{filename}: 파일을 읽을 수 없습니다: {e}")
+
+        for dataset_key, df in sheets.items():
+            if df.empty:
+                continue
+            key, metadata = excel_server.register_dataset(
+                session_id=sid,
+                dataset_key=dataset_key,
+                df=df,
+                filename=filename,
+                sheet_name=dataset_key,
+                llm=llm,
+                log_ctx=log_ctx,
+            )
+            previews.append(_dataset_preview(key, df, filename, metadata))
+
+    if not previews:
+        raise HTTPException(status_code=400, detail="유효한 데이터가 없는 파일입니다.")
+
+    return {"status": "success", "session_id": sid, "datasets": previews}
+
+
+@router.post("/upload-dataset-url")
+def upload_dataset_url(body: ApiDatasetRequest):
+    try:
+        raw = fetch_json(body.url, header_name=body.header_name, header_value=body.header_value)
+        df = json_to_dataframe(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except requests_exceptions.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"API 호출에 실패했습니다: {e}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="응답에 유효한 데이터가 없습니다.")
+
+    sid, _hist = _session.get_or_create(body.session_id, user_id=body.user_id, project_id=body.project_id)
+    tenant_id, db_project_id = storage.get_project_info(body.user_id) if body.user_id else (None, None)
+    resolved_project_id = body.project_id if body.project_id is not None else db_project_id
+    log_ctx = {
+        "qauid": None,
+        "servicecd": "In",
+        "tenant_id": tenant_id,
+        "project_id": resolved_project_id,
+        "session_uid": sid,
+        "creator": body.user_id,
+        "account_uid": body.account_uid,
+    }
+    llm = _get_llm(project_id=resolved_project_id, tenant_id=tenant_id, user_uid=body.user_id, account_uid=body.account_uid)
+    excel_server = get_excel_server()
+
+    # 데이터셋 이름/설명에는 URL을 절대 그대로 쓰지 않는다 (쿼리스트링에 apiKey가 포함될 수 있고,
+    # /share 기능으로 다른 사용자에게 노출될 수 있음). 사용자가 지정한 이름 또는 호스트명만 사용한다.
+    host = urlparse(body.url).hostname or "api"
+    display_name = body.dataset_name or host
+    dataset_key = _sanitize_dataset_key(display_name)
+
+    key, metadata = excel_server.register_dataset(
+        session_id=sid,
+        dataset_key=dataset_key,
+        df=df,
+        filename=display_name,
+        sheet_name=None,
+        llm=llm,
+        log_ctx=log_ctx,
+    )
+
+    return {
+        "status": "success",
+        "session_id": sid,
+        "datasets": [_dataset_preview(key, df, display_name, metadata)],
+    }
 
 
 # ── 이어가기 ─────────────────────────────────────────────────────

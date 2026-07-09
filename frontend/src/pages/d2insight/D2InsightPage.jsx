@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { App } from 'antd'
+import { PaperClipOutlined } from '@ant-design/icons'
 import { marked } from 'marked'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import DatasetUploadModal from '@/components/DatasetUploadModal/DatasetUploadModal'
 import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
 import '../d2shared/d2common.css'
@@ -44,6 +46,7 @@ export default function D2InsightPage() {
   const [viewingFavoriteQauid, setViewingFavoriteQauid] = useState(null)
   const [favorites, setFavorites] = useState([])
   const [shareTarget, setShareTarget] = useState(null) // {qauid}
+  const [datasetModalOpen, setDatasetModalOpen] = useState(false)
 
   // ── 사이드바 상태 ──────────────────────────────────────────────
   const [history, setHistory] = useState({})
@@ -257,6 +260,23 @@ export default function D2InsightPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleDatasetUploaded = (data) => {
+    if (data.session_id) updateSessionId(data.session_id)
+
+    const summary = data.datasets
+      .map((d) => `- ${d.filename} (행 ${d.row_count}, 컬럼 ${d.columns.length}) : ${d.description || ''}`)
+      .join('\n')
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `데이터셋이 등록되었습니다. 이제부터 이 세션의 보고서 생성은 아래 데이터를 대상으로 합니다 (기존 DB 조회는 사용되지 않습니다).\n${summary}`,
+        fileurl: null,
+        reportPath: null,
+      },
+    ])
   }
 
   // ── 사이드바 핸들러 ────────────────────────────────────────────
@@ -518,6 +538,15 @@ export default function D2InsightPage() {
                       }}
                     />
                     <button type="button" onClick={() => sendMessage()} disabled={isLoading}>전송</button>
+                    <button
+                      type="button"
+                      className="toggle-query-btn"
+                      title="데이터셋 추가 (파일 업로드 / API 연결)"
+                      onClick={() => setDatasetModalOpen(true)}
+                    >
+                      <PaperClipOutlined style={{ fontSize: 18 }} />
+                      <span>데이터 추가</span>
+                    </button>
                   </div>
                 </div>
               </>
@@ -596,6 +625,15 @@ export default function D2InsightPage() {
           message={message}
         />
       )}
+
+      {/* 데이터셋 추가(업로드/API) 모달 */}
+      <DatasetUploadModal
+        open={datasetModalOpen}
+        sessionId={sessionId}
+        apiBase="/d2insight"
+        onClose={() => setDatasetModalOpen(false)}
+        onSuccess={handleDatasetUploaded}
+      />
     </div>
   )
 }
