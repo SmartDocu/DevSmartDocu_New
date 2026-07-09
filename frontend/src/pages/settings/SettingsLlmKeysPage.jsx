@@ -121,6 +121,10 @@ export default function SettingsLlmKeysPage() {
         </div>
       </div>
 
+      <div style={{ background: '#f9fbe7', padding: '4px 10px', borderRadius: 6, color: '#6a7d3c', marginBottom: 10 }}>
+        <span style={{ color: '#6a7d3c', fontSize: 13 }}>＊ {t('msg.llmkey.notice')}</span>
+      </div>
+
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측: 목록 */}
         <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>

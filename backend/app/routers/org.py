@@ -82,11 +82,22 @@ def list_tenant_users(
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
     tenantnm = t_rows[0]["tenantnm"] if t_rows else ""
 
-    # 계정이 구독 중인 서비스 목록 (서비스 조건 radio 옵션)
+    # 계정이 구독 중인 서비스 목록 (서비스 조건 radio 옵션) + 서비스별 정원/현재인원
     available_servicecds = []
+    service_summary = []
     if accountuid:
-        svc_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+        svc_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd,total_users").eq("accountuid", accountuid).execute().data or []
         available_servicecds = [r["servicecd"] for r in svc_rows if r.get("servicecd")]
+        for r in svc_rows:
+            scd = r.get("servicecd")
+            if not scd:
+                continue
+            cnt = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid", count="exact").eq("accountuid", accountuid).eq("servicecd", scd).execute()
+            service_summary.append({
+                "servicecd": scd,
+                "total_users": r.get("total_users"),
+                "current_users": cnt.count or 0,
+            })
 
     # 사용자별 가입 서비스 매핑 (서비스 조건 필터링용)
     su_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid,servicecd").eq("tenantid", tenantid).execute().data or []
@@ -117,6 +128,7 @@ def list_tenant_users(
         "tenantnm": tenantnm,
         "users": all_users,
         "available_servicecds": available_servicecds,
+        "service_summary": service_summary,
     }
 
 
@@ -506,13 +518,13 @@ def list_project_users(
     is_tenant_manager = any(r.get("rolecd") == "M" for r in tu_rows)
 
     if is_tenant_manager and tenantid:
-        proj_rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm").eq("tenantid", tenantid).order("projectnm").execute().data or []
+        proj_rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm,servicecd").eq("tenantid", tenantid).order("projectnm").execute().data or []
     else:
         pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("projectid").eq("useruid", user_id).execute().data or []
         pids = [r["projectid"] for r in pu_rows if r.get("projectid")]
         proj_rows = []
         for pid in pids:
-            p_q = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm").eq("projectid", pid)
+            p_q = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,projectnm,servicecd").eq("projectid", pid)
             if tenantid:
                 p_q = p_q.eq("tenantid", tenantid)
             p = p_q.execute().data
@@ -523,6 +535,17 @@ def list_project_users(
 
     if not projectid:
         return {"projects": proj_rows, "projectid": None, "projectusers": [], "tenantusers": []}
+
+    # 프로젝트의 서비스(accountuid/servicecd) 및 계정 내 사용자별 가입 서비스 매핑
+    proj_detail = sb.schema(SUPABASE_SCHEMA).table("projects").select("accountuid,servicecd").eq("projectid", projectid).execute().data
+    proj_accountuid = proj_detail[0].get("accountuid") if proj_detail else None
+    proj_servicecd = proj_detail[0].get("servicecd") if proj_detail else None
+
+    svc_map = {}
+    if proj_accountuid:
+        su_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid,servicecd").eq("accountuid", proj_accountuid).execute().data or []
+        for r in su_rows:
+            svc_map.setdefault(r["useruid"], []).append(r["servicecd"])
 
     # ── 선택된 프로젝트 사용자 ──────────────────────────────────
     pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", projectid).order("useruid", desc=True).execute().data or []
@@ -536,6 +559,7 @@ def list_project_users(
             row["creatornm"] = cnm
         else:
             row["creatornm"] = ""
+        row["servicecds"] = svc_map.get(row.get("useruid"), [])
 
     # ── 해당 프로젝트에 없는 기업 사용자 (조회 Modal용) ───────────
     existing_uuids = {r["useruid"] for r in pu_rows if r.get("useruid")}
@@ -544,12 +568,20 @@ def list_project_users(
     else:
         all_tu = []
 
+    # 프로젝트의 서비스(accountuid+servicecd)에 가입된 사용자만 후보로 노출
+    service_useruids = None
+    if proj_accountuid and proj_servicecd:
+        service_useruids = {uid for uid, scds in svc_map.items() if proj_servicecd in scds}
+
     tenantusers_modal = []
     for tu in all_tu:
         uid = tu.get("useruid")
-        if uid and uid not in existing_uuids:
-            nm, email = _get_usernm_email(sb, uid)
-            tenantusers_modal.append({"useruid": uid, "usernm": nm, "email": email})
+        if not uid or uid in existing_uuids:
+            continue
+        if service_useruids is not None and uid not in service_useruids:
+            continue
+        nm, email = _get_usernm_email(sb, uid)
+        tenantusers_modal.append({"useruid": uid, "usernm": nm, "email": email, "servicecds": svc_map.get(uid, [])})
 
     return {
         "projects": proj_rows,

@@ -40,8 +40,13 @@ export default function OrgTenantUsersPage() {
   const [roleFilter,     setRoleFilter]     = useState('all')
   const [serviceFilters, setServiceFilters] = useState([])
 
-  const { tenantid, tenantnm, users = [], available_servicecds = [] } = data
+  const { tenantid, tenantnm, users = [], available_servicecds = [], service_summary = [] } = data
   const serviceCodes = allServiceCodes.filter((c) => available_servicecds.includes(c.codevalue))
+
+  const serviceLabels = (scds) => serviceCodes
+    .filter((c) => (scds || []).includes(c.codevalue))
+    .map((c) => t(c.term_key) || c.default_name)
+    .join(', ')
 
   const filteredUsers = useMemo(() => {
     return [...users]
@@ -179,6 +184,27 @@ export default function OrgTenantUsersPage() {
         </div>
       </div>
 
+      {service_summary.length > 0 && (
+        <div className="form-filter-group">
+          <div className="filter-item">
+            <label style={{ width: 'auto', marginRight: 16 }}>{t('lbl.service.usage')}:</label>
+            {serviceCodes.map((svc) => {
+              const s = service_summary.find((r) => r.servicecd === svc.codevalue)
+              if (!s) return null
+              const label = t(svc.term_key) || svc.default_name
+              const countText = s.total_users != null
+                ? t('inf.service.usage.count').replace('{current}', s.current_users).replace('{total}', s.total_users)
+                : t('inf.service.usage.nolimit').replace('{current}', s.current_users)
+              return (
+                <span key={s.servicecd} className="radio-label" style={{ marginRight: 24 }}>
+                  {label} {countText}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측 패널: 목록 */}
         <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
@@ -190,17 +216,18 @@ export default function OrgTenantUsersPage() {
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '40%' }}>{t('thd.email_thd')}</th>
-                  <th style={{ width: '30%' }}>{t('thd.usernm_thd')}</th>
-                  <th style={{ width: '15%' }}>{t('thd.rolecd_thd')}</th>
-                  <th style={{ width: '15%' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '30%' }}>{t('thd.email_thd')}</th>
+                  <th style={{ width: '20%' }}>{t('thd.usernm_thd')}</th>
+                  <th style={{ width: '12%' }}>{t('thd.rolecd_thd')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '28%' }}>{t('thd.servicecd_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : filteredUsers.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : filteredUsers.map((u) => (
                   <tr key={u.useruid}
                     className={selectedUid === u.useruid ? 'selected-row' : ''}
@@ -210,6 +237,7 @@ export default function OrgTenantUsersPage() {
                     <td>{u.usernm}</td>
                     <td>{u.rolecd === 'M' ? t('cod.rolecd_M') : t('cod.rolecd_U')}</td>
                     <td style={{ textAlign: 'center' }}>{u.useyn ? '✔' : ''}</td>
+                    <td>{serviceLabels(u.servicecds)}</td>
                   </tr>
                 ))}
               </tbody>
