@@ -20,7 +20,7 @@ export function useSaveTenantLlm() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['org-tenant-llms'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -33,7 +33,7 @@ export function useDeleteTenantLlm() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['org-tenant-llms'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }
 
@@ -74,7 +74,7 @@ export function useDeleteOrgProject() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['org-projects'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }
 
@@ -127,7 +127,7 @@ export function useSendInvitation() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['org-invitations'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -154,7 +154,7 @@ export function useSaveTenantUser() {
       qc.invalidateQueries({ queryKey: ['org-tenant-users', vars.tenantid] })
       qc.invalidateQueries({ queryKey: ['org-tenant-users'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -168,6 +168,6 @@ export function useDeleteTenantUser() {
       qc.invalidateQueries({ queryKey: ['org-tenant-users', vars.tenantid] })
       qc.invalidateQueries({ queryKey: ['org-tenant-users'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }

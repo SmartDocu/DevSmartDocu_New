@@ -688,6 +688,23 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
         acc = sd.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
     accountuid = acc.data["accountuid"] if acc and acc.data else None
 
+    # 서비스 최대 인원 제한 검사: (신규 초대 인원 수 + 현재 활성 인원 수) > 최대 인원 이면 차단
+    if accountuid:
+        acc_svc = sd.table("accountservices").select("total_users").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
+        total_users = acc_svc.data.get("total_users") if acc_svc.data else None
+        if total_users is not None:
+            active_cnt = (
+                sd.table("serviceusers")
+                .select("useruid", count="exact")
+                .eq("accountuid", accountuid)
+                .eq("servicecd", body.servicecd)
+                .eq("useyn", True)
+                .execute()
+            )
+            current_count = active_cnt.count or 0
+            if len(emails) + current_count > total_users:
+                raise HTTPException(status_code=400, detail="최대 인원이 초과 됩니다.")
+
     # 이미 public.users에 가입된 이메일 → useruid 매핑
     user_rows = svc.schema("public").table("users").select("useruid,email").in_("email", emails).execute().data or []
     email_to_useruid = {r["email"]: r["useruid"] for r in user_rows}
