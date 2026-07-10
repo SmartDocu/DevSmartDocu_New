@@ -152,6 +152,25 @@ export function useUpgradePlan() {
   })
 }
 
+// ─── Tenant Subscription (신규 테넌트 셀프 생성) ────────────────────────────────
+
+export function useTenantSubscriptionInit() {
+  return useQuery({
+    queryKey: ['tenant-subscription-init'],
+    queryFn: () => apiClient.get('/settings/tenant-subscription/init').then((r) => r.data),
+  })
+}
+
+export function useCreateTenantSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-subscription', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myinfo'] })
+    },
+  })
+}
+
 // ─── Connectors ───────────────────────────────────────────────────────────────
 
 export function useConnectors() {

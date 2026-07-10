@@ -5,7 +5,7 @@ import { useSettingsTenants, useSaveTenant, useDeleteTenant } from '@/hooks/useS
 
 const EMPTY_FORM = {
   tenantid: '', tenantnm: '', useyn: true,
-  billingusercnt: '', llmlimityn: false, email: '', telno: '',
+  email: '', telno: '',
   languagecd: '', timezone: '', issystemtenant: false,
 }
 
@@ -37,8 +37,6 @@ export default function SettingsTenantsPage() {
       tenantid: row.tenantid,
       tenantnm: row.tenantnm || '',
       useyn: !!row.useyn,
-      billingusercnt: row.billingusercnt ?? '',
-      llmlimityn: !!row.llmlimityn,
       email: row.decemail || '',
       telno: row.dectelno || '',
       languagecd: row.languagecd || '',
@@ -68,8 +66,6 @@ export default function SettingsTenantsPage() {
     if (form.tenantid) fd.append('tenantid', form.tenantid)
     fd.append('tenantnm', form.tenantnm)
     fd.append('useyn', form.useyn ? 'true' : 'false')
-    if (form.billingusercnt !== '') fd.append('billingusercnt', String(form.billingusercnt))
-    fd.append('llmlimityn', form.llmlimityn ? 'true' : 'false')
     if (form.email) fd.append('email', form.email)
     if (form.telno) fd.append('telno', form.telno)
     if (form.languagecd) fd.append('languagecd', form.languagecd)
@@ -179,20 +175,6 @@ export default function SettingsTenantsPage() {
             <div style={{ paddingLeft: 60 }}>
               <input type="checkbox" checked={form.useyn}
                 onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.billingusercnt')}:</label>
-            <input type="number" value={form.billingusercnt} style={{ width: 120 }}
-              onChange={(e) => setForm((f) => ({ ...f, billingusercnt: e.target.value }))} />
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.llmlimityn')}:</label>
-            <div style={{ paddingLeft: 60 }}>
-              <input type="checkbox" checked={form.llmlimityn}
-                onChange={(e) => setForm((f) => ({ ...f, llmlimityn: e.target.checked }))} />
             </div>
           </div>
 

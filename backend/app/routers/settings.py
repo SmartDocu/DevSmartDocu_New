@@ -350,8 +350,6 @@ async def save_tenant(
     tenantid: Optional[str] = Form(None),
     tenantnm: str = Form(...),
     useyn: str = Form("true"),
-    billingusercnt: Optional[str] = Form(None),
-    llmlimityn: str = Form("false"),
     email: Optional[str] = Form(None),
     telno: Optional[str] = Form(None),
     languagecd: Optional[str] = Form(None),
@@ -364,15 +362,11 @@ async def save_tenant(
     sb = _sb(token)
 
     useyn_bool = useyn.lower() not in ("false", "0", "")
-    llmlimityn_bool = llmlimityn.lower() not in ("false", "0", "")
     issystemtenant_bool = issystemtenant.lower() not in ("false", "0", "")
-    billingusercnt_int = int(billingusercnt) if billingusercnt and billingusercnt.strip() else None
 
     tenant_data = {
         "tenantnm": tenantnm,
         "useyn": useyn_bool,
-        "billingusercnt": billingusercnt_int,
-        "llmlimityn": llmlimityn_bool,
         "issystemtenant": issystemtenant_bool,
         "creator": user.id,
     }
@@ -703,6 +697,91 @@ def upgrade_plan(
     }).execute()
 
     return {"result": "success", "message": "업그레이드가 완료되었습니다."}
+
+
+# ══════════════════════════════════════════════════════
+#  TENANT SUBSCRIPTION (신규 테넌트 셀프 생성)
+# ══════════════════════════════════════════════════════
+
+@router.get("/tenant-subscription/init")
+def get_tenant_subscription_init(
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """신규 테넌트 생성 화면 초기값 — languages/timezones 목록 + 현재 tenantuser의 languagecd/timezone 기본값."""
+    user = _get_user(token)
+    sb = _sb(token)
+    user_id = str(user.id)
+
+    tu_row = {}
+    if tenantid:
+        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("languagecd,timezone").eq("useruid", user_id).eq("tenantid", tenantid).maybe_single().execute()
+        tu_row = tu.data or {}
+    if not tu_row:
+        tu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("languagecd,timezone").eq("useruid", user_id).eq("useyn", True).limit(1).execute().data or []
+        tu_row = tu_rows[0] if tu_rows else {}
+
+    languages = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd,languagenm").eq("useyn", True).order("orderno").execute().data or []
+    timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezones").select("timezone").eq("useyn", True).execute().data or [])]
+
+    return {
+        "languages": languages,
+        "timezones": timezones,
+        "default_languagecd": tu_row.get("languagecd"),
+        "default_timezone": tu_row.get("timezone"),
+    }
+
+
+class TenantSubscriptionRequest(BaseModel):
+    tenantnm: str
+    languagecd: Optional[str] = None
+    timezone: Optional[str] = None
+
+
+@router.post("/tenant-subscription")
+def create_tenant_subscription(body: TenantSubscriptionRequest, token: str = Depends(get_token)):
+    """신규 테넌트 셀프 생성: tenants(useyn=true) / tenantusers(rolecd=M) / accounts(accounttype=T) 동시 생성."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenant_data = {
+        "tenantnm": body.tenantnm,
+        "useyn": True,
+        "issystemtenant": False,
+        "creator": user_id,
+    }
+    if body.languagecd:
+        tenant_data["languagecd"] = body.languagecd
+    if body.timezone:
+        tenant_data["timezone"] = body.timezone
+
+    tenant_resp = svc.table("tenants").insert(tenant_data).execute()
+    if not tenant_resp.data:
+        raise HTTPException(status_code=500, detail="테넌트 저장에 실패했습니다.")
+    new_tenantid = tenant_resp.data[0]["tenantid"]
+
+    tenantuser_data = {
+        "tenantid": new_tenantid,
+        "useruid": user_id,
+        "rolecd": "M",
+        "useyn": True,
+        "creator": user_id,
+    }
+    if body.languagecd:
+        tenantuser_data["languagecd"] = body.languagecd
+    if body.timezone:
+        tenantuser_data["timezone"] = body.timezone
+    svc.table("tenantusers").insert(tenantuser_data).execute()
+
+    svc.table("accounts").insert({
+        "accounttype": "T",
+        "tenantid": new_tenantid,
+        "accountstatus": "Active",
+        "creator": user_id,
+    }).execute()
+
+    return {"tenantid": new_tenantid, "tenantnm": body.tenantnm}
 
 
 @router.post("/myinfo/timezone")

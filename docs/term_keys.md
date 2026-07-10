@@ -400,7 +400,6 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.billing.model |
 | lbl.billing.multi |
 | lbl.billing.single |
-| lbl.billingusercnt |
 | lbl.bold |
 | lbl.bordercolor |
 | lbl.chapter |
@@ -471,7 +470,6 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.joindt |
 | lbl.keycoldatatypecd |
 | lbl.keycolnm |
-| lbl.llmlimityn |
 | lbl.llmmodelnicknm |
 | lbl.llmmodelnm |
 | lbl.llmvendornm |
@@ -548,6 +546,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | lbl.tag1_lbl |
 | lbl.tag2_lbl |
 | lbl.tblparams.list |
+| lbl.languagecd |
 | lbl.telno |
 | lbl.template.upload |
 | lbl.tenant |
@@ -838,6 +837,7 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | ttl.sentence.manage |
 | ttl.table.manage |
 | ttl.tenant.llm |
+| ttl.tenant.subscription |
 | ttl.tenant.user.reject |
 | ttl.tmpl.syntax.error |
 | ttl.translations |

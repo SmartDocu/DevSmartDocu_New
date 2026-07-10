@@ -123,7 +123,13 @@ export default function MyInfoPage() {
 
         {/* 요금제 */}
         <Col span={12}>
-          <Card size="small" title={t('ttl.myinfo.plan')} loading={subsLoading} style={{ height: '100%' }}>
+          <Card
+            size="small"
+            title={t('ttl.myinfo.plan')}
+            extra={<Button size="small" onClick={() => openInTab('tenant-subscription', '', t('ttl.tenant.subscription'))}>{t('ttl.tenant.subscription')}</Button>}
+            loading={subsLoading}
+            style={{ height: '100%' }}
+          >
             <Table
               size="small"
               pagination={false}
@@ -136,13 +142,7 @@ export default function MyInfoPage() {
                   key: 'actions',
                   render: (_, row) => {
                     if (row.plancd === 'Fr') return (
-                      <Space>
-                        <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`)}>{t('btn.upgrade.pro')}</Button>
-                        <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.group')}</Button>
-                      </Space>
-                    )
-                    if (row.plancd === 'Pr') return (
-                      <Button size="small" onClick={() => alert('작업 예정입니다.')}>{t('btn.upgrade.group')}</Button>
+                      <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`)}>{t('btn.upgrade.pro')}</Button>
                     )
                     return null
                   },
