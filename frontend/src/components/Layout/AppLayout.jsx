@@ -68,6 +68,7 @@ export default function AppLayout() {
     const found = saved && projectList.find(p => String(p.projectid) === String(saved))
     const resolved = found ? found.projectid : projectList[0].projectid
     setSelectedProjectId(resolved)
+    updateUser({ myprojectid: String(resolved) })
     if (String(resolved) !== String(saved ?? '')) {
       updateMyProject.mutate({ myprojectid: String(resolved), servicecd: currentServicecd })
     }
@@ -314,6 +315,7 @@ export default function AppLayout() {
                   value={selectedProjectId || undefined}
                   onChange={(val) => {
                     setSelectedProjectId(val)
+                    updateUser({ myprojectid: String(val) })
                     updateMyProject.mutate({ myprojectid: String(val), servicecd: currentServicecd })
                   }}
                   size="small"

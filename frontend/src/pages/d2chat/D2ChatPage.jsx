@@ -206,7 +206,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.post('/d2chat/session/inject', {
         session_id: sessionId,
-        project_id: user?.projectid ?? null,
+        project_id: user?.myprojectid ?? null,
         question, answer, query, visualization_type, table_html, chart_image,
       })
       if (data.session_id) updateSessionId(data.session_id)
@@ -252,7 +252,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.post(
         '/d2chat/ask',
-        { question, session_id: sessionIdRef.current, project_id: user?.projectid ?? null, account_uid: user?.accountuid ?? null },
+        { question, session_id: sessionIdRef.current, project_id: user?.myprojectid ?? null, account_uid: user?.accountuid ?? null },
         ASK_TIMEOUT,
       )
 
