@@ -33,7 +33,7 @@ export default function AppLauncher() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 0' }}>
       <h2 style={{ textAlign: 'center', marginBottom: 48, color: '#163E64', fontSize: 24, fontWeight: 700 }}>
-        D2Doc
+        {user?.tenantnm}
       </h2>
 
       {isLoading ? (
