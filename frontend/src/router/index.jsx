@@ -45,6 +45,8 @@ import OrgTenantLlmsPage from '@/pages/org/OrgTenantLlmsPage'
 import OrgProjectsPage from '@/pages/org/OrgProjectsPage'
 import OrgProjectUsersPage from '@/pages/org/OrgProjectUsersPage'
 import OrgInviteMembersPage from '@/pages/org/OrgInviteMembersPage'
+import OrgTenantManagePage from '@/pages/org/OrgTenantManagePage'
+import OrgSubscriptionManagePage from '@/pages/org/OrgSubscriptionManagePage'
 import AdminUserRolePage from '@/pages/admin/AdminUserRolePage'
 import AdminSamplePromptPage from '@/pages/admin/AdminSamplePromptPage'
 import AdminHelpsPage from '@/pages/admin/AdminHelpsPage'
@@ -165,6 +167,8 @@ export const router = createBrowserRouter([
       { path: 'org/projects', element: <OrgProjectsPage /> },
       { path: 'org/project-users', element: <OrgProjectUsersPage /> },
       { path: 'org/invite-members', element: <OrgInviteMembersPage /> },
+      { path: 'org/tenant-manage', element: <OrgTenantManagePage /> },
+      { path: 'org/subscription-manage', element: <OrgSubscriptionManagePage /> },
 
       // AI LLM 설정 (CA/SA/TA)
       { path: 'master/ai-charts', element: <MasterAiChartsPage /> },

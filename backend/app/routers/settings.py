@@ -735,6 +735,244 @@ def upgrade_plan(
 
 
 # ══════════════════════════════════════════════════════
+#  TENANT MANAGE — 구독 관리 (좌: 현재 구독 / 우: Team·Enterprise 상품 선택)
+# ══════════════════════════════════════════════════════
+
+def _get_tenant_and_account(svc, user_id: str, tenantid: Optional[str]) -> tuple[str, Optional[str]]:
+    """tenantid와 accountuid를 반환."""
+    if not tenantid:
+        tu = svc.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
+        if not tu.data:
+            raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+        tenantid = str(tu.data["tenantid"])
+
+    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+
+    if issystemtenant:
+        acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    else:
+        acc = svc.table("accounts").select("accountuid").eq("tenantid", int(tenantid)).maybe_single().execute()
+
+    accountuid = str(acc.data["accountuid"]) if acc and acc.data else None
+    return tenantid, accountuid
+
+
+@router.get("/tenant-manage/subscriptions")
+def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """구독 관리 화면 좌측: 서비스별 현재 구독 상품 목록."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    _, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+
+    # 전체 서비스 목록 — 아직 구독하지 않은 서비스도 선택 가능하도록 항상 포함
+    service_codes = (
+        svc.table("codes").select("codevalue,orderno")
+        .eq("codegroupcd", "servicecd").eq("useyn", True).order("orderno").execute().data or []
+    )
+
+    if not accountuid:
+        return {
+            "subscriptions": [
+                {
+                    "servicecd": c["codevalue"], "productcd": None, "productnm": None,
+                    "plancd": None, "billingtermcd": None, "users": None, "credit": None,
+                    "servicestatus": None,
+                }
+                for c in service_codes
+            ],
+            "accountuid": None,
+        }
+
+    rows = (
+        svc.table("accountservices")
+        .select("servicecd,productcd,plancd,servicestatus")
+        .eq("accountuid", accountuid)
+        .execute()
+        .data or []
+    )
+    row_map = {r["servicecd"]: r for r in rows}
+
+    productcds = [r["productcd"] for r in rows if r.get("productcd")]
+    prods = (
+        svc.table("products").select("productcd,productnm,billingtermcd,users,credit")
+        .in_("productcd", productcds).execute().data or []
+    ) if productcds else []
+    prod_map = {p["productcd"]: p for p in prods}
+
+    result = []
+    for c in service_codes:
+        scd = c["codevalue"]
+        r = row_map.get(scd)
+        if not r:
+            result.append({
+                "servicecd": scd, "productcd": None, "productnm": None,
+                "plancd": None, "billingtermcd": None, "users": None, "credit": None,
+                "servicestatus": None,
+            })
+            continue
+        p = prod_map.get(r.get("productcd"), {})
+        result.append({
+            "servicecd": scd,
+            "productcd": r.get("productcd"),
+            "productnm": p.get("productnm", r.get("productcd")),
+            "plancd": r.get("plancd"),
+            "billingtermcd": p.get("billingtermcd"),
+            "users": p.get("users"),
+            "credit": p.get("credit"),
+            "servicestatus": r.get("servicestatus"),
+        })
+
+    return {"subscriptions": result, "accountuid": accountuid}
+
+
+@router.get("/tenant-manage/team-products")
+def get_tenant_manage_team_products(servicecd: str, token: str = Depends(get_token)):
+    """구독 관리 화면 우측: 선택한 서비스의 Team/Enterprise 상품 목록."""
+    _get_user(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    rows = (
+        svc.table("products")
+        .select("productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey,orderno")
+        .eq("servicecd", servicecd)
+        .eq("producttype", "Service")
+        .in_("plancd", ["Te", "En"])
+        .eq("useyn", True)
+        .order("orderno")
+        .execute()
+        .data or []
+    )
+    return {"products": rows}
+
+
+class SubscriptionChangeRequest(BaseModel):
+    servicecd: str
+    productcd: str
+
+
+@router.post("/tenant-manage/subscription-change")
+def change_tenant_subscription(
+    body: SubscriptionChangeRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """구독 관리 화면: 선택한 상품으로 구독 변경.
+
+    결제 연동 전까지는 저장 즉시 accountservices에 반영한다.
+    추후 결제 게이트가 추가되면 결제 성공 콜백에서 이 로직을 호출하도록 변경해야 한다.
+    """
+    from datetime import datetime, timezone as tz, timedelta as td
+    from dateutil.relativedelta import relativedelta
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    prod_row = svc.table("products").select(
+        "productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
+    ).eq("productcd", body.productcd).maybe_single().execute()
+    if not prod_row.data:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    product = prod_row.data
+
+    cur_row = svc.table("accountservices").select(
+        "subscriptionuid,productcd,plancd"
+    ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
+    current = cur_row.data or {}  # 없으면 해당 서비스 신규 구독
+
+    now_utc = datetime.now(tz.utc)
+    today = now_utc.date()
+
+    new_sub_resp = svc.table("subscriptions").insert({
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "productcd": product["productcd"],
+        "plancd": product["plancd"],
+        "servicecd": product["servicecd"],
+        "billingtermcd": product.get("billingtermcd"),
+        "old_productcd": current.get("productcd"),
+        "subscription_status": "Paid",
+        "creator": user_id,
+    }).execute()
+    if not new_sub_resp.data:
+        raise HTTPException(status_code=500, detail="구독 저장에 실패했습니다.")
+    new_subscriptionuid = new_sub_resp.data[0]["subscriptionuid"]
+
+    users = product.get("users") or 1
+    accountservices_payload = {
+        "old_subscriptionuid": current.get("subscriptionuid"),
+        "old_productcd": current.get("productcd"),
+        "old_plancd": current.get("plancd"),
+        "subscriptionuid": new_subscriptionuid,
+        "productcd": product["productcd"],
+        "plancd": product["plancd"],
+        "is_customerAIKey": product.get("is_customeraikey", False),
+        "billingfirstdt": today.isoformat(),
+        "billingday": today.day,
+        "included_users": users,
+        "add_users": 0,
+        "total_users": users,
+        "is_autotopup": False,
+        "creator": user_id,
+    }
+    if current:
+        svc.table("accountservices").update(accountservices_payload).eq(
+            "accountuid", accountuid
+        ).eq("servicecd", body.servicecd).execute()
+    else:
+        # 해당 서비스 최초 구독 — accountservices 신규 행 생성
+        svc.table("accountservices").insert({
+            **accountservices_payload,
+            "accountuid": accountuid,
+            "servicecd": body.servicecd,
+            "tenantid": int(tenantid),
+            "servicestatus": "Active",
+            "is_postpaid": False,
+        }).execute()
+
+    svc.table("subscription_credits").insert({
+        "subscriptionuid": new_subscriptionuid,
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "productcd": product["productcd"],
+        "servicecd": product["servicecd"],
+        "quantity": product.get("credit", 0),
+        "credittypecd": "SC",
+        "creditdesc": "Subscription Credit",
+        "creator": user_id,
+    }).execute()
+
+    if current.get("subscriptionuid"):
+        svc.table("creditbuckets").update({
+            "expiredts": now_utc.isoformat(),
+        }).eq("subscriptionuid", current["subscriptionuid"]).execute()
+
+    expiredts = (today + relativedelta(months=1) - td(days=1)).isoformat()
+    svc.table("creditbuckets").insert({
+        "subscriptionuid": new_subscriptionuid,
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "servicecd": product["servicecd"],
+        "chargecredit": product.get("credit", 0),
+        "creditchargecd": "Ba",
+        "priorityno": 1,
+        "usecredit": 0,
+        "remaincredit": product.get("credit", 0),
+        "granteddts": now_utc.isoformat(),
+        "expiredts": expiredts,
+        "startdt": today.isoformat(),
+    }).execute()
+
+    return {"result": "success", "message": "구독이 변경되었습니다."}
+
+
+# ══════════════════════════════════════════════════════
 #  TENANT SUBSCRIPTION (신규 테넌트 셀프 생성)
 # ══════════════════════════════════════════════════════
 

@@ -171,6 +171,33 @@ export function useCreateTenantSubscription() {
   })
 }
 
+// ─── Tenant Manage (구독 관리) ──────────────────────────────────────────────────
+
+export function useTenantManageSubscriptions() {
+  return useQuery({
+    queryKey: ['tenant-manage-subscriptions'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/subscriptions').then((r) => r.data),
+  })
+}
+
+export function useTenantManageTeamProducts(servicecd) {
+  return useQuery({
+    queryKey: ['tenant-manage-team-products', servicecd],
+    queryFn: () => apiClient.get('/settings/tenant-manage/team-products', { params: { servicecd } }).then((r) => r.data),
+    enabled: !!servicecd,
+  })
+}
+
+export function useChangeTenantSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/subscription-change', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-subscriptions'] })
+    },
+  })
+}
+
 // ─── Connectors ───────────────────────────────────────────────────────────────
 
 export function useConnectors() {
