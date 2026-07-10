@@ -48,6 +48,9 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
             .eq("docid", docid) \
             .execute()
 
+        if not docparamdtls_resp.data or not docparams_resp.data:
+            return df.copy()
+
         df_dtls = pd.DataFrame(docparamdtls_resp.data)
         df_params = pd.DataFrame(docparams_resp.data)
 
@@ -79,11 +82,15 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
         # 2. docparamdtls
         docparamdtls_resp = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
             .select("*").eq("docid", docid).eq("datauid", datauid).execute()
-        df_dtls = pd.DataFrame(docparamdtls_resp.data)
 
         # 3. gendoc_params (value)
         gendoc_params_resp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
             .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
+
+        if not docparamdtls_resp.data or not gendoc_params_resp.data:
+            return df.copy()
+
+        df_dtls = pd.DataFrame(docparamdtls_resp.data)
         df_gendoc = pd.DataFrame(gendoc_params_resp.data)
         df_gendoc = df_gendoc[["paramuid", "paramvalue"]]
 

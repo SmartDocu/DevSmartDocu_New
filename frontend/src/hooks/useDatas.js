@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
@@ -102,6 +102,7 @@ export function useDatacols(datauid) {
 
 export function useSaveDbData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/db', body).then((r) => r.data),
     onSuccess: () => {
@@ -114,6 +115,7 @@ export function useSaveDbData() {
 
 export function useSaveExData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (formData) =>
       apiClient.post('/datas/ex', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
@@ -127,6 +129,7 @@ export function useSaveExData() {
 
 export function useSaveAiData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/ai', body).then((r) => r.data),
     onSuccess: () => {
@@ -139,6 +142,7 @@ export function useSaveAiData() {
 
 export function useDeleteData(datasourcecd) {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (datauid) => apiClient.delete(`/datas/${datauid}`).then((r) => r.data),
     onSuccess: () => {
@@ -151,6 +155,7 @@ export function useDeleteData(datasourcecd) {
 
 export function useCreateDatacols() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/datacols/create', body).then((r) => r.data),
     onSuccess: (_data, body) => {
@@ -163,6 +168,7 @@ export function useCreateDatacols() {
 
 export function useSaveDatacols() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (cols) => apiClient.post('/datas/datacols', cols).then((r) => r.data),
     onSuccess: (_data, cols) => {
@@ -183,6 +189,7 @@ export function useDfDatas(docid) {
 
 export function useSaveDfData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/df', body).then((r) => r.data),
     onSuccess: (_, body) => {
@@ -195,6 +202,7 @@ export function useSaveDfData() {
 
 export function useSaveDfvData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/dfv', body).then((r) => r.data),
     onSuccess: (_, body) => {
@@ -206,6 +214,7 @@ export function useSaveDfvData() {
 }
 
 export function useAiDataPreview() {
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/ai-preview', body).then((r) => r.data),
     onError: (err) => { message.error(err.response?.data?.detail || t('msg.preview.error')) },
@@ -228,6 +237,7 @@ export function useApiConnectors() {
 
 export function useSaveApiData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/api', body).then((r) => r.data),
     onSuccess: () => {
@@ -247,6 +257,7 @@ export function useApiParams(datauid) {
 
 export function useDeleteDfData() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ datauid }) => apiClient.delete(`/datas/${datauid}`).then((r) => r.data),
     onSuccess: (_, { docid }) => {

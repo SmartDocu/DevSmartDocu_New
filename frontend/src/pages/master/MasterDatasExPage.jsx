@@ -77,13 +77,12 @@ export default function MasterDatasExPage() {
     if (excelFile) fd.append('excelfile', excelFile)
     try {
       const res = await saveData.mutateAsync(fd)
-      message.success(t('msg.save.success'))
       const newUid = res?.datauid || form.datauid
       if (newUid) {
-        createCols.mutate({ datauid: newUid })
+        await createCols.mutateAsync({ datauid: newUid })
       }
-    } catch (err) {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+    } catch {
+      // saveData/createCols 각각의 onError에서 이미 메시지 처리함
     } finally {
       setSaving(false)
     }

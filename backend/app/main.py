@@ -61,6 +61,7 @@ async def postgrest_api_error_handler(request: Request, exc: APIError):
             status_code=401,
             content={"detail": "토큰이 만료되었습니다."},
         )
+    print(f"[postgrest_api_error_handler] {request.method} {request.url.path} code={code} message={message}")
     return JSONResponse(status_code=500, content={"detail": message})
 
 

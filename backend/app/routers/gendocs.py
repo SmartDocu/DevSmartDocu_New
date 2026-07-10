@@ -880,6 +880,10 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
 @router.get("/genchapters/{genchapteruid}/rewrite/status")
 def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
+    sb = _sb(token)
+    genchap_check = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("genchapteruid").eq("genchapteruid", genchapteruid).execute().data
+    if not genchap_check:
+        raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     sb_svc = get_service_client()
     row = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").select(
         "genchapterjobuid,jobstatuscd,errorcd,errormessage,startdts,chapteruid"
@@ -1042,6 +1046,10 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     docid = ctx["docid"]
     results = body.results
 
+    gendoc_check = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("gendocuid", gendocuid).execute().data
+    if not gendoc_check:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()
     timeout = timedelta(hours=2)
@@ -1130,6 +1138,10 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
 @router.get("/{gendocuid}/generate/status")
 def generate_status(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
+    sb = _sb(token)
+    gendoc_check = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("gendocuid", gendocuid).execute().data
+    if not gendoc_check:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     sb_svc = get_service_client()
     row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").select(
         "gendocjobuid,jobstatuscd,errorcd,errormessage,startdts"

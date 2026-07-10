@@ -7,6 +7,7 @@ import { App, Select, Spin } from 'antd'
 import dayjs from 'dayjs'
 import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
 import apiClient from '@/api/client'
+import { supabase } from '@/lib/supabaseClient'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useReqStore } from '@/stores/reqStore'
@@ -55,10 +56,8 @@ export default function ReqChaptersReadPage() {
 
   const [rewriting,       setRewriting]       = useState(false)
   const [uploadLoading,   setUploadLoading]   = useState(false)
-  const chapterPollingRef = useRef(null)
 
   const [generating,    setGenerating]    = useState(false)
-  const pollingRef = useRef(null)
 
   const fileInputRef = useRef(null)
 
@@ -87,47 +86,37 @@ export default function ReqChaptersReadPage() {
       .catch(() => {})
   }, [selectedChap?.genchapteruid]) // eslint-disable-line
 
-  // 챕터 재작성 중 5초 폴링
+  // 챕터 재작성 완료 감지 (Realtime)
   useEffect(() => {
     if (!rewriting || !selectedChap) return
-    chapterPollingRef.current = setInterval(() => {
-      apiClient.get(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite/status`)
-        .then((res) => {
-          // if (res.data.JobStatusCD !== 'S') {    //jeff 20260706 1340 아랫줄처럼 수정
-          if (res.data.JobStatusCD === 'E' || res.data.ErrorCD) {  // jeff 20260707 'S'->'P'(워커 선점)->'E' 순서로 바뀌므로 'E'(또는 에러)일 때만 완료로 판단
-            setRewriting(false)
-            clearInterval(chapterPollingRef.current)
-            chapterPollingRef.current = null
-            if (res.data.ErrorCD) message.error(res.data.ErrorMessage || t('msg.server.error'))
-            else { refetch(); loadContent(selectedChap.genchapteruid, viewType) }
-          }
+    const channel = supabase
+      .channel(`chapter_rewrite_${selectedChap.genchapteruid}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'sdoc', table: 'genchapters_realtimes', filter: `genchapteruid=eq.${selectedChap.genchapteruid}` },
+        (payload) => {
+          if (payload.new.jobstatuscd !== 'E') return  // 'S'->'P'(워커 선점)->'E' 순서로 바뀌므로 'E'일 때만 완료로 판단
+          setRewriting(false)
+          if (payload.new.errorcd) message.error(payload.new.errormessage || t('msg.server.error'))
+          else { refetch(); loadContent(selectedChap.genchapteruid, viewType) }
         })
-        .catch(() => {})
-    }, 5000)
-    return () => {
-      if (chapterPollingRef.current) { clearInterval(chapterPollingRef.current); chapterPollingRef.current = null }
-    }
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [rewriting, selectedChap?.genchapteruid]) // eslint-disable-line
 
-  // 문서 전체 생성 중 5초 폴링
+  // 문서 전체 생성 완료 감지 (Realtime)
   useEffect(() => {
     if (!generating || !selectedGendocuid) return
-    pollingRef.current = setInterval(() => {
-      apiClient.get(`/gendocs/${selectedGendocuid}/generate/status`)
-        .then((res) => {
-          // if (res.data.JobStatusCD !== 'S') {
-          if (res.data.JobStatusCD === 'E' || res.data.ErrorCD) {  // jeff 20260707 'S'->'merging'->'E' 순서로 바뀌므로 'E'(또는 에러)일 때만 완료로 판단
-            setGenerating(false)
-            clearInterval(pollingRef.current)
-            pollingRef.current = null
-            refetch()
-          }
+    const channel = supabase
+      .channel(`doc_generate_${selectedGendocuid}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'sdoc', table: 'gendocs_realtimes', filter: `gendocuid=eq.${selectedGendocuid}` },
+        (payload) => {
+          if (payload.new.jobstatuscd !== 'E') return  // 'S'->'merging'->'E' 순서로 바뀌므로 'E'일 때만 완료로 판단
+          setGenerating(false)
+          refetch()
         })
-        .catch(() => {})
-    }, 5000)
-    return () => {
-      if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
-    }
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [generating, selectedGendocuid]) // eslint-disable-line
 
   // ── 콘텐츠 로드 ─────────────────────────────────────────────────────────────

@@ -35,6 +35,7 @@ python-dateutil
 beautifulsoup4
 python-docx
 openpyxl
+xlrd
 
 # ── 외부 DB ───────────────────────────────────────────────────
 pyodbc
