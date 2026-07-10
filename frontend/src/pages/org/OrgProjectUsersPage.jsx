@@ -41,7 +41,6 @@ export default function OrgProjectUsersPage() {
     return found ? (t(found.term_key) || found.default_name) : scd
   }
 
-  const serviceLabels = (scds) => (scds || []).map(serviceLabel).join(', ')
 
   useEffect(() => {
     if (paramProjectid) setSelectedProjectid(paramProjectid)
@@ -142,14 +141,13 @@ export default function OrgProjectUsersPage() {
                   <th style={{ width: '18%' }}>{t('thd.usernm_thd')}</th>
                   <th style={{ width: '14%' }}>{t('thd.rolecd_thd')}</th>
                   <th style={{ width: '10%' }}>{t('thd.useyn_thd')}</th>
-                  <th style={{ width: '30%' }}>{t('thd.servicecd_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : projectusers.length === 0 ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : projectusers.map((u) => (
                   <tr key={u.useruid}
                     className={selectedUid === u.useruid ? 'selected-row' : ''}
@@ -159,7 +157,6 @@ export default function OrgProjectUsersPage() {
                     <td>{u.usernm}</td>
                     <td>{u.rolecd === 'M' ? t('cod.rolecd_M') : t('cod.rolecd_U')}</td>
                     <td style={{ textAlign: 'center' }}>{u.useyn ? '✔' : ''}</td>
-                    <td>{serviceLabels(u.servicecds)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -247,7 +244,6 @@ export default function OrgProjectUsersPage() {
               <tr style={{ background: '#f0f0f0' }}>
                 <th style={{ padding: 8, border: '1px solid #ccc' }}>{t('thd.usernm_thd')}</th>
                 <th style={{ padding: 8, border: '1px solid #ccc' }}>{t('thd.email_thd')}</th>
-                <th style={{ padding: 8, border: '1px solid #ccc' }}>{t('thd.servicecd_thd')}</th>
               </tr>
             </thead>
             <tbody>
@@ -256,11 +252,10 @@ export default function OrgProjectUsersPage() {
                   onClick={() => handleModalUserSelect(u)}>
                   <td style={{ padding: 6, border: '1px solid #ccc' }}>{u.usernm}</td>
                   <td style={{ padding: 6, border: '1px solid #ccc' }}>{u.email}</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{serviceLabels(u.servicecds)}</td>
                 </tr>
               ))}
               {tenantusers.length === 0 && (
-                <tr><td colSpan={3} style={{ textAlign: 'center', padding: 8 }}>{t('msg.no.data')}</td></tr>
+                <tr><td colSpan={2} style={{ textAlign: 'center', padding: 8 }}>{t('msg.no.data')}</td></tr>
               )}
             </tbody>
           </table>

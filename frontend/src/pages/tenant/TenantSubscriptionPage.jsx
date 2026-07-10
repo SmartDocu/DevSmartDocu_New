@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { App, Button, Form, Input, Select } from 'antd'
+import { useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
@@ -13,6 +14,7 @@ export default function TenantSubscriptionPage() {
   const navigate = useNavigate()
   const { user, switchTenant, updateUser } = useAuthStore()
   const clearTabs = useTabStore((s) => s.clearTabs)
+  const queryClient = useQueryClient()
 
   const { data = {}, isLoading } = useTenantSubscriptionInit()
   const createTenant = useCreateTenantSubscription()
@@ -41,6 +43,7 @@ export default function TenantSubscriptionPage() {
         accountuid: sw.data.accountuid,
         tenants: [...(user?.tenants || []), { tenantid: String(created.tenantid), tenantnm: sw.data.tenantnm }],
       })
+      queryClient.invalidateQueries()
       clearTabs()
       message.success(t('msg.save.success'))
       navigate('/launcher')

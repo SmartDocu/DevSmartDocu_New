@@ -1,5 +1,6 @@
 import { Outlet, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover } from 'antd'
+import { useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
@@ -35,6 +36,7 @@ export default function AppLayout() {
   const { token: cssToken } = theme.useToken()
   const { user, clearAuth, updateUser, switchTenant } = useAuthStore()
   const { message, modal } = App.useApp()
+  const queryClient = useQueryClient()
 
   const location = useLocation()
   const [docModalOpen, setDocModalOpen] = useState(false)
@@ -68,7 +70,7 @@ export default function AppLayout() {
     const found = saved && projectList.find(p => String(p.projectid) === String(saved))
     const resolved = found ? found.projectid : projectList[0].projectid
     setSelectedProjectId(resolved)
-    updateUser({ myprojectid: String(resolved) })
+	updateUser({ myprojectid: String(resolved) })
     if (String(resolved) !== String(saved ?? '')) {
       updateMyProject.mutate({ myprojectid: String(resolved), servicecd: currentServicecd })
     }
@@ -145,6 +147,7 @@ export default function AppLayout() {
             tenanticonurl: res.data.tenanticonurl ?? tenant?.tenanticonurl,
             accountuid: res.data.accountuid ?? null,
           })
+          queryClient.invalidateQueries()
           clearTabs()
           navigate('/launcher')
         } catch (e) {
@@ -315,7 +318,7 @@ export default function AppLayout() {
                   value={selectedProjectId || undefined}
                   onChange={(val) => {
                     setSelectedProjectId(val)
-                    updateUser({ myprojectid: String(val) })
+					updateUser({ myprojectid: String(val) })
                     updateMyProject.mutate({ myprojectid: String(val), servicecd: currentServicecd })
                   }}
                   size="small"
