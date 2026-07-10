@@ -35,6 +35,7 @@ export default function MyInfoPage() {
 
   const isMfaEnabled = factorsData?.mfa_enabled ?? false
   const subscriptions = subsData?.subscriptions || []
+  const isSystemTenant = tenant.issystemtenant === true
 
   const isAgreed = (v) => v === 'Y' || v === true
 
@@ -126,7 +127,9 @@ export default function MyInfoPage() {
           <Card
             size="small"
             title={t('ttl.myinfo.plan')}
-            extra={<Button size="small" onClick={() => openInTab('tenant-subscription', '', t('ttl.tenant.subscription'))}>{t('ttl.tenant.subscription')}</Button>}
+            extra={isSystemTenant ? (
+              <Button size="small" onClick={() => openInTab('tenant-subscription', '', t('ttl.tenant.subscription'))}>{t('ttl.tenant.subscription')}</Button>
+            ) : null}
             loading={subsLoading}
             style={{ height: '100%' }}
           >
@@ -141,7 +144,7 @@ export default function MyInfoPage() {
                   title: t('lbl.upgrade'),
                   key: 'actions',
                   render: (_, row) => {
-                    if (row.plancd === 'Fr') return (
+                    if (isSystemTenant && row.plancd === 'Fr') return (
                       <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`)}>{t('btn.upgrade.pro')}</Button>
                     )
                     return null
