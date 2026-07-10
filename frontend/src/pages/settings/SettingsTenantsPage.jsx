@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
-import { useSettingsTenants, useSaveTenant, useDeleteTenant } from '@/hooks/useSettings'
+import { useSettingsTenants, useSaveTenant } from '@/hooks/useSettings'
 
 const EMPTY_FORM = {
   tenantid: '', tenantnm: '', useyn: true,
@@ -10,11 +10,10 @@ const EMPTY_FORM = {
 }
 
 export default function SettingsTenantsPage() {
-  const { message, modal } = App.useApp()
+  const { message } = App.useApp()
   useLangStore((s) => s.translations)
   const { data = {}, isLoading } = useSettingsTenants()
   const saveTenant = useSaveTenant()
-  const deleteTenant = useDeleteTenant()
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedId, setSelectedId] = useState(null)
@@ -50,20 +49,11 @@ export default function SettingsTenantsPage() {
     setCreatedts(row.createdts || '')
   }
 
-  const handleNew = () => {
-    setSelectedId(null)
-    setForm(EMPTY_FORM)
-    setIconFile(null)
-    setIconFileNm('')
-    setIconFileUrl('')
-    setCreatornm('')
-    setCreatedts('')
-  }
-
   const handleSave = () => {
+    if (!selectedId) { message.warning(t('msg.select.update')); return }
     if (!form.tenantnm.trim()) { message.warning(t('msg.tenantnm.required')); return }
     const fd = new FormData()
-    if (form.tenantid) fd.append('tenantid', form.tenantid)
+    fd.append('tenantid', form.tenantid)
     fd.append('tenantnm', form.tenantnm)
     fd.append('useyn', form.useyn ? 'true' : 'false')
     if (form.email) fd.append('email', form.email)
@@ -73,21 +63,8 @@ export default function SettingsTenantsPage() {
     fd.append('issystemtenant', form.issystemtenant ? 'true' : 'false')
     if (iconFile) fd.append('iconfile', iconFile)
     saveTenant.mutate(fd, {
-      onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
+      onSuccess: () => { message.success(t('msg.save.success')) },
       onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
-    })
-  }
-
-  const handleDelete = () => {
-    if (!selectedId) { message.warning(t('msg.select.delete')); return }
-    modal.confirm({
-      title: t('btn.delete'),
-      content: t('msg.confirm.delete'),
-      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
-      onOk: () => deleteTenant.mutate(selectedId, {
-        onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
-      }),
     })
   }
 
@@ -111,13 +88,16 @@ export default function SettingsTenantsPage() {
           <div>{t('mnu.company.tenants')}</div>
         </div>
       </div>
+      <div style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>
+        ※ 이 화면은 기존 기업의 사용여부·연락처·명칭 등 정보 수정만 가능합니다. (신규 생성·삭제 불가)
+      </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측 패널: 기업 목록 */}
         <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+            <div />
           </div>
           <div className="table-container">
             {isLoading ? (
@@ -153,14 +133,9 @@ export default function SettingsTenantsPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveTenant.isPending}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveTenant.isPending || !selectedId}>
                 {t('btn.save')}
               </button>
-              {selectedId && (
-                <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteTenant.isPending}>
-                  {t('btn.delete')}
-                </button>
-              )}
             </div>
           </div>
 

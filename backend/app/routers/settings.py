@@ -331,6 +331,13 @@ def list_tenants(token: str = Depends(get_token)):
 
     rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").order("createdts", desc=True).execute().data or []
 
+    tenantids = [row["tenantid"] for row in rows if row.get("tenantid")]
+    account_map = {}
+    if tenantids:
+        svc = get_service_client().schema(SUPABASE_SCHEMA)
+        acc_rows = svc.table("accounts").select("tenantid, encemail, enctelno").in_("tenantid", tenantids).execute().data or []
+        account_map = {a["tenantid"]: a for a in acc_rows}
+
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         if row.get("creator"):
@@ -339,10 +346,36 @@ def list_tenants(token: str = Depends(get_token)):
                 row["creatornm"] = u[0]["usernm"] if u else ""
             except Exception:
                 row["creatornm"] = ""
+        acc = account_map.get(row.get("tenantid"))
+        row["decemail"] = _decrypt(acc.get("encemail")) if acc else ""
+        row["dectelno"] = _decrypt(acc.get("enctelno")) if acc else ""
 
     langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezones").select("*").eq("useyn", True).execute().data or [])]
     return {"tenants": rows, "languages": langs, "timezones": timezones}
+
+
+def _save_tenant_contact(tenantid: int, email: Optional[str], telno: Optional[str], creator: str):
+    if not email and not telno:
+        return
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    payload = {}
+    if email:
+        payload["encemail"] = _encrypt(email)
+    if telno:
+        payload["enctelno"] = _encrypt(telno)
+
+    existing = svc.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
+    if existing.data:
+        svc.table("accounts").update(payload).eq("tenantid", tenantid).execute()
+    else:
+        payload.update({
+            "accounttype": "T",
+            "tenantid": tenantid,
+            "accountstatus": "Active",
+            "creator": creator,
+        })
+        svc.table("accounts").insert(payload).execute()
 
 
 @router.post("/tenants")
@@ -384,6 +417,7 @@ async def save_tenant(
                 tenant_data["iconfilenm"] = icon_nm
                 tenant_data["iconfileurl"] = icon_url
             sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
+            _save_tenant_contact(int(tenantid), email, telno, str(user.id))
             return {"status": "updated"}
 
     resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert(tenant_data).execute()
@@ -395,6 +429,7 @@ async def save_tenant(
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
+        _save_tenant_contact(int(new_tenantid), email, telno, str(user.id))
     return {"status": "inserted"}
 
 

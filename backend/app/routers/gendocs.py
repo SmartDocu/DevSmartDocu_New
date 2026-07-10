@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 def _get_docid(sb, user_id: str) -> Optional[int]:
-    row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do").execute().data
     docid = row[0].get("mydocid") if row else None
     return int(docid) if docid else None
 
@@ -29,7 +29,7 @@ def _get_user_context(sb, user_id: str) -> dict:
     """docid → projectid → tenantid 순으로 조회하여 LLM 모델 선택에 필요한 컨텍스트 반환"""
     docid = tenantid = projectid = None
     try:
-        row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).execute().data
+        row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do").execute().data
         if row and row[0].get("mydocid"):
             docid = int(row[0]["mydocid"])
     except Exception:

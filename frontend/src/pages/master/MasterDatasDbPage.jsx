@@ -32,7 +32,8 @@ export default function MasterDatasDbPage() {
   const menuNm = currentMenu ? (currentMenu.default_text || '') : t('mnu.master_data.data.db')
 
   const { data: datas = [], isLoading } = useDatasDb()
-  const { data: projects = [] } = useDatasProjects()
+  const { data: projectsData } = useDatasProjects()
+  const projects = projectsData?.projects || []
   const { data: connectors = [] } = useDbConnectors()
   const saveData     = useSaveDbData()
   const deleteData   = useDeleteData('db')

@@ -35,7 +35,8 @@ export default function MasterDatasApiPage() {
 
   const { data: paramLocations = [] } = useMenuCodes('param_locationcd')
   const { data: datas = [], isLoading } = useDatasApi()
-  const { data: projects = [] } = useDatasProjects()
+  const { data: projectsData } = useDatasProjects()
+  const projects = projectsData?.projects || []
   const { data: connectors = [] } = useApiConnectors()
   const saveData   = useSaveApiData()
   const deleteData = useDeleteData('api')

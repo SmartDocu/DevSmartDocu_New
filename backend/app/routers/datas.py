@@ -82,7 +82,7 @@ def parse_ddl_columns(ddl: str) -> list[dict]:
     return result
 
 
-def _active_projects(sb, user_id: str):
+def _active_projects(sb, user_id: str, servicecd: Optional[str] = None):
     proj_list = (
         sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": user_id})
@@ -91,12 +91,14 @@ def _active_projects(sb, user_id: str):
     ids = [p["projectid"] for p in proj_list]
     if not ids:
         return [], {}
-    active = (
+    q = (
         sb.schema(SUPABASE_SCHEMA).table("projects")
         .select("projectid, projectnm")
         .in_("projectid", ids).eq("useyn", True)
-        .execute().data or []
     )
+    if servicecd:
+        q = q.eq("servicecd", servicecd)
+    active = q.execute().data or []
     pmap = {p["projectid"]: p["projectnm"] for p in active}
     return [p["projectid"] for p in active], pmap
 
@@ -117,26 +119,40 @@ def _delete_storage(sb, url: str):
 # ── Projects ───────────────────────────────────────────────────────────────────
 
 @router.get("/projects")
-def list_datas_projects(token: str = Depends(get_token)):
+def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    active_ids, pmap = _active_projects(sb, str(user.id))
+    active_ids, pmap = _active_projects(sb, str(user.id), servicecd)
+
+    myprojectid = None
+    if servicecd:
+        su_row = (
+            sb.schema(SUPABASE_SCHEMA).table("serviceusers")
+            .select("myprojectid")
+            .eq("useruid", str(user.id)).eq("servicecd", servicecd)
+            .maybe_single().execute()
+        )
+        if su_row.data:
+            myprojectid = su_row.data.get("myprojectid")
+
     return {
         "projects": [
             {"projectid": pid, "projectnm": pmap[pid]}
             for pid in active_ids
-        ]
+        ],
+        "myprojectid": myprojectid,
     }
 
 
 class MyProjectRequest(BaseModel):
     myprojectid: str
+    servicecd: str
 
 @router.post("/myproject")
 def update_my_project(body: MyProjectRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"myprojectid": body.myprojectid}).eq("useruid", str(user.id)).execute()
+    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"myprojectid": body.myprojectid}).eq("useruid", str(user.id)).eq("servicecd", body.servicecd).execute()
     return {"status": "ok"}
 
 

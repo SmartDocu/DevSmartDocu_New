@@ -248,15 +248,14 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         svc_row = (
             sd.table("serviceusers")
-            .select("mydocid,myprojectid")
+            .select("mydocid")
             .eq("useruid", user_id)
+            .eq("servicecd", "Do")
             .maybe_single()
             .execute()
         )
         if svc_row.data:
             mydocid = svc_row.data.get("mydocid")
-            if svc_row.data.get("myprojectid"):
-                ctx.myprojectid = str(svc_row.data["myprojectid"])
     except Exception:
         pass
 
@@ -325,7 +324,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
             # mydocid가 실제 선택 docid와 다를 때 DB 동기화
             if str(docid) != str(mydocid or ""):
                 try:
-                    sd.table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).execute()
+                    sd.table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).eq("servicecd", "Do").execute()
                 except Exception:
                     pass
 

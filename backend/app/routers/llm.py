@@ -68,7 +68,7 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
     info = rows[0] if rows else {}
     svc_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select(
         "mydocid"
-    ).eq("useruid", user_id).execute().data or []
+    ).eq("useruid", user_id).eq("servicecd", "Do").execute().data or []
     if svc_rows:
         info["mydocid"] = svc_rows[0].get("mydocid")
     return user_id, info

@@ -23,17 +23,17 @@ export function useChapterDatas(chapteruid) {
   })
 }
 
-export function useDatasProjects({ enabled = true } = {}) {
+export function useDatasProjects({ enabled = true, servicecd } = {}) {
   return useQuery({
-    queryKey: ['datas-projects'],
-    queryFn: () => apiClient.get('/datas/projects').then((r) => r.data.projects),
+    queryKey: ['datas-projects', servicecd],
+    queryFn: () => apiClient.get('/datas/projects', { params: servicecd ? { servicecd } : {} }).then((r) => r.data),
     enabled,
   })
 }
 
 export function useUpdateMyProject() {
   return useMutation({
-    mutationFn: (myprojectid) => apiClient.post('/datas/myproject', { myprojectid }),
+    mutationFn: ({ myprojectid, servicecd }) => apiClient.post('/datas/myproject', { myprojectid, servicecd }),
   })
 }
 

@@ -54,22 +54,24 @@ export default function AppLayout() {
   const { data: allMenus = [] } = useMenus(appcd)
   const { data: helpData } = useHelpSearch(location.pathname, languageCd || 'en')
   const helpItem = helpData?.help ?? null
-  const { data: projectList = [] } = useDatasProjects({ enabled: !!user })
+  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid })
+  const currentServicecd = apps.find((a) => a.appcd === appcd)?.servicecd
+  const { data: projectsData } = useDatasProjects({ enabled: !!user, servicecd: currentServicecd })
+  const projectList = projectsData?.projects || []
   const updateMyProject = useUpdateMyProject()
   const [selectedProjectId, setSelectedProjectId] = useState(null)
   const [appLauncherOpen, setAppLauncherOpen] = useState(false)
-  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid })
 
   useEffect(() => {
-    if (projectList.length === 0) return
-    const saved = user?.myprojectid
+    if (!currentServicecd || projectList.length === 0) return
+    const saved = projectsData?.myprojectid
     const found = saved && projectList.find(p => String(p.projectid) === String(saved))
     const resolved = found ? found.projectid : projectList[0].projectid
     setSelectedProjectId(resolved)
     if (String(resolved) !== String(saved ?? '')) {
-      updateUser({ myprojectid: String(resolved) })
+      updateMyProject.mutate({ myprojectid: String(resolved), servicecd: currentServicecd })
     }
-  }, [projectList])
+  }, [projectList, projectsData?.myprojectid, currentServicecd])
 
 
   // re-render 트리거용 구독
@@ -312,8 +314,7 @@ export default function AppLayout() {
                   value={selectedProjectId || undefined}
                   onChange={(val) => {
                     setSelectedProjectId(val)
-                    updateUser({ myprojectid: String(val) })
-                    updateMyProject.mutate(String(val))
+                    updateMyProject.mutate({ myprojectid: String(val), servicecd: currentServicecd })
                   }}
                   size="small"
                   variant="borderless"
