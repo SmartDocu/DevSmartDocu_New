@@ -24,7 +24,7 @@ export default function ReqChaptersReadPage() {
   const { accessToken, user } = useAuthStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
 
-  const { activeGendocuid, setActiveGenchapteruid } = useReqStore()
+  const { activeGendocuid, activeGenchapteruid, setActiveGenchapteruid } = useReqStore()
 
   // gendoc 목록
   const { data: gendocsData = {} } = useGendocs(ONE_YEAR_AGO, TODAY, user?.docid)
@@ -69,6 +69,13 @@ export default function ReqChaptersReadPage() {
     setContent(null)
     setRewriting(false)
   }, [selectedGendocuid])
+
+  // 알림 등에서 특정 챕터로 딥링크 시(activeGenchapteruid) 자동 선택
+  useEffect(() => {
+    if (!activeGenchapteruid || selectedChap || chapters.length === 0) return
+    const target = chapters.find((c) => c.genchapteruid === activeGenchapteruid)
+    if (target) handleRowSelect(target)
+  }, [activeGenchapteruid, chapters]) // eslint-disable-line
 
   // 탭 재진입 시 생성 상태 자동 조회
   useEffect(() => {

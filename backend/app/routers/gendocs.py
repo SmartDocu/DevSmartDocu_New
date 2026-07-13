@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
+from utilsPrj.notifications import create_notification
 
 router = APIRouter()
 
@@ -792,9 +793,10 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
 
-    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,gendocjobuid").eq("gendocuid", gendocuid).execute().data
+    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,gendocjobuid,gendocnm").eq("gendocuid", gendocuid).execute().data
     docid = docid_row[0]["docid"] if docid_row else ctx.get("docid")
     doc_gendocjobuid = docid_row[0]["gendocjobuid"] if docid_row else None
+    gendocnm = docid_row[0].get("gendocnm", "") if docid_row else ""
 
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()
@@ -871,6 +873,7 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
             "user_id": user_id,
             "access_token": token,
             "is_start_doc": False,
+            "gendocnm": gendocnm,
         }, ensure_ascii=False),
     )
 
@@ -881,12 +884,13 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
 def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    genchap_check = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("genchapteruid").eq("genchapteruid", genchapteruid).execute().data
+    genchap_check = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("genchapteruid,gendocuid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap_check:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+    gendocuid = genchap_check[0]["gendocuid"]
     sb_svc = get_service_client()
     row = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").select(
-        "genchapterjobuid,jobstatuscd,errorcd,errormessage,startdts,chapteruid"
+        "genchapterjobuid,jobstatuscd,errorcd,errormessage,startdts,chapteruid,creator,is_start_doc"
     ).eq("genchapteruid", genchapteruid).order("startdts", desc=True).limit(1).execute().data
     if not row:
         return {"JobStatusCD": None, "ErrorCD": None, "ErrorMessage": None}
@@ -909,6 +913,17 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
                     "chapterlocked": False,
                     "chapterenddts": now_iso,
                 }).eq("genchapteruid", genchapteruid).execute()
+                if not row[0].get("is_start_doc") and row[0].get("creator"):
+                    _chap_nm_row = sb_svc.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", row[0].get("chapteruid")).execute().data
+                    _chapternm = _chap_nm_row[0]["chapternm"] if _chap_nm_row else ""
+                    _gendoc_nm_row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
+                    _gendocnm = _gendoc_nm_row[0]["gendocnm"] if _gendoc_nm_row else ""
+                    create_notification(
+                        sb_svc, category="chapter", status="error",
+                        title="챕터 작성 실패", message=f"'{_gendocnm}' 문서의 '{_chapternm}' 챕터 작성 중 오류가 발생했습니다.",
+                        target_object="gendoc", target_uid=gendocuid,
+                        target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=row[0]["creator"],
+                    )
                 return {"JobStatusCD": "E", "ErrorCD": "CRASH", "ErrorMessage": "Worker process terminated unexpectedly"}
         except Exception:
             pass
@@ -1144,7 +1159,7 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     sb_svc = get_service_client()
     row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").select(
-        "gendocjobuid,jobstatuscd,errorcd,errormessage,startdts"
+        "gendocjobuid,jobstatuscd,errorcd,errormessage,startdts,creator,gendocnm"
     ).eq("gendocuid", gendocuid).order("startdts", desc=True).limit(1).execute().data
     if not row:
         return {"JobStatusCD": None, "ErrorCD": None, "ErrorMessage": None}
@@ -1167,6 +1182,13 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
                     "doclocked": False,
                     "docenddts": now_iso,
                 }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
+                if row[0].get("creator"):
+                    create_notification(
+                        sb_svc, category="doc", status="error",
+                        title="문서 작성 실패",
+                        message=f"'{row[0].get('gendocnm') or ''}' 문서 작성 중 오류가 발생했습니다.",
+                        target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=row[0]["creator"],
+                    )
                 return {"JobStatusCD": "E", "ErrorCD": "CRASH", "ErrorMessage": "Worker process terminated unexpectedly"}
         except Exception:
             pass

@@ -17,6 +17,7 @@ import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
 import { useApps } from '@/hooks/useApps'
+import { useNotifications, navigateToNotificationTarget } from '@/hooks/useNotifications'
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -63,6 +64,10 @@ export default function AppLayout() {
   const updateMyProject = useUpdateMyProject()
   const [selectedProjectId, setSelectedProjectId] = useState(null)
   const [appLauncherOpen, setAppLauncherOpen] = useState(false)
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const { data: notificationsData } = useNotifications()
+  const notifications = notificationsData?.notifications || []
+  const unreadCount = notificationsData?.unread_count || 0
 
   useEffect(() => {
     if (!currentServicecd || projectList.length === 0) return
@@ -94,6 +99,32 @@ export default function AppLayout() {
       openTab({ key: 'myinfo', label: t('ttl.myinfo.personal', 'My Info') || 'My Info', labelKey: 'ttl.myinfo.personal', path: tabPath })
     }
     navigate(navPath)
+  }
+
+  // launcher 화면(appcd 없음)에서도 알림 클릭이 동작해야 하므로 openMyInfoInTab과 동일하게
+  // effectiveAppcd(현재 appcd 없으면 첫 번째 앱)로 폴백해서 이동한다 — useOpenInTab은 appcd가
+  // 없으면 /app/:appcd 하위에만 등록된 라우트로 못 감(그냥 launcher로 리다이렉트됨).
+  const openAppRouteInTab = (routePath, query = '', fallbackLabel = '') => {
+    const effectiveAppcd = appcd || apps[0]?.appcd
+    const tabPath = effectiveAppcd ? `app/${effectiveAppcd}/${routePath}${query}` : `${routePath}${query}`
+    const navPath = effectiveAppcd ? `/app/${effectiveAppcd}/${routePath}${query}` : `/${routePath}${query}`
+    const menu = allMenus.find((m) => m.route_path === routePath)
+    if (menu) {
+      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text || fallbackLabel), labelKey: `mnu.${menu.menucd}`, path: tabPath })
+    } else {
+      openTab({ key: routePath, label: fallbackLabel, path: tabPath })
+    }
+    navigate(navPath)
+  }
+
+  const handleNotificationClick = (n) => {
+    setNotificationOpen(false)
+    navigateToNotificationTarget(n, openAppRouteInTab)
+  }
+
+  const handleNotificationListClick = () => {
+    setNotificationOpen(false)
+    openAppRouteInTab('notifications', '', t('ttl.notifications'))
   }
 
   // 언어 초기화
@@ -423,14 +454,64 @@ export default function AppLayout() {
                 </Popover>
 
                 {/* 알람 */}
-                <div style={{ marginLeft: 20 }}>
-                  <Badge count={3} size="small">
-                    <BellOutlined
-                      style={{ color: '#fff', fontSize: 18, cursor: 'pointer' }}
-                      onClick={() => message.info(t('msg.notification.coming.soon'))}
-                    />
-                  </Badge>
-                </div>
+                <Popover
+                  open={notificationOpen}
+                  onOpenChange={setNotificationOpen}
+                  trigger="click"
+                  placement="bottomRight"
+                  content={
+                    <div style={{ width: 320 }}>
+                      <div style={{ maxHeight: 360, overflowY: 'auto', background: '#fff' }}>
+                        {notifications.length === 0 ? (
+                          <div style={{ padding: '24px 8px', textAlign: 'center', color: '#999' }}>
+                            {t('msg.notification.empty')}
+                          </div>
+                        ) : (
+                          notifications.map((n) => (
+                            <div
+                              key={n.notificationuid}
+                              onClick={() => handleNotificationClick(n)}
+                              style={{
+                                padding: '16px 8px',
+                                marginBottom: 6,
+                                borderRadius: 6,
+                                cursor: 'pointer',
+                                background: n.is_read ? 'transparent' : '#f0f6ff',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {!n.is_read && <span style={{ width: 6, height: 6, borderRadius: '50%', background: n.notificationstatus === 'error' ? '#dc3545' : '#245F97', flexShrink: 0 }} />}
+                                <span style={{ fontWeight: n.is_read ? 400 : 600, fontSize: 13 }}>{n.title}</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>{n.message}</div>
+                              <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{n.createdts}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <div
+                        onClick={handleNotificationListClick}
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'center',
+                          fontSize: 13,
+                          color: '#245F97',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          borderTop: '1px solid #f0f0f0',
+                        }}
+                      >
+                        {t('btn.notification.list')}
+                      </div>
+                    </div>
+                  }
+                >
+                  <div style={{ marginLeft: 20 }}>
+                    <Badge count={unreadCount} size="small">
+                      <BellOutlined style={{ color: '#fff', fontSize: 18, cursor: 'pointer' }} />
+                    </Badge>
+                  </div>
+                </Popover>
                 {/* 사람 아이콘 */}
                 <Dropdown
                   menu={{

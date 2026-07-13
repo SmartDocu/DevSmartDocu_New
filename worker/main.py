@@ -12,6 +12,7 @@ from backend.app.config import settings
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from utilsPrj.chapter_making import replace_doc
 from utilsPrj.html_to_docx import html_to_docx_merge
+from utilsPrj.notifications import create_notification
 
 
 class FakeRequest:
@@ -280,6 +281,11 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         end_iso = datetime.now(timezone.utc).isoformat()
         _update_queue(sb_svc, gendocjobuid, "E", end_dts=end_iso)
         logger.info("문서 완료: %s", gendocuid)
+        create_notification(
+            sb_svc, category="doc", status="info",
+            title="문서 작성 완료", message=f"'{gendocnm}' 문서 작성이 완료되었습니다.",
+            target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
+        )
 
         sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
             "doclocked": False,
@@ -293,6 +299,11 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_queue(sb_svc, gendocjobuid, "E",
                           error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+            create_notification(
+                sb_svc, category="doc", status="error",
+                title="문서 작성 실패", message=f"'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
+            )
         except Exception:
             logger.exception("문서 오류 상태 업데이트 실패: %s", gendocuid)
         try:
@@ -378,6 +389,11 @@ def process_message(msg):
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_queue(sb_svc, gendocjobuid, "E",
                           error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+            create_notification(
+                sb_svc, category="doc", status="error",
+                title="문서 작성 실패", message=f"'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
+            )
         except Exception:
             logger.exception("큐 상태 업데이트 실패: %s", gendocuid)
 
@@ -416,6 +432,13 @@ def process_chapter_message(msg):
     sb = get_thread_supabase(access_token=access_token)
     sb_svc = get_service_client()
     sqs = boto3.client("sqs", region_name=AWS_REGION)
+
+    chapternm = ""
+    try:
+        _chap_row = sb_svc.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
+        chapternm = _chap_row[0]["chapternm"] if _chap_row else ""
+    except Exception:
+        pass
 
     logger.info("챕터 처리 시작: %s (is_start_doc=%s)", genchapteruid, is_start_doc)
 
@@ -476,6 +499,13 @@ def process_chapter_message(msg):
         end_iso = datetime.now(timezone.utc).isoformat()
         _update_chapter_queue(sb_svc, genchapterjobuid, "E", end_dts=end_iso)
         logger.info("챕터 완료: %s", genchapteruid)
+        if not is_start_doc:
+            create_notification(
+                sb_svc, category="chapter", status="info",
+                title="챕터 작성 완료", message=f"'{gendocnm}' 문서의 '{chapternm}' 챕터 작성이 완료되었습니다.",
+                target_object="gendoc", target_uid=gendocuid,
+                target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=user_id,
+            )
 
         # 문서 작성 fan-out 챕터: 전체 완료 여부 체크 → 마지막이면 Phase 2+3
         if is_start_doc and gendocjobuid:
@@ -510,6 +540,13 @@ def process_chapter_message(msg):
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_chapter_queue(sb_svc, genchapterjobuid, "E",
                                    error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+            if not is_start_doc:
+                create_notification(
+                    sb_svc, category="chapter", status="error",
+                    title="챕터 작성 실패", message=f"'{gendocnm}' 문서의 '{chapternm}' 챕터 작성 중 오류가 발생했습니다.",
+                    target_object="gendoc", target_uid=gendocuid,
+                    target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=user_id,
+                )
         except Exception:
             logger.exception("챕터 큐 상태 업데이트 실패: %s", genchapteruid)
 
@@ -521,6 +558,12 @@ def process_chapter_message(msg):
                     end_iso = datetime.now(timezone.utc).isoformat()
                     _update_queue(sb_svc, gendocjobuid, "E",
                                   error_cd="ERR", error_msg=f"챕터 처리 실패: {genchapteruid}", end_dts=end_iso)
+                    create_notification(
+                        sb_svc, category="doc", status="error",
+                        title="문서 작성 실패",
+                        message=f"'{doc_rt[0].get('gendocnm') or gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                        target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
+                    )
                     sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
                         "doclocked": False,
                         "docenddts": datetime.now(timezone.utc).isoformat(),
