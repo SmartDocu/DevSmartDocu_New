@@ -37,7 +37,10 @@ export function useJobNotifications() {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'sdoc', table: 'genchapters_realtimes', filter: `creator=eq.${userId}` },
-        (payload) => handleDone(payload, 'msg.chapter.write.complete'),
+        (payload) => {
+          if (payload.new.is_start_doc) return  // 문서 작성 fan-out의 내부 챕터 — 별도 알림 안 띄움
+          handleDone(payload, 'msg.chapter.write.complete')
+        },
       )
       .subscribe()
 
