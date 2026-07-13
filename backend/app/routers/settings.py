@@ -35,20 +35,26 @@ def _encrypt(val: str) -> Optional[str]:
         return None
 
 
-def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
     try:
-        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
-        if not tu.data:
+        q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
             return None
-        tz = tu.data.get("timezone")
-        if not tz and tu.data.get("tenantid"):
-            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
-            if t.data:
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
                 tz = t.data.get("timezone")
         if not tz:
             return None
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
-        return tz_row.data.get("offsetminutes") if tz_row.data else None
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
     except Exception:
         return None
 
@@ -500,7 +506,7 @@ def get_myinfo(token: str = Depends(get_token), tenantid: Optional[str] = Depend
     effective_timezone = tenantuser.get("timezone") or tenant.get("timezone") or None
 
     # tenant.createdts timezone 적용 포맷
-    offsetminutes = _get_offsetminutes(sb, str(user_id))
+    offsetminutes = _get_offsetminutes(sb, str(user_id), tenantid)
     if tenant.get("createdts"):
         tenant["createdts"] = _fmt_dt(tenant["createdts"], offsetminutes)
 
@@ -884,7 +890,7 @@ def change_tenant_subscription(
     cur_row = svc.table("accountservices").select(
         "subscriptionuid,productcd,plancd"
     ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
-    current = cur_row.data or {}  # 없으면 해당 서비스 신규 구독
+    current = cur_row.data if cur_row else {}  # 없으면 해당 서비스 신규 구독
 
     now_utc = datetime.now(tz.utc)
     today = now_utc.date()
@@ -970,6 +976,468 @@ def change_tenant_subscription(
     }).execute()
 
     return {"result": "success", "message": "구독이 변경되었습니다."}
+
+
+@router.get("/tenant-manage/lang-timezone")
+def get_tenant_manage_lang_timezone(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """구독 관리 화면 좌측: 테넌트 전체 기본 언어·타임존 조회."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, _ = _get_tenant_and_account(svc, user_id, tenantid)
+
+    t_row = svc.table("tenants").select("languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    tenant = t_row.data if t_row else {}
+
+    langs = svc.table("languages").select("languagecd,languagenm").order("languagenm").execute().data or []
+    timezones = [r["timezone"] for r in (svc.table("timezones").select("timezone").eq("useyn", True).execute().data or [])]
+
+    return {
+        "languagecd": tenant.get("languagecd"),
+        "timezone": tenant.get("timezone"),
+        "languages": langs,
+        "timezones": timezones,
+    }
+
+
+class TenantLangTimezoneRequest(BaseModel):
+    languagecd: Optional[str] = None
+    timezone: Optional[str] = None
+
+
+@router.post("/tenant-manage/lang-timezone")
+def update_tenant_manage_lang_timezone(
+    body: TenantLangTimezoneRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """구독 관리 화면 좌측: 테넌트 전체 기본 언어·타임존 저장."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, _ = _get_tenant_and_account(svc, user_id, tenantid)
+
+    payload = {}
+    if body.languagecd:
+        payload["languagecd"] = body.languagecd
+    if body.timezone:
+        payload["timezone"] = body.timezone
+    if not payload:
+        raise HTTPException(status_code=400, detail="변경할 값이 없습니다.")
+
+    svc.table("tenants").update(payload).eq("tenantid", int(tenantid)).execute()
+    return {"result": "success"}
+
+
+@router.get("/tenant-manage/other-subscriptions")
+def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """기타 구독 관리 화면: 보유 중인 User/Feature 상품 + 구매 가능 상품 목록."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+
+    subscribed_servicecds = set()
+    owned_productcds = set()
+    if accountuid:
+        subscribed_servicecds = {
+            r["servicecd"] for r in (
+                svc.table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+            )
+        }
+        owned_productcds = {
+            r["productcd"] for r in (
+                svc.table("account_features").select("productcd").eq("accountuid", accountuid).execute().data or []
+            )
+        }
+
+    all_products = (
+        svc.table("products").select(
+            "productcd,productnm,servicecd,producttype,users,billingtermcd,orderno"
+        )
+        .in_("producttype", ["User", "Feature"])
+        .eq("useyn", True)
+        .order("orderno")
+        .execute().data or []
+    )
+    prod_map = {p["productcd"]: p for p in all_products}
+    # User 타입은 구독 중인 서비스의 상품만 노출 (Feature는 서비스 무관, 반복 구매 가능)
+    # Feature 타입은 취소 전까지 1회만 구독 가능 — 이미 보유 중이면 목록에서 제외
+    products = [
+        p for p in all_products
+        if not (p["producttype"] == "Feature" and p["productcd"] in owned_productcds)
+        and (p["producttype"] == "Feature" or p["servicecd"] in subscribed_servicecds)
+    ]
+
+    owned = []
+    if accountuid:
+        offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
+        rows = (
+            svc.table("subscription_features").select("subscriptionuid,productcd,createdts")
+            .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
+            .order("createdts").execute().data or []
+        )
+        for r in rows:
+            p = prod_map.get(r["productcd"], {})
+            owned.append({
+                "subscriptionuid": r["subscriptionuid"],
+                "productcd": r["productcd"],
+                "productnm": p.get("productnm", r["productcd"]),
+                "servicecd": p.get("servicecd"),
+                "producttype": p.get("producttype"),
+                "users": p.get("users"),
+                "createdts": _fmt_dt(r.get("createdts"), offsetminutes),
+                "orderno": p.get("orderno", 999),
+            })
+        owned.sort(key=lambda o: o["orderno"])
+
+    return {"owned": owned, "products": products, "accountuid": accountuid}
+
+
+class OtherSubscriptionPurchaseRequest(BaseModel):
+    productcd: str
+
+
+@router.post("/tenant-manage/other-subscription-purchase")
+def purchase_tenant_manage_other_subscription(
+    body: OtherSubscriptionPurchaseRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """기타 구독 관리 화면: User/Feature 상품 구매.
+
+    결제 연동 전까지는 저장 즉시 accountservices/account_features에 반영한다.
+    Credit(producttype='Credit') 구매는 이번 범위에서 제외한다.
+    """
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    prod_row = svc.table("products").select(
+        "productcd,productnm,servicecd,producttype,users,useyn"
+    ).eq("productcd", body.productcd).maybe_single().execute()
+    product = prod_row.data if prod_row else None
+    if not product or product.get("producttype") not in ("User", "Feature"):
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+
+    if product["producttype"] == "Feature":
+        existing_feature = svc.table("account_features").select("accountuid").eq(
+            "accountuid", accountuid
+        ).eq("productcd", product["productcd"]).maybe_single().execute()
+        if existing_feature and existing_feature.data:
+            raise HTTPException(status_code=400, detail="이미 구독 중인 기능입니다.")
+
+    accsvc = None
+    if product["producttype"] == "User":
+        svcrow = svc.table("accountservices").select(
+            "included_users,add_users"
+        ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
+        accsvc = svcrow.data if svcrow else None
+        if not accsvc:
+            raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
+
+    svc.table("subscription_features").insert({
+        "subscriptionuid": str(uuid.uuid4()),
+        "productcd": product["productcd"],
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "quantity": 1,
+        "subscriptionstatus": "Paid",
+        "creator": user_id,
+    }).execute()
+
+    existing_af = svc.table("account_features").select("accountuid").eq(
+        "accountuid", accountuid
+    ).eq("productcd", product["productcd"]).maybe_single().execute()
+    if existing_af and existing_af.data:
+        svc.table("account_features").update({
+            "updater": user_id,
+            "updatedts": datetime.now(tz.utc).isoformat(),
+        }).eq("accountuid", accountuid).eq("productcd", product["productcd"]).execute()
+    else:
+        svc.table("account_features").insert({
+            "accountuid": accountuid,
+            "productcd": product["productcd"],
+            "tenantid": int(tenantid),
+            "creator": user_id,
+        }).execute()
+
+    if product["producttype"] == "User":
+        new_add_users = (accsvc.get("add_users") or 0) + (product.get("users") or 0)
+        new_total_users = (accsvc.get("included_users") or 0) + new_add_users
+        svc.table("accountservices").update({
+            "add_users": new_add_users,
+            "total_users": new_total_users,
+            "updater": user_id,
+        }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+
+    return {"result": "success"}
+
+
+class OtherSubscriptionCancelRequest(BaseModel):
+    subscriptionuid: str
+    cancel_reasoncd: str
+    cancel_reasondesc: Optional[str] = None
+
+
+@router.post("/tenant-manage/other-subscription-cancel")
+def cancel_tenant_manage_other_subscription(
+    body: OtherSubscriptionCancelRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """기타 구독 관리 화면: User/Feature 구매 건 취소."""
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    sf_row = svc.table("subscription_features").select(
+        "subscriptionuid,productcd,accountuid,subscriptionstatus"
+    ).eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+    sf = sf_row.data if sf_row else None
+    if not sf or sf.get("accountuid") != accountuid:
+        raise HTTPException(status_code=404, detail="구독 내역을 찾을 수 없습니다.")
+    if sf.get("subscriptionstatus") == "Cancelled":
+        raise HTTPException(status_code=400, detail="이미 취소된 구독입니다.")
+
+    prod_row = svc.table("products").select(
+        "productcd,servicecd,producttype,users"
+    ).eq("productcd", sf["productcd"]).maybe_single().execute()
+    product = prod_row.data if prod_row else {}
+
+    now_utc = datetime.now(tz.utc)
+    svc.table("subscription_features").update({
+        "subscriptionstatus": "Cancelled",
+        "canceluseruid": user_id,
+        "canceldts": now_utc.isoformat(),
+        "cancel_reasoncd": body.cancel_reasoncd,
+        "cancel_reasondesc": body.cancel_reasondesc,
+        "updater": user_id,
+        "updatedts": now_utc.isoformat(),
+    }).eq("subscriptionuid", body.subscriptionuid).execute()
+
+    if product.get("producttype") == "User" and product.get("servicecd"):
+        svcrow = svc.table("accountservices").select(
+            "included_users,add_users"
+        ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
+        accsvc = svcrow.data if svcrow else None
+        if accsvc:
+            new_add_users = max((accsvc.get("add_users") or 0) - (product.get("users") or 0), 0)
+            new_total_users = (accsvc.get("included_users") or 0) + new_add_users
+            svc.table("accountservices").update({
+                "add_users": new_add_users,
+                "total_users": new_total_users,
+                "updater": user_id,
+            }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+
+    remaining = svc.table("subscription_features").select("subscriptionuid").eq(
+        "accountuid", accountuid
+    ).eq("productcd", sf["productcd"]).eq("subscriptionstatus", "Paid").execute().data or []
+    if not remaining:
+        svc.table("account_features").delete().eq("accountuid", accountuid).eq("productcd", sf["productcd"]).execute()
+
+    return {"result": "success"}
+
+
+@router.get("/tenant-manage/credit-subscriptions")
+def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """크레딧 구매 관리 화면: 구매 내역 + 구매 가능 크레딧 상품 목록."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+
+    subscribed_servicecds = set()
+    if accountuid:
+        subscribed_servicecds = {
+            r["servicecd"] for r in (
+                svc.table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+            )
+        }
+
+    all_products = (
+        svc.table("products").select(
+            "productcd,productnm,servicecd,producttype,credit,expiremonths,orderno"
+        )
+        .eq("producttype", "Credit")
+        .eq("useyn", True)
+        .order("orderno")
+        .execute().data or []
+    )
+    prod_map = {p["productcd"]: p for p in all_products}
+    # 구독 중인 서비스의 크레딧 상품만 노출
+    products = [p for p in all_products if p["servicecd"] in subscribed_servicecds]
+
+    owned = []
+    if accountuid:
+        offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
+        rows = (
+            svc.table("subscription_credits").select("subscriptionuid,productcd,quantity,createdts,expiresdts")
+            .eq("accountuid", accountuid).eq("credittypecd", "MT")
+            .is_("canceldts", "null")
+            .order("createdts").execute().data or []
+        )
+        for r in rows:
+            p = prod_map.get(r["productcd"], {})
+            owned.append({
+                "subscriptionuid": r["subscriptionuid"],
+                "productcd": r["productcd"],
+                "productnm": p.get("productnm", r["productcd"]),
+                "servicecd": p.get("servicecd"),
+                "quantity": r.get("quantity"),
+                "createdts": _fmt_dt(r.get("createdts"), offsetminutes),
+                "expiresdts": _fmt_dt(r.get("expiresdts"), offsetminutes),
+                "orderno": p.get("orderno", 999),
+            })
+        owned.sort(key=lambda o: o["orderno"])
+
+    return {"owned": owned, "products": products, "accountuid": accountuid}
+
+
+class CreditSubscriptionPurchaseRequest(BaseModel):
+    productcd: str
+
+
+@router.post("/tenant-manage/credit-subscription-purchase")
+def purchase_tenant_manage_credit_subscription(
+    body: CreditSubscriptionPurchaseRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """크레딧 구매 관리 화면: 크레딧 상품 구매.
+
+    결제 연동 전까지는 저장 즉시 subscription_credits에 반영한다.
+    creditbuckets(실사용 가능 잔여크레딧) 반영은 이번 범위에서 제외한다.
+    """
+    from datetime import datetime, timezone as tz
+    from dateutil.relativedelta import relativedelta
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    prod_row = svc.table("products").select(
+        "productcd,productnm,servicecd,producttype,credit,expiremonths"
+    ).eq("productcd", body.productcd).maybe_single().execute()
+    product = prod_row.data if prod_row else None
+    if not product or product.get("producttype") != "Credit":
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+
+    if product.get("servicecd"):
+        svcrow = svc.table("accountservices").select("servicecd").eq(
+            "accountuid", accountuid
+        ).eq("servicecd", product["servicecd"]).maybe_single().execute()
+        if not svcrow or not svcrow.data:
+            raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
+
+    now_utc = datetime.now(tz.utc)
+    expiremonths = product.get("expiremonths")
+    expiresdts = (now_utc + relativedelta(months=expiremonths)).isoformat() if expiremonths else None
+
+    svc.table("subscription_credits").insert({
+        "subscriptionuid": str(uuid.uuid4()),
+        "credittypecd": "MT",
+        "creditdesc": product.get("productnm"),
+        "productcd": product["productcd"],
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "quantity": product.get("credit") or 0,
+        "expiresdts": expiresdts,
+        "creator": user_id,
+    }).execute()
+
+    return {"result": "success"}
+
+
+@router.get("/tenant-manage/overview")
+def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """전체 현황 화면: 서비스별 프로젝트/인원/크레딧 현황 + 테넌트 총 인원."""
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+
+    total_users = len(
+        svc.table("tenantusers").select("useruid").eq("tenantid", int(tenantid)).eq("useyn", True).execute().data or []
+    )
+
+    services = []
+    if accountuid:
+        accsvc_rows = (
+            svc.table("accountservices").select("servicecd,total_users")
+            .eq("accountuid", accountuid).execute().data or []
+        )
+        svc_map = {r["servicecd"]: {"servicecd": r["servicecd"], "total_users": r.get("total_users") or 0} for r in accsvc_rows}
+
+        proj_rows = (
+            svc.table("projects").select("servicecd")
+            .eq("accountuid", accountuid).eq("useyn", True).execute().data or []
+        )
+        project_counts = {}
+        for r in proj_rows:
+            project_counts[r["servicecd"]] = project_counts.get(r["servicecd"], 0) + 1
+
+        su_rows = (
+            svc.table("serviceusers").select("servicecd")
+            .eq("accountuid", accountuid).eq("useyn", True).execute().data or []
+        )
+        used_user_counts = {}
+        for r in su_rows:
+            used_user_counts[r["servicecd"]] = used_user_counts.get(r["servicecd"], 0) + 1
+
+        now_utc = datetime.now(tz.utc)
+        cb_rows = (
+            svc.table("creditbuckets").select("servicecd,chargecredit,usecredit,remaincredit,expiredts")
+            .eq("accountuid", accountuid).gt("expiredts", now_utc.isoformat()).execute().data or []
+        )
+        credit_totals = {}
+        for r in cb_rows:
+            scd = r["servicecd"]
+            c = credit_totals.setdefault(scd, {"total_credit": 0, "used_credit": 0, "remain_credit": 0})
+            c["total_credit"] += r.get("chargecredit") or 0
+            c["used_credit"] += r.get("usecredit") or 0
+            c["remain_credit"] += r.get("remaincredit") or 0
+
+        for scd, s in svc_map.items():
+            credit = credit_totals.get(scd, {"total_credit": 0, "used_credit": 0, "remain_credit": 0})
+            services.append({
+                "servicecd": scd,
+                "projects": project_counts.get(scd, 0),
+                "total_users": s["total_users"],
+                "used_users": used_user_counts.get(scd, 0),
+                "total_credit": credit["total_credit"],
+                "used_credit": credit["used_credit"],
+                "remain_credit": credit["remain_credit"],
+            })
+        services.sort(key=lambda s: s["servicecd"])
+
+    return {
+        "total_users": total_users,
+        "services": services,
+    }
 
 
 # ══════════════════════════════════════════════════════

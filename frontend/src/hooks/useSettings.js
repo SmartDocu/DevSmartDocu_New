@@ -198,6 +198,74 @@ export function useChangeTenantSubscription() {
   })
 }
 
+export function useTenantManageLangTimezone() {
+  return useQuery({
+    queryKey: ['tenant-manage-lang-timezone'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/lang-timezone').then((r) => r.data),
+  })
+}
+
+export function useSaveTenantManageLangTimezone() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/lang-timezone', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-lang-timezone'] })
+    },
+  })
+}
+
+export function useTenantManageOtherSubscriptions() {
+  return useQuery({
+    queryKey: ['tenant-manage-other-subscriptions'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/other-subscriptions').then((r) => r.data),
+  })
+}
+
+export function usePurchaseTenantManageOtherSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/other-subscription-purchase', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-other-subscriptions'] })
+    },
+  })
+}
+
+export function useCancelTenantManageOtherSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/other-subscription-cancel', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-other-subscriptions'] })
+    },
+  })
+}
+
+export function useTenantManageCreditSubscriptions() {
+  return useQuery({
+    queryKey: ['tenant-manage-credit-subscriptions'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/credit-subscriptions').then((r) => r.data),
+  })
+}
+
+export function usePurchaseTenantManageCreditSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/credit-subscription-purchase', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-credit-subscriptions'] })
+    },
+  })
+}
+
+export function useTenantManageOverview() {
+  return useQuery({
+    queryKey: ['tenant-manage-overview'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/overview').then((r) => r.data),
+  })
+}
+
 // ─── Connectors ───────────────────────────────────────────────────────────────
 
 export function useConnectors() {
