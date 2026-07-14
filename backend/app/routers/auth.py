@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from backend.app.config import settings
 from backend.app.dependencies import get_token
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
+from utilsPrj.credit_helper import upsert_ba_creditbucket
 from backend.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -949,20 +950,17 @@ def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
                 }).execute()
 
                 now_utc = datetime.now(timezone.utc)
-                service.schema(SCHEMA).table("creditbuckets").insert({
-                    "subscriptionuid": subscriptionuid,
-                    "tenantid": smartdoc_tenantid,
-                    "accountuid": accountuid,
-                    "startdt": now_utc.date().isoformat(),
-                    "servicecd": product["servicecd"],
-                    "creditchargecd": "Ba",
-                    "priorityno": 1,
-                    "chargecredit": product.get("credit", 0),
-                    "usecredit": 0,
-                    "remaincredit": product.get("credit", 0),
-                    "granteddts": now_utc.isoformat(),
-                    "expiredts": (now_utc + relativedelta(months=1)).isoformat(),
-                }).execute()
+                upsert_ba_creditbucket(
+                    service.schema(SCHEMA),
+                    subscriptionuid=subscriptionuid,
+                    tenantid=smartdoc_tenantid,
+                    accountuid=accountuid,
+                    servicecd=product["servicecd"],
+                    chargecredit=product.get("credit", 0),
+                    granteddts=now_utc.isoformat(),
+                    expiredts=(now_utc + relativedelta(months=1)).isoformat(),
+                    startdt=now_utc.date().isoformat(),
+                )
 
     except Exception as e:
         raise HTTPException(

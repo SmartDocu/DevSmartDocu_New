@@ -207,7 +207,6 @@ export default function OrgTenantManagePage() {
           <Card
             size="small"
             title={t('ttl.tenant.manage.overview.services')}
-            extra={<span>{t('lbl.current.user.count')}: {overviewData.total_users ?? 0}</span>}
             loading={overviewLoading}
           >
             <Table

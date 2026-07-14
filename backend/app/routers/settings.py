@@ -11,11 +11,9 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
+from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket
 
 router = APIRouter()
-
-# creditbuckets.priorityno — creditchargecd(=subscription_credits.creditchargecd)별 소진 우선순위
-CREDITCHARGECD_PRIORITY = {"Ba": 1, "Pr": 3, "Re": 4, "Ma": 5, "Au": 6}
 
 
 def _decrypt(val: str) -> str:
@@ -596,10 +594,21 @@ def get_upgrade_products(
     servicecd: str,
     plancd: str = "Pr",
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """업그레이드 플랜 상품 목록 — servicecd + plancd 기준, orderno 정렬."""
-    _get_user(token)
+    """업그레이드 플랜 상품 목록 — servicecd + plancd 기준, orderno 정렬.
+
+    Free/Pro(개인 계정용 플랜)는 systemtenant가 아니면 선택할 수 없다.
+    """
+    user = _get_user(token)
+    user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    if plancd in ("Fr", "Pr"):
+        _, issystemtenant = _get_tenant_and_issystemtenant(svc, user_id, tenantid)
+        if not issystemtenant:
+            return {"products": []}
+
     rows = (
         svc.table("products")
         .select("productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey,orderno,useyn")
@@ -633,14 +642,7 @@ def upgrade_plan(
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     # tenantid & accountuid 조회
-    if not tenantid:
-        tu = svc.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
-        if not tu.data:
-            raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
-        tenantid = str(tu.data["tenantid"])
-
-    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    tenantid, issystemtenant = _get_tenant_and_issystemtenant(svc, user_id, tenantid)
     if issystemtenant:
         acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
     else:
@@ -656,6 +658,10 @@ def upgrade_plan(
     if not prod_row.data:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
     product = prod_row.data
+
+    # Free/Pro(개인 계정용 플랜)는 systemtenant가 아니면 선택할 수 없다.
+    if not issystemtenant and product.get("plancd") in ("Fr", "Pr"):
+        raise HTTPException(status_code=400, detail="Free/Pro 플랜은 선택할 수 없습니다.")
 
     # [과거_sub] 조회 — accountuid & servicecd 기반 최신 Paid subscription
     past_rows = svc.table("subscriptions").select(
@@ -719,27 +725,19 @@ def upgrade_plan(
         "creator": user_id,
     }).execute()
 
-    # ④ creditbuckets — [과거_sub] 기존 행 만료 처리 (status 컬럼이 없어 expiredts를 현재 시각으로 당겨서 만료시킴)
-    svc.table("creditbuckets").update({
-        "expiredts": now_utc.isoformat(),
-    }).eq("subscriptionuid", past_sub["subscriptionuid"]).execute()
-
-    # creditbuckets 신규 행 삽입
+    # ④ creditbuckets — 기존 Ba 버킷이 있으면 잔여 크레딧 병합 후 creditbucket_historys로 이관, 신규 Ba 버킷 발급
     expiredts = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
-    svc.table("creditbuckets").insert({
-        "subscriptionuid": new_subscriptionuid,
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "servicecd": product["servicecd"],
-        "chargecredit": product.get("credit", 0),
-        "creditchargecd": creditchargecd,
-        "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
-        "usecredit": 0,
-        "remaincredit": product.get("credit", 0),
-        "granteddts": now_utc.isoformat(),
-        "expiredts": expiredts,
-        "startdt": today.isoformat(),
-    }).execute()
+    upsert_ba_creditbucket(
+        svc,
+        subscriptionuid=new_subscriptionuid,
+        tenantid=int(tenantid),
+        accountuid=accountuid,
+        servicecd=product["servicecd"],
+        chargecredit=product.get("credit", 0),
+        granteddts=now_utc.isoformat(),
+        expiredts=expiredts,
+        startdt=today.isoformat(),
+    )
 
     return {"result": "success", "message": "업그레이드가 완료되었습니다."}
 
@@ -747,6 +745,19 @@ def upgrade_plan(
 # ══════════════════════════════════════════════════════
 #  TENANT MANAGE — 구독 관리 (좌: 현재 구독 / 우: Team·Enterprise 상품 선택)
 # ══════════════════════════════════════════════════════
+
+def _get_tenant_and_issystemtenant(svc, user_id: str, tenantid: Optional[str]) -> tuple[str, bool]:
+    """tenantid와 issystemtenant 여부를 반환."""
+    if not tenantid:
+        tu = svc.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
+        if not tu.data:
+            raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+        tenantid = str(tu.data["tenantid"])
+
+    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    return tenantid, issystemtenant
+
 
 def _get_tenant_and_account(svc, user_id: str, tenantid: Optional[str]) -> tuple[str, Optional[str]]:
     """tenantid와 accountuid를 반환."""
@@ -891,6 +902,19 @@ def change_tenant_subscription(
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
     product = prod_row.data
 
+    # 새 플랜의 인원 제한(products.users)보다 현재 활성 사용자가 많으면 변경 차단
+    if product.get("users") is not None:
+        active_user_count = len(
+            svc.table("serviceusers").select("useruid")
+            .eq("accountuid", accountuid).eq("servicecd", body.servicecd).eq("tenantid", int(tenantid))
+            .eq("useyn", True).execute().data or []
+        )
+        if active_user_count > product["users"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"현재 활성 사용자가 {active_user_count}명으로 변경하려는 플랜의 인원 제한({product['users']}명)을 초과합니다. 먼저 사용자를 비활성화해주세요.",
+            )
+
     cur_row = svc.table("accountservices").select(
         "subscriptionuid,productcd,plancd"
     ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
@@ -959,26 +983,18 @@ def change_tenant_subscription(
         "creator": user_id,
     }).execute()
 
-    if current.get("subscriptionuid"):
-        svc.table("creditbuckets").update({
-            "expiredts": now_utc.isoformat(),
-        }).eq("subscriptionuid", current["subscriptionuid"]).execute()
-
     expiredts = (today + relativedelta(months=1) - td(days=1)).isoformat()
-    svc.table("creditbuckets").insert({
-        "subscriptionuid": new_subscriptionuid,
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "servicecd": product["servicecd"],
-        "chargecredit": product.get("credit", 0),
-        "creditchargecd": creditchargecd,
-        "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
-        "usecredit": 0,
-        "remaincredit": product.get("credit", 0),
-        "granteddts": now_utc.isoformat(),
-        "expiredts": expiredts,
-        "startdt": today.isoformat(),
-    }).execute()
+    upsert_ba_creditbucket(
+        svc,
+        subscriptionuid=new_subscriptionuid,
+        tenantid=int(tenantid),
+        accountuid=accountuid,
+        servicecd=product["servicecd"],
+        chargecredit=product.get("credit", 0),
+        granteddts=now_utc.isoformat(),
+        expiredts=expiredts,
+        startdt=today.isoformat(),
+    )
 
     return {"result": "success", "message": "구독이 변경되었습니다."}
 
@@ -1472,7 +1488,7 @@ def purchase_tenant_manage_credit_subscription(
 
 @router.get("/tenant-manage/overview")
 def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """전체 현황 화면: 서비스별 프로젝트/인원/크레딧 현황 + 테넌트 총 인원."""
+    """전체 현황 화면: 서비스별 프로젝트/인원/크레딧 현황."""
     from datetime import datetime, timezone as tz
 
     user = _get_user(token)
@@ -1480,10 +1496,6 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
-
-    total_users = len(
-        svc.table("tenantusers").select("useruid").eq("tenantid", int(tenantid)).eq("useyn", True).execute().data or []
-    )
 
     services = []
     if accountuid:
@@ -1541,7 +1553,6 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
         services.sort(key=lambda s: s["servicecd"])
 
     return {
-        "total_users": total_users,
         "services": services,
     }
 

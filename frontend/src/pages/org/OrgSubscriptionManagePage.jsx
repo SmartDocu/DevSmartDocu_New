@@ -9,7 +9,7 @@ import {
 } from '@/hooks/useSettings'
 
 export default function OrgSubscriptionManagePage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: subData = {}, isLoading: subsLoading } = useTenantManageSubscriptions()
@@ -47,13 +47,25 @@ export default function OrgSubscriptionManagePage() {
 
   const handleSave = () => {
     if (!selectedServicecd || !selectedProductcd) { message.warning(t('msg.select.placeholder')); return }
-    changeMutation.mutate(
-      { servicecd: selectedServicecd, productcd: selectedProductcd },
-      {
-        onSuccess: () => { message.success(t('msg.save.success')); setSelectedProductcd(null) },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+
+    const currentSub = subscriptions.find((s) => s.servicecd === selectedServicecd)
+    if (currentSub && currentSub.productcd === selectedProductcd) {
+      message.warning(t('msg.subscription.already'))
+      return
+    }
+
+    modal.confirm({
+      content: t('msg.confirm.subscription.change'),
+      onOk: () => {
+        changeMutation.mutate(
+          { servicecd: selectedServicecd, productcd: selectedProductcd },
+          {
+            onSuccess: () => { message.success(t('msg.save.success')); setSelectedProductcd(null) },
+            onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+          },
+        )
       },
-    )
+    })
   }
 
   return (
