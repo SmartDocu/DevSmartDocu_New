@@ -364,13 +364,16 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
 def get_history(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    return storage.get_history_by_date(sb, str(user.id))
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    return storage.get_history_by_date(sb, str(user.id), offsetminutes)
 
 
 @router.get("/history/{session_id}")
 def get_session(session_id: str, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
-    data = storage.get_session_messages(sb, session_id)
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    data = storage.get_session_messages(sb, session_id, offsetminutes)
     if not data["messages"]:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
     return data
@@ -390,7 +393,8 @@ def delete_session(session_id: str, token: str = Depends(get_token)):
 def get_favorites(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    return storage.get_favorites(sb, str(user.id))
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    return storage.get_favorites(sb, str(user.id), offsetminutes)
 
 
 @router.post("/favorite/qa")
@@ -432,7 +436,8 @@ def share_session(body: ShareRequest, token: str = Depends(get_token)):
 def get_shares_sent(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    return storage.get_shares_sent(sb, str(user.id))
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    return storage.get_shares_sent(sb, str(user.id), offsetminutes)
 
 
 @router.delete("/shares/sent/{share_uid}")
@@ -447,7 +452,8 @@ def delete_share(share_uid: str, token: str = Depends(get_token)):
 def get_shares_received(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
-    return storage.get_shares_received(sb, str(user.id))
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    return storage.get_shares_received(sb, str(user.id), offsetminutes)
 
 
 @router.delete("/shares/received/{share_uid}")
@@ -460,8 +466,10 @@ def delete_share_received(share_uid: str, token: str = Depends(get_token)):
 
 @router.get("/snapshots/{share_uid}")
 def get_snapshot(share_uid: str, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
-    data = storage.get_snapshot_messages(sb, share_uid)
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    data = storage.get_snapshot_messages(sb, share_uid, offsetminutes)
     if not data["messages"]:
         raise HTTPException(status_code=404, detail="스냅샷을 찾을 수 없습니다.")
     return data

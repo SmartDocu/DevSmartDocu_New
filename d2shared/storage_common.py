@@ -34,6 +34,46 @@ def get_project_info(sb, user_uid: str) -> tuple[int | None, int | None]:
     return None, None
 
 
+def get_offsetminutes(sb, user_id: str | None) -> int | None:
+    """tenantusers.timezone → tenants.timezone → timezones.offsetminutes 순으로 조회."""
+    if not user_id:
+        return None
+    try:
+        rows = (
+            _q(sb, "tenantusers").select("timezone,tenantid")
+            .eq("useruid", user_id).eq("useyn", True).limit(1).execute().data or []
+        )
+        if not rows:
+            return None
+        tz = rows[0].get("timezone")
+        if not tz and rows[0].get("tenantid"):
+            t = _q(sb, "tenants").select("timezone").eq("tenantid", rows[0]["tenantid"]).maybe_single().execute()
+            if t and t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = _q(sb, "timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
+    except Exception:
+        return None
+
+
+def fmt_dt(raw, offsetminutes: int | None = None) -> str:
+    if not raw:
+        return ""
+    try:
+        from datetime import timedelta, timezone as _tz
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(_tz.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(raw)
+
+
 def parse_answer(answer_raw: str | None) -> dict:
     """answer 컬럼(JSON 또는 plain text)에서 text와 시각화 데이터 추출."""
     if not answer_raw:
@@ -94,6 +134,7 @@ def get_history_by_date(
     *,
     session_table: str,
     fav_table: str | None = None,
+    offsetminutes: int | None = None,
 ) -> dict:
     """날짜별로 그룹화된 세션 목록 반환.
 
@@ -118,12 +159,12 @@ def get_history_by_date(
 
         grouped: dict = {}
         for row in (res.data or []):
-            date_key = str(row.get("createdts", ""))[:10]
-            # date_key = str(row.get("createdt", ""))[:10]
+            formatted = fmt_dt(row.get("createdts", ""), offsetminutes)
+            date_key = formatted[:10]
             item: dict = {
                 "session_id": row["sessionuid"],
                 "title":      row.get("sessiontitles", ""),
-                "created_at": row.get("createdts", ""),
+                "created_at": formatted,
             }
             if fav_table:
                 item["is_favorite"] = row["sessionuid"] in fav_uids
@@ -208,6 +249,7 @@ def get_favorites(
     fav_table: str,
     include_viz: bool = False,
     extra_fields: list[str] | None = None,
+    offsetminutes: int | None = None,
 ) -> list[dict]:
     """즐겨찾기 목록 반환.
 
@@ -235,7 +277,7 @@ def get_favorites(
                 "session_id":  row.get("sessionuid"),
                 "question":    row.get("question", ""),
                 "answer":      ans["text"],
-                "created_at":  row.get("createdts"),
+                "created_at":  fmt_dt(row.get("createdts"), offsetminutes),
             }
             if include_viz:
                 item["visualization_type"] = ans["visualization_type"]

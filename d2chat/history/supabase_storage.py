@@ -9,6 +9,8 @@ from typing import Optional
 from d2shared.storage_common import (
     _q,
     get_project_info,
+    get_offsetminutes,
+    fmt_dt,
     parse_answer as _parse_answer,
     create_session as _create_session,
     delete_session as _delete_session,
@@ -158,12 +160,12 @@ def get_qa_count(sb, session_uid: str) -> int:
     return _get_qa_count(sb, session_uid, table=_QA_TABLE)
 
 
-def get_history_by_date(sb, creator: str) -> dict:
+def get_history_by_date(sb, creator: str, offsetminutes: int | None = None) -> dict:
     """날짜 → 세션 요약 목록. 즐겨찾기 여부 포함."""
-    return _get_history_by_date(sb, creator, session_table=_SESSION_TABLE, fav_table=_FAV_TABLE)
+    return _get_history_by_date(sb, creator, session_table=_SESSION_TABLE, fav_table=_FAV_TABLE, offsetminutes=offsetminutes)
 
 
-def get_session_messages(sb, session_uid: str) -> dict:
+def get_session_messages(sb, session_uid: str, offsetminutes: int | None = None) -> dict:
     """chat_qas → HistoryView 호환 messages 형식."""
     res = (
         _q(sb, _QA_TABLE)
@@ -175,17 +177,18 @@ def get_session_messages(sb, session_uid: str) -> dict:
 
     messages = []
     for qa in (res.data or []):
+        ts = fmt_dt(qa["createdts"], offsetminutes)
         messages.append({
             "role":      "user",
             "content":   qa["question"],
-            "timestamp": qa["createdts"],
+            "timestamp": ts,
             "qauid":     qa["qauid"],
         })
         ans = _parse_answer(qa.get("answer"))
         messages.append({
             "role":               "assistant",
             "content":            ans["text"],
-            "timestamp":          qa["createdts"],
+            "timestamp":          ts,
             "query":              None,
             "visualization_type": ans["visualization_type"],
             "table_html":         ans["table_html"],
@@ -207,9 +210,9 @@ def remove_favorite_qa(sb, qauid: str, creator: str) -> None:
     _remove_favorite_qa(sb, qauid, creator, qa_table=_QA_TABLE, fav_table=_FAV_TABLE)
 
 
-def get_favorites(sb, creator: str) -> list:
+def get_favorites(sb, creator: str, offsetminutes: int | None = None) -> list:
     """즐겨찾기 Q&A 목록 — chat_favorites (최신순)."""
-    return _get_favorites(sb, creator, fav_table=_FAV_TABLE, include_viz=True, extra_fields=["dataset"])
+    return _get_favorites(sb, creator, fav_table=_FAV_TABLE, include_viz=True, extra_fields=["dataset"], offsetminutes=offsetminutes)
 
 
 # ── 공유 ─────────────────────────────────────────────────────────
@@ -288,7 +291,7 @@ def delete_share_received(sb, share_uid: str, target_user_uid: str) -> None:
     )
 
 
-def get_shares_sent(sb, creator: str) -> list:
+def get_shares_sent(sb, creator: str, offsetminutes: int | None = None) -> list:
     res = (
         _q(sb, "chat_session_shares")
         .select("shareuid,sessionuid,sessiontitles,targetuseruids,createdts")
@@ -298,10 +301,13 @@ def get_shares_sent(sb, creator: str) -> list:
         .order("createdts", desc=True)
         .execute()
     )
-    return res.data or []
+    rows = res.data or []
+    for row in rows:
+        row["createdts"] = fmt_dt(row.get("createdts"), offsetminutes)
+    return rows
 
 
-def get_shares_received(sb, target_user_uid: str) -> list:
+def get_shares_received(sb, target_user_uid: str, offsetminutes: int | None = None) -> list:
     res = (
         _q(sb, "chat_session_share_users")
         .select("shareuid,sessionuid,sessiontitles,creator,createdts")
@@ -311,10 +317,13 @@ def get_shares_received(sb, target_user_uid: str) -> list:
         .order("createdts", desc=True)
         .execute()
     )
-    return res.data or []
+    rows = res.data or []
+    for row in rows:
+        row["createdts"] = fmt_dt(row.get("createdts"), offsetminutes)
+    return rows
 
 
-def get_snapshot_messages(sb, share_uid: str) -> dict:
+def get_snapshot_messages(sb, share_uid: str, offsetminutes: int | None = None) -> dict:
     """chat_snapshots → HistoryView 호환 messages 형식."""
     res = (
         _q(sb, "chat_snapshots")
@@ -326,16 +335,17 @@ def get_snapshot_messages(sb, share_uid: str) -> dict:
 
     messages = []
     for snap in (res.data or []):
+        ts = fmt_dt(snap["createdts"], offsetminutes)
         messages.append({
             "role":      "user",
             "content":   snap["question"],
-            "timestamp": snap["createdts"],
+            "timestamp": ts,
         })
         ans = _parse_answer(snap.get("answer"))
         messages.append({
             "role":               "assistant",
             "content":            ans["text"],
-            "timestamp":          snap["createdts"],
+            "timestamp":          ts,
             "query":              None,
             "visualization_type": ans["visualization_type"],
             "table_html":         ans["table_html"],

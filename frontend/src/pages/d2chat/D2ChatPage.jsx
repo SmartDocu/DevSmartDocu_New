@@ -3,6 +3,7 @@ import { App } from 'antd'
 import { CodeOutlined, CloseOutlined, PaperClipOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 import DatasetUploadModal from '@/components/DatasetUploadModal/DatasetUploadModal'
 import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
@@ -11,33 +12,37 @@ import './d2chat.css'
 
 const ASK_TIMEOUT = { timeout: 180000 }
 
-const INITIAL_MESSAGE = {
-  role: 'assistant',
-  content: '안녕하세요! 데이터 분석을 도와드립니다. 무엇을 도와드릴까요?',
-  visualization: null,
-  visualizationType: null,
+function getInitialMessage() {
+  return {
+    role: 'assistant',
+    content: t('msg.d2chat.welcome'),
+    visualization: null,
+    visualizationType: null,
+  }
 }
 
-const EXAMPLE_QUESTIONS = [
-  { label: '인터페이스 오류율', question: '오늘 인터페이스 오류율은?' },
-  { label: '크리티컬 오류', question: '어제 크리티컬오류는 몇 건인가요?' },
-  { label: '평균 처리 시간', question: '인터페이스 평균 처리 시간은?' },
-  { label: '미국 매출액 집계', question: '미국의 총 매출액을 년별로 집계해주세요.' },
-  { label: '카테고리별 점유율', question: '북 아메리카의 매출을 카테고리별로 점유율을 그래프로 그려주세요.' },
-  { label: '미국 내 판매 지역', question: '미국 판매지역을 모두 알려주세요.' },
+const EXAMPLE_QUESTION_DEFS = [
+  { labelKey: 'btn.d2chat.example_iface_error_rate', questionKey: 'msg.d2chat.example_iface_error_rate_question' },
+  { labelKey: 'btn.d2chat.example_critical_error', questionKey: 'msg.d2chat.example_critical_error_question' },
+  { labelKey: 'btn.d2chat.example_avg_processing_time', questionKey: 'msg.d2chat.example_avg_processing_time_question' },
+  { labelKey: 'btn.d2chat.example_us_sales', questionKey: 'msg.d2chat.example_us_sales_question' },
+  { labelKey: 'btn.d2chat.example_category_share', questionKey: 'msg.d2chat.example_category_share_question' },
+  { labelKey: 'btn.d2chat.example_us_regions', questionKey: 'msg.d2chat.example_us_regions_question' },
 ]
 
 
 export default function D2ChatPage() {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const user = useAuthStore((s) => s.user)
+  const EXAMPLE_QUESTIONS = EXAMPLE_QUESTION_DEFS.map((d) => ({ label: t(d.labelKey), question: t(d.questionKey) }))
 
   // ── 대화 상태 ──────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState(null)
   const sessionIdRef = useRef(null)
   const updateSessionId = (id) => { setSessionId(id); sessionIdRef.current = id }
 
-  const [messages, setMessages] = useState([INITIAL_MESSAGE])
+  const [messages, setMessages] = useState([getInitialMessage()])
   const [queryHistory, setQueryHistory] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [queryPanelOpen, setQueryPanelOpen] = useState(false)
@@ -126,7 +131,7 @@ export default function D2ChatPage() {
   // ── 대화 핸들러 ────────────────────────────────────────────────
   const handleNewChat = () => {
     updateSessionId(null)
-    setMessages([INITIAL_MESSAGE])
+    setMessages([getInitialMessage()])
     setQueryHistory([])
     setShowAutoTest(true)
     setViewingSessionId(null)
@@ -139,7 +144,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.get(`/d2chat/history/${sid}`)
       setHistoryMessages(data.messages || [])
-      setHistoryLabel('과거 대화 보기')
+      setHistoryLabel(t('msg.d2chat.view_past_chat'))
       setViewingSessionId(sid)
       setViewingSnapshotId(null)
       setViewingFavoriteQauid(null)
@@ -159,7 +164,7 @@ export default function D2ChatPage() {
         chart_image: fav.chart_image,
       },
     ])
-    setHistoryLabel('즐겨찾기 대화')
+    setHistoryLabel(t('msg.d2chat.favorite_chat'))
     setViewingSessionId(null)
     setViewingSnapshotId(null)
     setViewingFavoriteQauid(fav.qauid)
@@ -175,7 +180,7 @@ export default function D2ChatPage() {
       }
       fetchFavorites()
     } catch (e) {
-      message.error(e.response?.data?.detail || '즐겨찾기 처리 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2chat.fav_error'))
     }
   }
 
@@ -184,7 +189,7 @@ export default function D2ChatPage() {
       await apiClient.delete(`/d2chat/favorite/qa/${qauid}`)
       fetchFavorites()
     } catch (e) {
-      message.error(e.response?.data?.detail || '즐겨찾기 삭제 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2chat.fav_delete_error'))
     }
   }
 
@@ -192,7 +197,7 @@ export default function D2ChatPage() {
     try {
       const { data } = await apiClient.get(`/d2chat/snapshots/${shareUid}`)
       setHistoryMessages(data.messages || [])
-      setHistoryLabel(label || '공유받은 대화')
+      setHistoryLabel(label || t('ttl.d2chat.shares_received'))
       setViewingSessionId(null)
       setViewingSnapshotId(shareUid)
       setViewingFavoriteQauid(null)
@@ -227,7 +232,7 @@ export default function D2ChatPage() {
       setShowAutoTest(false)
       setViewMode('chat')
     } catch (e) {
-      message.error(e.response?.data?.detail || '이어가기 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2chat.continue_error'))
     }
   }
 
@@ -285,10 +290,10 @@ export default function D2ChatPage() {
 
         addMessage('assistant', data.answer, visualization, data.visualization_type)
       } else {
-        addMessage('assistant', '오류: ' + (data.error || '알 수 없는 오류'))
+        addMessage('assistant', t('msg.d2chat.error_prefix') + (data.error || t('msg.d2chat.unknown_error')))
       }
     } catch (error) {
-      addMessage('assistant', '오류가 발생했습니다: ' + (error.response?.data?.detail || error.message))
+      addMessage('assistant', t('msg.d2chat.chat_error_prefix') + (error.response?.data?.detail || error.message))
     } finally {
       setIsLoading(false)
     }
@@ -303,7 +308,7 @@ export default function D2ChatPage() {
       .join('\n')
     addMessage(
       'assistant',
-      `데이터셋이 등록되었습니다. 이제부터 이 대화는 아래 데이터를 대상으로 답변합니다 (기존 DB 조회는 사용되지 않습니다).\n${summary}`,
+      `${t('msg.d2chat.dataset_registered')}\n${summary}`,
     )
   }
 
@@ -316,7 +321,7 @@ export default function D2ChatPage() {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
     } catch (error) {
-      addMessage('assistant', '질문 목록을 가져오는 중 오류 발생: ' + error.message)
+      addMessage('assistant', t('msg.d2chat.fetch_questions_error') + error.message)
     }
   }
 
@@ -351,7 +356,7 @@ export default function D2ChatPage() {
         if (id === sessionId) handleNewChat()
       }
     } catch (e2) {
-      message.error(e2.response?.data?.detail || '삭제 중 오류가 발생했습니다.')
+      message.error(e2.response?.data?.detail || t('msg.d2chat.delete_error'))
     }
   }
 
@@ -390,7 +395,7 @@ export default function D2ChatPage() {
       <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>AI 데이터 분석 챗봇</div>
+          <div>{t('ttl.d2chat.agent')}</div>
         </div>
       </div>
 
@@ -399,30 +404,30 @@ export default function D2ChatPage() {
         {/* ── 사이드바 ── */}
         <aside className="d2chat-sidebar">
           <div className="current-session-block">
-            <span className="current-session-label">현재 대화</span>
-            <span className="current-session-title">{currentTitle || '아직 질문이 없습니다.'}</span>
+            <span className="current-session-label">{t('lbl.d2chat.current_session')}</span>
+            <span className="current-session-title">{currentTitle || t('msg.d2chat.no_request')}</span>
           </div>
 
           <div className="sidebar-newchat">
-            <button type="button" className="new-chat-btn" onClick={handleNewChat}>+ 새 대화</button>
+            <button type="button" className="new-chat-btn" onClick={handleNewChat}>{t('btn.d2chat.new_chat')}</button>
           </div>
 
           <nav className="sidebar-nav">
 
             {/* 공유한 내역 */}
             <div className="sidebar-section">
-              <SectionHeader sectionKey="sent" icon="↑" label="공유한 내역" count={sharesSent.length} />
+              <SectionHeader sectionKey="sent" icon="↑" label={t('ttl.d2chat.shares_sent')} count={sharesSent.length} />
               {openSections.sent && (
                 <ul className="session-list">
                   {sharesSent.length === 0
-                    ? <li className="sidebar-empty">공유한 대화가 없습니다.</li>
+                    ? <li className="sidebar-empty">{t('msg.d2chat.no_shares_sent')}</li>
                     : sharesSent.map((s) => (
                       <li
                         key={s.shareuid}
                         className={`session-item ${s.shareuid === viewingSnapshotId ? 'viewing' : ''}`}
                         onClick={() => handleSelectSnapshot(s.shareuid, s.sessiontitles)}
                       >
-                        <span className="session-title">{s.sessiontitles || '(제목 없음)'}</span>
+                        <span className="session-title">{s.sessiontitles || t('msg.d2chat.no_title')}</span>
                         <span className="session-date-badge">{s.createdts?.slice(5, 10)}</span>
                         {/* <span className="session-date-badge">{s.createdt?.slice(5)}</span> */}
                         <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.shareuid, 'sent')}>···</button>
@@ -434,18 +439,18 @@ export default function D2ChatPage() {
 
             {/* 공유받은 내역 */}
             <div className="sidebar-section">
-              <SectionHeader sectionKey="received" icon="↓" label="공유받은 내역" count={sharesReceived.length} />
+              <SectionHeader sectionKey="received" icon="↓" label={t('ttl.d2chat.shares_received')} count={sharesReceived.length} />
               {openSections.received && (
                 <ul className="session-list">
                   {sharesReceived.length === 0
-                    ? <li className="sidebar-empty">공유받은 대화가 없습니다.</li>
+                    ? <li className="sidebar-empty">{t('msg.d2chat.no_shares_received')}</li>
                     : sharesReceived.map((s) => (
                       <li
                         key={s.shareuid}
                         className={`session-item ${s.shareuid === viewingSnapshotId ? 'viewing' : ''}`}
                         onClick={() => handleSelectSnapshot(s.shareuid, s.sessiontitles)}
                       >
-                        <span className="session-title">{s.sessiontitles || '(제목 없음)'}</span>
+                        <span className="session-title">{s.sessiontitles || t('msg.d2chat.no_title')}</span>
                         <span className="session-date-badge">{s.createdts?.slice(5, 10)}</span>
                         {/* <span className="session-date-badge">{s.createdt?.slice(5)}</span> */}
                         <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.shareuid, 'received')}>···</button>
@@ -457,11 +462,11 @@ export default function D2ChatPage() {
 
             {/* 즐겨찾기 */}
             <div className="sidebar-section fav-section">
-              <SectionHeader sectionKey="favorites" icon="★" label="즐겨찾기" count={favorites.length} iconActive={favorites.length > 0} />
+              <SectionHeader sectionKey="favorites" icon="★" label={t('ttl.d2chat.favorites')} count={favorites.length} iconActive={favorites.length > 0} />
               {openSections.favorites && (
                 <ul className="session-list">
                   {favorites.length === 0
-                    ? <li className="sidebar-empty">즐겨찾기가 없습니다.</li>
+                    ? <li className="sidebar-empty">{t('msg.d2chat.no_favorites')}</li>
                     : favorites.map((f) => (
                       <li
                         key={f.qauid}
@@ -469,7 +474,7 @@ export default function D2ChatPage() {
                         onClick={() => handleSelectFavorite(f)}
                       >
                         <span className="session-fav-star">★</span>
-                        <span className="session-title">{f.question?.slice(0, 35) || '(내용 없음)'}</span>
+                        <span className="session-title">{f.question?.slice(0, 35) || t('msg.d2chat.no_content')}</span>
                         <span className="session-date-badge">{f.created_at?.slice(5, 10)}</span>
                         <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, f.qauid, 'favorites')}>···</button>
                       </li>
@@ -481,12 +486,12 @@ export default function D2ChatPage() {
             {/* 대화 목록 (날짜별) */}
             <div className="sidebar-section">
               <SectionHeader
-                sectionKey="history" icon="💬" label="대화 목록"
+                sectionKey="history" icon="💬" label={t('ttl.d2chat.history')}
                 count={Object.values(history).flat().filter((s) => s.session_id !== sessionId).length}
               />
               {openSections.history && (
                 filteredHistory.length === 0 ? (
-                  <p className="sidebar-empty">이전 대화가 없습니다.</p>
+                  <p className="sidebar-empty">{t('msg.d2chat.no_history')}</p>
                 ) : filteredHistory.map(([d, sessions]) => (
                   <div key={d} className="date-group">
                     <button type="button" className={`date-toggle ${openDates[d] ? 'open' : ''}`} onClick={() => toggleDate(d)}>
@@ -503,7 +508,7 @@ export default function D2ChatPage() {
                           >
                             <span
                               className={`session-fav-indicator ${favoritedSessionIds.has(s.session_id) ? 'fav-on' : ''}`}
-                              title={favoritedSessionIds.has(s.session_id) ? '즐겨찾기된 대화 있음' : ''}
+                              title={favoritedSessionIds.has(s.session_id) ? t('msg.d2chat.fav_exists') : ''}
                             >★</span>
                             <span className="session-title">{s.title}</span>
                             <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id)}>···</button>
@@ -529,9 +534,9 @@ export default function D2ChatPage() {
                     const session = Object.values(history).flat().find((s) => s.session_id === menuOpenId)
                     if (session) handleShareOpen(e, session)
                   }}
-                >공유</button>
+                >{t('btn.d2chat.share')}</button>
               )}
-              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>삭제</button>
+              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>{t('btn.delete')}</button>
             </div>
           )}
         </aside>
@@ -551,7 +556,7 @@ export default function D2ChatPage() {
                         type="button"
                         className={`msg-fav-btn${isFav ? ' fav-on' : ''}`}
                         onClick={(e) => { e.stopPropagation(); handleToggleFavorite(msg.qauid) }}
-                        title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                        title={isFav ? t('btn.d2chat.fav_remove') : t('btn.d2chat.fav_add')}
                       >★</button>
                     ) : null
 
@@ -570,7 +575,7 @@ export default function D2ChatPage() {
                   {isLoading && (
                     <div className="loading">
                       <div className="spinner" />
-                      <span className="loading-text">분석 중입니다...</span>
+                      <span className="loading-text">{t('msg.d2chat.analyzing')}</span>
                     </div>
                   )}
                   <div ref={bottomRef} />
@@ -578,7 +583,7 @@ export default function D2ChatPage() {
 
                 <div className="input-container">
                   <div className="examples">
-                    <strong>예시 질문:</strong>
+                    <strong>{t('lbl.d2chat.example_question')}</strong>
                     {EXAMPLE_QUESTIONS.map((item, index) => (
                       <span key={index} className="example-btn" onClick={() => setInputValue(item.question)}>{item.label}</span>
                     ))}
@@ -586,7 +591,7 @@ export default function D2ChatPage() {
                   <div className="input-wrapper">
                     <textarea
                       id="questionInput"
-                      placeholder="질문을 입력하세요..."
+                      placeholder={t('inf.d2chat.input_placeholder')}
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
                       onKeyDown={(e) => {
@@ -596,27 +601,27 @@ export default function D2ChatPage() {
                         }
                       }}
                     />
-                    <button type="button" id="sendBtn" onClick={() => sendQuestion()} disabled={isLoading}>전송</button>
+                    <button type="button" id="sendBtn" onClick={() => sendQuestion()} disabled={isLoading}>{t('btn.send')}</button>
                     {showAutoTest && (
-                      <button type="button" id="autoTestBtn" onClick={runAutoTest} disabled={isLoading}>📋 자동실행</button>
+                      <button type="button" id="autoTestBtn" onClick={runAutoTest} disabled={isLoading}>📋 {t('btn.d2chat.auto_test')}</button>
                     )}
                     <button
                       type="button"
                       className="toggle-query-btn"
-                      title="데이터셋 추가 (파일 업로드 / API 연결)"
+                      title={t('inf.d2chat.add_dataset_tooltip')}
                       onClick={() => setDatasetModalOpen(true)}
                     >
                       <PaperClipOutlined style={{ fontSize: 18 }} />
-                      <span>데이터 추가</span>
+                      <span>{t('btn.d2chat.add_data')}</span>
                     </button>
                     <button
                       type="button"
                       className="toggle-query-btn"
-                      title={queryPanelOpen ? '쿼리 숨기기' : '쿼리 보기'}
+                      title={queryPanelOpen ? t('btn.d2chat.hide_query') : t('btn.d2chat.show_query')}
                       onClick={() => setQueryPanelOpen((prev) => !prev)}
                     >
                       {queryPanelOpen ? <CloseOutlined style={{ fontSize: 18 }} /> : <CodeOutlined style={{ fontSize: 18 }} />}
-                      <span>{queryPanelOpen ? '쿼리숨기기' : '쿼리보기'}</span>
+                      <span>{queryPanelOpen ? t('btn.d2chat.hide_query') : t('btn.d2chat.show_query')}</span>
                     </button>
                   </div>
                 </div>
@@ -624,12 +629,12 @@ export default function D2ChatPage() {
             ) : (
               <div className="history-view">
                 <div className="history-bar">
-                  <span><strong>이어가기</strong>를 누르면 대화를 이어서 할 수 있습니다.</span>
+                  <span>{t('msg.d2chat.continue_hint')}</span>
                   <button
                     type="button"
                     className="history-back-btn"
                     onClick={() => { setViewingSessionId(null); setViewMode('chat') }}
-                  >← 현재 대화로</button>
+                  >← {t('btn.d2chat.back_to_current')}</button>
                 </div>
                 <div className="messages history-messages">
                   {historyMessages.map((msg, index) => {
@@ -641,7 +646,7 @@ export default function D2ChatPage() {
                         type="button"
                         className={`msg-fav-btn${isFav ? ' fav-on' : ''}`}
                         onClick={(e) => { e.stopPropagation(); handleToggleFavorite(msg.qauid) }}
-                        title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                        title={isFav ? t('btn.d2chat.fav_remove') : t('btn.d2chat.fav_add')}
                       >★</button>
                     ) : null
 
@@ -675,7 +680,7 @@ export default function D2ChatPage() {
                                     chart_image: nextMsg?.chart_image || null,
                                   })
                                 }}
-                              >이어가기</button>
+                              >{t('btn.d2chat.continue')}</button>
                             </div>
                           )}
                         </div>
@@ -690,7 +695,7 @@ export default function D2ChatPage() {
 
           <div className={`query-panel ${queryPanelOpen ? 'active' : ''}`}>
             <div className="query-header">
-              <span>쿼리 히스토리</span>
+              <span>{t('ttl.d2chat.query_history')}</span>
               <button type="button" className="query-close" onClick={() => setQueryPanelOpen(false)}>×</button>
             </div>
             <div className="query-content">
@@ -700,21 +705,21 @@ export default function D2ChatPage() {
                   {item.queries.map((q, qIndex) => (
                     <div key={qIndex}>
                       {item.queries.length > 1 && (
-                        <div style={{ fontSize: 11, color: '#666', marginBottom: 5, fontWeight: 600 }}>쿼리 {qIndex + 1}</div>
+                        <div style={{ fontSize: 11, color: '#666', marginBottom: 5, fontWeight: 600 }}>{t('lbl.d2chat.query_n').replace('{n}', qIndex + 1)}</div>
                       )}
                       <div className="query-sql">{q.query.trim()}</div>
                       <button
                         type="button"
                         onClick={() => {
                           navigator.clipboard.writeText(q.query.trim()).then(() => {
-                            message.success('쿼리가 복사되었습니다!')
+                            message.success(t('msg.d2chat.query_copied'))
                           })
                         }}
                         style={{
                           color: '#fff', background: '#0e66c4', padding: '2px 12px', marginTop: 4,
                           border: '1px solid #0e66c4', borderRadius: 4, cursor: 'pointer',
                         }}
-                      >복  사</button>
+                      >{t('btn.d2chat.copy')}</button>
                     </div>
                   ))}
                 </div>
@@ -749,6 +754,7 @@ export default function D2ChatPage() {
 // 메시지 말풍선
 // ─────────────────────────────────────────────────────────────────
 function MessageBubble({ role, content, visualization, visualizationType, starButton }) {
+  useLangStore((s) => s.translations)
   return (
     <div className={`message ${role}`}>
       {role === 'assistant' && (
@@ -764,7 +770,7 @@ function MessageBubble({ role, content, visualization, visualizationType, starBu
         {visualization && (
           <div className="visualization-container">
             {visualizationType === 'table' && <div dangerouslySetInnerHTML={{ __html: visualization }} />}
-            {visualizationType === 'chart' && <img src={`data:image/png;base64,${visualization}`} alt="차트" />}
+            {visualizationType === 'chart' && <img src={`data:image/png;base64,${visualization}`} alt={t('lbl.d2chat.chart_alt')} />}
           </div>
         )}
       </div>
@@ -782,6 +788,7 @@ function MessageBubble({ role, content, visualization, visualizationType, starBu
 // 공유 모달 — 같은 테넌트 사용자에게 대화 공유
 // ─────────────────────────────────────────────────────────────────
 function ShareModal({ sessionId, sessionTitle, onClose, onShared }) {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const [users, setUsers] = useState([])
   const [selected, setSelected] = useState([])
@@ -809,7 +816,7 @@ function ShareModal({ sessionId, sessionTitle, onClose, onShared }) {
       onShared?.()
       onClose()
     } catch (e) {
-      message.error(e.response?.data?.detail || '공유 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2chat.share_error'))
       setSharing(false)
     }
   }
@@ -817,13 +824,13 @@ function ShareModal({ sessionId, sessionTitle, onClose, onShared }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box share-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>대화 공유</h2>
+        <h2>{t('ttl.d2chat.share_chat')}</h2>
         <p className="share-session-title">&quot;{sessionTitle}&quot;</p>
 
         {loading ? (
-          <p className="share-loading">사용자 목록 로딩 중...</p>
+          <p className="share-loading">{t('msg.d2chat.loading_users')}</p>
         ) : users.length === 0 ? (
-          <p className="share-loading">공유 가능한 사용자가 없습니다.</p>
+          <p className="share-loading">{t('msg.d2chat.no_shareable_users')}</p>
         ) : (
           <ul className="share-user-list">
             {users.map((u) => (
@@ -839,9 +846,9 @@ function ShareModal({ sessionId, sessionTitle, onClose, onShared }) {
 
         <div className="modal-buttons">
           <button type="button" onClick={handleShare} disabled={selected.length === 0 || sharing}>
-            {sharing ? '공유 중...' : `공유 (${selected.length}명)`}
+            {sharing ? t('msg.d2chat.sharing') : t('btn.d2chat.share_with_count').replace('{n}', selected.length)}
           </button>
-          <button type="button" onClick={onClose} style={{ background: '#6c757d' }}>취소</button>
+          <button type="button" onClick={onClose} style={{ background: '#6c757d' }}>{t('btn.cancel')}</button>
         </div>
       </div>
     </div>
