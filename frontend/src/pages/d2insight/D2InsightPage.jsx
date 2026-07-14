@@ -4,6 +4,7 @@ import { PaperClipOutlined } from '@ant-design/icons'
 import { marked } from 'marked'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 import DatasetUploadModal from '@/components/DatasetUploadModal/DatasetUploadModal'
 import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
@@ -12,31 +13,35 @@ import './d2insight.css'
 
 const CHAT_TIMEOUT = { timeout: 360000 } // 보고서 생성 최대 6분
 
-const INITIAL_MESSAGE = {
-  role: 'assistant',
-  content: '안녕하세요! AI 분석 보고서 에이전트입니다.\n\n기업 데이터를 분석하여 판매·경영·기술·품질 등 다양한 보고서를 자동으로 생성합니다.\n예: "2024-01 판매분석 보고서 작성해줘"',
-  fileurl: null,
-  reportPath: null,
+function getInitialMessage() {
+  return {
+    role: 'assistant',
+    content: t('msg.d2insight.welcome'),
+    fileurl: null,
+    reportPath: null,
+  }
 }
 
-const EXAMPLE_QUESTIONS = [
-  { label: '판매 보고서', question: '2013년 9월 판매실적보고서를 작성해주세요.' },
-  { label: '서버로그 보고서', question: '지난 달 서버로그 분석 보고서를 그 전달과 비교하여 일괄 작성해주세요.' },
-  { label: '인터페이스로그 보고서', question: '지난달 인터페이스 로그 분석 보고서를 작성해주세요.' },
+const EXAMPLE_QUESTION_DEFS = [
+  { labelKey: 'btn.d2insight.example_sales', questionKey: 'msg.d2insight.example_sales_question' },
+  { labelKey: 'btn.d2insight.example_serverlog', questionKey: 'msg.d2insight.example_serverlog_question' },
+  { labelKey: 'btn.d2insight.example_interfacelog', questionKey: 'msg.d2insight.example_interfacelog_question' },
 ]
 
 
 export default function D2InsightPage() {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const user = useAuthStore((s) => s.user)
   const userId = user?.id
+  const EXAMPLE_QUESTIONS = EXAMPLE_QUESTION_DEFS.map((d) => ({ label: t(d.labelKey), question: t(d.questionKey) }))
 
   // ── 대화 상태 ──────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState(null)
   const sessionIdRef = useRef(null)
   const updateSessionId = (id) => { setSessionId(id); sessionIdRef.current = id }
 
-  const [messages, setMessages] = useState([INITIAL_MESSAGE])
+  const [messages, setMessages] = useState([getInitialMessage()])
   const [isLoading, setIsLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [viewMode, setViewMode] = useState('chat') // 'chat' | 'history'
@@ -124,7 +129,7 @@ export default function D2InsightPage() {
   // ── 대화 핸들러 ────────────────────────────────────────────────
   const handleNewChat = () => {
     updateSessionId(null)
-    setMessages([INITIAL_MESSAGE])
+    setMessages([getInitialMessage()])
     setViewingSessionId(null)
     setViewingFavoriteQauid(null)
     setViewMode('chat')
@@ -136,7 +141,7 @@ export default function D2InsightPage() {
     try {
       const { data } = await apiClient.get(`/d2insight/history/${userId}/${sid}`)
       setHistoryMessages(data.messages || [])
-      setHistoryLabel('과거 보고서 보기')
+      setHistoryLabel(t('msg.d2insight.view_past_report'))
       setViewingSessionId(sid)
       setViewingFavoriteQauid(null)
       setViewMode('history')
@@ -150,7 +155,7 @@ export default function D2InsightPage() {
       { role: 'user', content: fav.question, qauid: fav.qauid },
       { role: 'assistant', content: fav.answer, fileurl: fav.fileurl, reportPath: fav.filenm },
     ])
-    setHistoryLabel('즐겨찾기 보고서')
+    setHistoryLabel(t('msg.d2insight.favorite_report'))
     setViewingSessionId(null)
     setViewingFavoriteQauid(fav.qauid)
     setViewMode('history')
@@ -165,7 +170,7 @@ export default function D2InsightPage() {
         { role: 'user', content: data.question || '' },
         { role: 'assistant', content: answerText, fileurl: data.fileurl, reportPath: data.filenm },
       ])
-      setHistoryLabel(label || '공유받은 보고서')
+      setHistoryLabel(label || t('ttl.d2insight.shares_received'))
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
       setViewMode('history')
@@ -184,7 +189,7 @@ export default function D2InsightPage() {
       }
       fetchFavorites()
     } catch (e) {
-      message.error(e.response?.data?.detail || '즐겨찾기 처리 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2insight.fav_error'))
     }
   }
 
@@ -207,7 +212,7 @@ export default function D2InsightPage() {
       setViewingFavoriteQauid(null)
       setViewMode('chat')
     } catch (e) {
-      message.error(e.response?.data?.detail || '이어가기 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2insight.continue_error'))
     }
   }
 
@@ -255,7 +260,7 @@ export default function D2InsightPage() {
     } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: '오류가 발생했습니다: ' + (error.response?.data?.detail || error.message) },
+        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (error.response?.data?.detail || error.message) },
       ])
     } finally {
       setIsLoading(false)
@@ -272,7 +277,7 @@ export default function D2InsightPage() {
       ...prev,
       {
         role: 'assistant',
-        content: `데이터셋이 등록되었습니다. 이제부터 이 세션의 보고서 생성은 아래 데이터를 대상으로 합니다 (기존 DB 조회는 사용되지 않습니다).\n${summary}`,
+        content: `${t('msg.d2insight.dataset_registered')}\n${summary}`,
         fileurl: null,
         reportPath: null,
       },
@@ -311,7 +316,7 @@ export default function D2InsightPage() {
         if (id === sessionId) handleNewChat()
       }
     } catch (e2) {
-      message.error(e2.response?.data?.detail || '삭제 중 오류가 발생했습니다.')
+      message.error(e2.response?.data?.detail || t('msg.d2insight.delete_error'))
     }
   }
 
@@ -342,7 +347,7 @@ export default function D2InsightPage() {
       <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>AI 분석 보고서 에이전트</div>
+          <div>{t('ttl.d2insight.agent')}</div>
         </div>
       </div>
 
@@ -351,30 +356,30 @@ export default function D2InsightPage() {
         {/* ── 사이드바 ── */}
         <aside className="d2insight-sidebar">
           <div className="current-session-block">
-            <span className="current-session-label">현재 세션</span>
-            <span className="current-session-title">{currentTitle || '아직 요청이 없습니다.'}</span>
+            <span className="current-session-label">{t('lbl.d2insight.current_session')}</span>
+            <span className="current-session-title">{currentTitle || t('msg.d2insight.no_request')}</span>
           </div>
 
           <div className="sidebar-newchat">
-            <button type="button" className="new-chat-btn" onClick={handleNewChat}>+ 새 대화</button>
+            <button type="button" className="new-chat-btn" onClick={handleNewChat}>{t('btn.d2insight.new_chat')}</button>
           </div>
 
           <nav className="sidebar-nav">
 
             {/* 공유한 내역 */}
             <div className="sidebar-section">
-              <SectionHeader sectionKey="sent" icon="↑" label="공유한 보고서" count={sharesSent.length} />
+              <SectionHeader sectionKey="sent" icon="↑" label={t('ttl.d2insight.shares_sent')} count={sharesSent.length} />
               {openSections.sent && (
                 <ul className="session-list">
                   {sharesSent.length === 0
-                    ? <li className="sidebar-empty">공유한 보고서가 없습니다.</li>
+                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_sent')}</li>
                     : sharesSent.map((s) => (
                       <li
                         key={s.share_qauid}
                         className="session-item"
                         onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
                       >
-                        <span className="session-title">{s.question?.slice(0, 30) || '(제목 없음)'}</span>
+                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
                         <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
                         <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'sent')}>···</button>
                       </li>
@@ -385,18 +390,18 @@ export default function D2InsightPage() {
 
             {/* 공유받은 내역 */}
             <div className="sidebar-section">
-              <SectionHeader sectionKey="received" icon="↓" label="공유받은 보고서" count={sharesReceived.length} />
+              <SectionHeader sectionKey="received" icon="↓" label={t('ttl.d2insight.shares_received')} count={sharesReceived.length} />
               {openSections.received && (
                 <ul className="session-list">
                   {sharesReceived.length === 0
-                    ? <li className="sidebar-empty">공유받은 보고서가 없습니다.</li>
+                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_received')}</li>
                     : sharesReceived.map((s) => (
                       <li
                         key={s.share_qauid}
                         className="session-item"
                         onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
                       >
-                        <span className="session-title">{s.question?.slice(0, 30) || '(제목 없음)'}</span>
+                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
                         <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
                         <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'received')}>···</button>
                       </li>
@@ -407,11 +412,11 @@ export default function D2InsightPage() {
 
             {/* 즐겨찾기 */}
             <div className="sidebar-section fav-section">
-              <SectionHeader sectionKey="favorites" icon="★" label="즐겨찾기" count={favorites.length} iconActive={favorites.length > 0} />
+              <SectionHeader sectionKey="favorites" icon="★" label={t('ttl.d2insight.favorites')} count={favorites.length} iconActive={favorites.length > 0} />
               {openSections.favorites && (
                 <ul className="session-list">
                   {favorites.length === 0
-                    ? <li className="sidebar-empty">즐겨찾기가 없습니다.</li>
+                    ? <li className="sidebar-empty">{t('msg.d2insight.no_favorites')}</li>
                     : favorites.map((f) => (
                       <li
                         key={f.qauid}
@@ -419,7 +424,7 @@ export default function D2InsightPage() {
                         onClick={() => handleSelectFavorite(f)}
                       >
                         <span className="session-fav-star">★</span>
-                        <span className="session-title">{f.question?.slice(0, 35) || '(내용 없음)'}</span>
+                        <span className="session-title">{f.question?.slice(0, 35) || t('msg.d2insight.no_content')}</span>
                         <span className="session-date-badge">{f.created_at?.slice(5, 10)}</span>
                         <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, f.qauid, 'favorites')}>···</button>
                       </li>
@@ -431,12 +436,12 @@ export default function D2InsightPage() {
             {/* 보고서 목록 (날짜별) */}
             <div className="sidebar-section">
               <SectionHeader
-                sectionKey="history" icon="💬" label="대화 목록"
+                sectionKey="history" icon="💬" label={t('ttl.d2insight.history')}
                 count={Object.values(history).flat().filter((s) => s.session_id !== sessionId).length}
               />
               {openSections.history && (
                 filteredHistory.length === 0 ? (
-                  <p className="sidebar-empty">이전 대화가 없습니다.</p>
+                  <p className="sidebar-empty">{t('msg.d2insight.no_history')}</p>
                 ) : filteredHistory.map(([d, sessions]) => (
                   <div key={d} className="date-group">
                     <button type="button" className={`date-toggle ${openDates[d] ? 'open' : ''}`} onClick={() => toggleDate(d)}>
@@ -453,7 +458,7 @@ export default function D2InsightPage() {
                           >
                             <span
                               className={`session-fav-indicator ${favoritedSessionIds.has(s.session_id) ? 'fav-on' : ''}`}
-                              title={favoritedSessionIds.has(s.session_id) ? '즐겨찾기된 보고서 있음' : ''}
+                              title={favoritedSessionIds.has(s.session_id) ? t('msg.d2insight.fav_exists') : ''}
                             >★</span>
                             <span className="session-title">{s.title}</span>
                             <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id)}>···</button>
@@ -471,7 +476,7 @@ export default function D2InsightPage() {
           {/* ··· 드롭다운 메뉴 */}
           {menuOpenId && (
             <div className="session-dropdown" style={{ top: menuPos.top, left: menuPos.left }}>
-              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>삭제</button>
+              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>{t('btn.delete')}</button>
             </div>
           )}
         </aside>
@@ -491,7 +496,7 @@ export default function D2InsightPage() {
                         type="button"
                         className={`msg-fav-btn${isFav ? ' fav-on' : ''}`}
                         onClick={(e) => { e.stopPropagation(); handleToggleFavorite(msg.qauid) }}
-                        title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                        title={isFav ? t('btn.d2insight.fav_remove') : t('btn.d2insight.fav_add')}
                       >★</button>
                     ) : null
 
@@ -512,7 +517,7 @@ export default function D2InsightPage() {
                   {isLoading && (
                     <div className="loading">
                       <div className="spinner" />
-                      <span className="loading-text">보고서를 생성 중입니다...</span>
+                      <span className="loading-text">{t('msg.d2insight.generating')}</span>
                     </div>
                   )}
                   <div ref={bottomRef} />
@@ -520,14 +525,14 @@ export default function D2InsightPage() {
 
                 <div className="input-container">
                   <div className="examples">
-                    <strong>예시 요청:</strong>
+                    <strong>{t('lbl.d2insight.example_request')}</strong>
                     {EXAMPLE_QUESTIONS.map((item, index) => (
                       <span key={index} className="example-btn" onClick={() => setInputValue(item.question)}>{item.label}</span>
                     ))}
                   </div>
                   <div className="input-wrapper">
                     <textarea
-                      placeholder="보고서 요청을 입력하세요... (예: 2024-01 판매분석 보고서 작성해줘)"
+                      placeholder={t('inf.d2insight.input_placeholder')}
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
                       onKeyDown={(e) => {
@@ -537,15 +542,15 @@ export default function D2InsightPage() {
                         }
                       }}
                     />
-                    <button type="button" onClick={() => sendMessage()} disabled={isLoading}>전송</button>
+                    <button type="button" onClick={() => sendMessage()} disabled={isLoading}>{t('btn.send')}</button>
                     <button
                       type="button"
                       className="toggle-query-btn"
-                      title="데이터셋 추가 (파일 업로드 / API 연결)"
+                      title={t('inf.d2insight.add_dataset_tooltip')}
                       onClick={() => setDatasetModalOpen(true)}
                     >
                       <PaperClipOutlined style={{ fontSize: 18 }} />
-                      <span>데이터 추가</span>
+                      <span>{t('btn.d2insight.add_data')}</span>
                     </button>
                   </div>
                 </div>
@@ -553,12 +558,12 @@ export default function D2InsightPage() {
             ) : (
               <div className="history-view">
                 <div className="history-bar">
-                  <span><strong>이어가기</strong>를 누르면 대화를 이어서 할 수 있습니다.</span>
+                  <span>{t('msg.d2insight.continue_hint')}</span>
                   <button
                     type="button"
                     className="history-back-btn"
                     onClick={() => { setViewingSessionId(null); setViewMode('chat') }}
-                  >← 현재 대화로</button>
+                  >← {t('btn.d2insight.back_to_current')}</button>
                 </div>
                 <div className="messages history-messages">
                   {historyMessages.map((msg, index) => {
@@ -570,7 +575,7 @@ export default function D2InsightPage() {
                         type="button"
                         className={`msg-fav-btn${isFav ? ' fav-on' : ''}`}
                         onClick={(e) => { e.stopPropagation(); handleToggleFavorite(msg.qauid) }}
-                        title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                        title={isFav ? t('btn.d2insight.fav_remove') : t('btn.d2insight.fav_add')}
                       >★</button>
                     ) : null
 
@@ -600,7 +605,7 @@ export default function D2InsightPage() {
                                     reportPath: nextMsg?.reportPath || null,
                                   })
                                 }}
-                              >이어가기</button>
+                              >{t('btn.d2insight.continue')}</button>
                             </div>
                           )}
                         </div>
@@ -663,6 +668,7 @@ function parseMarkdownWithImages(text) {
 // 메시지 말풍선
 // ─────────────────────────────────────────────────────────────────
 function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, onShare }) {
+  useLangStore((s) => s.translations)
   const [previewExpanded, setPreviewExpanded] = useState(false)
   const [previewContent, setPreviewContent] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -681,7 +687,7 @@ function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, 
     : null
   const displayName = pdfUrl
     ? decodeURIComponent(pdfUrl.split('/').pop().split('?')[0])
-    : (reportPath || '보고서.pdf')
+    : (reportPath || t('lbl.d2insight.default_report_name'))
 
   const handleTogglePreview = async () => {
     if (previewExpanded) { setPreviewExpanded(false); return }
@@ -743,17 +749,17 @@ function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, 
               <span className="report-filename">{displayName}</span>
               <div className="report-btns">
                 <button type="button" className="report-btn" onClick={handleTogglePreview} disabled={previewLoading}>
-                  {previewLoading ? '로딩 중...' : previewExpanded ? '접기' : '미리보기'}
+                  {previewLoading ? t('msg.d2insight.preview_loading') : previewExpanded ? t('btn.d2insight.collapse') : t('btn.d2insight.preview')}
                 </button>
-                <button type="button" className="report-btn download" onClick={handleDownload}>다운로드</button>
+                <button type="button" className="report-btn download" onClick={handleDownload}>{t('btn.d2insight.download')}</button>
                 {qauid && onShare && (
-                  <button type="button" className="report-btn share-btn" onClick={() => onShare(qauid)}>공유</button>
+                  <button type="button" className="report-btn share-btn" onClick={() => onShare(qauid)}>{t('btn.d2insight.share')}</button>
                 )}
               </div>
             </div>
             {previewExpanded && previewContent && (
               previewContent.startsWith('__pdf__:')
-                ? <iframe src={previewContent.slice(8)} style={{ width: '100%', height: 600, border: 'none' }} title="보고서 미리보기" />
+                ? <iframe src={previewContent.slice(8)} style={{ width: '100%', height: 600, border: 'none' }} title={t('ttl.d2insight.report_preview')} />
                 : <div
                     className="report-preview-html"
                     dangerouslySetInnerHTML={{ __html: parseMarkdownWithImages(previewContent) }}
@@ -776,6 +782,7 @@ function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, 
 // 공유 모달 — 폴더 선택 후 tenant 내 공유
 // ─────────────────────────────────────────────────────────────────
 function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
+  useLangStore((s) => s.translations)
   const [folders, setFolders] = useState([])
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -797,7 +804,7 @@ function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
       onShared?.()
       onClose()
     } catch (e) {
-      message.error(e.response?.data?.detail || '공유 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2insight.share_error'))
       setSharing(false)
     }
   }
@@ -805,11 +812,11 @@ function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box folder-modal-box" onClick={(e) => e.stopPropagation()}>
-        <h3 className="modal-title">공유 폴더 선택</h3>
+        <h3 className="modal-title">{t('ttl.d2insight.select_share_folder')}</h3>
         {loading ? (
-          <p className="modal-empty">폴더 로딩 중...</p>
+          <p className="modal-empty">{t('msg.d2insight.loading_folders')}</p>
         ) : folders.length === 0 ? (
-          <p className="modal-empty">등록된 폴더가 없습니다.</p>
+          <p className="modal-empty">{t('msg.d2insight.no_folders')}</p>
         ) : (
           <ul className="folder-list">
             {folders.map(f => (
@@ -825,14 +832,14 @@ function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
           </ul>
         )}
         <div className="modal-actions">
-          <button type="button" className="modal-btn cancel" onClick={onClose}>취소</button>
+          <button type="button" className="modal-btn cancel" onClick={onClose}>{t('btn.cancel')}</button>
           <button
             type="button"
             className="modal-btn confirm"
             onClick={handleShare}
             disabled={!selected || sharing}
           >
-            {sharing ? '공유 중...' : '공유'}
+            {sharing ? t('msg.d2insight.sharing') : t('btn.d2insight.share')}
           </button>
         </div>
       </div>

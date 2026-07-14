@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntApp, ConfigProvider } from 'antd'
 import koKR from 'antd/locale/ko_KR'
 import enUS from 'antd/locale/en_US'
+import jaJP from 'antd/locale/ja_JP'
+import esES from 'antd/locale/es_ES'
 import App from './App'
 import { useLangStore } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -31,7 +33,7 @@ const theme = {
   },
 }
 
-const ANT_LOCALES = { ko: koKR, en: enUS }
+const ANT_LOCALES = { ko: koKR, en: enUS, ja: jaJP, es: esES }
 
 function LocalizedApp() {
   const langCd = useLangStore((s) => s.languageCd)

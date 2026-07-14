@@ -8,6 +8,48 @@ from d2insight.db import supabase_client as _sc
 from d2insight.db.supabase_client import build_shares_path, delete_from_storage
 
 
+# ── Timezone ────────────────────────────────────────────────────
+
+def get_offsetminutes(user_id: str | None) -> int | None:
+    """tenantusers.timezone → tenants.timezone → timezones.offsetminutes 순으로 조회."""
+    if not user_id:
+        return None
+    try:
+        rows = (
+            _sc.table("tenantusers").select("timezone,tenantid")
+            .eq("useruid", user_id).eq("useyn", True).limit(1).execute().data or []
+        )
+        if not rows:
+            return None
+        tz = rows[0].get("timezone")
+        if not tz and rows[0].get("tenantid"):
+            t = _sc.table("tenants").select("timezone").eq("tenantid", rows[0]["tenantid"]).maybe_single().execute()
+            if t and t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = _sc.table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: int | None = None) -> str:
+    if not raw:
+        return ""
+    try:
+        from datetime import timedelta, timezone as _tz
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(_tz.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(raw)
+
+
 # ── 사용자 / 프로젝트 정보 ────────────────────────────────────────
 
 def get_project_info(user_uid: str) -> tuple[int | None, int | None]:
@@ -56,7 +98,7 @@ def delete_session(session_uid: str, creator: str) -> bool:
     return True
 
 
-def get_history_by_date(creator: str) -> dict:
+def get_history_by_date(creator: str, offsetminutes: int | None = None) -> dict:
     """날짜별로 그룹화된 세션 목록을 반환한다."""
     try:
         q = (
@@ -71,13 +113,14 @@ def get_history_by_date(creator: str) -> dict:
         res = q.execute()
         grouped: dict = {}
         for row in (res.data or []):
-            date_key = str(row.get("createdts", ""))[:10]
+            formatted = _fmt_dt(row.get("createdts", ""), offsetminutes)
+            date_key = formatted[:10]
             if date_key not in grouped:
                 grouped[date_key] = []
             grouped[date_key].append({
                 "session_id": row["sessionuid"],
                 "title": row.get("sessiontitles", ""),
-                "created_at": row.get("createdts", ""),
+                "created_at": formatted,
             })
         return grouped
     except Exception:
@@ -251,7 +294,7 @@ def remove_favorite_qa(qauid: str, creator: str) -> bool:
         return False
 
 
-def get_favorites(creator: str) -> list[dict]:
+def get_favorites(creator: str, offsetminutes: int | None = None) -> list[dict]:
     """내 즐겨찾기 목록을 반환한다."""
     try:
         res = (
@@ -277,7 +320,7 @@ def get_favorites(creator: str) -> list[dict]:
                 "answer": answer_text,
                 "filenm": row.get("filenm"),
                 "fileurl": row.get("fileurl"),
-                "created_at": row.get("createdts"),
+                "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
             })
         return result
     except Exception:
@@ -370,7 +413,7 @@ def share_qa(qauid: str, creator: str, folder_uid: str | None = None) -> bool:
         return False
 
 
-def get_shares_sent(creator: str) -> list[dict]:
+def get_shares_sent(creator: str, offsetminutes: int | None = None) -> list[dict]:
     """내가 공유한 QA 목록을 반환한다."""
     try:
         res = (
@@ -380,7 +423,7 @@ def get_shares_sent(creator: str) -> list[dict]:
             .order("createdts", desc=True)
             .execute()
         )
-        return _format_share_rows(res.data or [])
+        return _format_share_rows(res.data or [], offsetminutes)
     except Exception:
         return []
 
@@ -412,7 +455,7 @@ def delete_share_sent(share_qauid: str, creator: str) -> bool:
         return False
 
 
-def get_all_shares(project_id: int | None) -> list[dict]:
+def get_all_shares(project_id: int | None, offsetminutes: int | None = None) -> list[dict]:
     """같은 project의 모든 공유 보고서 반환."""
     try:
         q = (
@@ -425,12 +468,12 @@ def get_all_shares(project_id: int | None) -> list[dict]:
         else:
             q = q.is_("projectid", "null")
         res = q.execute()
-        return _format_share_rows(res.data or [])
+        return _format_share_rows(res.data or [], offsetminutes)
     except Exception:
         return []
 
 
-def get_shares_received(project_id: int | None, my_creator: str) -> list[dict]:
+def get_shares_received(project_id: int | None, my_creator: str, offsetminutes: int | None = None) -> list[dict]:
     """같은 projectid에서 내가 creator가 아닌 공유 QA 목록을 반환한다."""
     try:
         q = (
@@ -444,7 +487,7 @@ def get_shares_received(project_id: int | None, my_creator: str) -> list[dict]:
         else:
             q = q.is_("projectid", "null")
         res = q.execute()
-        return _format_share_rows(res.data or [])
+        return _format_share_rows(res.data or [], offsetminutes)
     except Exception:
         return []
 
@@ -467,7 +510,7 @@ def get_share(share_qauid: str) -> dict | None:
         return None
 
 
-def _format_share_rows(rows: list[dict]) -> list[dict]:
+def _format_share_rows(rows: list[dict], offsetminutes: int | None = None) -> list[dict]:
     result = []
     for row in rows:
         answer_text = ""
@@ -485,6 +528,6 @@ def _format_share_rows(rows: list[dict]) -> list[dict]:
             "fileurl": row.get("fileurl"),
             "folder_uid": row.get("folderuid"),
             "creator": row.get("creator"),
-            "created_at": row.get("createdts"),
+            "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
         })
     return result

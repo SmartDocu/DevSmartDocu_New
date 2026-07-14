@@ -132,7 +132,7 @@ def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(ge
             .eq("useruid", str(user.id)).eq("servicecd", servicecd)
             .maybe_single().execute()
         )
-        if su_row.data:
+        if su_row and su_row.data:
             myprojectid = su_row.data.get("myprojectid")
 
     return {
@@ -607,7 +607,7 @@ async def save_ex_data(
             svc = sb.schema(SUPABASE_SCHEMA).table("accountservices") \
                 .select("plancd").eq("accountuid", accountuid).eq("servicecd", "Do") \
                 .maybe_single().execute()
-            plancd = svc.data.get("plancd") if svc.data else None
+            plancd = svc.data.get("plancd") if svc and svc.data else None
 
         limit_mb = None
         if plancd:
