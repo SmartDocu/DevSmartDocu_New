@@ -20,6 +20,8 @@ class UserContext(BaseModel):
     docid: Optional[str] = None
     docnm: Optional[str] = None
     tenantid: Optional[str] = None
+    tenantnm: Optional[str] = None
+    disptenantnm: Optional[str] = None
     tenantmanager: Optional[str] = "N"
     tenanticonurl: Optional[str] = None
     projectid: Optional[str] = None

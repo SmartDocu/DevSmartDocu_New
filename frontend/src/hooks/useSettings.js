@@ -198,19 +198,27 @@ export function useChangeTenantSubscription() {
   })
 }
 
-export function useTenantManageLangTimezone() {
+export function useTenantManageTenantInfo() {
   return useQuery({
-    queryKey: ['tenant-manage-lang-timezone'],
-    queryFn: () => apiClient.get('/settings/tenant-manage/lang-timezone').then((r) => r.data),
+    queryKey: ['tenant-manage-tenant-info'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/tenant-info').then((r) => r.data),
   })
 }
 
-export function useSaveTenantManageLangTimezone() {
+export function useTenantManageBasicInfo() {
+  return useQuery({
+    queryKey: ['tenant-manage-basic-info'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/basic-info').then((r) => r.data),
+  })
+}
+
+export function useSaveTenantManageBasicInfo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body) => apiClient.post('/settings/tenant-manage/lang-timezone', body).then((r) => r.data),
+    mutationFn: (formData) => apiClient.post('/settings/tenant-manage/basic-info', formData).then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tenant-manage-lang-timezone'] })
+      qc.invalidateQueries({ queryKey: ['tenant-manage-basic-info'] })
+      qc.invalidateQueries({ queryKey: ['tenant-manage-tenant-info'] })
     },
   })
 }

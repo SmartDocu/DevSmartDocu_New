@@ -175,6 +175,7 @@ export default function AppLayout() {
           switchTenant(tenantid)
           updateUser({
             tenantnm: res.data.tenantnm ?? tenant?.tenantnm,
+            disptenantnm: res.data.disptenantnm ?? res.data.tenantnm ?? tenant?.tenantnm,
             tenanticonurl: res.data.tenanticonurl ?? tenant?.tenanticonurl,
             accountuid: res.data.accountuid ?? null,
           })
@@ -225,8 +226,15 @@ export default function AppLayout() {
               />
             )}
             {!siderCollapsed && (
-              <Text strong style={{ color: isDark ? '#fff' : '#163E64', fontSize: 16, whiteSpace: 'nowrap' }}>
-                D2Doc
+              <Text
+                strong
+                style={{
+                  color: isDark ? '#fff' : '#163E64', fontSize: 16, whiteSpace: 'nowrap',
+                  overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: '1 1 0',
+                }}
+                title={user?.disptenantnm || user?.tenantnm || 'D2Doc'}
+              >
+                {user?.disptenantnm || user?.tenantnm || 'D2Doc'}
               </Text>
             )}
           </div>

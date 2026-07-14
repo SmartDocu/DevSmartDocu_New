@@ -419,18 +419,18 @@ async def save_tenant(
         if existing:
             if iconfile and iconfile.filename:
                 existing_url = existing[0].get("iconfileurl")
-                icon_nm, icon_url = _save_iconfile(sb, iconfile, "iconfiles/tenants", existing_url)
+                icon_nm, icon_url = _save_iconfile(sb, iconfile, f"iconfiles/tenants/{tenantid}", existing_url)
                 tenant_data["iconfilenm"] = icon_nm
                 tenant_data["iconfileurl"] = icon_url
             sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
             _save_tenant_contact(int(tenantid), email, telno, str(user.id))
             return {"status": "updated"}
 
-    resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert(tenant_data).execute()
+    resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert({**tenant_data, "disptenantnm": tenantnm}).execute()
     new_tenantid = resp.data[0]["tenantid"] if resp.data else None
     if new_tenantid:
         if iconfile and iconfile.filename:
-            icon_nm, icon_url = _save_iconfile(sb, iconfile, "iconfiles/tenants")
+            icon_nm, icon_url = _save_iconfile(sb, iconfile, f"iconfiles/tenants/{new_tenantid}")
             sb.schema(SUPABASE_SCHEMA).table("tenants").update({
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
@@ -978,56 +978,117 @@ def change_tenant_subscription(
     return {"result": "success", "message": "구독이 변경되었습니다."}
 
 
-@router.get("/tenant-manage/lang-timezone")
-def get_tenant_manage_lang_timezone(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """구독 관리 화면 좌측: 테넌트 전체 기본 언어·타임존 조회."""
+@router.get("/tenant-manage/tenant-info")
+def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """테넌트 관리 화면 [테넌트 정보] 카드: 담당자 연락처 + 언어·타임존 표시 전용 조회."""
     user = _get_user(token)
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
-    tenantid, _ = _get_tenant_and_account(svc, user_id, tenantid)
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
 
     t_row = svc.table("tenants").select("languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     tenant = t_row.data if t_row else {}
+
+    languagenm = None
+    if tenant.get("languagecd"):
+        l_row = svc.table("languages").select("languagenm").eq("languagecd", tenant["languagecd"]).maybe_single().execute()
+        languagenm = l_row.data.get("languagenm") if l_row and l_row.data else None
+
+    email, telno = "", ""
+    if accountuid:
+        acc_row = svc.table("accounts").select("encemail,enctelno").eq("accountuid", accountuid).maybe_single().execute()
+        acc = acc_row.data if acc_row else {}
+        email = _decrypt(acc.get("encemail"))
+        telno = _decrypt(acc.get("enctelno"))
+
+    return {
+        "email": email,
+        "telno": telno,
+        "languagecd": tenant.get("languagecd"),
+        "languagenm": languagenm,
+        "timezone": tenant.get("timezone"),
+    }
+
+
+@router.get("/tenant-manage/basic-info")
+def get_tenant_manage_basic_info(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """[테넌트 기본 정보 설정] 화면: 아이콘·언어·타임존(tenants) + 담당자 연락처(accounts) 조회."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+
+    t_row = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    tenant = t_row.data if t_row else {}
+
+    email, telno = "", ""
+    if accountuid:
+        acc_row = svc.table("accounts").select("encemail,enctelno").eq("accountuid", accountuid).maybe_single().execute()
+        acc = acc_row.data if acc_row else {}
+        email = _decrypt(acc.get("encemail"))
+        telno = _decrypt(acc.get("enctelno"))
 
     langs = svc.table("languages").select("languagecd,languagenm").order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (svc.table("timezones").select("timezone").eq("useyn", True).execute().data or [])]
 
     return {
+        "iconfilenm": tenant.get("iconfilenm"),
+        "iconfileurl": tenant.get("iconfileurl"),
+        "disptenantnm": tenant.get("disptenantnm"),
         "languagecd": tenant.get("languagecd"),
         "timezone": tenant.get("timezone"),
+        "email": email,
+        "telno": telno,
         "languages": langs,
         "timezones": timezones,
     }
 
 
-class TenantLangTimezoneRequest(BaseModel):
-    languagecd: Optional[str] = None
-    timezone: Optional[str] = None
-
-
-@router.post("/tenant-manage/lang-timezone")
-def update_tenant_manage_lang_timezone(
-    body: TenantLangTimezoneRequest,
+@router.post("/tenant-manage/basic-info")
+async def save_tenant_manage_basic_info(
+    disptenantnm: Optional[str] = Form(None),
+    languagecd: Optional[str] = Form(None),
+    timezone: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    telno: Optional[str] = Form(None),
+    iconfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """구독 관리 화면 좌측: 테넌트 전체 기본 언어·타임존 저장."""
+    """[테넌트 기본 정보 설정] 화면: tenants(아이콘·표현기업명·언어·타임존) + accounts(담당자 연락처) 저장."""
     user = _get_user(token)
     user_id = str(user.id)
-    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    svc_root = get_service_client()
+    svc = svc_root.schema(SUPABASE_SCHEMA)
 
-    tenantid, _ = _get_tenant_and_account(svc, user_id, tenantid)
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
 
-    payload = {}
-    if body.languagecd:
-        payload["languagecd"] = body.languagecd
-    if body.timezone:
-        payload["timezone"] = body.timezone
-    if not payload:
-        raise HTTPException(status_code=400, detail="변경할 값이 없습니다.")
+    tenant_payload = {}
+    if disptenantnm:
+        tenant_payload["disptenantnm"] = disptenantnm
+    if languagecd:
+        tenant_payload["languagecd"] = languagecd
+    if timezone:
+        tenant_payload["timezone"] = timezone
+    if iconfile and iconfile.filename:
+        existing = svc.table("tenants").select("iconfileurl").eq("tenantid", int(tenantid)).maybe_single().execute()
+        existing_url = existing.data.get("iconfileurl") if existing and existing.data else None
+        icon_nm, icon_url = _save_iconfile(svc_root, iconfile, f"iconfiles/tenants/{tenantid}", existing_url)
+        tenant_payload["iconfilenm"] = icon_nm
+        tenant_payload["iconfileurl"] = icon_url
+    if tenant_payload:
+        svc.table("tenants").update(tenant_payload).eq("tenantid", int(tenantid)).execute()
 
-    svc.table("tenants").update(payload).eq("tenantid", int(tenantid)).execute()
+    if accountuid and (email or telno):
+        acc_payload = {}
+        if email:
+            acc_payload["encemail"] = _encrypt(email)
+        if telno:
+            acc_payload["enctelno"] = _encrypt(telno)
+        svc.table("accounts").update(acc_payload).eq("accountuid", accountuid).execute()
+
     return {"result": "success"}
 
 
@@ -1060,6 +1121,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
         )
         .in_("producttype", ["User", "Feature"])
         .eq("useyn", True)
+        .eq("is_sales", True)
         .order("orderno")
         .execute().data or []
     )
@@ -1277,6 +1339,7 @@ def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tena
         )
         .eq("producttype", "Credit")
         .eq("useyn", True)
+        .eq("is_sales", True)
         .order("orderno")
         .execute().data or []
     )
@@ -1488,6 +1551,7 @@ def create_tenant_subscription(body: TenantSubscriptionRequest, token: str = Dep
 
     tenant_data = {
         "tenantnm": body.tenantnm,
+        "disptenantnm": body.tenantnm,
         "useyn": True,
         "issystemtenant": False,
         "creator": user_id,

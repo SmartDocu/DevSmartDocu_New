@@ -47,6 +47,7 @@ import OrgProjectsPage from '@/pages/org/OrgProjectsPage'
 import OrgProjectUsersPage from '@/pages/org/OrgProjectUsersPage'
 import OrgInviteMembersPage from '@/pages/org/OrgInviteMembersPage'
 import OrgTenantManagePage from '@/pages/org/OrgTenantManagePage'
+import OrgTenantBasicInfoPage from '@/pages/org/OrgTenantBasicInfoPage'
 import OrgSubscriptionManagePage from '@/pages/org/OrgSubscriptionManagePage'
 import OrgOtherSubscriptionManagePage from '@/pages/org/OrgOtherSubscriptionManagePage'
 import OrgCreditManagePage from '@/pages/org/OrgCreditManagePage'
@@ -172,6 +173,7 @@ export const router = createBrowserRouter([
       { path: 'org/project-users', element: <OrgProjectUsersPage /> },
       { path: 'org/invite-members', element: <OrgInviteMembersPage /> },
       { path: 'org/tenant-manage', element: <OrgTenantManagePage /> },
+      { path: 'org/tenant-basic-info', element: <OrgTenantBasicInfoPage /> },
       { path: 'org/subscription-manage', element: <OrgSubscriptionManagePage /> },
       { path: 'org/other-subscription-manage', element: <OrgOtherSubscriptionManagePage /> },
       { path: 'org/credit-manage', element: <OrgCreditManagePage /> },

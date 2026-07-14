@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react'
-import { App, Button, Card, Row, Col, Table, Tag, Descriptions, Select } from 'antd'
+import { App, Button, Card, Row, Col, Table, Tag } from 'antd'
 import { CreditCardOutlined, HistoryOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
   useTenantManageSubscriptions,
-  useTenantManageLangTimezone,
-  useSaveTenantManageLangTimezone,
+  useTenantManageTenantInfo,
   useTenantManageOtherSubscriptions,
   useTenantManageCreditSubscriptions,
   useTenantManageOverview,
@@ -23,65 +21,44 @@ function PlaceholderCard({ icon, titleKey, onClick }) {
   )
 }
 
-function TenantLangTimezoneCard() {
-  const { message } = App.useApp()
-  const { data = {}, isLoading } = useTenantManageLangTimezone()
-  const saveMutation = useSaveTenantManageLangTimezone()
-
-  const [languagecd, setLanguagecd] = useState(null)
-  const [timezoneVal, setTimezoneVal] = useState(null)
-
-  useEffect(() => {
-    setLanguagecd(data.languagecd || null)
-    setTimezoneVal(data.timezone || null)
-  }, [data.languagecd, data.timezone])
-
-  const languages = data.languages || []
-  const timezones = data.timezones || []
-
-  const handleSave = () => {
-    saveMutation.mutate(
-      { languagecd, timezone: timezoneVal },
-      {
-        onSuccess: () => { message.success(t('msg.save.success')) },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
-      },
-    )
-  }
+function TenantInfoCard({ openInTab }) {
+  const { data = {}, isLoading } = useTenantManageTenantInfo()
 
   return (
     <Card
       size="small"
-      title={t('ttl.tenant.manage.lang_timezone')}
+      title={t('ttl.tenant.manage.tenant_info')}
       extra={(
-        <Button size="small" type="primary" loading={saveMutation.isPending} onClick={handleSave}>
-          {t('btn.save')}
+        <Button
+          size="small"
+          onClick={() => openInTab('org/tenant-basic-info', '', t('ttl.tenant.manage.basic_info'))}
+        >
+          {t('btn.setting')}
         </Button>
       )}
       loading={isLoading}
       style={{ height: '100%' }}
     >
-      <Descriptions column={1} size="small" bordered>
-        <Descriptions.Item label={t('thd.languagenm')}>
-          <Select
-            value={languagecd}
-            onChange={setLanguagecd}
-            style={{ width: '100%' }}
-            size="small"
-            options={languages.map((l) => ({ label: l.languagenm, value: l.languagecd }))}
-          />
-        </Descriptions.Item>
-        <Descriptions.Item label={t('lbl.timezone')}>
-          <Select
-            value={timezoneVal}
-            onChange={setTimezoneVal}
-            style={{ width: '100%' }}
-            size="small"
-            showSearch
-            options={timezones.map((tz) => ({ label: tz, value: tz }))}
-          />
-        </Descriptions.Item>
-      </Descriptions>
+      <div style={{ border: '1px solid #f0f0f0', borderBottom: 'none', fontSize: 12 }}>
+        {[
+          [t('lbl.email'), data.email],
+          [t('lbl.telno'), data.telno],
+          [t('thd.languagenm'), data.languagenm || data.languagecd],
+          [t('lbl.timezone'), data.timezone],
+        ].map(([label, value]) => (
+          <div key={label} style={{ display: 'flex', borderBottom: '1px solid #f0f0f0' }}>
+            <div style={{ flex: '0 0 90px', padding: '6px 8px', background: '#fafafa', borderRight: '1px solid #f0f0f0' }}>
+              {label}
+            </div>
+            <div
+              title={value || ''}
+              style={{ flex: '1 1 0', minWidth: 0, padding: '6px 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {value || '-'}
+            </div>
+          </div>
+        ))}
+      </div>
     </Card>
   )
 }
@@ -124,14 +101,14 @@ export default function OrgTenantManagePage() {
         </div>
       </div>
 
-      <Row gutter={20} style={{ marginBottom: 20, paddingRight: 10 }}>
-        {/* 언어 정보 & 타임존 설정: 테넌트 전체 기본값 */}
-        <Col flex="20 1 0">
-          <TenantLangTimezoneCard />
+      <Row gutter={20} wrap={false} style={{ marginBottom: 20, paddingRight: 10 }}>
+        {/* 테넌트 정보: 담당자 연락처 + 언어·타임존 (표시 전용, 수정은 별도 페이지) */}
+        <Col flex="20 1 0" style={{ minWidth: 0 }}>
+          <TenantInfoCard openInTab={openInTab} />
         </Col>
 
         {/* 제품 구독 관리: 상단 좌측 제목 / 상단 우측 이동 버튼, 하단 구독 리스트 */}
-        <Col flex="20 1 0">
+        <Col flex="20 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.subscription')}
@@ -162,7 +139,7 @@ export default function OrgTenantManagePage() {
         </Col>
 
         {/* 기타 구독 정보: User/Feature 상품 보유 현황 */}
-        <Col flex="20 1 0">
+        <Col flex="20 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.other_subscription')}
@@ -192,7 +169,7 @@ export default function OrgTenantManagePage() {
         </Col>
 
         {/* 크레딧 구매 내역 */}
-        <Col flex="40 1 0">
+        <Col flex="40 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.credit')}

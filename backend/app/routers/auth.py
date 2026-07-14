@@ -273,7 +273,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
             tenants_info = (
                 sd.table("tenants")
-                .select("tenantid,tenantnm,iconfileurl")
+                .select("tenantid,tenantnm,disptenantnm,iconfileurl")
                 .in_("tenantid", tenantids)
                 .execute()
             )
@@ -295,6 +295,8 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
                 ctx.tenantid = str(active_tenantid)
                 t_info = tenants_map.get(active_tenantid)
                 if t_info:
+                    ctx.tenantnm = t_info.get("tenantnm")
+                    ctx.disptenantnm = t_info.get("disptenantnm") or t_info.get("tenantnm")
                     ctx.tenanticonurl = t_info.get("iconfileurl")
 
     except Exception:
@@ -1182,7 +1184,7 @@ def switch_tenant(body: SwitchTenantRequest, token: str = Depends(get_token)):
 
     sd.table("users").update({"default_tenantid": body.tenantid}).eq("useruid", user_id).execute()
 
-    tenant_info = sd.table("tenants").select("tenantnm,iconfileurl,issystemtenant").eq("tenantid", body.tenantid).maybe_single().execute()
+    tenant_info = sd.table("tenants").select("tenantnm,disptenantnm,iconfileurl,issystemtenant").eq("tenantid", body.tenantid).maybe_single().execute()
 
     accountuid = None
     try:
@@ -1196,9 +1198,11 @@ def switch_tenant(body: SwitchTenantRequest, token: str = Depends(get_token)):
     except Exception:
         pass
 
+    tenantnm = tenant_info.data.get("tenantnm", "") if tenant_info.data else ""
     return {
         "tenantid": str(body.tenantid),
-        "tenantnm": tenant_info.data.get("tenantnm", "") if tenant_info.data else "",
+        "tenantnm": tenantnm,
+        "disptenantnm": (tenant_info.data.get("disptenantnm") or tenantnm) if tenant_info.data else "",
         "tenanticonurl": tenant_info.data.get("iconfileurl") if tenant_info.data else None,
         "accountuid": accountuid,
     }
