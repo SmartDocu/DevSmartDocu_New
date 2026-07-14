@@ -9,30 +9,30 @@ import {
 
 const { Search } = Input
 
-const CATEGORY_OPTIONS = [
-  { value: '', label: t('cod.filter_all') },
-  { value: 'doc', label: t('cod.notificationcategory_doc') },
-  { value: 'chapter', label: t('cod.notificationcategory_chapter') },
-]
-
-const NOTIFICATION_STATUS_OPTIONS = [
-  { value: '', label: t('cod.filter_all') },
-  { value: 'info', label: t('cod.notificationstatus_info') },
-  { value: 'error', label: t('cod.notificationstatus_error') },
-]
-
-const READ_STATUS_OPTIONS = [
-  { value: '', label: t('cod.filter_all') },
-  { value: 'unread', label: t('lbl.notification.unread') },
-  { value: 'read', label: t('lbl.notification.read') },
-]
-
 const PAGE_SIZE = 20
 
 export default function NotificationsPage() {
   useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const openInTab = useOpenInTab()
+
+  const CATEGORY_OPTIONS = [
+    { value: '', label: t('cod.filter_all') },
+    { value: 'doc', label: t('cod.notificationcategory_doc') },
+    { value: 'chapter', label: t('cod.notificationcategory_chapter') },
+  ]
+
+  const NOTIFICATION_STATUS_OPTIONS = [
+    { value: '', label: t('cod.filter_all') },
+    { value: 'info', label: t('cod.notificationstatus_info') },
+    { value: 'error', label: t('cod.notificationstatus_error') },
+  ]
+
+  const READ_STATUS_OPTIONS = [
+    { value: '', label: t('cod.filter_all') },
+    { value: 'unread', label: t('lbl.notification.unread') },
+    { value: 'read', label: t('lbl.notification.read') },
+  ]
 
   const [category, setCategory] = useState('')
   const [notificationStatus, setNotificationStatus] = useState('')
@@ -78,7 +78,6 @@ export default function NotificationsPage() {
           <div>{t('ttl.notifications')}</div>
         </div>
       </div>
-      <div style={{ color: '#dc3545', fontSize: 16, fontWeight: 700, marginBottom: 12 }}>다국어 입력, url 이동 작업하기</div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 12 }}>
         <div style={{ display: 'flex', gap: 8 }}>

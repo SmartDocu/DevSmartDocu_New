@@ -10,9 +10,10 @@ from urllib.parse import urlparse
 import pandas as pd
 from requests import exceptions as requests_exceptions
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from backend.app.dependencies import get_token, get_user as _get_user
 from d2insight.chat.intent_parser import parse_intent
 from d2insight.chat.pipeline_runner import run_tool, run_report_from_spec
 from d2insight.chat import session as _session
@@ -25,6 +26,13 @@ from d2shared.api_dataset import fetch_json, json_to_dataframe
 router = APIRouter()
 
 MAX_UPLOAD_TOTAL_BYTES = 500 * 1024 * 1024  # 한 번에 업로드하는 전체 파일 합산 용량 제한 (500MB)
+
+
+def _check_owner(token: str, user_id: str | None) -> None:
+    """토큰의 실제 사용자와 요청 파라미터의 user_id가 일치하는지 검증한다."""
+    user = _get_user(token)
+    if user_id and str(user.id) != user_id:
+        raise HTTPException(status_code=403, detail="본인 데이터만 조회할 수 있습니다.")
 
 
 def _sanitize_dataset_key(name: str) -> str:
@@ -113,7 +121,8 @@ class ChatResponse(BaseModel):
 # ── 채팅 ─────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
-def chat_endpoint(req: ChatRequest) -> ChatResponse:
+def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResponse:
+    _check_owner(token, req.user_id)
     token_tracker.reset()
 
     try:
@@ -239,7 +248,9 @@ async def upload_dataset(
     user_id: Optional[str] = Form(None),
     project_id: Optional[int] = Form(None),
     account_uid: Optional[str] = Form(None),
+    token: str = Depends(get_token),
 ):
+    _check_owner(token, user_id)
     file_entries = []  # (filename, ext, content)
     total_size = 0
     for file in files:
@@ -307,7 +318,8 @@ async def upload_dataset(
 
 
 @router.post("/upload-dataset-url")
-def upload_dataset_url(body: ApiDatasetRequest):
+def upload_dataset_url(body: ApiDatasetRequest, token: str = Depends(get_token)):
+    _check_owner(token, body.user_id)
     try:
         raw = fetch_json(body.url, header_name=body.header_name, header_value=body.header_value)
         df = json_to_dataframe(raw)
@@ -360,8 +372,9 @@ def upload_dataset_url(body: ApiDatasetRequest):
 # ── 이어가기 ─────────────────────────────────────────────────────
 
 @router.post("/session/inject")
-def inject_qa(body: InjectRequest):
+def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     """과거 Q&A를 현재(또는 새) 세션에 이어붙인다."""
+    _check_owner(token, body.user_id)
     try:
         sid, _ = _session.get_or_create(body.session_id, user_id=body.user_id, project_id=body.project_id)
     except Exception:
@@ -383,14 +396,17 @@ def inject_qa(body: InjectRequest):
 # ── 히스토리 ─────────────────────────────────────────────────────
 
 @router.get("/history/{user_id}")
-def get_history(user_id: str):
+def get_history(user_id: str, token: str = Depends(get_token)):
     """날짜별로 그룹화된 세션 목록 반환."""
-    return storage.get_history_by_date(user_id)
+    _check_owner(token, user_id)
+    offsetminutes = storage.get_offsetminutes(user_id)
+    return storage.get_history_by_date(user_id, offsetminutes)
 
 
 @router.get("/history/{user_id}/{session_id}")
-def get_session_messages(user_id: str, session_id: str):
+def get_session_messages(user_id: str, session_id: str, token: str = Depends(get_token)):
     """세션의 Q&A 메시지 목록 반환."""
+    _check_owner(token, user_id)
     messages = storage.get_session_messages(session_id)
     if not messages:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
@@ -398,7 +414,8 @@ def get_session_messages(user_id: str, session_id: str):
 
 
 @router.delete("/history/{user_id}/{session_id}")
-def delete_session(user_id: str, session_id: str):
+def delete_session(user_id: str, session_id: str, token: str = Depends(get_token)):
+    _check_owner(token, user_id)
     storage.delete_session(session_id, user_id)
     return {"ok": True}
 
@@ -406,12 +423,15 @@ def delete_session(user_id: str, session_id: str):
 # ── 즐겨찾기 ─────────────────────────────────────────────────────
 
 @router.get("/favorites/{user_id}")
-def get_favorites(user_id: str):
-    return storage.get_favorites(user_id)
+def get_favorites(user_id: str, token: str = Depends(get_token)):
+    _check_owner(token, user_id)
+    offsetminutes = storage.get_offsetminutes(user_id)
+    return storage.get_favorites(user_id, offsetminutes)
 
 
 @router.post("/favorite/qa")
-def add_favorite_qa(body: FavoriteQARequest):
+def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
+    _check_owner(token, body.user_id)
     ok = storage.add_favorite_qa(body.qauid, body.user_id)
     if not ok:
         raise HTTPException(status_code=404, detail="QA를 찾을 수 없습니다.")
@@ -419,7 +439,8 @@ def add_favorite_qa(body: FavoriteQARequest):
 
 
 @router.delete("/favorite/qa/{user_id}/{qauid}")
-def remove_favorite_qa(user_id: str, qauid: str):
+def remove_favorite_qa(user_id: str, qauid: str, token: str = Depends(get_token)):
+    _check_owner(token, user_id)
     storage.remove_favorite_qa(qauid, user_id)
     return {"ok": True}
 
@@ -427,8 +448,9 @@ def remove_favorite_qa(user_id: str, qauid: str):
 # ── 폴더 ─────────────────────────────────────────────────────────
 
 @router.get("/folders/{user_id}")
-def get_folders(user_id: str):
+def get_folders(user_id: str, token: str = Depends(get_token)):
     """폴더 목록 반환. 폴더가 없으면 샘플 폴더를 자동 생성한다."""
+    _check_owner(token, user_id)
     tenant_id, _ = storage.get_project_info(user_id)
     storage.seed_sample_folders(tenant_id, user_id)
     return storage.get_folders(tenant_id)
@@ -437,8 +459,9 @@ def get_folders(user_id: str):
 # ── 공유 ─────────────────────────────────────────────────────────
 
 @router.post("/share")
-def share_qa(body: ShareRequest):
+def share_qa(body: ShareRequest, token: str = Depends(get_token)):
     """QA를 같은 tenant의 모든 사용자와 공유한다."""
+    _check_owner(token, body.user_id)
     ok = storage.share_qa(body.qauid, body.user_id, body.folder_uid)
     if not ok:
         raise HTTPException(status_code=404, detail="QA를 찾을 수 없습니다.")
@@ -446,32 +469,39 @@ def share_qa(body: ShareRequest):
 
 
 @router.get("/shares/sent/{user_id}")
-def get_shares_sent(user_id: str):
-    return storage.get_shares_sent(user_id)
+def get_shares_sent(user_id: str, token: str = Depends(get_token)):
+    _check_owner(token, user_id)
+    offsetminutes = storage.get_offsetminutes(user_id)
+    return storage.get_shares_sent(user_id, offsetminutes)
 
 
 @router.delete("/shares/sent/{share_qauid}/{user_id}")
-def delete_share_sent(share_qauid: str, user_id: str):
+def delete_share_sent(share_qauid: str, user_id: str, token: str = Depends(get_token)):
+    _check_owner(token, user_id)
     storage.delete_share_sent(share_qauid, user_id)
     return {"ok": True}
 
 
 @router.delete("/shares/received/{share_qauid}/{user_id}")
-def delete_share_received(share_qauid: str, user_id: str):
+def delete_share_received(share_qauid: str, user_id: str, token: str = Depends(get_token)):
+    _check_owner(token, user_id)
     storage.delete_share_received(share_qauid, user_id)
     return {"ok": True}
 
 
 @router.get("/shares/received/{user_id}")
-def get_shares_received(user_id: str):
+def get_shares_received(user_id: str, token: str = Depends(get_token)):
     """같은 project의 모든 공유 보고서 목록 반환."""
+    _check_owner(token, user_id)
     _, project_id = storage.get_project_info(user_id)
-    return storage.get_all_shares(project_id)
+    offsetminutes = storage.get_offsetminutes(user_id)
+    return storage.get_all_shares(project_id, offsetminutes)
 
 
 @router.get("/shares/{share_qauid}")
-def get_share_detail(share_qauid: str):
-    """공유된 QA 내용 조회."""
+def get_share_detail(share_qauid: str, token: str = Depends(get_token)):
+    """공유된 QA 내용 조회 (로그인한 사용자면 누구나 조회 가능 — 공유 링크 특성상 소유자 검증 없음)."""
+    _get_user(token)
     row = storage.get_share(share_qauid)
     if not row:
         raise HTTPException(status_code=404, detail="공유 내역을 찾을 수 없습니다.")

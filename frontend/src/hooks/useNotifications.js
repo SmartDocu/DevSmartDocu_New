@@ -47,12 +47,28 @@ export function useNotifications() {
   return query
 }
 
+// 알림 관련 쿼리(헤더 벨 + 목록 화면의 모든 필터 조합)를 한 번에 직접 패치한다.
+// invalidateQueries만으로는 새로고침 전까지 화면이 갱신되지 않는 문제가 있어,
+// mutate 성공 시 캐시를 즉시 갱신하고 invalidate는 최종 동기화용으로 함께 호출한다.
+function patchNotificationsCache(qc, updater) {
+  qc.setQueriesData({ queryKey: ['notifications'] }, (old) => {
+    if (!old || !Array.isArray(old.notifications)) return old
+    const notifications = updater(old.notifications)
+    return { ...old, notifications, unread_count: notifications.filter((n) => !n.is_read).length }
+  })
+}
+
 export function useMarkNotificationRead() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (notificationuid) => apiClient.post(`/notifications/${notificationuid}/read`).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['notifications'] })
+    // invalidate를 하지 않는다 — "안읽음" 필터에서 방금 읽은 row가 즉시 사라지면
+    // 펼쳐놓은 이동/삭제 버튼을 누르기 전에 화면에서 사라져버리는 문제가 있음.
+    // 캐시만 직접 패치해 배경색만 바꾸고, 실제 제외는 다음 필터 변경/새로고침 때 반영.
+    onSuccess: (_data, notificationuid) => {
+      patchNotificationsCache(qc, (list) =>
+        list.map((n) => (n.notificationuid === notificationuid ? { ...n, is_read: true } : n)),
+      )
     },
   })
 }
@@ -82,6 +98,7 @@ export function useMarkAllNotificationsRead() {
   return useMutation({
     mutationFn: () => apiClient.post('/notifications/read-all').then((r) => r.data),
     onSuccess: () => {
+      patchNotificationsCache(qc, (list) => list.map((n) => ({ ...n, is_read: true })))
       qc.invalidateQueries({ queryKey: ['notifications'] })
     },
   })
@@ -91,7 +108,8 @@ export function useDeleteNotification() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (notificationuid) => apiClient.post(`/notifications/${notificationuid}/delete`).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (_data, notificationuid) => {
+      patchNotificationsCache(qc, (list) => list.filter((n) => n.notificationuid !== notificationuid))
       qc.invalidateQueries({ queryKey: ['notifications'] })
     },
   })

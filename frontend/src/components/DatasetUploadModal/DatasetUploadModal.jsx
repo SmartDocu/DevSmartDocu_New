@@ -3,13 +3,15 @@ import { App, Modal, Tabs, Form, Input, Upload, Button, Alert } from 'antd'
 import { InboxOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useLangStore, t } from '@/stores/langStore'
 
 const { Dragger } = Upload
 
 // 로컬 파일 업로드 또는 외부 API 연결로 세션에 데이터셋을 등록하는 모달.
 // 등록되면 해당 세션은 이후 DB 대신 이 데이터(들)을 대상으로 질의하는 모드로 전환된다.
-// apiBase: '/d2chat'(기본, 토큰 인증) | '/d2insight'(인증 없음 — user_id를 body에 직접 포함)
+// apiBase: '/d2chat' | '/d2insight' — 둘 다 토큰 인증, d2insight는 user_id를 body에 추가로 포함
 export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess, apiBase = '/d2chat' }) {
+  useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const user = useAuthStore((s) => s.user)
   const isInsight = apiBase === '/d2insight'
@@ -28,7 +30,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
 
   const handleFileSubmit = async () => {
     if (fileList.length === 0) {
-      message.error('업로드할 파일을 선택해주세요.')
+      message.error(t('msg.d2insight.select_file_required'))
       return
     }
     setSubmitting(true)
@@ -41,11 +43,11 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       if (isInsight && user?.id) fd.append('user_id', user.id)
 
       const { data } = await apiClient.post(`${apiBase}/upload-dataset`, fd)
-      message.success(`${data.datasets.length}개 데이터셋이 등록되었습니다.`)
+      message.success(t('msg.d2insight.datasets_registered').replace('{n}', data.datasets.length))
       onSuccess?.(data)
       resetAndClose()
     } catch (e) {
-      message.error(e.response?.data?.detail || '파일 업로드 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2insight.upload_error'))
     } finally {
       setSubmitting(false)
     }
@@ -65,12 +67,12 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
         header_value: values.header_value || null,
         ...(isInsight ? { user_id: user?.id ?? null } : {}),
       })
-      message.success(`${data.datasets.length}개 데이터셋이 등록되었습니다.`)
+      message.success(t('msg.d2insight.datasets_registered').replace('{n}', data.datasets.length))
       onSuccess?.(data)
       resetAndClose()
     } catch (e) {
       if (e?.errorFields) return // antd form validation error, 조용히 무시
-      message.error(e.response?.data?.detail || 'API 연결 중 오류가 발생했습니다.')
+      message.error(e.response?.data?.detail || t('msg.d2insight.api_connect_error'))
     } finally {
       setSubmitting(false)
     }
@@ -79,7 +81,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
   const items = [
     {
       key: 'file',
-      label: '파일 업로드',
+      label: t('lbl.d2insight.file_upload'),
       children: (
         <div>
           <Dragger
@@ -90,44 +92,44 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
             onChange={({ fileList: fl }) => setFileList(fl)}
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p className="ant-upload-text">클릭하거나 파일을 드래그하여 업로드</p>
-            <p className="ant-upload-hint">CSV, XLSX, XLS 파일 지원 (여러 개 선택 가능, 전체 500MB 이하)</p>
+            <p className="ant-upload-text">{t('inf.d2insight.upload_drag_text')}</p>
+            <p className="ant-upload-hint">{t('inf.d2insight.upload_hint')}</p>
           </Dragger>
           <div style={{ marginTop: 16, textAlign: 'right' }}>
-            <Button type="primary" onClick={handleFileSubmit} loading={submitting}>업로드</Button>
+            <Button type="primary" onClick={handleFileSubmit} loading={submitting}>{t('btn.d2insight.upload')}</Button>
           </div>
         </div>
       ),
     },
     {
       key: 'api',
-      label: 'API 연결',
+      label: t('lbl.d2insight.api_connect'),
       children: (
         <Form form={apiForm} layout="vertical">
           <Form.Item
             name="url"
             label="API URL"
-            rules={[{ required: true, message: 'URL을 입력해주세요.' }]}
+            rules={[{ required: true, message: t('msg.d2insight.url_required') }]}
           >
             <Input placeholder="https://api.example.com/data" />
           </Form.Item>
-          <Form.Item name="dataset_name" label="데이터셋 이름 (선택)">
-            <Input placeholder="지정하지 않으면 호스트명을 사용합니다" />
+          <Form.Item name="dataset_name" label={t('lbl.d2insight.dataset_name')}>
+            <Input placeholder={t('inf.d2insight.dataset_name_placeholder')} />
           </Form.Item>
-          <Form.Item name="header_name" label="인증 헤더 이름 (선택)">
-            <Input placeholder="예: Authorization" />
+          <Form.Item name="header_name" label={t('lbl.d2insight.auth_header_name')}>
+            <Input placeholder={t('inf.d2insight.auth_header_name_placeholder')} />
           </Form.Item>
-          <Form.Item name="header_value" label="인증 헤더 값 (선택)">
-            <Input.Password placeholder="예: Bearer xxxxx" />
+          <Form.Item name="header_value" label={t('lbl.d2insight.auth_header_value')}>
+            <Input.Password placeholder={t('inf.d2insight.auth_header_value_placeholder')} />
           </Form.Item>
           <Alert
             type="info"
             showIcon
-            message="JSON 응답을 반환하는 공개 API만 지원합니다. 사설/내부망 주소는 사용할 수 없습니다."
+            message={t('msg.d2insight.api_public_only')}
             style={{ marginBottom: 16 }}
           />
           <div style={{ textAlign: 'right' }}>
-            <Button type="primary" onClick={handleApiSubmit} loading={submitting}>연결</Button>
+            <Button type="primary" onClick={handleApiSubmit} loading={submitting}>{t('btn.d2insight.connect')}</Button>
           </div>
         </Form>
       ),
@@ -136,7 +138,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
 
   return (
     <Modal
-      title="데이터셋 추가"
+      title={t('ttl.d2insight.add_dataset')}
       open={open}
       onCancel={resetAndClose}
       footer={null}
@@ -146,7 +148,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       <Alert
         type="warning"
         showIcon
-        message="데이터셋을 등록하면 이 대화는 이후 등록된 데이터만을 대상으로 답변합니다 (기존 DB 조회는 사용되지 않습니다)."
+        message={t('msg.d2insight.dataset_scope_warning')}
         style={{ marginBottom: 16 }}
       />
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
