@@ -41,6 +41,7 @@ function TenantInfoCard({ openInTab }) {
     >
       <div style={{ border: '1px solid #f0f0f0', borderBottom: 'none', fontSize: 12 }}>
         {[
+          [t('lbl.disptenantnm'), data.disptenantnm],
           [t('lbl.email'), data.email],
           [t('lbl.telno'), data.telno],
           [t('thd.languagenm'), data.languagenm || data.languagecd],

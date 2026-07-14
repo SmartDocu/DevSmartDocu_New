@@ -14,6 +14,9 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 
 router = APIRouter()
 
+# creditbuckets.priorityno — creditchargecd(=subscription_credits.creditchargecd)별 소진 우선순위
+CREDITCHARGECD_PRIORITY = {"Ba": 1, "Pr": 3, "Re": 4, "Ma": 5, "Au": 6}
+
 
 def _decrypt(val: str) -> str:
     if not val:
@@ -356,7 +359,7 @@ def list_tenants(token: str = Depends(get_token)):
         row["decemail"] = _decrypt(acc.get("encemail")) if acc else ""
         row["dectelno"] = _decrypt(acc.get("enctelno")) if acc else ""
 
-    langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").order("languagenm").execute().data or []
+    langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").eq("useyn", True).order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezones").select("*").eq("useyn", True).execute().data or [])]
     return {"tenants": rows, "languages": langs, "timezones": timezones}
 
@@ -703,6 +706,7 @@ def upgrade_plan(
     }).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
 
     # ③ subscription_credits 신규 행 삽입
+    creditchargecd = "Ba"
     svc.table("subscription_credits").insert({
         "subscriptionuid": new_subscriptionuid,
         "tenantid": int(tenantid),
@@ -710,7 +714,7 @@ def upgrade_plan(
         "productcd": product["productcd"],
         "servicecd": product["servicecd"],
         "quantity": product.get("credit", 0),
-        "credittypecd": "SC",
+        "creditchargecd": creditchargecd,
         "creditdesc": "Subscription Credit",
         "creator": user_id,
     }).execute()
@@ -728,8 +732,8 @@ def upgrade_plan(
         "accountuid": accountuid,
         "servicecd": product["servicecd"],
         "chargecredit": product.get("credit", 0),
-        "creditchargecd": "Ba",
-        "priorityno": 1,
+        "creditchargecd": creditchargecd,
+        "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
         "usecredit": 0,
         "remaincredit": product.get("credit", 0),
         "granteddts": now_utc.isoformat(),
@@ -942,6 +946,7 @@ def change_tenant_subscription(
             "is_postpaid": False,
         }).execute()
 
+    creditchargecd = "Ba"
     svc.table("subscription_credits").insert({
         "subscriptionuid": new_subscriptionuid,
         "tenantid": int(tenantid),
@@ -949,7 +954,7 @@ def change_tenant_subscription(
         "productcd": product["productcd"],
         "servicecd": product["servicecd"],
         "quantity": product.get("credit", 0),
-        "credittypecd": "SC",
+        "creditchargecd": creditchargecd,
         "creditdesc": "Subscription Credit",
         "creator": user_id,
     }).execute()
@@ -966,8 +971,8 @@ def change_tenant_subscription(
         "accountuid": accountuid,
         "servicecd": product["servicecd"],
         "chargecredit": product.get("credit", 0),
-        "creditchargecd": "Ba",
-        "priorityno": 1,
+        "creditchargecd": creditchargecd,
+        "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
         "usecredit": 0,
         "remaincredit": product.get("credit", 0),
         "granteddts": now_utc.isoformat(),
@@ -987,7 +992,7 @@ def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Opt
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
 
-    t_row = svc.table("tenants").select("languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    t_row = svc.table("tenants").select("disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     tenant = t_row.data if t_row else {}
 
     languagenm = None
@@ -1003,6 +1008,7 @@ def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Opt
         telno = _decrypt(acc.get("enctelno"))
 
     return {
+        "disptenantnm": tenant.get("disptenantnm"),
         "email": email,
         "telno": telno,
         "languagecd": tenant.get("languagecd"),
@@ -1030,7 +1036,7 @@ def get_tenant_manage_basic_info(token: str = Depends(get_token), tenantid: Opti
         email = _decrypt(acc.get("encemail"))
         telno = _decrypt(acc.get("enctelno"))
 
-    langs = svc.table("languages").select("languagecd,languagenm").order("languagenm").execute().data or []
+    langs = svc.table("languages").select("languagecd,languagenm").eq("useyn", True).order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (svc.table("timezones").select("timezone").eq("useyn", True).execute().data or [])]
 
     return {
@@ -1352,7 +1358,7 @@ def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tena
         offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
         rows = (
             svc.table("subscription_credits").select("subscriptionuid,productcd,quantity,createdts,expiresdts")
-            .eq("accountuid", accountuid).eq("credittypecd", "MT")
+            .eq("accountuid", accountuid).eq("creditchargecd", "Ma")
             .is_("canceldts", "null")
             .order("createdts").execute().data or []
         )
@@ -1385,8 +1391,8 @@ def purchase_tenant_manage_credit_subscription(
 ):
     """크레딧 구매 관리 화면: 크레딧 상품 구매.
 
-    결제 연동 전까지는 저장 즉시 subscription_credits에 반영한다.
-    creditbuckets(실사용 가능 잔여크레딧) 반영은 이번 범위에서 제외한다.
+    결제 연동 전까지는 저장 즉시 subscription_credits / creditbuckets에 반영한다.
+    추후 결제 게이트가 추가되면 결제 성공 콜백에서 이 로직을 호출하도록 변경해야 한다.
     """
     from datetime import datetime, timezone as tz
     from dateutil.relativedelta import relativedelta
@@ -1400,7 +1406,7 @@ def purchase_tenant_manage_credit_subscription(
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
     prod_row = svc.table("products").select(
-        "productcd,productnm,servicecd,producttype,credit,expiremonths"
+        "productcd,productnm,servicecd,producttype,credit"
     ).eq("productcd", body.productcd).maybe_single().execute()
     product = prod_row.data if prod_row else None
     if not product or product.get("producttype") != "Credit":
@@ -1414,19 +1420,51 @@ def purchase_tenant_manage_credit_subscription(
             raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
 
     now_utc = datetime.now(tz.utc)
-    expiremonths = product.get("expiremonths")
-    expiresdts = (now_utc + relativedelta(months=expiremonths)).isoformat() if expiremonths else None
+    # creditchargecd가 Ba가 아닌 크레딧은 구매 시점 + 1년 - 1일을 만료일로 고정
+    expiresdts = (now_utc + relativedelta(years=1) - timedelta(days=1)).isoformat()
+    credit = product.get("credit") or 0
+    new_subscriptionuid = str(uuid.uuid4())
+    creditchargecd = "Ma"
+
+    # creditbuckets.startdt는 같은 tenantid/accountuid/servicecd의 아직 유효한(만료 전) Ba 버킷 startdt를 그대로 이관
+    ba_rows = (
+        svc.table("creditbuckets").select("startdt")
+        .eq("tenantid", int(tenantid)).eq("accountuid", accountuid)
+        .eq("servicecd", product.get("servicecd")).eq("creditchargecd", "Ba")
+        .gt("expiredts", now_utc.isoformat())
+        .order("startdt", desc=True).limit(1)
+        .execute().data or []
+    )
+    if not ba_rows:
+        raise HTTPException(status_code=400, detail="기준이 되는 플랜 기본(Ba) 크레딧 정보를 찾을 수 없습니다.")
+    startdt = ba_rows[0]["startdt"]
 
     svc.table("subscription_credits").insert({
-        "subscriptionuid": str(uuid.uuid4()),
-        "credittypecd": "MT",
+        "subscriptionuid": new_subscriptionuid,
+        "creditchargecd": creditchargecd,
         "creditdesc": product.get("productnm"),
         "productcd": product["productcd"],
         "tenantid": int(tenantid),
         "accountuid": accountuid,
-        "quantity": product.get("credit") or 0,
+        "servicecd": product.get("servicecd"),
+        "quantity": credit,
         "expiresdts": expiresdts,
         "creator": user_id,
+    }).execute()
+
+    svc.table("creditbuckets").insert({
+        "subscriptionuid": new_subscriptionuid,
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "servicecd": product.get("servicecd"),
+        "chargecredit": credit,
+        "creditchargecd": creditchargecd,
+        "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
+        "usecredit": 0,
+        "remaincredit": credit,
+        "granteddts": now_utc.isoformat(),
+        "expiredts": expiresdts,
+        "startdt": startdt,
     }).execute()
 
     return {"result": "success"}
@@ -1473,19 +1511,24 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
 
         now_utc = datetime.now(tz.utc)
         cb_rows = (
-            svc.table("creditbuckets").select("servicecd,chargecredit,usecredit,remaincredit,expiredts")
+            svc.table("creditbuckets").select("servicecd,chargecredit,usecredit,expiredts")
             .eq("accountuid", accountuid).gt("expiredts", now_utc.isoformat()).execute().data or []
         )
         credit_totals = {}
         for r in cb_rows:
             scd = r["servicecd"]
-            c = credit_totals.setdefault(scd, {"total_credit": 0, "used_credit": 0, "remain_credit": 0})
+            c = credit_totals.setdefault(scd, {"total_credit": 0, "used_credit": 0})
             c["total_credit"] += r.get("chargecredit") or 0
             c["used_credit"] += r.get("usecredit") or 0
-            c["remain_credit"] += r.get("remaincredit") or 0
+
+        remain_rows = (
+            svc.table("vw_creditbucketsums").select("servicecd,remaincredit")
+            .eq("accountuid", accountuid).execute().data or []
+        )
+        remain_map = {r["servicecd"]: r.get("remaincredit") or 0 for r in remain_rows}
 
         for scd, s in svc_map.items():
-            credit = credit_totals.get(scd, {"total_credit": 0, "used_credit": 0, "remain_credit": 0})
+            credit = credit_totals.get(scd, {"total_credit": 0, "used_credit": 0})
             services.append({
                 "servicecd": scd,
                 "projects": project_counts.get(scd, 0),
@@ -1493,7 +1536,7 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
                 "used_users": used_user_counts.get(scd, 0),
                 "total_credit": credit["total_credit"],
                 "used_credit": credit["used_credit"],
-                "remain_credit": credit["remain_credit"],
+                "remain_credit": remain_map.get(scd, 0),
             })
         services.sort(key=lambda s: s["servicecd"])
 
