@@ -1,7 +1,9 @@
 import { Outlet, useNavigate, useLocation, useParams } from 'react-router-dom'
-import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover } from 'antd'
+import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover, Input, Spin } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
+import QRCode from 'qrcode'
 import apiClient from '@/api/client'
+import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
 import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
@@ -35,7 +37,7 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const { appcd } = useParams()
   const { token: cssToken } = theme.useToken()
-  const { user, clearAuth, updateUser, switchTenant } = useAuthStore()
+  const { user, clearAuth, updateUser, switchTenant, updateTokens } = useAuthStore()
   const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
 
@@ -44,6 +46,14 @@ export default function AppLayout() {
   const [registerModalOpen, setRegisterModalOpen] = useState(false)
   const [loginModalOpen, setLoginModalOpen] = useState(false)
   const [helpModalOpen, setHelpModalOpen] = useState(false)
+  const [mfaChallenge, setMfaChallenge] = useState(null) // { tenantid, tenant, factor_id, code }
+  const [tenantSwitching, setTenantSwitching] = useState(false)
+  const [mfaSetupModal, setMfaSetupModal] = useState(null) // { tenantid, tenant }
+  const [mfaSetupData, setMfaSetupData] = useState(null) // { factor_id, totp_uri, secret }
+  const [mfaSetupQr, setMfaSetupQr] = useState('')
+  const [mfaSetupCode, setMfaSetupCode] = useState('')
+  const mfaSetupEnroll = useMfaEnroll()
+  const mfaSetupVerify = useMfaEnrollVerify()
   const { tabs, activeKey, closeTab, setActiveKey, siderCollapsed, setSiderCollapsed, colorTheme, setColorTheme, openTab, clearTabs, closeOtherTabs, closeLeftTabs, closeRightTabs } = useTabStore()
   const isDark = !!user && colorTheme === 'dark'
   const headerBg = isDark ? '#081A2B' : '#163E64'
@@ -162,6 +172,47 @@ export default function AppLayout() {
     navigate('/')
   }
 
+  const _finishTenantSwitch = (tenantid, tenant, data) => {
+    switchTenant(tenantid)
+    updateUser({
+      tenantnm: data.tenantnm ?? tenant?.tenantnm,
+      disptenantnm: data.disptenantnm ?? data.tenantnm ?? tenant?.tenantnm,
+      tenanticonurl: data.tenanticonurl ?? tenant?.tenanticonurl,
+      accountuid: data.accountuid ?? null,
+      tenantmanager: data.tenantmanager ?? 'N',
+      accountmanager: data.accountmanager ?? 'N',
+    })
+    queryClient.invalidateQueries()
+    clearTabs()
+    navigate('/launcher')
+  }
+
+  const _attemptSwitchTenant = async (tenantid, tenant) => {
+    setTenantSwitching(true)
+    try {
+      const res = await apiClient.post('/auth/switch-tenant', {
+        tenantid,
+        refresh_token: useAuthStore.getState().refreshToken,
+      })
+
+      if (res.data.mfa_setup_required) {
+        setMfaSetupModal({ tenantid, tenant })
+        return
+      }
+      if (res.data.mfa_required) {
+        setMfaChallenge({ tenantid, tenant, factor_id: res.data.factor_id, code: '' })
+        return
+      }
+
+      _finishTenantSwitch(tenantid, tenant, res.data)
+    } catch (e) {
+      const detail = e.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.tenant.switch.error'))
+    } finally {
+      setTenantSwitching(false)
+    }
+  }
+
   const handleTenantChange = (tenantid) => {
     const tenant = user?.tenants?.find((t) => String(t.tenantid) === String(tenantid))
     modal.confirm({
@@ -169,24 +220,64 @@ export default function AppLayout() {
       content: t('msg.tenant.switch.desc'),
       okText: t('btn.confirm'),
       cancelText: t('btn.cancel'),
-      onOk: async () => {
-        try {
-          const res = await apiClient.post('/auth/switch-tenant', { tenantid })
-          switchTenant(tenantid)
-          updateUser({
-            tenantnm: res.data.tenantnm ?? tenant?.tenantnm,
-            disptenantnm: res.data.disptenantnm ?? res.data.tenantnm ?? tenant?.tenantnm,
-            tenanticonurl: res.data.tenanticonurl ?? tenant?.tenanticonurl,
-            accountuid: res.data.accountuid ?? null,
-          })
-          queryClient.invalidateQueries()
-          clearTabs()
-          navigate('/launcher')
-        } catch (e) {
-          message.error(t('msg.tenant.switch.error'))
-        }
-      },
+      onOk: () => _attemptSwitchTenant(tenantid, tenant),
     })
+  }
+
+  const handleMfaChallengeVerify = async () => {
+    if (!mfaChallenge || mfaChallenge.code.length !== 6) return
+    const { accessToken, refreshToken } = useAuthStore.getState()
+    setTenantSwitching(true)
+    try {
+      const res = await apiClient.post('/auth/mfa-verify', {
+        factor_id: mfaChallenge.factor_id,
+        code: mfaChallenge.code,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        tenantid: mfaChallenge.tenantid,
+      })
+      updateTokens({ accessToken: res.data.access_token, refreshToken: res.data.refresh_token })
+      const { tenantid, tenant } = mfaChallenge
+      setMfaChallenge(null)
+      _finishTenantSwitch(tenantid, tenant, res.data.user || {})
+    } catch (e) {
+      message.error(t('msg.mfa.code_invalid'))
+      setMfaChallenge((c) => (c ? { ...c, code: '' } : c))
+    } finally {
+      setTenantSwitching(false)
+    }
+  }
+
+  // 강제 MFA 설정 모달 진입 시 자동으로 enroll 시작 (라우팅/탭 전환에 기대지 않고 모달 안에서 바로 처리)
+  useEffect(() => {
+    if (!mfaSetupModal) { setMfaSetupData(null); setMfaSetupQr(''); setMfaSetupCode(''); return }
+    mfaSetupEnroll.mutate(undefined, { onSuccess: (data) => setMfaSetupData(data) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mfaSetupModal])
+
+  useEffect(() => {
+    if (!mfaSetupData?.totp_uri) { setMfaSetupQr(''); return }
+    QRCode.toDataURL(mfaSetupData.totp_uri, { width: 160, margin: 2 })
+      .then(setMfaSetupQr)
+      .catch(() => setMfaSetupQr(''))
+  }, [mfaSetupData])
+
+  const handleMfaSetupVerify = () => {
+    if (!mfaSetupData || mfaSetupCode.length !== 6) return
+    mfaSetupVerify.mutate(
+      { factor_id: mfaSetupData.factor_id, code: mfaSetupCode },
+      {
+        onSuccess: (data) => {
+          if (data.access_token) {
+            updateTokens({ accessToken: data.access_token, refreshToken: data.refresh_token || useAuthStore.getState().refreshToken })
+          }
+          const { tenantid, tenant } = mfaSetupModal
+          setMfaSetupModal(null)
+          _attemptSwitchTenant(tenantid, tenant)
+        },
+        onError: () => setMfaSetupCode(''),
+      },
+    )
   }
 
   return (
@@ -731,6 +822,95 @@ export default function AppLayout() {
       <DocSelectModal open={docModalOpen} onClose={() => setDocModalOpen(false)} />
       <RegisterModal open={registerModalOpen} onClose={() => setRegisterModalOpen(false)} />
       <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+
+      {/* 테넌트 전환 진행 중 오버레이 — MFA 모달이 닫힌 뒤 실제 전환까지의 공백 구간 안내 */}
+      {tenantSwitching && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{t('msg.tenant.switching')}</span>
+          </div>
+        </div>
+      )}
+
+      <Modal
+        title={t('ttl.mfa.verify')}
+        open={!!mfaChallenge}
+        onCancel={() => setMfaChallenge(null)}
+        footer={null}
+        width={320}
+      >
+        <div style={{ textAlign: 'center', padding: '12px 0' }}>
+          <Input
+            value={mfaChallenge?.code || ''}
+            onChange={(e) => setMfaChallenge((c) => (c ? { ...c, code: e.target.value.replace(/\D/g, '').slice(0, 6) } : c))}
+            onPressEnter={handleMfaChallengeVerify}
+            maxLength={6}
+            style={{ width: 160, textAlign: 'center', letterSpacing: 8, fontFamily: 'monospace', fontSize: 20, margin: '0 auto 16px', display: 'block' }}
+            placeholder="000000"
+          />
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={handleMfaChallengeVerify}
+            disabled={(mfaChallenge?.code || '').length !== 6}
+          >
+            {t('ttl.mfa.verify')}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        title={t('ttl.mfa.setup')}
+        open={!!mfaSetupModal}
+        onCancel={() => setMfaSetupModal(null)}
+        footer={null}
+        width={360}
+      >
+        <div style={{ textAlign: 'center', padding: '8px 0' }}>
+          <div style={{ fontSize: 13, color: '#888', marginBottom: 16, textAlign: 'left' }}>
+            {t('msg.mfa.setup_required')}
+          </div>
+          {mfaSetupQr && (
+            <img
+              src={mfaSetupQr}
+              alt="QR Code"
+              style={{ width: 160, height: 160, border: '1px solid #f0f0f0', borderRadius: 8, marginBottom: 12 }}
+            />
+          )}
+          {mfaSetupData?.secret && (
+            <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#666', marginBottom: 16, wordBreak: 'break-all' }}>
+              {mfaSetupData.secret}
+            </div>
+          )}
+          <Input
+            value={mfaSetupCode}
+            onChange={(e) => setMfaSetupCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onPressEnter={handleMfaSetupVerify}
+            maxLength={6}
+            style={{ width: 160, textAlign: 'center', letterSpacing: 8, fontFamily: 'monospace', fontSize: 20, margin: '0 auto 16px', display: 'block' }}
+            placeholder="000000"
+          />
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={handleMfaSetupVerify}
+            disabled={mfaSetupCode.length !== 6 || !mfaSetupData}
+          >
+            {t('btn.mfa.activate')}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         title={<div style={{ textAlign: 'center' }}>{helpItem?.help}</div>}

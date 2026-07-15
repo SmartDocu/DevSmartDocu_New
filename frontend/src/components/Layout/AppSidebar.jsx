@@ -7,9 +7,21 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useFavorites, useToggleFavorite } from '@/hooks/useMenus'
 import { useConfigs } from '@/hooks/useConfigs'
+import { useTenantManageOtherSubscriptions } from '@/hooks/useSettings'
 import { useTabStore } from '@/stores/tabStore'
 
 const { Text } = Typography
+
+/* ── 기타 구독(Feature) 상품 구독 여부에 따라서만 노출되는 메뉴 ── */
+const FEATURE_GATED_MENUS = {
+  'tenant_mgr.manage.whitelists': 'whitelist',
+}
+
+function hasFeatureAccess(menucd, ownedProductcds) {
+  const requiredProductcd = FEATURE_GATED_MENUS[menucd]
+  if (!requiredProductcd) return true
+  return ownedProductcds.has(requiredProductcd)
+}
 
 /* ── Ant Design 아이콘 동적 렌더링 ── */
 function DynIcon({ name }) {
@@ -140,11 +152,18 @@ export default function AppSidebar({ collapsed = false, isDark = false, appcd = 
   const { data: allMenus = [], isLoading: menusLoading } = useMenus(appcd)
   const { data: favoritesData = [] } = useFavorites()
   const toggleFavorite = useToggleFavorite()
+  const { data: otherSubData } = useTenantManageOtherSubscriptions({ enabled: isAuthenticated() })
+  const ownedFeatureProductcds = useMemo(
+    () => new Set((otherSubData?.owned || []).map((o) => o.productcd)),
+    [otherSubData],
+  )
 
   /* ── 권한 필터링된 메뉴 목록 (자식이 보이면 부모도 자동 포함) ── */
   const visibleMenus = useMemo(() => {
     const visibleCds = new Set(
-      allMenus.filter((m) => canSee(m.rolecd, user, isAuthenticated)).map((m) => m.menucd)
+      allMenus
+        .filter((m) => canSee(m.rolecd, user, isAuthenticated) && hasFeatureAccess(m.menucd, ownedFeatureProductcds))
+        .map((m) => m.menucd)
     )
     // 보이는 메뉴의 모든 조상 menucd 추가
     visibleCds.forEach((cd) => {
@@ -154,7 +173,7 @@ export default function AppSidebar({ collapsed = false, isDark = false, appcd = 
       }
     })
     return allMenus.filter((m) => visibleCds.has(m.menucd))
-  }, [allMenus, user, isAuthenticated])
+  }, [allMenus, user, isAuthenticated, ownedFeatureProductcds])
 
   /* ── 즐겨찾기 Set (menucd) ── */
   const favoriteSet = useMemo(

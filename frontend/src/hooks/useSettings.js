@@ -223,10 +223,11 @@ export function useSaveTenantManageBasicInfo() {
   })
 }
 
-export function useTenantManageOtherSubscriptions() {
+export function useTenantManageOtherSubscriptions(options = {}) {
   return useQuery({
     queryKey: ['tenant-manage-other-subscriptions'],
     queryFn: () => apiClient.get('/settings/tenant-manage/other-subscriptions').then((r) => r.data),
+    ...options,
   })
 }
 

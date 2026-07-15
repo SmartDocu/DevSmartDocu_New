@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import random
 import re
 import string
@@ -9,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from pydantic import BaseModel
 
 from backend.app.config import settings
-from backend.app.dependencies import get_token
+from backend.app.dependencies import get_token, get_tenantid
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from utilsPrj.credit_helper import upsert_ba_creditbucket
 from backend.app.schemas.auth import (
@@ -20,10 +21,12 @@ from backend.app.schemas.auth import (
     MfaEnrollRequest,
     MfaEnrollResponse,
     MfaEnrollVerifyRequest,
+    MfaEnrollVerifyResponse,
     MfaUnenrollRequest,
     RefreshRequest,
     RegisterInviteRequest,
     RegisterRequest,
+    SelectTenantRequest,
     SendResetEmailRequest,
     SendSmsRequest,
     TenantsResponse,
@@ -43,6 +46,72 @@ def _get_client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else ""
+
+
+def _get_tenant_config(tenantid: int, configcd: str) -> bool:
+    """config_tenants.value == 'true' 여부를 반환한다."""
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    cfg = svc.table("config_tenants").select("value").eq("tenantid", tenantid).eq("configcd", configcd).maybe_single().execute()
+    val = (cfg.data or {}).get("value") if cfg else None
+    return val is True or (isinstance(val, str) and val.lower() == "true")
+
+
+def _check_ip_whitelist(tenantid: int, ip: str, is_manager: bool) -> bool:
+    """tenant의 IP allow-list 설정을 확인한다. 미설정/비활성 시 통과(True)."""
+    configcd = "Is_Manager_IP_Allow" if is_manager else "Is_User_IP_Allow"
+    if not _get_tenant_config(tenantid, configcd):
+        return True
+
+    try:
+        ip_num = int(ipaddress.IPv4Address(ip))
+    except ValueError:
+        return False
+
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    rows = svc.table("whitelists").select("start_ip_num,end_ip_num").eq("tenantid", tenantid).eq("useyn", True).execute().data or []
+    return any(r["start_ip_num"] <= ip_num <= r["end_ip_num"] for r in rows)
+
+
+def _get_mfa_session_state(user_client) -> dict:
+    """계정의 MFA 등록 여부와 현재 세션의 aal 상태를 반환한다.
+    aal은 세션 전역 값이라 테넌트를 넘나들어도 한 번 aal2가 되면 유지된다.
+    """
+    try:
+        assurance = user_client.auth.mfa.get_authenticator_assurance_level()
+        is_aal2 = assurance.current_level == "aal2"
+        has_verified = False
+        factor_id = None
+        if assurance.next_level == "aal2":
+            factors_resp = user_client.auth.mfa.list_factors()
+            verified_factors = [f for f in (factors_resp.totp or []) if f.status == "verified"]
+            if verified_factors:
+                has_verified = True
+                factor_id = verified_factors[0].id
+        return {"has_verified": has_verified, "is_aal2": is_aal2, "factor_id": factor_id}
+    except Exception:
+        return {"has_verified": False, "is_aal2": False, "factor_id": None}
+
+
+def _evaluate_tenant_access(user_client, tenantid: int, is_manager: bool, ip: str) -> dict:
+    """대상 테넌트의 IP 화이트리스트 / MFA 정책을 평가한다.
+
+    반환:
+      {"status": "ok"}
+      {"status": "blocked", "reason": "ip"}
+      {"status": "blocked", "reason": "mfa_setup"}                       — MFA 미등록, 강제 설정 필요
+      {"status": "blocked", "reason": "mfa_challenge", "factor_id": ...} — 등록됨, 이번 세션 TOTP 미인증
+    """
+    if not _check_ip_whitelist(tenantid, ip, is_manager):
+        return {"status": "blocked", "reason": "ip"}
+
+    if _get_tenant_config(tenantid, "Is_MFA"):
+        mfa_state = _get_mfa_session_state(user_client)
+        if not mfa_state["has_verified"]:
+            return {"status": "blocked", "reason": "mfa_setup"}
+        if not mfa_state["is_aal2"]:
+            return {"status": "blocked", "reason": "mfa_challenge", "factor_id": mfa_state["factor_id"]}
+
+    return {"status": "ok"}
 
 
 def _parse_user_agent(ua: str) -> dict:
@@ -173,20 +242,25 @@ def _get_user_client(access_token: str, refresh_token: Optional[str] = None):
     return get_thread_supabase(access_token=access_token, refresh_token=refresh_token)
 
 
-def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
+    """tenantid를 주면 그 테넌트 기준으로, 없으면(다중 테넌트일 때 모호해질 수 있어) 아무 소속 행이나 사용."""
     try:
-        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
-        if not tu.data:
+        q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        rows = q.limit(1).execute().data or []
+        if not rows:
             return None
-        tz = tu.data.get("timezone")
-        if not tz and tu.data.get("tenantid"):
-            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
-            if t.data:
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
                 tz = t.data.get("timezone")
         if not tz:
             return None
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
-        return tz_row.data.get("offsetminutes") if tz_row.data else None
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
     except Exception:
         return None
 
@@ -204,27 +278,6 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
-
-
-def _check_mfa_required(user_client) -> tuple[bool, Optional[str]]:
-    """
-    MFA 필요 여부와 factor_id를 반환한다.
-    - aal1 상태이고 verified factor가 있으면 MFA 필요
-    반환: (mfa_required: bool, factor_id: str | None)
-    """
-    try:
-        assurance = user_client.auth.mfa.get_authenticator_assurance_level()
-        if assurance.next_level == "aal2" and assurance.current_level != "aal2":
-            factors_resp = user_client.auth.mfa.list_factors()
-            verified_factors = [
-                f for f in (factors_resp.totp or [])
-                if f.status == "verified"
-            ]
-            if verified_factors:
-                return True, verified_factors[0].id
-    except Exception:
-        pass
-    return False, None
 
 
 def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
@@ -530,32 +583,65 @@ def login(body: LoginRequest, request: Request, background_tasks: BackgroundTask
         )
 
     user_client = _get_user_client(session.access_token, session.refresh_token)
-
-    # ── MFA 등록 여부 확인 ───────────────────────────────────────────────────
-    mfa_required, factor_id = _check_mfa_required(user_client)
-
-    print(f'MFA_여부: {mfa_required}')
     user = auth_resp.user
     ctx = _load_user_context(user_client, str(user.id), user.email)
+
+    # ── 다중 테넌트: 정책 평가 없이 먼저 테넌트를 선택하게 한다 ────────────────
+    if len(ctx.tenants or []) > 1:
+        _log(
+            tenantid=0, useruid=str(user.id), logintypecd="Em",
+            is_success=True, errorcd=None, errormessage=None,
+            ip=ip, is_mfaused=False,
+            sessionid=(session.access_token[:100] if session.access_token else None),
+            device_fingerprint=fingerprint, **ua_info,
+        )
+        return LoginResponse(
+            tenant_selection_required=True,
+            tenants=ctx.tenants,
+            access_token_temp=session.access_token,
+            refresh_token_temp=session.refresh_token,
+        )
+
+    # ── 단일 테넌트(또는 무소속): 해당 테넌트의 IP/MFA 정책 평가 ───────────────
+    eval_result = {"status": "ok"}
+    if ctx.tenantid:
+        eval_result = _evaluate_tenant_access(user_client, int(ctx.tenantid), ctx.tenantmanager == "Y", ip)
+
+    if eval_result["status"] == "blocked":
+        reason = eval_result["reason"]
+        _log(
+            tenantid=int(ctx.tenantid) if ctx.tenantid else 0,
+            useruid=str(user.id), logintypecd="Em",
+            is_success=False, errorcd=f"policy_{reason}", errormessage=f"접근 차단: {reason}",
+            ip=ip, is_mfaused=False, sessionid=None,
+            device_fingerprint=fingerprint, **ua_info,
+        )
+        if reason == "ip":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="msg.login.ip.not.allowed")
+        if reason == "mfa_setup":
+            return LoginResponse(
+                mfa_setup_required=True,
+                tenantid=ctx.tenantid,
+                access_token_temp=session.access_token,
+                refresh_token_temp=session.refresh_token,
+            )
+        # reason == "mfa_challenge" — aal1 임시 토큰만 반환, 완전한 인증 아님
+        return LoginResponse(
+            mfa_required=True,
+            factor_id=eval_result["factor_id"],
+            tenantid=ctx.tenantid,
+            access_token_temp=session.access_token,
+            refresh_token_temp=session.refresh_token,
+        )
 
     _log(
         tenantid=int(ctx.tenantid) if ctx.tenantid else 0,
         useruid=str(user.id), logintypecd="Em",
         is_success=True, errorcd=None, errormessage=None,
-        ip=ip, is_mfaused=mfa_required,
+        ip=ip, is_mfaused=False,
         sessionid=(session.access_token[:100] if session.access_token else None),
         device_fingerprint=fingerprint, **ua_info,
     )
-
-    if mfa_required:
-        # aal1 임시 토큰만 반환 — 완전한 인증 아님
-        return LoginResponse(
-            mfa_required=True,
-            factor_id=factor_id,
-            access_token_temp=session.access_token,
-            refresh_token_temp=session.refresh_token,
-            # user=ctx,
-        )
     # ────────────────────────────────────────────────────────────────────────
 
     return LoginResponse(
@@ -614,11 +700,72 @@ def mfa_verify(body: MfaVerifyRequest):
 
     final_client = _get_user_client(access_token, refresh_token)
     user = verify_resp.user
+
+    if body.tenantid:
+        get_service_client().schema(SUPABASE_SCHEMA).table("users").update(
+            {"default_tenantid": body.tenantid}
+        ).eq("useruid", str(user.id)).execute()
+
     ctx = _load_user_context(final_client, str(user.id), user.email)
 
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
+        user=ctx,
+    )
+
+
+@router.post("/select-tenant", response_model=LoginResponse)
+def select_tenant(body: SelectTenantRequest, request: Request):
+    """
+    다중 테넌트 계정의 로그인 직후 테넌트 확정, 또는 강제 MFA 설정 완료 후 재개.
+    임시 토큰(access_token_temp/refresh_token_temp) 기준으로 동작한다.
+    """
+    ip = _get_client_ip(request)
+    user_client = _get_user_client(body.access_token_temp, body.refresh_token_temp)
+
+    try:
+        user_resp = user_client.auth.get_user(body.access_token_temp)
+        user = user_resp.user
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
+
+    sd = get_service_client().schema(SUPABASE_SCHEMA)
+    tu_check = (
+        sd.table("tenantusers").select("tenantid")
+        .eq("useruid", str(user.id)).eq("tenantid", int(body.tenantid)).eq("useyn", True)
+        .maybe_single().execute()
+    )
+    if not tu_check or not tu_check.data:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="소속되지 않은 테넌트입니다.")
+
+    sd.table("users").update({"default_tenantid": body.tenantid}).eq("useruid", str(user.id)).execute()
+
+    ctx = _load_user_context(user_client, str(user.id), user.email)
+
+    eval_result = _evaluate_tenant_access(user_client, int(body.tenantid), ctx.tenantmanager == "Y", ip)
+    if eval_result["status"] == "blocked":
+        reason = eval_result["reason"]
+        if reason == "ip":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="msg.login.ip.not.allowed")
+        if reason == "mfa_setup":
+            return LoginResponse(
+                mfa_setup_required=True,
+                tenantid=body.tenantid,
+                access_token_temp=body.access_token_temp,
+                refresh_token_temp=body.refresh_token_temp,
+            )
+        return LoginResponse(
+            mfa_required=True,
+            factor_id=eval_result["factor_id"],
+            tenantid=body.tenantid,
+            access_token_temp=body.access_token_temp,
+            refresh_token_temp=body.refresh_token_temp,
+        )
+
+    return LoginResponse(
+        access_token=body.access_token_temp,
+        refresh_token=body.refresh_token_temp,
         user=ctx,
     )
 
@@ -987,7 +1134,7 @@ def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
 # ─── MFA 관리 ────────────────────────────────────────────────────────────────
 
 @router.get("/mfa-factors", response_model=dict)
-def get_mfa_factors(token: str = Depends(get_token)):
+def get_mfa_factors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """
     현재 사용자의 MFA factor 목록 조회.
     설정 화면에서 MFA 등록 여부 확인 및 factor_id 획득에 사용한다.
@@ -1005,7 +1152,7 @@ def get_mfa_factors(token: str = Depends(get_token)):
             detail="유효하지 않은 토큰입니다.",
         )
 
-    offsetminutes = _get_offsetminutes(user_client, user_id)
+    offsetminutes = _get_offsetminutes(user_client, user_id, tenantid)
 
     # Admin REST API로 factor 목록 조회 (set_session 없이도 동작)
     try:
@@ -1089,11 +1236,12 @@ def mfa_enroll(body: MfaEnrollRequest, token: str = Depends(get_token)):
     )
 
 
-@router.post("/mfa-enroll-verify", response_model=MessageResponse)
+@router.post("/mfa-enroll-verify", response_model=MfaEnrollVerifyResponse)
 def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_token)):
     """
     등록한 TOTP 코드를 검증하여 verified 상태로 전환한다.
     이 단계 완료 후부터 로그인 시 MFA 코드 입력이 요구된다.
+    성공 시 세션이 aal2로 격상되면 그 새 토큰을 함께 반환한다(강제 설정 흐름 재개용).
     """
     user_client = _get_user_client(token, body.refresh_token or None)  # ← refresh_token 추가
     try:
@@ -1101,7 +1249,7 @@ def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_tok
             {"factor_id": body.factor_id}
         )
         print(f"[MFA] challenge_id: {challenge_resp.id}")  # ← 추가
-        user_client.auth.mfa.verify({
+        verify_resp = user_client.auth.mfa.verify({
             "factor_id": body.factor_id,
             "challenge_id": challenge_resp.id,
             "code": body.code,
@@ -1112,7 +1260,12 @@ def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_tok
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="인증 코드가 올바르지 않습니다. QR 코드를 다시 스캔해주세요.",
         )
-    return MessageResponse(ok=True, message="MFA가 활성화되었습니다.")
+    return MfaEnrollVerifyResponse(
+        ok=True,
+        message="MFA가 활성화되었습니다.",
+        access_token=getattr(verify_resp, "access_token", None),
+        refresh_token=getattr(verify_resp, "refresh_token", None),
+    )
 
 
 @router.delete("/mfa-unenroll", response_model=MessageResponse)
@@ -1168,41 +1321,71 @@ def send_sms(body: SendSmsRequest):
 
 class SwitchTenantRequest(BaseModel):
     tenantid: int
+    refresh_token: Optional[str] = None
 
 
 @router.post("/switch-tenant")
-def switch_tenant(body: SwitchTenantRequest, token: str = Depends(get_token)):
-    """테넌트 전환: users.default_tenantid 업데이트"""
-    supabase = _get_user_client(token)
+def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depends(get_token)):
+    """테넌트 전환: 대상 테넌트의 IP/MFA 정책을 먼저 평가하고, 통과했을 때만 users.default_tenantid를 갱신한다."""
+    # refresh_token까지 넘겨야 client.auth.set_session()이 호출되어 mfa.* SDK 호출(assurance level/factor 목록)이 정상 동작한다.
+    supabase = _get_user_client(token, body.refresh_token)
     user_resp = supabase.auth.get_user(token)
     if not user_resp or not user_resp.user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
     user_id = str(user_resp.user.id)
     sd = get_service_client().schema(SUPABASE_SCHEMA)
 
+    ip = _get_client_ip(request)
+    tu_row = (
+        sd.table("tenantusers").select("rolecd, useyn")
+        .eq("tenantid", body.tenantid).eq("useruid", user_id)
+        .maybe_single().execute()
+    )
+    is_manager = bool(
+        tu_row and tu_row.data
+        and tu_row.data.get("rolecd") == "M"
+        and tu_row.data.get("useyn") is True
+    )
+
+    eval_result = _evaluate_tenant_access(supabase, body.tenantid, is_manager, ip)
+    if eval_result["status"] == "blocked":
+        reason = eval_result["reason"]
+        if reason == "ip":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="msg.login.ip.not.allowed")
+        if reason == "mfa_setup":
+            return {"mfa_setup_required": True, "tenantid": str(body.tenantid)}
+        return {"mfa_required": True, "factor_id": eval_result["factor_id"], "tenantid": str(body.tenantid)}
+
     sd.table("users").update({"default_tenantid": body.tenantid}).eq("useruid", user_id).execute()
 
     tenant_info = sd.table("tenants").select("tenantnm,disptenantnm,iconfileurl,issystemtenant").eq("tenantid", body.tenantid).maybe_single().execute()
+    tenant_data = tenant_info.data if tenant_info else None
 
     accountuid = None
+    issystemtenant = tenant_data.get("issystemtenant", True) if tenant_data else True
     try:
-        issystemtenant = tenant_info.data.get("issystemtenant", True) if tenant_info.data else True
         if issystemtenant:
             acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
         else:
             acc = sd.table("accounts").select("accountuid").eq("tenantid", body.tenantid).maybe_single().execute()
-        if acc.data:
+        if acc and acc.data:
             accountuid = str(acc.data["accountuid"])
     except Exception:
         pass
 
-    tenantnm = tenant_info.data.get("tenantnm", "") if tenant_info.data else ""
+    # 사이드바 메뉴 노출(canSee의 TM/AM 판정)에 쓰이는 값 — 전환 시마다 갱신해야 함
+    tenantmanager = "Y" if is_manager else "N"
+    accountmanager = "Y" if (issystemtenant or is_manager) else "N"
+
+    tenantnm = tenant_data.get("tenantnm", "") if tenant_data else ""
     return {
         "tenantid": str(body.tenantid),
         "tenantnm": tenantnm,
-        "disptenantnm": (tenant_info.data.get("disptenantnm") or tenantnm) if tenant_info.data else "",
-        "tenanticonurl": tenant_info.data.get("iconfileurl") if tenant_info.data else None,
+        "disptenantnm": (tenant_data.get("disptenantnm") or tenantnm) if tenant_data else "",
+        "tenanticonurl": tenant_data.get("iconfileurl") if tenant_data else None,
         "accountuid": accountuid,
+        "tenantmanager": tenantmanager,
+        "accountmanager": accountmanager,
     }
 
 

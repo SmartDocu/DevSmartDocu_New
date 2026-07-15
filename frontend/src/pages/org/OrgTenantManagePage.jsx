@@ -109,7 +109,7 @@ export default function OrgTenantManagePage() {
         </Col>
 
         {/* 제품 구독 관리: 상단 좌측 제목 / 상단 우측 이동 버튼, 하단 구독 리스트 */}
-        <Col flex="20 1 0" style={{ minWidth: 0 }}>
+        <Col flex="30 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.subscription')}
@@ -129,11 +129,11 @@ export default function OrgTenantManagePage() {
               loading={subsLoading}
               dataSource={subscriptions}
               rowKey="servicecd"
-              scroll={{ y: 195 }}
+              // scroll={{ y: 195 }}
               locale={{ emptyText: t('msg.no.data') }}
               columns={[
-                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
-                { title: t('lbl.plan'), key: 'plancd', render: (_, row) => planLabel(row.plancd) },
+                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm', width: '65%' },
+                { title: t('lbl.plan'), key: 'plancd', render: (_, row) => planLabel(row.plancd), width: '35%' },
               ]}
             />
           </Card>
@@ -170,7 +170,7 @@ export default function OrgTenantManagePage() {
         </Col>
 
         {/* 크레딧 구매 내역 */}
-        <Col flex="40 1 0" style={{ minWidth: 0 }}>
+        <Col flex="30 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.credit')}
@@ -193,8 +193,8 @@ export default function OrgTenantManagePage() {
               scroll={{ y: 195 }}
               locale={{ emptyText: t('msg.no.data') }}
               columns={[
-                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
-                { title: t('lbl.credit'), dataIndex: 'quantity', key: 'quantity' },
+                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm', width: '70%' },
+                { title: t('lbl.credit'), dataIndex: 'quantity', key: 'quantity', width: '30%' },
               ]}
             />
           </Card>

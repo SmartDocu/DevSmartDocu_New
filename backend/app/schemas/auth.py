@@ -51,6 +51,16 @@ class LoginResponse(BaseModel):
     access_token_temp: Optional[str] = None  # aal1 임시 토큰 (MFA 검증 전용)
     refresh_token_temp: Optional[str] = None
 
+    # ── 다중 테넌트: 로그인 직후 테넌트 선택 필요 ──
+    tenant_selection_required: bool = False
+    tenants: Optional[list] = None
+
+    # ── 테넌트 정책: MFA 미설정 계정 강제 등록 필요 ──
+    mfa_setup_required: bool = False
+
+    # ── 위 세 가지 분기에서 재개(select-tenant/mfa-verify) 시 필요한 대상 테넌트 ──
+    tenantid: Optional[str] = None
+
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -122,6 +132,14 @@ class MfaVerifyRequest(BaseModel):
     code: str
     access_token: str
     refresh_token: str
+    tenantid: Optional[str] = None  # 지정 시 검증 성공 후 default_tenantid로 반영
+
+
+class SelectTenantRequest(BaseModel):
+    """다중 테넌트 로그인 직후(또는 강제 MFA 설정 완료 후) 테넌트 확정"""
+    tenantid: str
+    access_token_temp: str
+    refresh_token_temp: str
 
 
 class MfaEnrollRequest(BaseModel):
@@ -161,3 +179,11 @@ class MfaFactorsResponse(BaseModel):
     """GET /mfa-factors 응답"""
     factors: list[MfaFactorItem]
     mfa_enabled: bool
+
+
+class MfaEnrollVerifyResponse(BaseModel):
+    """MFA 등록 확인 응답 — 성공 시 세션이 aal2로 격상되면 새 토큰을 함께 내려준다."""
+    ok: bool
+    message: str = ""
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None

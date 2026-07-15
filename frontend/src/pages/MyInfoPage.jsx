@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
   Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
-import { useMyInfo, useUpdateUsername, useUpdateTimezone, useMySubscriptions } from '@/hooks/useSettings'
+import { useMyInfo, useUpdateUsername, useUpdateTimezone, useMySubscriptions, useTenantManageOtherSubscriptions } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useLangStore, t } from '@/stores/langStore'
 
@@ -13,14 +12,15 @@ const { Title } = Typography
 
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
-  const navigate = useNavigate()
   const openInTab = useOpenInTab()
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
-  
+
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
   const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
+  const { data: otherSubData } = useTenantManageOtherSubscriptions()
+  const hasMfaFeature = (otherSubData?.owned || []).some((o) => o.productcd === 'mfa')
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
   const [timezoneVal, setTimezoneVal] = useState(null)
@@ -156,37 +156,42 @@ export default function MyInfoPage() {
         </Col>
       </Row>
 
-      {/* 보안 설정 (MFA) ─────────────────────────────────────────────────── */}
-      <Card
-        size="small"
-        title={t('ttl.myinfo.security')}
-        loading={factorsLoading}
-        style={{ marginBottom: 16 }}
-      >
-        <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label={t('ttl.mfa.status')}>
-            <Space>
-              {isMfaEnabled ? (
-                <Tag color="green">{t('btn.mfa.enable')}</Tag>
-              ) : (
-                <Tag color="default">{t('btn.mfa.disable')}</Tag>
-              )}
-              <Button
-                htmlType="button"
-                size="small"
-                icon={<LockOutlined />}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  navigate('/settings/mfa')
-                }}
-              >
-                {isMfaEnabled ? t('btn.mfa.manage') : t('ttl.mfa.setup')}
-              </Button>
-            </Space>
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+      {/* 보안 설정 (MFA) — 현재 테넌트가 MFA 기능을 구독 중일 때만 노출 ───────── */}
+      {hasMfaFeature && (
+        <Card
+          size="small"
+          title={t('ttl.myinfo.security')}
+          loading={factorsLoading}
+          style={{ marginBottom: 16 }}
+        >
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+            {t('msg.mfa.account_wide_notice')}
+          </div>
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label={t('ttl.mfa.status')}>
+              <Space>
+                {isMfaEnabled ? (
+                  <Tag color="green">{t('btn.mfa.enable')}</Tag>
+                ) : (
+                  <Tag color="default">{t('btn.mfa.disable')}</Tag>
+                )}
+                <Button
+                  htmlType="button"
+                  size="small"
+                  icon={<LockOutlined />}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    openInTab('settings/mfa', '', t('ttl.mfa.setup'))
+                  }}
+                >
+                  {isMfaEnabled ? t('btn.mfa.manage') : t('ttl.mfa.setup')}
+                </Button>
+              </Space>
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+      )}
 
       {/* 약관 동의 여부 */}
       <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ marginBottom: 16 }}>

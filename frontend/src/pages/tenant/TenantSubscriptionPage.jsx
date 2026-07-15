@@ -35,7 +35,10 @@ export default function TenantSubscriptionPage() {
     if (!tenantnm.trim()) { message.warning(t('msg.tenantnm.required')); return }
     try {
       const created = await createTenant.mutateAsync({ tenantnm, languagecd, timezone: tz })
-      const sw = await apiClient.post('/auth/switch-tenant', { tenantid: created.tenantid })
+      const sw = await apiClient.post('/auth/switch-tenant', {
+        tenantid: created.tenantid,
+        refresh_token: useAuthStore.getState().refreshToken,
+      })
       switchTenant(created.tenantid)
       updateUser({
         tenantnm: sw.data.tenantnm,

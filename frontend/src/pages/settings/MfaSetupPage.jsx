@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert,
+  App,
   Button,
   Card,
   Col,
@@ -52,6 +53,7 @@ function QRCodeCanvas({ uri }) {
 export default function MfaSetupPage() {
   useLangStore((s) => s.translations)
   const navigate = useNavigate()
+  const { modal } = App.useApp()
   const [form] = Form.useForm()
 
   // 현재 단계: 0 = 상태 확인, 1 = QR 스캔, 2 = 코드 입력, 3 = 완료
@@ -94,10 +96,23 @@ export default function MfaSetupPage() {
   // ── 해제 ────────────────────────────────────────────────────────────────────
   const handleUnenroll = () => {
     if (!verifiedFactor) return
-    mfaUnenroll.mutate(
-      { factor_id: verifiedFactor.factor_id },
-      { onSuccess: () => setCurrentStep(0) },
-    )
+    modal.confirm({
+      title: t('msg.mfa.unenroll.confirm.title'),
+      content: (
+        <div style={{ whiteSpace: 'pre-line' }}>
+          {t('msg.mfa.unenroll.confirm.desc').replace(/\\n/g, '\n')}
+        </div>
+      ),
+      okText: t('btn.mfa.disable'),
+      okType: 'danger',
+      cancelText: t('btn.cancel'),
+      onOk: () => {
+        mfaUnenroll.mutate(
+          { factor_id: verifiedFactor.factor_id },
+          { onSuccess: () => setCurrentStep(0) },
+        )
+      },
+    })
   }
 
   // ── 시크릿 복사 ─────────────────────────────────────────────────────────────

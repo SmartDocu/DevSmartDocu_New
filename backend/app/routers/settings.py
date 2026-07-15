@@ -385,6 +385,15 @@ def _save_tenant_contact(tenantid: int, email: Optional[str], telno: Optional[st
         svc.table("accounts").insert(payload).execute()
 
 
+def _save_default_tenant_configs(tenantid: int, creator: str):
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    rows = [
+        {"tenantid": tenantid, "configcd": configcd, "value": False, "creator": creator}
+        for configcd in ("Is_MFA", "Is_User_IP_Allow", "Is_Manager_IP_Allow", "Is_SSO_MS")
+    ]
+    svc.table("config_tenants").insert(rows).execute()
+
+
 @router.post("/tenants")
 async def save_tenant(
     tenantid: Optional[str] = Form(None),
@@ -437,6 +446,7 @@ async def save_tenant(
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
         _save_tenant_contact(int(new_tenantid), email, telno, str(user.id))
+        _save_default_tenant_configs(int(new_tenantid), str(user.id))
     return {"status": "inserted"}
 
 
@@ -1264,6 +1274,14 @@ def purchase_tenant_manage_other_subscription(
             "updater": user_id,
         }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
 
+    if product["productcd"] == "mfa":
+        svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute()
+
+    if product["productcd"] == "whitelist":
+        svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).in_(
+            "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
+        ).execute()
+
     return {"result": "success"}
 
 
@@ -1334,6 +1352,14 @@ def cancel_tenant_manage_other_subscription(
     ).eq("productcd", sf["productcd"]).eq("subscriptionstatus", "Paid").execute().data or []
     if not remaining:
         svc.table("account_features").delete().eq("accountuid", accountuid).eq("productcd", sf["productcd"]).execute()
+
+    if sf["productcd"] == "mfa":
+        svc.table("config_tenants").update({"value": False}).eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute()
+
+    if sf["productcd"] == "whitelist":
+        svc.table("config_tenants").update({"value": False}).eq("tenantid", int(tenantid)).in_(
+            "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
+        ).execute()
 
     return {"result": "success"}
 
@@ -1550,7 +1576,9 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
                 "used_credit": credit["used_credit"],
                 "remain_credit": remain_map.get(scd, 0),
             })
-        services.sort(key=lambda s: s["servicecd"])
+        code_rows = svc.table("codes").select("codevalue,orderno").eq("codegroupcd", "servicecd").execute().data or []
+        order_map = {r["codevalue"]: r.get("orderno") if r.get("orderno") is not None else 999 for r in code_rows}
+        services.sort(key=lambda s: order_map.get(s["servicecd"], 999))
 
     return {
         "services": services,
@@ -1639,6 +1667,8 @@ def create_tenant_subscription(body: TenantSubscriptionRequest, token: str = Dep
         "accountstatus": "Active",
         "creator": user_id,
     }).execute()
+
+    _save_default_tenant_configs(new_tenantid, user_id)
 
     return {"tenantid": new_tenantid, "tenantnm": body.tenantnm}
 
