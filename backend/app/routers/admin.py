@@ -573,9 +573,22 @@ def list_ui_terms(
     _require_admin(token)
     sb = _sb_service()
 
-    terms = (
-        sb.schema(SUPABASE_SCHEMA).table("ui_terms").select("*").order("term_key").execute().data or []
-    )
+    terms: list = []
+    offset = 0
+    while True:
+        batch = (
+            sb.schema(SUPABASE_SCHEMA)
+            .table("ui_terms")
+            .select("*")
+            .order("term_key")
+            .range(offset, offset + 999)
+            .execute()
+            .data or []
+        )
+        terms.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
 
     translations: list = []
     offset = 0
