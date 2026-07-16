@@ -39,3 +39,25 @@ export function useDeleteWhitelist() {
     },
   })
 }
+
+export function useWhitelistConfig() {
+  return useQuery({
+    queryKey: ['whitelist-config'],
+    queryFn: () => apiClient.get('/whitelists/config').then((r) => r.data),
+  })
+}
+
+export function useSaveWhitelistConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/whitelists/config', payload).then((r) => r.data),
+    onSuccess: () => {
+      message.success(t('msg.save.success'))
+      qc.invalidateQueries({ queryKey: ['whitelist-config'] })
+    },
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
+    },
+  })
+}

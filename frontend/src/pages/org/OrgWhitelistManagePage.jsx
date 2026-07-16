@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useWhitelists, useSaveWhitelist, useDeleteWhitelist } from '@/hooks/useWhitelists'
+import {
+  useWhitelists, useSaveWhitelist, useDeleteWhitelist,
+  useWhitelistConfig, useSaveWhitelistConfig,
+} from '@/hooks/useWhitelists'
 
 const IPTYPES = ['IP', 'CIDR', 'RANGE']
 
@@ -24,6 +27,27 @@ export default function OrgWhitelistManagePage() {
   const { data: whitelists = [], isLoading } = useWhitelists()
   const saveWhitelist = useSaveWhitelist()
   const deleteWhitelist = useDeleteWhitelist()
+
+  const { data: config, isLoading: configLoading } = useWhitelistConfig()
+  const saveConfig = useSaveWhitelistConfig()
+  const [configForm, setConfigForm] = useState({ is_manager_ip_allow: false, is_user_ip_allow: false })
+
+  useEffect(() => {
+    if (config) {
+      setConfigForm({
+        is_manager_ip_allow: !!config.is_manager_ip_allow,
+        is_user_ip_allow: !!config.is_user_ip_allow,
+      })
+    }
+  }, [config])
+
+  const handleSaveConfig = () => {
+    if ((configForm.is_manager_ip_allow || configForm.is_user_ip_allow) && whitelists.length === 0) {
+      alert(t('msg.whitelist.config.empty.warning'))
+      return
+    }
+    saveConfig.mutate(configForm)
+  }
 
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -71,6 +95,43 @@ export default function OrgWhitelistManagePage() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
           <div>{t('mnu.tenant_mgr.whitelist')}</div>
+        </div>
+      </div>
+
+      {/* IP 제한 적용 설정 */}
+      <div style={{ marginBottom: 24, paddingRight: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>{t('ttl.whitelist.config')}</h3>
+          {isEditYn && (
+            <button className="btn btn-primary" type="button" onClick={handleSaveConfig} disabled={saveConfig.isPending || configLoading}>
+              {t('btn.save')}
+            </button>
+          )}
+        </div>
+        <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, padding: '12px 16px' }}>
+          <div style={{ display: 'flex', gap: 32, marginBottom: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: isEditYn ? 'pointer' : 'default' }}>
+              <input
+                type="checkbox"
+                checked={configForm.is_manager_ip_allow}
+                disabled={!isEditYn || configLoading}
+                onChange={(e) => setConfigForm((f) => ({ ...f, is_manager_ip_allow: e.target.checked }))}
+              />
+              {t('lbl.whitelist.manager_ip_allow')}
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: isEditYn ? 'pointer' : 'default' }}>
+              <input
+                type="checkbox"
+                checked={configForm.is_user_ip_allow}
+                disabled={!isEditYn || configLoading}
+                onChange={(e) => setConfigForm((f) => ({ ...f, is_user_ip_allow: e.target.checked }))}
+              />
+              {t('lbl.whitelist.user_ip_allow')}
+            </label>
+          </div>
+          <div style={{ fontSize: 12, color: '#d46b08' }}>
+            {t('inf.whitelist.config.warning')}
+          </div>
         </div>
       </div>
 

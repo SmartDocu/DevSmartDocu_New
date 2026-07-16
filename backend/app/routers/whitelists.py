@@ -183,3 +183,65 @@ def delete_whitelist(whitelistuid: str, token: str = Depends(get_token), tenanti
     sb = _sb(token)
     sb.schema(SUPABASE_SCHEMA).table("whitelists").delete().eq("whitelistuid", whitelistuid).eq("tenantid", int(tenantid)).execute()
     return {"ok": True}
+
+
+# ─── IP 제한 적용 설정 (config_tenants.Is_Manager_IP_Allow / Is_User_IP_Allow) ──
+
+_IP_ALLOW_CONFIGCDS = ("Is_Manager_IP_Allow", "Is_User_IP_Allow")
+
+
+@router.get("/config")
+def get_whitelist_config(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
+    _require_not_system_tenant(tenantid)
+    _require_whitelist_subscription(tenantid)
+
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    rows = (
+        svc.table("config_tenants").select("configcd,value")
+        .eq("tenantid", int(tenantid)).in_("configcd", _IP_ALLOW_CONFIGCDS)
+        .execute().data or []
+    )
+    cfg = {r["configcd"]: r["value"] for r in rows}
+    return {
+        "is_manager_ip_allow": bool(cfg.get("Is_Manager_IP_Allow")),
+        "is_user_ip_allow": bool(cfg.get("Is_User_IP_Allow")),
+    }
+
+
+class WhitelistConfigSaveRequest(BaseModel):
+    is_manager_ip_allow: bool
+    is_user_ip_allow: bool
+
+
+@router.post("/config")
+def save_whitelist_config(
+    body: WhitelistConfigSaveRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
+    _require_not_system_tenant(tenantid)
+    _require_whitelist_subscription(tenantid)
+
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    values = {
+        "Is_Manager_IP_Allow": body.is_manager_ip_allow,
+        "Is_User_IP_Allow": body.is_user_ip_allow,
+    }
+    for configcd, value in values.items():
+        existing = (
+            svc.table("config_tenants").select("tenantid")
+            .eq("tenantid", int(tenantid)).eq("configcd", configcd)
+            .maybe_single().execute()
+        )
+        if existing and existing.data:
+            svc.table("config_tenants").update({"value": value}).eq("tenantid", int(tenantid)).eq("configcd", configcd).execute()
+        else:
+            svc.table("config_tenants").insert({
+                "tenantid": int(tenantid), "configcd": configcd, "value": value, "creator": str(user.id),
+            }).execute()
+
+    return {"result": "success"}

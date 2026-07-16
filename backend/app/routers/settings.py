@@ -1154,14 +1154,16 @@ async def save_tenant_manage_basic_info(
 
 @router.get("/tenant-manage/other-subscriptions")
 def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """기타 구독 관리 화면: 보유 중인 User/Feature 상품 + 구매 가능 상품 목록."""
+    """기타 구독 관리 화면: 보유 중인 User/Feature 상품 + 구매 가능 상품 목록.
+
+    조회(GET)는 사이드바/내정보 화면에서 모든 사용자가 '내 보유 기능' 확인용으로도 재사용하므로
+    매니저/시스템테넌트 제한을 걸지 않는다 — 구매·취소(POST) 쪽에서만 제한한다.
+    """
     user = _get_user(token)
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
-    _require_tenant_manager(svc, user_id, tenantid)
-    _require_not_system_tenant(svc, tenantid)
 
     subscribed_servicecds = set()
     owned_productcds = set()
