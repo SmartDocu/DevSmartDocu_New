@@ -23,6 +23,25 @@ function hasFeatureAccess(menucd, ownedProductcds) {
   return ownedProductcds.has(requiredProductcd)
 }
 
+/* ── 시스템(개인) 테넌트에서는 '조직' 개념이 없어 의미 없는 기업 관리 메뉴 ──
+   org.project_users(proj_mgr와 공유)·org.llm/org.project_llm(AM, 개인 LLM 키 등록용)은 제외 */
+const SYSTEM_TENANT_HIDDEN_MENUS = new Set([
+  'tenant_mgr.manage',
+  'tenant_mgr.manage.overview',
+  'tenant_mgr.manage.whitelists',
+  'tenant_mgr.org.users',
+  'tenant_mgr.org.projects',
+  'tenant_mgr.db.db_data',
+  'tenant_mgr.db.api_data',
+  'tenant_mgr.db.connectors',
+  'tenant_mgr.db.data_groups',
+  'tenant_mgr.db.servers',
+])
+
+function hiddenOnSystemTenant(menucd, isSystemTenant) {
+  return isSystemTenant && SYSTEM_TENANT_HIDDEN_MENUS.has(menucd)
+}
+
 /* ── Ant Design 아이콘 동적 렌더링 ── */
 function DynIcon({ name }) {
   const Icon = name && Icons[name]
@@ -162,7 +181,9 @@ export default function AppSidebar({ collapsed = false, isDark = false, appcd = 
   const visibleMenus = useMemo(() => {
     const visibleCds = new Set(
       allMenus
-        .filter((m) => canSee(m.rolecd, user, isAuthenticated) && hasFeatureAccess(m.menucd, ownedFeatureProductcds))
+        .filter((m) => canSee(m.rolecd, user, isAuthenticated)
+          && hasFeatureAccess(m.menucd, ownedFeatureProductcds)
+          && !hiddenOnSystemTenant(m.menucd, user?.issystemtenant))
         .map((m) => m.menucd)
     )
     // 보이는 메뉴의 모든 조상 menucd 추가

@@ -181,6 +181,7 @@ export default function AppLayout() {
       accountuid: data.accountuid ?? null,
       tenantmanager: data.tenantmanager ?? 'N',
       accountmanager: data.accountmanager ?? 'N',
+      issystemtenant: data.issystemtenant ?? null,
     })
     queryClient.invalidateQueries()
     clearTabs()

@@ -789,6 +789,24 @@ def _get_tenant_and_account(svc, user_id: str, tenantid: Optional[str]) -> tuple
     return tenantid, accountuid
 
 
+def _require_tenant_manager(svc, user_id: str, tenantid: str) -> None:
+    """tenant-manage 화면 전용 엔드포인트 접근 제한: 해당 테넌트의 매니저(rolecd=M)만 허용."""
+    tu = (
+        svc.table("tenantusers").select("rolecd,useyn")
+        .eq("useruid", user_id).eq("tenantid", int(tenantid))
+        .maybe_single().execute()
+    )
+    if not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
+        raise HTTPException(status_code=403, detail="테넌트 관리자만 접근할 수 있습니다.")
+
+
+def _require_not_system_tenant(svc, tenantid: str) -> None:
+    """조직/구독 관리 화면은 시스템(개인) 테넌트에서 의미가 없어 차단한다."""
+    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    if t_row.data and t_row.data.get("issystemtenant"):
+        raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
+
+
 @router.get("/tenant-manage/subscriptions")
 def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """구독 관리 화면 좌측: 서비스별 현재 구독 상품 목록."""
@@ -796,7 +814,9 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
-    _, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     # 전체 서비스 목록 — 아직 구독하지 않은 서비스도 선택 가능하도록 항상 포함
     service_codes = (
@@ -902,6 +922,8 @@ def change_tenant_subscription(
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
     if not accountuid:
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
@@ -1017,6 +1039,8 @@ def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Opt
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     t_row = svc.table("tenants").select("disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     tenant = t_row.data if t_row else {}
@@ -1051,6 +1075,8 @@ def get_tenant_manage_basic_info(token: str = Depends(get_token), tenantid: Opti
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     t_row = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     tenant = t_row.data if t_row else {}
@@ -1096,6 +1122,8 @@ async def save_tenant_manage_basic_info(
     svc = svc_root.schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     tenant_payload = {}
     if disptenantnm:
@@ -1132,6 +1160,8 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     subscribed_servicecds = set()
     owned_productcds = set()
@@ -1213,6 +1243,8 @@ def purchase_tenant_manage_other_subscription(
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
     if not accountuid:
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
@@ -1305,6 +1337,8 @@ def cancel_tenant_manage_other_subscription(
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
     if not accountuid:
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
@@ -1372,6 +1406,8 @@ def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tena
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     subscribed_servicecds = set()
     if accountuid:
@@ -1444,6 +1480,8 @@ def purchase_tenant_manage_credit_subscription(
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
     if not accountuid:
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
@@ -1522,6 +1560,8 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
 
     services = []
     if accountuid:

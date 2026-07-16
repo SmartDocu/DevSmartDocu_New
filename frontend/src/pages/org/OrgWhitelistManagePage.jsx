@@ -91,7 +91,7 @@ export default function OrgWhitelistManagePage() {
                 <tr>
                   <th style={{ width: '20%' }}>{t('thd.iptype_thd')}</th>
                   <th style={{ width: '35%' }}>{t('thd.ipvalue_thd')}</th>
-                  <th style={{ width: '30%' }}>{t('thd.desc_thd')}</th>
+                  <th style={{ width: '30%' }}>{t('thd.desc_whitelist')}</th>
                   <th style={{ width: '15%', textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>

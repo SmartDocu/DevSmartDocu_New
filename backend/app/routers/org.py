@@ -57,6 +57,15 @@ def _get_usernm_email(sb, useruid: str):
     return "", ""
 
 
+def _require_not_system_tenant(sb, tenantid) -> None:
+    """조직(기업) 관리 전용 엔드포인트 접근 제한: 시스템(개인) 테넌트에서는 차단한다."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    if t_row.data and t_row.data.get("issystemtenant"):
+        raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
+
+
 # ══════════════════════════════════════════════════════
 #  TENANT USERS
 # ══════════════════════════════════════════════════════
@@ -77,6 +86,7 @@ def list_tenant_users(
         tenantid = header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    _require_not_system_tenant(sb, tenantid)
 
     # 기업명 조회
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
@@ -148,6 +158,7 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     sb = _sb(token)
     user_id = user.id
     tenantid = int(body.tenantid)
+    _require_not_system_tenant(sb, tenantid)
 
     if not body.accountuid or not body.servicecds:
         raise HTTPException(status_code=400, detail="서비스를 선택해야 합니다.")
@@ -227,6 +238,7 @@ def delete_tenant_user(body: TenantUserDeleteRequest, token: str = Depends(get_t
     sb = _sb(token)
     tenantid = body.tenantid
     useruid = body.useruid
+    _require_not_system_tenant(sb, tenantid)
 
     # tenantusers에서 삭제
     sb.schema(SUPABASE_SCHEMA).table("tenantusers").delete().eq("tenantid", tenantid).eq("useruid", useruid).execute()
@@ -403,6 +415,7 @@ def list_org_projects(
         tenantid = header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    _require_not_system_tenant(sb, tenantid)
 
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
     tenantnm = t_rows[0]["tenantnm"] if t_rows else ""
@@ -442,6 +455,7 @@ def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token
     tenantid = body.tenantid or header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    _require_not_system_tenant(sb, tenantid)
 
     if not body.projectnm:
         raise HTTPException(status_code=400, detail="프로젝트명은 필수입니다.")
@@ -490,6 +504,9 @@ def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token
 def delete_org_project(projectid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
+    proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", projectid).maybe_single().execute()
+    if proj.data:
+        _require_not_system_tenant(sb, proj.data.get("tenantid"))
     sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", projectid).execute()
     return {"result": "success", "message": "프로젝트가 성공적으로 삭제되었습니다."}
 
@@ -670,6 +687,7 @@ def list_invite_members(token: str = Depends(get_token)):
     tenantid = _get_tenant_manager_tenantid(user_id)
 
     svc = get_service_client()
+    _require_not_system_tenant(svc, tenantid)
     sd = svc.schema(SUPABASE_SCHEMA)
     offsetminutes = _get_offsetminutes(svc, user_id)
 
@@ -700,6 +718,7 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     user_id = str(user.id)
     tenantid = _get_tenant_manager_tenantid(user_id)
+    _require_not_system_tenant(get_service_client(), tenantid)
 
     seen = set()
     emails = [e.strip() for e in body.emails if e and e.strip()]

@@ -32,6 +32,7 @@ class UserContext(BaseModel):
     tenants: Optional[list] = []
     accountuid: Optional[str] = None
     accountmanager: Optional[str] = "N"
+    issystemtenant: Optional[bool] = None
 
 
 # ── 기존 LoginResponse → MFA 필드 추가 ──────────────────────────────────────

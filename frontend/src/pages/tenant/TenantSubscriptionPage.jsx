@@ -44,6 +44,9 @@ export default function TenantSubscriptionPage() {
         tenantnm: sw.data.tenantnm,
         tenanticonurl: sw.data.tenanticonurl,
         accountuid: sw.data.accountuid,
+        tenantmanager: sw.data.tenantmanager ?? 'N',
+        accountmanager: sw.data.accountmanager ?? 'N',
+        issystemtenant: sw.data.issystemtenant ?? null,
         tenants: [...(user?.tenants || []), { tenantid: String(created.tenantid), tenantnm: sw.data.tenantnm }],
       })
       queryClient.invalidateQueries()

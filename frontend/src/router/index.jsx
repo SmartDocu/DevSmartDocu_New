@@ -1,6 +1,8 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/Layout/AppLayout'
 import RequireAuth from '@/components/Auth/RequireAuth'
+import RequireTenantManager from '@/components/Auth/RequireTenantManager'
+import RequireNotSystemTenant from '@/components/Auth/RequireNotSystemTenant'
 import HomePage from '@/pages/HomePage'
 import AppLauncher from '@/pages/AppLauncher'
 import AppIndex from '@/pages/AppIndex'
@@ -168,17 +170,17 @@ export const router = createBrowserRouter([
       { path: 'qna', element: <QnaPage /> },
 
       // Stage 8: 조직 관리 (org/)
-      { path: 'org/tenant-users', element: <OrgTenantUsersPage /> },
+      { path: 'org/tenant-users', element: <RequireNotSystemTenant><OrgTenantUsersPage /></RequireNotSystemTenant> },
       { path: 'org/tenant-llms', element: <OrgTenantLlmsPage /> },
-      { path: 'org/projects', element: <OrgProjectsPage /> },
+      { path: 'org/projects', element: <RequireNotSystemTenant><OrgProjectsPage /></RequireNotSystemTenant> },
       { path: 'org/project-users', element: <OrgProjectUsersPage /> },
-      { path: 'org/invite-members', element: <OrgInviteMembersPage /> },
-      { path: 'org/tenant-manage', element: <OrgTenantManagePage /> },
-      { path: 'org/tenant-basic-info', element: <OrgTenantBasicInfoPage /> },
-      { path: 'org/subscription-manage', element: <OrgSubscriptionManagePage /> },
-      { path: 'org/other-subscription-manage', element: <OrgOtherSubscriptionManagePage /> },
-      { path: 'org/credit-manage', element: <OrgCreditManagePage /> },
-      { path: 'org/tenant-manage/whitelist', element: <OrgWhitelistManagePage /> },
+      { path: 'org/invite-members', element: <RequireNotSystemTenant><OrgInviteMembersPage /></RequireNotSystemTenant> },
+      { path: 'org/tenant-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgTenantManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/tenant-basic-info', element: <RequireTenantManager><RequireNotSystemTenant><OrgTenantBasicInfoPage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/other-subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgOtherSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/credit-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgCreditManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/tenant-manage/whitelist', element: <RequireTenantManager><RequireNotSystemTenant><OrgWhitelistManagePage /></RequireNotSystemTenant></RequireTenantManager> },
 
       // AI LLM 설정 (CA/SA/TA)
       { path: 'master/ai-charts', element: <MasterAiChartsPage /> },

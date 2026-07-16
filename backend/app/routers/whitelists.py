@@ -27,6 +27,30 @@ def _require_whitelist_subscription(tenantid: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail="msg.whitelist.subscription.required")
 
 
+def _require_tenant_manager(user_id: str, tenantid: Optional[str]) -> None:
+    """테넌트 관리 화면 전용 엔드포인트 접근 제한: 해당 테넌트의 매니저(rolecd=M)만 허용."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="msg.tenant.required")
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    tu = (
+        svc.table("tenantusers").select("rolecd,useyn")
+        .eq("useruid", user_id).eq("tenantid", int(tenantid))
+        .maybe_single().execute()
+    )
+    if not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
+        raise HTTPException(status_code=403, detail="테넌트 관리자만 접근할 수 있습니다.")
+
+
+def _require_not_system_tenant(tenantid: Optional[str]) -> None:
+    """조직/구독 관리 화면은 시스템(개인) 테넌트에서 의미가 없어 차단한다."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="msg.tenant.required")
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    if t_row.data and t_row.data.get("issystemtenant"):
+        raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
+
+
 def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
     try:
         tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
@@ -87,9 +111,11 @@ def _calc_ip_range(iptype: str, ipvalue: str) -> tuple[int, int]:
 
 @router.get("")
 def list_whitelists(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
+    _require_not_system_tenant(tenantid)
     _require_whitelist_subscription(tenantid)
     sb = _sb(token)
-    user = _get_user(token)
     offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     rows = (
@@ -118,6 +144,9 @@ def save_whitelist(
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
+    user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
+    _require_not_system_tenant(tenantid)
     _require_whitelist_subscription(tenantid)
     if body.iptype not in IPTYPES:
         raise HTTPException(status_code=400, detail="msg.whitelist.iptype.invalid")
@@ -139,7 +168,7 @@ def save_whitelist(
         sb.schema(SUPABASE_SCHEMA).table("whitelists").update(record).eq("whitelistuid", body.whitelistuid).execute()
         return {"result": "updated", "whitelistuid": body.whitelistuid}
 
-    record["creator"] = str(_get_user(token).id)
+    record["creator"] = str(user.id)
     res = sb.schema(SUPABASE_SCHEMA).table("whitelists").insert(record).execute()
     new_id = res.data[0]["whitelistuid"] if res.data else None
     return {"result": "inserted", "whitelistuid": new_id}
@@ -147,6 +176,9 @@ def save_whitelist(
 
 @router.delete("/{whitelistuid}")
 def delete_whitelist(whitelistuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
+    _require_not_system_tenant(tenantid)
     _require_whitelist_subscription(tenantid)
     sb = _sb(token)
     sb.schema(SUPABASE_SCHEMA).table("whitelists").delete().eq("whitelistuid", whitelistuid).eq("tenantid", int(tenantid)).execute()

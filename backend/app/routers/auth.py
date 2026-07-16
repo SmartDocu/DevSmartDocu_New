@@ -482,6 +482,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         if ctx.tenantid:
             t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
             issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+            ctx.issystemtenant = issystemtenant
             if issystemtenant:
                 acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
                 ctx.accountmanager = "Y"  # 개인 계정 = 본인이 account 소유자
@@ -1386,6 +1387,7 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
         "accountuid": accountuid,
         "tenantmanager": tenantmanager,
         "accountmanager": accountmanager,
+        "issystemtenant": issystemtenant,
     }
 
 
