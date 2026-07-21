@@ -32,6 +32,7 @@ class UserContext(BaseModel):
     tenants: Optional[list] = []
     accountuid: Optional[str] = None
     accountmanager: Optional[str] = "N"
+    accountstatus: Optional[str] = None
     issystemtenant: Optional[bool] = None
 
 

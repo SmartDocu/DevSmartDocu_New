@@ -477,22 +477,27 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 8. accountuid + accountmanager (issystemtenant 여부에 따라 조회 기준 다름)
+    # 8. accountuid + accountstatus + accountmanager (issystemtenant 여부에 따라 조회 기준 다름)
+    #    system tenant는 여러 개인 계정이 같은 tenantid를 공유하므로 useruid로 조회해야
+    #    accounts 행이 유일하게 특정된다. 기업 tenant는 tenantid당 accounts 행이 유일하다.
     try:
         if ctx.tenantid:
             t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
             issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
             ctx.issystemtenant = issystemtenant
+
             if issystemtenant:
-                acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+                acc = sd.table("accounts").select("accountuid, accountstatus").eq("useruid", user_id).maybe_single().execute()
                 ctx.accountmanager = "Y"  # 개인 계정 = 본인이 account 소유자
             else:
-                acc = sd.table("accounts").select("accountuid").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
+                acc = sd.table("accounts").select("accountuid, accountstatus").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
                 # 기업 테넌트: tenantusers.rolecd = "M" 이면 accountmanager
                 tu_row = sd.table("tenantusers").select("rolecd").eq("tenantid", int(ctx.tenantid)).eq("useruid", user_id).maybe_single().execute()
                 ctx.accountmanager = "Y" if tu_row.data and tu_row.data.get("rolecd") == "M" else "N"
+
             if acc and acc.data:
                 ctx.accountuid = str(acc.data["accountuid"])
+                ctx.accountstatus = acc.data.get("accountstatus")
     except Exception:
         pass
 
@@ -1363,14 +1368,16 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
     tenant_data = tenant_info.data if tenant_info else None
 
     accountuid = None
+    accountstatus = None
     issystemtenant = tenant_data.get("issystemtenant", True) if tenant_data else True
     try:
         if issystemtenant:
-            acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+            acc = sd.table("accounts").select("accountuid, accountstatus").eq("useruid", user_id).maybe_single().execute()
         else:
-            acc = sd.table("accounts").select("accountuid").eq("tenantid", body.tenantid).maybe_single().execute()
+            acc = sd.table("accounts").select("accountuid, accountstatus").eq("tenantid", body.tenantid).maybe_single().execute()
         if acc and acc.data:
             accountuid = str(acc.data["accountuid"])
+            accountstatus = acc.data.get("accountstatus")
     except Exception:
         pass
 
@@ -1385,6 +1392,7 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
         "disptenantnm": (tenant_data.get("disptenantnm") or tenantnm) if tenant_data else "",
         "tenanticonurl": tenant_data.get("iconfileurl") if tenant_data else None,
         "accountuid": accountuid,
+        "accountstatus": accountstatus,
         "tenantmanager": tenantmanager,
         "accountmanager": accountmanager,
         "issystemtenant": issystemtenant,

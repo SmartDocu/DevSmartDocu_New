@@ -4,6 +4,7 @@ import { AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useApps } from '@/hooks/useApps'
+import { useMenuCodes } from '@/hooks/useMenus'
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -25,10 +26,20 @@ export default function AppLauncher() {
   const tenantid = useAuthStore((s) => s.user?.tenantid)
   const { data = {}, isLoading } = useApps({ tenantid })
   const { apps = [], subscribed_servicecds = [] } = data
+  const { data: accountStatusCodes = [] } = useMenuCodes('accountstatus')
 
   useLangStore((s) => s.translations)
 
-  const visibleApps = apps.filter((app) => canSeeApp(app, user, subscribed_servicecds))
+  const isAccountInactive = !!user?.accountstatus && user.accountstatus !== 'Active'
+  const accountStatusMsg = isAccountInactive
+    ? (() => {
+        const code = accountStatusCodes.find((c) => c.codevalue === user.accountstatus)
+        return code ? (t(code.term_key) || code.default_name) : t('msg.account.status.inactive')
+      })()
+    : ''
+  const visibleApps = isAccountInactive
+    ? []
+    : apps.filter((app) => canSeeApp(app, user, subscribed_servicecds))
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 0' }}>
@@ -36,7 +47,11 @@ export default function AppLauncher() {
         {user?.tenantnm}
       </h2>
 
-      {isLoading ? (
+      {isAccountInactive ? (
+        <div style={{ textAlign: 'center', color: '#999', padding: 80 }}>
+          {accountStatusMsg}
+        </div>
+      ) : isLoading ? (
         <div style={{ textAlign: 'center', padding: 80 }}>
           <Spin size="large" />
         </div>

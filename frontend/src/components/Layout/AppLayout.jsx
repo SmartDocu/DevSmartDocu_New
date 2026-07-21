@@ -179,6 +179,7 @@ export default function AppLayout() {
       disptenantnm: data.disptenantnm ?? data.tenantnm ?? tenant?.tenantnm,
       tenanticonurl: data.tenanticonurl ?? tenant?.tenanticonurl,
       accountuid: data.accountuid ?? null,
+      accountstatus: data.accountstatus ?? null,
       tenantmanager: data.tenantmanager ?? 'N',
       accountmanager: data.accountmanager ?? 'N',
       issystemtenant: data.issystemtenant ?? null,
