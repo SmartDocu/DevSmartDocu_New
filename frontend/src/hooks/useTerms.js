@@ -51,12 +51,14 @@ export function useDeleteTerm() {
 
 export function useSaveTermTranslation() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ termkey, languagecd, translated_text }) =>
       apiClient.post(`/terms/${termkey}/translations`, { languagecd, translated_text }).then((r) => r.data),
     onSuccess: (_data, { termkey }) => {
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 

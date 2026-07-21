@@ -105,12 +105,14 @@ export function useDeleteMenu() {
 
 export function useSaveTranslation() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ menucd, languagecd, translated_text }) =>
       apiClient.post(`/menus/${menucd}/translations`, { languagecd, translated_text }).then((r) => r.data),
     onSuccess: (_data, { menucd }) => {
       qc.invalidateQueries({ queryKey: ['menu-translations', menucd] })
     },
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 

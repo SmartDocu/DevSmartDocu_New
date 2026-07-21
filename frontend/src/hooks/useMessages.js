@@ -49,12 +49,14 @@ export function useDeleteMessage() {
 
 export function useSaveMessageTranslation() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ messagekey, languagecd, translated_text }) =>
       apiClient.post(`/messages/${messagekey}/translations`, { languagecd, translated_text }).then((r) => r.data),
     onSuccess: (_data, { messagekey }) => {
       qc.invalidateQueries({ queryKey: ['message-translations', messagekey] })
     },
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 

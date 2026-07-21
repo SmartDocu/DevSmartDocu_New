@@ -128,6 +128,10 @@ def create_menu(body: MenuSaveRequest, token: str = Depends(get_token)):
     sb = _sb(token)
     user_id = str(user.id)
 
+    # menucd는 URL 경로 파라미터로 그대로 쓰이므로 '/'가 들어가면 수정/삭제/번역 API가 전부 라우팅되지 않는다.
+    if "/" in body.menucd:
+        raise HTTPException(status_code=400, detail="menucd에는 '/'를 사용할 수 없습니다. (예: org.invite_members)")
+
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("menus")
         .select("menucd").eq("menucd", body.menucd).execute().data

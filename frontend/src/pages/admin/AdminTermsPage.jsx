@@ -68,6 +68,7 @@ export default function AdminTermsPage() {
     setSelectedTerm(null)
     setIsNew(true)
     setForm(EMPTY_TERM)
+    setTransEdits({})
   }
 
   const handleTermSave = async () => {

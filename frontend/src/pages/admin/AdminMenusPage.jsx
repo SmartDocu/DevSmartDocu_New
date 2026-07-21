@@ -80,6 +80,7 @@ export default function AdminMenusPage() {
     setSelectedMenu(null)
     setIsNew(true)
     setForm(EMPTY_MENU)
+    setTransEdits({})
   }
 
   const handleMenuSave = async () => {

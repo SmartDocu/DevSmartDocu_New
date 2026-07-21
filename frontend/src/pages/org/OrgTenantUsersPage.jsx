@@ -128,7 +128,7 @@ export default function OrgTenantUsersPage() {
   }
 
   const pageTitle = roleid === 7 && tenantnm
-    ? `${t('mnu.project.users')}: ${tenantnm}` : t('mnu.project.users')
+    ? `${t('mnu.tenant.users')}: ${tenantnm}` : t('mnu.tenant.users')
 
   return (
     <div>
@@ -206,7 +206,7 @@ export default function OrgTenantUsersPage() {
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측 패널: 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 6, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
@@ -245,7 +245,7 @@ export default function OrgTenantUsersPage() {
         </div>
 
         {/* 우측 패널: 상세 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 4, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
