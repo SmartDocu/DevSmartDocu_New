@@ -136,17 +136,16 @@ export default function OrgTenantUsersPage() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
           <div>{pageTitle}</div>
-          {user?.tenantmanager === 'Y' && (
-            <button
-              className="btn btn-primary"
-              type="button"
-              style={{ marginLeft: 'auto' }}
-              onClick={() => openInTab('org/invite-members')}
-            >
-              {t('btn.invite.members.manage')}
-            </button>
-          )}
         </div>
+        {user?.tenantmanager === 'Y' && (
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={() => openInTab('org/invite-members')}
+          >
+            {t('btn.invite.members.manage')}
+          </button>
+        )}
       </div>
 
       {/* 필터 */}

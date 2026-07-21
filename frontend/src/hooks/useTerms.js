@@ -22,15 +22,17 @@ export function useSaveTerm() {
   const qc = useQueryClient()
   const { message } = App.useApp()
   return useMutation({
-    mutationFn: ({ isNew, termkey, ...body }) =>
+    // origTermgroupcd: 수정 대상 행을 특정하는 "원래" termgroupcd (termkey만으로는 유일하지 않음).
+    // body.termgroupcd는 저장할 새 값 — 편집 중 그룹을 바꾼 경우 둘이 다를 수 있다.
+    mutationFn: ({ isNew, termkey, origTermgroupcd, ...body }) =>
       isNew
         ? apiClient.post('/terms', { termkey, ...body }).then((r) => r.data)
-        : apiClient.put(`/terms/${termkey}`, { termkey, ...body }).then((r) => r.data),
+        : apiClient.put(`/terms/${termkey}/${origTermgroupcd}`, { termkey, ...body }).then((r) => r.data),
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -38,12 +40,12 @@ export function useDeleteTerm() {
   const qc = useQueryClient()
   const { message } = App.useApp()
   return useMutation({
-    mutationFn: (termkey) => apiClient.delete(`/terms/${termkey}`).then((r) => r.data),
+    mutationFn: ({ termkey, termgroupcd }) => apiClient.delete(`/terms/${termkey}/${termgroupcd}`).then((r) => r.data),
     onSuccess: () => {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }
 
@@ -68,6 +70,6 @@ export function useDeleteTermTranslation() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })
 }

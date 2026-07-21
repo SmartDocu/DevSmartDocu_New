@@ -68,6 +68,7 @@ setSelectedMessage(msg)
     setSelectedMessage(null)
     setIsNew(true)
     setForm(EMPTY_MESSAGE)
+    setTransEdits({})
   }
 
   const handleSave = async () => {

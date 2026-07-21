@@ -108,7 +108,7 @@ export default function OrgInviteMembersPage() {
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측: 초대 이력 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
@@ -117,16 +117,18 @@ export default function OrgInviteMembersPage() {
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '45%' }}>{t('thd.email_thd')}</th>
-                  <th style={{ width: '30%' }}>{t('thd.invite.services')}</th>
-                  <th style={{ width: '25%' }}>{t('thd.createdts_thd')}</th>
+                  <th style={{ width: '30%' }}>{t('thd.email_thd')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.invite.services')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.invitedts_thd')}</th>
+                  <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.is_signup_thd')}</th>
+                  <th style={{ width: '22%' }}>{t('thd.signupdts_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : invitations.length === 0 ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : invitations.map((inv) => (
                   <tr
                     key={inv.userregrequid}
@@ -136,6 +138,8 @@ export default function OrgInviteMembersPage() {
                     <td>{inv.email}</td>
                     <td>{inv.servicecd}</td>
                     <td>{inv.createdts}</td>
+                    <td style={{ textAlign: 'center' }}>{inv.is_signup ? '✔' : ''}</td>
+                    <td>{inv.signupdts || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -144,7 +148,7 @@ export default function OrgInviteMembersPage() {
         </div>
 
         {/* 우측: 초대 폼 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {!selectedId && (

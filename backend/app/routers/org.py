@@ -13,20 +13,26 @@ router = APIRouter()
 
 
 
-def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
     try:
-        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
-        if not tu.data:
+        q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
             return None
-        tz = tu.data.get("timezone")
-        if not tz and tu.data.get("tenantid"):
-            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
-            if t.data:
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
                 tz = t.data.get("timezone")
         if not tz:
             return None
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
-        return tz_row.data.get("offsetminutes") if tz_row.data else None
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
     except Exception:
         return None
 
@@ -79,7 +85,6 @@ def list_tenant_users(
 ):
     user = _get_user(token)
     sb = _sb(token)
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     # tenantid 결정: Query 파라미터 > X-Tenant-ID 헤더
     if not tenantid:
@@ -87,6 +92,7 @@ def list_tenant_users(
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
     _require_not_system_tenant(sb, tenantid)
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     # 기업명 조회
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
@@ -409,13 +415,13 @@ def list_org_projects(
 ):
     user = _get_user(token)
     sb = _sb(token)
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
 
     if not tenantid:
         tenantid = header_tenantid
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
     _require_not_system_tenant(sb, tenantid)
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
     tenantnm = t_rows[0]["tenantnm"] if t_rows else ""
@@ -524,7 +530,7 @@ def list_project_users(
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
-    offsetminutes = _get_offsetminutes(sb, str(user_id))
+    offsetminutes = _get_offsetminutes(sb, str(user_id), tenantid)
 
     # ── 프로젝트 목록 (드롭다운용) ──────────────────────────────
     # tenantmanager=Y → 기업 전체 프로젝트 / 그 외 → 사용자가 속한 프로젝트(manager)
@@ -662,34 +668,37 @@ def delete_project_user(body: ProjectUserDeleteRequest, token: str = Depends(get
 #  INVITE MEMBERS (테넌트 매니저 전용)
 # ══════════════════════════════════════════════════════
 
-def _get_tenant_manager_tenantid(user_id: str) -> int:
-    """로그인 사용자가 매니저인 tenantid 반환. 권한 없으면 403."""
+def _require_tenant_manager_tenantid(user_id: str, header_tenantid: Optional[str]) -> int:
+    """현재 선택된 테넌트(X-Tenant-ID)에 대해 로그인 사용자가 매니저인지 검증 후 tenantid 반환. 아니면 403."""
+    if not header_tenantid:
+        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    tenantid = int(header_tenantid)
     svc = get_service_client()
-    tu_rows = (
+    tu_row = (
         svc.schema(SUPABASE_SCHEMA)
         .table("tenantusers")
-        .select("rolecd,tenantid")
+        .select("rolecd")
         .eq("useruid", user_id)
+        .eq("tenantid", tenantid)
         .eq("useyn", True)
+        .maybe_single()
         .execute()
-        .data or []
     )
-    manager_row = next((r for r in tu_rows if r.get("rolecd") == "M"), None)
-    if not manager_row:
+    if not tu_row.data or tu_row.data.get("rolecd") != "M":
         raise HTTPException(status_code=403, detail="테넌트 매니저 권한이 필요합니다.")
-    return int(manager_row["tenantid"])
+    return tenantid
 
 
 @router.get("/invite-members")
-def list_invite_members(token: str = Depends(get_token)):
+def list_invite_members(token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     user_id = str(user.id)
-    tenantid = _get_tenant_manager_tenantid(user_id)
+    tenantid = _require_tenant_manager_tenantid(user_id, header_tenantid)
 
     svc = get_service_client()
     _require_not_system_tenant(svc, tenantid)
     sd = svc.schema(SUPABASE_SCHEMA)
-    offsetminutes = _get_offsetminutes(svc, user_id)
+    offsetminutes = _get_offsetminutes(svc, user_id, tenantid)
 
     rows = (
         sd.table("userregreqs")
@@ -701,6 +710,7 @@ def list_invite_members(token: str = Depends(get_token)):
     )
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
+        row["signupdts"] = _fmt_dt(row.get("signupdts"), offsetminutes)
 
     return {"invitations": rows, "tenantid": str(tenantid)}
 
@@ -711,13 +721,13 @@ class InviteMembersRequest(BaseModel):
 
 
 @router.post("/invite-members")
-def invite_member(body: InviteMembersRequest, token: str = Depends(get_token)):
+def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
     import smtplib
     from email.mime.text import MIMEText
 
     user = _get_user(token)
     user_id = str(user.id)
-    tenantid = _get_tenant_manager_tenantid(user_id)
+    tenantid = _require_tenant_manager_tenantid(user_id, header_tenantid)
     _require_not_system_tenant(get_service_client(), tenantid)
 
     seen = set()

@@ -73,7 +73,7 @@ export default function AdminTermsPage() {
   const handleTermSave = async () => {
     if (!form.termkey.trim()) { alert(t('msg.term.required')); return }
     const termkey = form.termkey
-    await saveTerm.mutateAsync({ ...form, isNew })
+    await saveTerm.mutateAsync({ ...form, isNew, origTermgroupcd: selectedTerm?.termgroupcd })
     if (isNew) {
       setIsNew(false)
       setSelectedTerm({ ...form })
@@ -97,7 +97,10 @@ export default function AdminTermsPage() {
       okText: t('btn.delete'),
       cancelText: t('btn.cancel'),
       okButtonProps: { danger: true },
-      onOk: () => deleteTerm.mutate(selectedTerm.termkey, { onSuccess: handleTermNew }),
+      onOk: () => deleteTerm.mutate(
+        { termkey: selectedTerm.termkey, termgroupcd: selectedTerm.termgroupcd },
+        { onSuccess: handleTermNew },
+      ),
     })
   }
 
@@ -144,8 +147,8 @@ export default function AdminTermsPage() {
                   return term.termkey?.toLowerCase().includes(q) || term.termgroupcd?.toLowerCase().includes(q)
                 }).map((term) => (
                   <tr
-                    key={term.termkey}
-                    className={selectedTerm?.termkey === term.termkey ? 'selected-row' : ''}
+                    key={`${term.termkey}::${term.termgroupcd}`}
+                    className={selectedTerm?.termkey === term.termkey && selectedTerm?.termgroupcd === term.termgroupcd ? 'selected-row' : ''}
                     style={{ cursor: 'pointer' }}
                     onClick={() => handleTermSelect(term)}
                   >

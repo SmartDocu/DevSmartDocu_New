@@ -60,13 +60,15 @@ def create_term(body: TermSaveRequest, token: str = Depends(get_token)):
 
 # ─── 용어 수정 ───────────────────────────────────────────────────────────────
 
-@router.put("/{termkey}", response_model=TermSaveResponse)
-def update_term(termkey: str, body: TermSaveRequest, token: str = Depends(get_token)):
+@router.put("/{termkey}/{termgroupcd}", response_model=TermSaveResponse)
+def update_term(termkey: str, termgroupcd: str, body: TermSaveRequest, token: str = Depends(get_token)):
+    """termkey는 termgroupcd와의 복합키(같은 termkey가 여러 termgroupcd로 존재 가능)이므로
+    원래 속해 있던 termgroupcd(경로 파라미터)로 대상 행을 특정해야 한다."""
     sb = _sb(token)
 
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("terms")
-        .select("termkey").eq("termkey", termkey).execute().data
+        .select("termkey").eq("termkey", termkey).eq("termgroupcd", termgroupcd).execute().data
     )
     if not existing:
         raise HTTPException(status_code=404, detail="용어를 찾을 수 없습니다.")
@@ -78,7 +80,7 @@ def update_term(termkey: str, body: TermSaveRequest, token: str = Depends(get_to
         "useyn": body.useyn,
     }
     try:
-        sb.schema(SUPABASE_SCHEMA).table("terms").update(record).eq("termkey", termkey).execute()
+        sb.schema(SUPABASE_SCHEMA).table("terms").update(record).eq("termkey", termkey).eq("termgroupcd", termgroupcd).execute()
         return TermSaveResponse(result="success", termkey=termkey)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB 저장 실패: {str(e)}")
@@ -86,19 +88,24 @@ def update_term(termkey: str, body: TermSaveRequest, token: str = Depends(get_to
 
 # ─── 용어 삭제 ───────────────────────────────────────────────────────────────
 
-@router.delete("/{termkey}")
-def delete_term(termkey: str, token: str = Depends(get_token)):
+@router.delete("/{termkey}/{termgroupcd}")
+def delete_term(termkey: str, termgroupcd: str, token: str = Depends(get_token)):
     sb = _sb(token)
 
-    existing = (
+    rows = (
         sb.schema(SUPABASE_SCHEMA).table("terms")
-        .select("termkey").eq("termkey", termkey).execute().data
+        .select("termkey,termgroupcd").eq("termkey", termkey).execute().data or []
     )
-    if not existing:
+    if not any(r.get("termgroupcd") == termgroupcd for r in rows):
         raise HTTPException(status_code=404, detail="용어를 찾을 수 없습니다.")
 
-    sb.schema(SUPABASE_SCHEMA).table("term_translations").delete().eq("termkey", termkey).execute()
-    sb.schema(SUPABASE_SCHEMA).table("terms").delete().eq("termkey", termkey).execute()
+    sb.schema(SUPABASE_SCHEMA).table("terms").delete().eq("termkey", termkey).eq("termgroupcd", termgroupcd).execute()
+
+    # term_translations는 termgroupcd 구분 없이 termkey만으로 공유되므로,
+    # 같은 termkey를 쓰는 다른 termgroupcd 행이 남아있지 않을 때만 번역도 함께 삭제한다.
+    if len(rows) <= 1:
+        sb.schema(SUPABASE_SCHEMA).table("term_translations").delete().eq("termkey", termkey).execute()
+
     return {"ok": True, "message": "용어가 삭제되었습니다."}
 
 
