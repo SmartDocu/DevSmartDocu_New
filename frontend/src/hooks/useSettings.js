@@ -110,7 +110,7 @@ export function useUpdateUsername() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 
@@ -123,7 +123,19 @@ export function useUpdateTimezone() {
       useAuthStore.getState().updateUser({ offsetminutes: data.offsetminutes ?? null })
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+  })
+}
+
+export function useUpdateMarketing() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/myinfo/marketing', body).then((r) => r.data),
+    onSuccess: () => {
+      message.success(t('msg.save.success'))
+      qc.invalidateQueries({ queryKey: ['myinfo'] })
+    },
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 

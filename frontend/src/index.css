@@ -223,6 +223,11 @@
   color: #fff !important;
 }
 
+/* ── Popconfirm 버튼 순서 반전 (Confirm 좌측, Cancel 우측) ───────────────────── */
+.popconfirm-reverse-actions .ant-popconfirm-buttons {
+  flex-direction: row-reverse;
+}
+
 /* ── 탭 글자색 (배경 흰색 유지) ───────────────────── */
 /* Light: 활성=#163E64(header), 비활성=연한 파란색 */
 .tabs-light .ant-tabs-tab .ant-tabs-tab-btn {

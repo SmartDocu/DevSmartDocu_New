@@ -543,6 +543,18 @@ def update_username(body: UpdateUsernameRequest, token: str = Depends(get_token)
     return {"status": "ok"}
 
 
+class UpdateMarketingRequest(BaseModel):
+    marketingyn: str
+
+
+@router.post("/myinfo/marketing")
+def update_marketing(body: UpdateMarketingRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    sb.schema(SUPABASE_SCHEMA).table("users").update({"marketingyn": body.marketingyn}).eq("useruid", user.id).execute()
+    return {"status": "ok"}
+
+
 class UpdateTimezoneRequest(BaseModel):
     timezone: Optional[str] = None
 

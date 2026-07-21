@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
-  Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Table, Tag, Typography,
+  Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
-import { useMyInfo, useUpdateUsername, useUpdateTimezone, useMySubscriptions, useTenantManageOtherSubscriptions } from '@/hooks/useSettings'
+import { useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useLangStore, t } from '@/stores/langStore'
 
@@ -16,6 +16,7 @@ export default function MyInfoPage() {
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
+  const updateMarketing = useUpdateMarketing()
 
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
   const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
@@ -56,6 +57,10 @@ export default function MyInfoPage() {
 
   const handleSaveTimezone = () => {
     updateTimezone.mutate({ timezone: timezoneVal }, { onSuccess: () => setEditingTimezone(false) })
+  }
+
+  const handleToggleMarketing = () => {
+    updateMarketing.mutate({ marketingyn: isAgreed(userInfo.marketingyn) ? 'N' : 'Y' })
   }
 
   const roleLabel = (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-'
@@ -203,7 +208,20 @@ export default function MyInfoPage() {
             {isAgreed(userInfo.userinfoyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
           </Descriptions.Item>
           <Descriptions.Item label={`${t('lbl.terms.marketing')} (${t('lbl.optional')})`}>
-            {isAgreed(userInfo.marketingyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
+            <Popconfirm
+              title={t('msg.marketing.consent.confirm')}
+              okText={t('btn.confirm')}
+              cancelText={t('btn.cancel')}
+              onConfirm={handleToggleMarketing}
+              rootClassName="popconfirm-reverse-actions"
+            >
+              <Switch
+                checked={isAgreed(userInfo.marketingyn)}
+                loading={updateMarketing.isPending}
+                checkedChildren={t('lbl.agreed')}
+                unCheckedChildren={t('lbl.not.agreed')}
+              />
+            </Popconfirm>
           </Descriptions.Item>
         </Descriptions>
       </Card>
