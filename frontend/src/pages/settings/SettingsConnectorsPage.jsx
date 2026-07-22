@@ -16,12 +16,17 @@ const EMPTY_FORM = {
   authtest: '', authtest_method: 'GET',
   credentialuid: '',
   api_key_name: '', api_key_locationcd: 'header',
+  extra_headers: [],
   oauth_client_id: '', token_endpoint: '', authorization_type: '',
   redirect_url: '', scope: '', grant_type: 'client_credentials',
   is_active: true,
   api_key_value: '',
   username: '', password: '',
   oauth_client_secret: '', refresh_token: '',
+}
+
+function validExtraHeaders(headers) {
+  return (headers || []).filter((h) => h.name?.trim() && h.value?.trim())
 }
 
 function fullUrl(base, path) {
@@ -127,6 +132,7 @@ export default function SettingsConnectorsPage() {
       credentialuid:       row.credentialuid      || '',
       api_key_name:        row.api_key_name       || '',
       api_key_locationcd:  row.api_key_locationcd || 'header',
+      extra_headers:       row.extra_headers       || [],
       oauth_client_id:     row.oauth_client_id    || '',
       token_endpoint:      row.token_endpoint     || '',
       authorization_type:  row.authorization_type || '',
@@ -171,6 +177,7 @@ export default function SettingsConnectorsPage() {
       credentialuid:      form.credentialuid      || null,
       api_key_name:       form.api_key_name       || null,
       api_key_locationcd: form.api_key_locationcd || null,
+      extra_headers:      validExtraHeaders(form.extra_headers),
       oauth_client_id:    form.oauth_client_id    || null,
       token_endpoint:     form.token_endpoint     || null,
       authorization_type: form.authorization_type || null,
@@ -212,6 +219,11 @@ export default function SettingsConnectorsPage() {
     )
   }
 
+  const addExtraHeader = () => setForm((f) => ({ ...f, extra_headers: [...f.extra_headers, { name: '', value: '' }] }))
+  const removeExtraHeader = (i) => setForm((f) => ({ ...f, extra_headers: f.extra_headers.filter((_, idx) => idx !== i) }))
+  const updateExtraHeader = (i, field, value) =>
+    setForm((f) => ({ ...f, extra_headers: f.extra_headers.map((h, idx) => idx === i ? { ...h, [field]: value } : h) }))
+
   const _hasFormSecret = () => {
     if (form.authtype === 'API_KEY') return !!form.api_key_value
     if (form.authtype === 'BASIC')   return !!form.password
@@ -232,6 +244,7 @@ export default function SettingsConnectorsPage() {
           baseurl: form.baseurl, authtest: form.authtest, authtest_method: form.authtest_method,
           authtype: form.authtype,
           api_key_name: form.api_key_name, api_key_locationcd: form.api_key_locationcd, api_key_value: form.api_key_value,
+          extra_headers: validExtraHeaders(form.extra_headers),
           username: form.username, password: form.password,
           oauth_client_id: form.oauth_client_id, oauth_client_secret: form.oauth_client_secret,
           token_endpoint: form.token_endpoint, grant_type: form.grant_type,
@@ -264,7 +277,7 @@ export default function SettingsConnectorsPage() {
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측: 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 4, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
@@ -300,7 +313,7 @@ export default function SettingsConnectorsPage() {
         </div>
 
         {/* 우측: 상세 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 6, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -388,6 +401,28 @@ export default function SettingsConnectorsPage() {
                     <input type="password" value={form.api_key_value} autoComplete="new-password"
                       placeholder={t('msg.placeholder.secret.change')}
                       onChange={(e) => setForm((f) => ({ ...f, api_key_value: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      {t('lbl.extra_headers_lbl')}:
+                      <small style={{ color: '#888', marginLeft: 8, fontWeight: 'normal' }}>{t('inf.extra.header.hint')}</small>
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {form.extra_headers.map((h, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="text" style={{ flex: 1 }} value={h.name} placeholder="Authorization / Accept-Profile"
+                            onChange={(e) => updateExtraHeader(i, 'name', e.target.value)} />
+                          <input type="password" style={{ flex: 1 }} value={h.value} autoComplete="new-password" placeholder="Bearer ... / apqr"
+                            onChange={(e) => updateExtraHeader(i, 'value', e.target.value)} />
+                          <button type="button" className="btn btn-danger" style={{ padding: '4px 10px', flexShrink: 0 }}
+                            onClick={() => removeExtraHeader(i)}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start', padding: '4px 10px' }}
+                        onClick={addExtraHeader}>
+                        {t('btn.add')}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

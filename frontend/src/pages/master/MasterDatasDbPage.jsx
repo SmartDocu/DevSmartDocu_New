@@ -5,11 +5,11 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import {
-  useDatasDb, useDatasProjects, useDbConnectors, useSaveDbData, useDeleteData,
+  useDatasDb, useDbConnectors, useSaveDbData, useDeleteData,
   useDatacols, useCreateDatacols, useSaveDatacols,
 } from '@/hooks/useDatas'
 
-const EMPTY_FORM = { datauid: '', projectid: '', connuid: '', datanm: '', desc: '', databasiscd: 'dbq', querybasis: '' }
+const EMPTY_FORM = { datauid: '', connuid: '', datanm: '', desc: '', databasiscd: 'dbq', querybasis: '' }
 
 export default function MasterDatasDbPage() {
   const { message } = App.useApp()
@@ -32,8 +32,6 @@ export default function MasterDatasDbPage() {
   const menuNm = currentMenu ? (currentMenu.default_text || '') : t('mnu.master_data.data.db')
 
   const { data: datas = [], isLoading } = useDatasDb()
-  const { data: projectsData } = useDatasProjects()
-  const projects = projectsData?.projects || []
   const { data: connectors = [] } = useDbConnectors()
   const saveData     = useSaveDbData()
   const deleteData   = useDeleteData('db')
@@ -64,7 +62,6 @@ export default function MasterDatasDbPage() {
     setSelectedUid(row.datauid)
     setForm({
       datauid:     row.datauid     || '',
-      projectid:   row.projectid   || '',
       connuid:     row.connuid     || '',
       datanm:      row.datanm      || '',
       desc:        row.desc        || '',
@@ -82,7 +79,7 @@ export default function MasterDatasDbPage() {
   }
 
   const handleSave = () => {
-    if (!form.datanm.trim() || !form.connuid || !form.projectid) {
+    if (!form.datanm.trim() || !form.connuid) {
       message.warning(t('msg.db.required'))
       return
     }
@@ -91,7 +88,6 @@ export default function MasterDatasDbPage() {
       datanm:      form.datanm,
       desc:        form.desc || null,
       connuid:     form.connuid || null,
-      projectid:   Number(form.projectid),
       databasiscd: form.databasiscd,
       querybasis:  form.querybasis || null,
     }
@@ -100,17 +96,11 @@ export default function MasterDatasDbPage() {
         const savedUid = result?.datauid || form.datauid
         if (savedUid) {
           createCols.mutate({ datauid: savedUid }, {
-            onSuccess: () => {
-              message.success(t('msg.save.col.created'))
-              setSelectedUid(savedUid)
-            },
-            onError: () => message.warning(t('msg.save.col.warn')),
+            onSuccess: () => { setSelectedUid(savedUid) },
+            onError: () => { message.warning(t('msg.save.col.warn')) },
           })
-        } else {
-          message.success(t('msg.save.success'))
         }
       },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
     })
   }
 
@@ -118,8 +108,7 @@ export default function MasterDatasDbPage() {
     if (!form.datauid) { message.warning(t('msg.select.delete')); return }
     if (!window.confirm(t('msg.confirm.delete'))) return
     deleteData.mutate(form.datauid, {
-      onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+      onSuccess: () => { handleNew() },
     })
   }
 
@@ -133,10 +122,7 @@ export default function MasterDatasDbPage() {
       measureyn:  !!c.measureyn,
       useyn:      c.useyn !== false,
     }))
-    saveCols.mutate(payload, {
-      onSuccess: () => message.success(t('msg.save.success')),
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
-    })
+    saveCols.mutate(payload)
   }
 
   const updateCol = (i, field, value) => {
@@ -164,22 +150,20 @@ export default function MasterDatasDbPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>{t('thd.projectnm_thd')}</th>
                   <th>{t('thd.connectnm_thd')}</th>
                   <th>{t('thd.datanm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={2} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : datas.length === 0 ? (
-                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={2} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : datas.map((d) => (
                   <tr key={d.datauid}
                     style={{ cursor: 'pointer', background: selectedUid === d.datauid ? 'var(--selected-row-bg)' : '', color: selectedUid === d.datauid ? 'var(--selected-row)' : '', fontWeight: selectedUid === d.datauid ? 600 : 'normal' }}
                     onClick={() => handleRowClick(d)}
                   >
-                    <td>{d.projectnm || ''}</td>
                     <td>{d.connectnm || ''}</td>
                     <td>{d.datanm}</td>
                   </tr>
@@ -208,17 +192,6 @@ export default function MasterDatasDbPage() {
                 )}
               </div>
             )}
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="data-projectid">{t('lbl.projectnm_lbl')}</label>
-            <select id="data-projectid" value={form.projectid}
-              onChange={(e) => setForm(f => ({ ...f, projectid: e.target.value }))}>
-              <option value="">{t('msg.select.placeholder')}</option>
-              {projects.map((p) => (
-                <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>
-              ))}
-            </select>
           </div>
 
           <div className="form-group">

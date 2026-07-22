@@ -254,6 +254,14 @@ def delete_server(connuid: str, token: str = Depends(get_token), tenantid: Optio
     user = _get_user(token)
     sb = _sb(token)
 
+    in_use = (
+        sb.schema(SUPABASE_SCHEMA).table("datas")
+        .select("datauid", count="exact").eq("connuid", connuid)
+        .execute()
+    )
+    if (in_use.count or 0) > 0:
+        raise HTTPException(status_code=400, detail="msg.server.in.use")
+
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
         .select("secret_path").eq("connuid", connuid).execute().data

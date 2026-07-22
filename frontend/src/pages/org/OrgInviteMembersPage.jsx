@@ -21,7 +21,7 @@ export default function OrgInviteMembersPage() {
   const { data: invitationsData = {}, isLoading } = useOrgInvitations()
   const sendMutation = useSendInvitation()
 
-  const { invitations = [] } = invitationsData
+  const { invitations = [], available_servicecds = [] } = invitationsData
 
   const handleNew = () => {
     setSelectedId(null)
@@ -37,6 +37,7 @@ export default function OrgInviteMembersPage() {
 
   const selectService = (scd) => {
     if (selectedId) return
+    if (!available_servicecds.includes(scd)) return
     setForm((f) => ({ ...f, servicecd: scd }))
   }
 
@@ -167,21 +168,27 @@ export default function OrgInviteMembersPage() {
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.invite.services')}:</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, marginTop: 8, paddingLeft: 4 }}>
-              {serviceCodes.map((code) => (
-                <label
-                  key={code.codevalue}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: selectedId ? 'default' : 'pointer' }}
-                >
-                  <input
-                    type="radio"
-                    name="servicecd"
-                    checked={form.servicecd === code.codevalue}
-                    onChange={() => selectService(code.codevalue)}
-                    disabled={!!selectedId}
-                  />
-                  <span>{t(code.term_key) || code.default_name}</span>
-                </label>
-              ))}
+              {serviceCodes.map((code) => {
+                const subscribed = available_servicecds.includes(code.codevalue)
+                return (
+                  <label
+                    key={code.codevalue}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: (selectedId || !subscribed) ? 'default' : 'pointer', color: subscribed ? undefined : '#aaa' }}
+                  >
+                    <input
+                      type="radio"
+                      name="servicecd"
+                      checked={form.servicecd === code.codevalue}
+                      onChange={() => selectService(code.codevalue)}
+                      disabled={!!selectedId || !subscribed}
+                    />
+                    <span>
+                      {t(code.term_key) || code.default_name}
+                      {!subscribed && ` (${t('lbl.service.not_subscribed')})`}
+                    </span>
+                  </label>
+                )
+              })}
             </div>
           </div>
 

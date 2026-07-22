@@ -155,14 +155,11 @@ export function useDeleteData(datasourcecd) {
 
 export function useCreateDatacols() {
   const qc = useQueryClient()
-  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datas/datacols/create', body).then((r) => r.data),
     onSuccess: (_data, body) => {
-      message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datacols', body.datauid] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
 }
 

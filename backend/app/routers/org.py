@@ -169,6 +169,13 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     if not body.accountuid or not body.servicecds:
         raise HTTPException(status_code=400, detail="서비스를 선택해야 합니다.")
 
+    # 구독하지 않은 서비스는 저장 차단
+    subscribed_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", body.accountuid).execute().data or []
+    subscribed_servicecds = {r["servicecd"] for r in subscribed_rows if r.get("servicecd")}
+    not_subscribed = set(body.servicecds) - subscribed_servicecds
+    if not_subscribed:
+        raise HTTPException(status_code=400, detail=f"구독하지 않은 서비스입니다: {', '.join(sorted(not_subscribed))}")
+
     # 이메일로 사용자 조회
     pub_users = sb.schema("public").table("users").select("*").eq("email", body.email).execute().data
     if not pub_users:
@@ -668,6 +675,19 @@ def delete_project_user(body: ProjectUserDeleteRequest, token: str = Depends(get
 #  INVITE MEMBERS (테넌트 매니저 전용)
 # ══════════════════════════════════════════════════════
 
+def _resolve_tenant_accountuid(sd, tenantid: int, user_id: str) -> tuple[str, Optional[str]]:
+    """tenantid → (tenantnm, accountuid) 해석. issystemtenant면 useruid 기준, 아니면 tenantid 기준으로 accounts 조회."""
+    t_row = sd.table("tenants").select("tenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
+    tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    if issystemtenant:
+        acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    else:
+        acc = sd.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
+    accountuid = acc.data["accountuid"] if acc and acc.data else None
+    return tenantnm, accountuid
+
+
 def _require_tenant_manager_tenantid(user_id: str, header_tenantid: Optional[str]) -> int:
     """현재 선택된 테넌트(X-Tenant-ID)에 대해 로그인 사용자가 매니저인지 검증 후 tenantid 반환. 아니면 403."""
     if not header_tenantid:
@@ -700,6 +720,12 @@ def list_invite_members(token: str = Depends(get_token), header_tenantid: Option
     sd = svc.schema(SUPABASE_SCHEMA)
     offsetminutes = _get_offsetminutes(svc, user_id, tenantid)
 
+    _, accountuid = _resolve_tenant_accountuid(sd, tenantid, user_id)
+    available_servicecds = []
+    if accountuid:
+        svc_rows = sd.table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+        available_servicecds = [r["servicecd"] for r in svc_rows if r.get("servicecd")]
+
     rows = (
         sd.table("userregreqs")
         .select("*")
@@ -712,7 +738,7 @@ def list_invite_members(token: str = Depends(get_token), header_tenantid: Option
         row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         row["signupdts"] = _fmt_dt(row.get("signupdts"), offsetminutes)
 
-    return {"invitations": rows, "tenantid": str(tenantid)}
+    return {"invitations": rows, "tenantid": str(tenantid), "available_servicecds": available_servicecds}
 
 
 class InviteMembersRequest(BaseModel):
@@ -739,15 +765,13 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), h
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
-    # 테넌트명 / accountuid 조회 (기존 llmkeys.py의 tenantid→accountuid 해석 패턴과 동일)
-    t_row = sd.table("tenants").select("tenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
-    tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
-    if issystemtenant:
-        acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
-    else:
-        acc = sd.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
-    accountuid = acc.data["accountuid"] if acc and acc.data else None
+    tenantnm, accountuid = _resolve_tenant_accountuid(sd, tenantid, user_id)
+
+    # 구독하지 않은 서비스는 초대 차단
+    subscribed_rows = sd.table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data if accountuid else []
+    subscribed_servicecds = {r["servicecd"] for r in (subscribed_rows or []) if r.get("servicecd")}
+    if body.servicecd not in subscribed_servicecds:
+        raise HTTPException(status_code=400, detail="구독하지 않은 서비스입니다.")
 
     # 서비스 최대 인원 제한 검사: (신규 초대 인원 수 + 현재 활성 인원 수) > 최대 인원 이면 차단
     if accountuid:

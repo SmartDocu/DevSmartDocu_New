@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useMenuCodes } from '@/hooks/useMenus'
 import {
   useDatasets,
   useDeleteDataset,
@@ -15,6 +16,12 @@ export default function SettingsDatasetsPage() {
   const { modal } = App.useApp()
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.editbuttonyn === 'Y'
+  const { data: serviceCodes = [] } = useMenuCodes('servicecd')
+  const serviceLabel = (servicecd) => {
+    const c = serviceCodes.find((sc) => sc.codevalue === servicecd)
+    return c ? (t(c.term_key) || c.default_name) : servicecd
+  }
+  const projectLabel = (p) => p.servicecd ? `${p.projectnm} - ${serviceLabel(p.servicecd)}` : p.projectnm
 
   const { data: datasets = [] } = useDatasets()
   const saveAll = useSaveDatasetAll()
@@ -249,7 +256,7 @@ export default function SettingsDatasetsPage() {
                               disabled={!canEdit}
                             />
                           </td>
-                          <td>{p.projectnm}</td>
+                          <td>{projectLabel(p)}</td>
                         </tr>
                       ))}
                     </tbody>

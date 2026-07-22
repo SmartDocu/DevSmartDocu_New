@@ -82,7 +82,7 @@ def parse_ddl_columns(ddl: str) -> list[dict]:
     return result
 
 
-def _active_projects(sb, user_id: str, servicecd: Optional[str] = None):
+def _active_projects(sb, user_id: str, servicecd: Optional[str] = None, tenantid: Optional[str] = None):
     proj_list = (
         sb.schema(SUPABASE_SCHEMA)
         .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": user_id})
@@ -90,17 +90,20 @@ def _active_projects(sb, user_id: str, servicecd: Optional[str] = None):
     )
     ids = [p["projectid"] for p in proj_list]
     if not ids:
-        return [], {}
+        return [], {}, {}
     q = (
         sb.schema(SUPABASE_SCHEMA).table("projects")
-        .select("projectid, projectnm")
+        .select("projectid, projectnm, servicecd")
         .in_("projectid", ids).eq("useyn", True)
     )
     if servicecd:
         q = q.eq("servicecd", servicecd)
+    if tenantid:
+        q = q.eq("tenantid", int(tenantid))
     active = q.execute().data or []
     pmap = {p["projectid"]: p["projectnm"] for p in active}
-    return [p["projectid"] for p in active], pmap
+    svc_map = {p["projectid"]: p.get("servicecd") for p in active}
+    return [p["projectid"] for p in active], pmap, svc_map
 
 
 def _delete_storage(sb, url: str):
@@ -119,10 +122,10 @@ def _delete_storage(sb, url: str):
 # ── Projects ───────────────────────────────────────────────────────────────────
 
 @router.get("/projects")
-def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(get_token)):
+def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    active_ids, pmap = _active_projects(sb, str(user.id), servicecd)
+    active_ids, pmap, svc_map = _active_projects(sb, str(user.id), servicecd, tenantid)
 
     myprojectid = None
     if servicecd:
@@ -137,7 +140,7 @@ def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(ge
 
     return {
         "projects": [
-            {"projectid": pid, "projectnm": pmap[pid]}
+            {"projectid": pid, "projectnm": pmap[pid], "servicecd": svc_map.get(pid)}
             for pid in active_ids
         ],
         "myprojectid": myprojectid,
@@ -443,6 +446,28 @@ def list_datas(
         rows.sort(key=lambda r: (r.get("datanm") or "").lower())
         return {"datas": rows}
 
+    # db/api 타입은 프로젝트 연결과 무관하게 테넌트 소속이면 바로 노출
+    if datasourcecd in ("db", "api") and not chapteruid:
+        rows = (
+            sb.schema(SUPABASE_SCHEMA).table("dataunits")
+            .select("*").eq("tenantid", tenantid).eq("datasourcecd", datasourcecd)
+            .execute().data or []
+        )
+        if rows:
+            cids = list({r["connuid"] for r in rows if r.get("connuid")})
+            if cids:
+                connectors = (
+                    sb.schema(SUPABASE_SCHEMA).table("connectors")
+                    .select("connuid, connnm").in_("connuid", cids)
+                    .execute().data or []
+                )
+                cmap = {c["connuid"]: c["connnm"] for c in connectors}
+                key = "connectnm" if datasourcecd == "db" else "connnm"
+                for r in rows:
+                    r[key] = cmap.get(r.get("connuid"), "")
+        rows.sort(key=lambda r: ((r.get("connectnm") or r.get("connnm") or "").lower(), (r.get("datanm") or "").lower()))
+        return {"datas": rows}
+
     # chapteruid가 있으면 해당 챕터의 projectid로 직접 필터 (llm/init 방식과 동일)
     single_pid = None
     chapter_docid = None
@@ -461,20 +486,31 @@ def list_datas(
             print(f"[list_datas] chapteruid 조회 오류: {e}", file=sys.stderr)
 
     if single_pid is None:
-        project_ids, pmap = _active_projects(sb, str(user.id))
-        if not project_ids:
-            return {"datas": []}
+        project_ids, pmap, _ = _active_projects(sb, str(user.id), tenantid=tenantid)
 
     try:
+        rows = []
         if single_pid is not None:
             # chapteruid 경로: .eq() 사용 (llm/init과 동일한 방식)
             query = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("projectid", single_pid)
-        else:
+            if datasourcecd:
+                query = query.eq("datasourcecd", datasourcecd)
+            rows = query.execute().data or []
+        elif project_ids:
             query = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").in_("projectid", project_ids)
+            if datasourcecd:
+                query = query.eq("datasourcecd", datasourcecd)
+            rows = query.execute().data or []
 
-        if datasourcecd:
-            query = query.eq("datasourcecd", datasourcecd)
-        rows = query.execute().data or []
+        # db/api는 프로젝트 연결과 무관하게 테넌트 소속이면 항상 포함
+        if not datasourcecd or datasourcecd in ("db", "api"):
+            dbapi_types = [datasourcecd] if datasourcecd else ["db", "api"]
+            dbapi_rows = (
+                sb.schema(SUPABASE_SCHEMA).table("datas").select("*")
+                .eq("tenantid", tenantid).in_("datasourcecd", dbapi_types)
+                .execute().data or []
+            )
+            rows += dbapi_rows
     except Exception as e:
         print(f"[list_datas] datas 조회 오류: {e}", file=sys.stderr)
         return {"datas": []}
@@ -491,8 +527,9 @@ def list_datas(
         pid = r.get("projectid")
         r["projectnm"] = pmap.get(pid)
 
-    if datasourcecd == "db" and rows:
-        cids = list({r["connuid"] for r in rows if r.get("connuid")})
+    db_rows = [r for r in rows if r.get("datasourcecd") == "db"]
+    if db_rows:
+        cids = list({r["connuid"] for r in db_rows if r.get("connuid")})
         if cids:
             connectors = (
                 sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -500,11 +537,12 @@ def list_datas(
                 .execute().data or []
             )
             cmap = {c["connuid"]: c["connnm"] for c in connectors}
-            for r in rows:
+            for r in db_rows:
                 r["connectnm"] = cmap.get(r.get("connuid"), "")
 
-    if datasourcecd == "api" and rows:
-        conn_uids = list({r["connuid"] for r in rows if r.get("connuid")})
+    api_rows = [r for r in rows if r.get("datasourcecd") == "api"]
+    if api_rows:
+        conn_uids = list({r["connuid"] for r in api_rows if r.get("connuid")})
         if conn_uids:
             api_conns = (
                 sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -512,7 +550,7 @@ def list_datas(
                 .execute().data or []
             )
             cmap = {c["connuid"]: c["connnm"] for c in api_conns}
-            for r in rows:
+            for r in api_rows:
                 r["connnm"] = cmap.get(r.get("connuid"), "")
 
     rows.sort(key=lambda r: (
@@ -527,23 +565,40 @@ def list_datas(
 # ── Source datas list (for AI page) ────────────────────────────────────────────
 
 @router.get("/source")
-def list_source_datas(projectid: int = None, token: str = Depends(get_token)):
-    """DB / Excel 데이터소스 목록 (AI 데이터 연결용)"""
+def list_source_datas(projectid: int = None, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """DB / API / Excel 데이터소스 목록 (AI 데이터 연결용)"""
     user = _get_user(token)
     sb = _sb(token)
-    query = (
+
+    issystemtenant = True
+    if tenantid:
+        t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+        issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+
+    # db/api (+ 기업 테넌트의 ex): 프로젝트 연결과 무관하게 테넌트 소속이면 전부 후보
+    tenant_wide_types = ["db", "api"] if issystemtenant else ["db", "api", "ex"]
+    rows = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd, projectid")
-        .not_.in_("datasourcecd", ["df", "dfv"])
+        .eq("tenantid", tenantid).in_("datasourcecd", tenant_wide_types)
+        .execute().data or []
     )
-    if projectid:
-        query = query.eq("projectid", projectid)
-    else:
-        active_ids, _ = _active_projects(sb, str(user.id))
-        if not active_ids:
-            return {"datas": []}
-        query = query.in_("projectid", active_ids)
-    rows = query.order("datanm").execute().data or []
+
+    # 개인/시스템 테넌트의 ex: 기존처럼 프로젝트(=creator가 매니저인 프로젝트) 기준
+    if issystemtenant:
+        ex_query = (
+            sb.schema(SUPABASE_SCHEMA).table("datas")
+            .select("datauid, datanm, datasourcecd, projectid")
+            .eq("datasourcecd", "ex")
+        )
+        if projectid:
+            rows += ex_query.eq("projectid", projectid).execute().data or []
+        else:
+            active_ids, _, _ = _active_projects(sb, str(user.id), tenantid=tenantid)
+            if active_ids:
+                rows += ex_query.in_("projectid", active_ids).execute().data or []
+
+    rows.sort(key=lambda r: (r.get("datanm") or "").lower())
     return {"datas": rows}
 
 
@@ -575,7 +630,8 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenan
     record["creator"] = str(user.id)
     record["datasourcecd"] = "db"
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
-    return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
+    datauid = resp.data[0]["datauid"]
+    return {"datauid": datauid, "message": "저장되었습니다."}
 
 
 # ── Excel Data Save ─────────────────────────────────────────────────────────────
@@ -638,7 +694,8 @@ async def save_ex_data(
     record["creator"] = str(user.id)
     record["datasourcecd"] = "ex"
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
-    return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
+    new_datauid = resp.data[0]["datauid"]
+    return {"datauid": new_datauid, "message": "저장되었습니다."}
 
 
 # ── AI Data Save ────────────────────────────────────────────────────────────────

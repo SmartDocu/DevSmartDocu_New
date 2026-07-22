@@ -104,17 +104,18 @@ export default function SettingsServersPage() {
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteServer.mutate(selectedId, {
         onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
       }),
     })
   }
 
-  const isOracle = form.dbtype === 'Oracle'
-  const isOracleTns = form.dbtype === 'Oracle(TNS)'
-  const isSupabase = form.dbtype === 'supabase'
+  const dbtypeLower = (form.dbtype || '').toLowerCase()
+  const isOracle = dbtypeLower === 'oracle'
+  const isOracleTns = dbtypeLower === 'oracle(tns)'
+  const isSupabase = dbtypeLower === 'supabase'
   const showServerPort = !isOracleTns && !isSupabase
-  const showDb = ['mssql', 'postgres'].includes(form.dbtype)
-  const showSsl = form.dbtype === 'postgres'
+  const showDb = ['mssql', 'postgres'].includes(dbtypeLower)
+  const showSsl = dbtypeLower === 'postgres'
   const showUsername = !isSupabase
 
   return (
@@ -128,7 +129,7 @@ export default function SettingsServersPage() {
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측: DB 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 4, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
@@ -163,7 +164,7 @@ export default function SettingsServersPage() {
         </div>
 
         {/* 우측: DB 상세 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 6, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', gap: 8 }}>

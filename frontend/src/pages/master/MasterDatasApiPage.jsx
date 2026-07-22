@@ -5,14 +5,14 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import {
-  useDatasApi, useDatasProjects, useApiConnectors,
+  useDatasApi, useApiConnectors,
   useSaveApiData, useDeleteData,
   useDatacols, useSaveDatacols, useCreateDatacols,
   useApiParams,
 } from '@/hooks/useDatas'
 
 const EMPTY_FORM = {
-  datauid: '', projectid: '', connuid: '', datanm: '', endpoint: '', desc: '', useyn: true,
+  datauid: '', connuid: '', datanm: '', endpoint: '', desc: '', useyn: true,
 }
 
 const EMPTY_PARAM = {
@@ -35,8 +35,6 @@ export default function MasterDatasApiPage() {
 
   const { data: paramLocations = [] } = useMenuCodes('param_locationcd')
   const { data: datas = [], isLoading } = useDatasApi()
-  const { data: projectsData } = useDatasProjects()
-  const projects = projectsData?.projects || []
   const { data: connectors = [] } = useApiConnectors()
   const saveData   = useSaveApiData()
   const deleteData = useDeleteData('api')
@@ -63,7 +61,6 @@ export default function MasterDatasApiPage() {
     setSelectedUid(row.datauid)
     setForm({
       datauid:   row.datauid   || '',
-      projectid: row.projectid || '',
       connuid:   row.connuid   || '',
       datanm:    row.datanm    || '',
       endpoint:  row.endpoint  || '',
@@ -80,13 +77,12 @@ export default function MasterDatasApiPage() {
   }
 
   const handleSave = () => {
-    if (!form.datanm.trim() || !form.projectid) {
+    if (!form.datanm.trim()) {
       message.warning(t('msg.db.required'))
       return
     }
     const body = {
       datauid:   form.datauid   || null,
-      projectid: Number(form.projectid),
       datanm:    form.datanm,
       connuid:   form.connuid   || null,
       endpoint:  form.endpoint  || null,
@@ -110,14 +106,10 @@ export default function MasterDatasApiPage() {
         setSelectedUid(savedUid)
         setForm((f) => ({ ...f, datauid: savedUid }))
         createCols.mutate({ datauid: savedUid }, {
-          onSuccess: () => message.success(t('msg.save.col.created')),
-          onError: () => {
-            message.success(t('msg.save.success'))
-            message.warning(t('msg.save.col.warn'))
-          },
+          onSuccess: () => { message.success(t('msg.save.success')) },
+          onError: () => { message.warning(t('msg.save.col.warn')) },
         })
       },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
     })
   }
 
@@ -125,8 +117,7 @@ export default function MasterDatasApiPage() {
     if (!form.datauid) { message.warning(t('msg.select.delete')); return }
     if (!window.confirm(t('msg.confirm.delete'))) return
     deleteData.mutate(form.datauid, {
-      onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+      onSuccess: () => { handleNew() },
     })
   }
 
@@ -144,10 +135,7 @@ export default function MasterDatasApiPage() {
       orderno:    i + 1,
       field_path: c.field_path || null,
     }))
-    saveCols.mutate(payload, {
-      onSuccess: () => message.success(t('msg.save.success')),
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
-    })
+    saveCols.mutate(payload)
   }
 
   const addParam = () => setParamsLocal((p) => [...p, { ...EMPTY_PARAM }])
@@ -229,16 +217,6 @@ export default function MasterDatasApiPage() {
                 )}
               </div>
             )}
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.projectnm_lbl')}</label>
-            <select value={form.projectid} onChange={(e) => setForm((f) => ({ ...f, projectid: e.target.value }))}>
-              <option value="">{t('msg.select.placeholder')}</option>
-              {projects.map((p) => (
-                <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>
-              ))}
-            </select>
           </div>
 
           <div className="form-group">

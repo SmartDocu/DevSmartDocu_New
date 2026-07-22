@@ -62,9 +62,9 @@ def process_data_db(supabase, request, datauid, docid=None, gendoc_uid=None, all
         .eq("connuid", connuid)
         .execute()
     )
-    dbtype = connectors_resp.data[0]['dbtype']
+    dbtype = (connectors_resp.data[0]['dbtype'] or "").strip().lower()
 
-    is_oracle = dbtype in ("Oracle", "Oracle(TNS)")
+    is_oracle = dbtype in ("oracle", "oracle(tns)")
 
     # 마스터 팝업용, 전체 데이터 필요
     if all:
@@ -422,9 +422,9 @@ def process_data_db_oracle(request, query, connuid, sampleyn=None):
 
 def process_data_connect_oracle(request, connuid):
     connector = _get_connector(get_supabase(request), connuid)
-    dbtype = connector.get("dbtype", "Oracle")
+    dbtype = (connector.get("dbtype") or "Oracle").strip().lower()
 
-    if dbtype == "Oracle(TNS)":
+    if dbtype == "oracle(tns)":
         dsn = connector.get("tns") or ""
     else:
         server  = connector.get("server") or ""

@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.config import settings
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.notifications import create_notification
 
@@ -24,6 +24,48 @@ def _get_docid(sb, user_id: str) -> Optional[int]:
     row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do").execute().data
     docid = row[0].get("mydocid") if row else None
     return int(docid) if docid else None
+
+
+def _tenant_of_doc(sb, docid: int) -> Optional[str]:
+    doc_row = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid").eq("docid", docid).maybe_single().execute()
+    if not doc_row.data or not doc_row.data.get("projectid"):
+        return None
+    proj_row = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", doc_row.data["projectid"]).maybe_single().execute()
+    return str(proj_row.data["tenantid"]) if proj_row.data and proj_row.data.get("tenantid") is not None else None
+
+
+def _resolve_docid(sb, user_id: str, tenantid: Optional[str], requested_docid: Optional[int]) -> Optional[int]:
+    """docid를 현재 테넌트 기준으로 검증/해석한다.
+
+    serviceusers.mydocid(마지막 선택 문서)는 테넌트 구분 없이 전역으로 저장되므로,
+    다른 테넌트로 전환한 상태에서 그대로 쓰면 이전 테넌트의 문서가 노출될 수 있다.
+    """
+    candidate = requested_docid or _get_docid(sb, user_id)
+    if candidate and (not tenantid or _tenant_of_doc(sb, candidate) == str(tenantid)):
+        return candidate
+
+    if not tenantid:
+        return None
+
+    # 현재 테넌트에서 열람 가능한 문서 중 하나로 대체
+    docs_data = sb.schema(SUPABASE_SCHEMA).rpc("fn_docs_filtered__r_user_viewer", {"p_useruid": user_id}).execute().data or []
+    docids = [d["docid"] for d in docs_data if d.get("docid")]
+    if not docids:
+        return None
+    docs_details = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid, projectid").in_("docid", docids).execute().data or []
+    project_ids = list({d["projectid"] for d in docs_details if d.get("projectid")})
+    if not project_ids:
+        return None
+    proj_rows = (
+        sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid")
+        .in_("projectid", project_ids).eq("tenantid", tenantid).eq("useyn", True)
+        .execute().data or []
+    )
+    valid_pids = {p["projectid"] for p in proj_rows}
+    for d in docs_details:
+        if d.get("projectid") in valid_pids:
+            return d["docid"]
+    return None
 
 
 def _get_user_context(sb, user_id: str) -> dict:
@@ -114,11 +156,11 @@ def list_gendocs(
     search_by: Optional[str] = "Doc",
     docgroupid: Optional[int] = None,
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
-    if not docid:
-        docid = _get_docid(sb, str(user.id))
+    docid = _resolve_docid(sb, str(user.id), tenantid, docid)
     if not docid:
         return {"gendocs": [], "docnm": None, "dataparams": []}
 

@@ -79,10 +79,14 @@ export default function MasterDatasExPage() {
       const res = await saveData.mutateAsync(fd)
       const newUid = res?.datauid || form.datauid
       if (newUid) {
-        await createCols.mutateAsync({ datauid: newUid })
+        try {
+          await createCols.mutateAsync({ datauid: newUid })
+        } catch {
+          message.warning(t('msg.save.col.warn'))
+        }
       }
     } catch {
-      // saveData/createCols 각각의 onError에서 이미 메시지 처리함
+      // saveData의 onError에서 이미 메시지 처리함
     } finally {
       setSaving(false)
     }
@@ -93,21 +97,15 @@ export default function MasterDatasExPage() {
     if (!window.confirm(t('msg.confirm.delete'))) return
     try {
       await deleteData.mutateAsync(form.datauid)
-      message.success(t('msg.delete.success'))
       handleNew()
-    } catch (err) {
-      message.error(err.response?.data?.detail || t('msg.delete.error'))
+    } catch {
+      // deleteData의 onError에서 이미 메시지 처리함
     }
   }
 
-  const handleSaveCols = async () => {
+  const handleSaveCols = () => {
     if (editCols.length === 0) { alert(t('msg.no.data.to.save')); return }
-    try {
-      await saveCols.mutateAsync(editCols.map((c) => ({ ...c, datauid: selectedColDatauid })))
-      message.success(t('msg.save.success'))
-    } catch (err) {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
-    }
+    saveCols.mutate(editCols.map((c) => ({ ...c, datauid: selectedColDatauid })))
   }
 
   const updateCol = (idx, field, value) => {

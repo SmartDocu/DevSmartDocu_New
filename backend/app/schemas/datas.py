@@ -66,7 +66,6 @@ class ApiParamItem(BaseModel):
 
 class ApiDataSaveRequest(BaseModel):
     datauid: Optional[str] = None
-    projectid: int
     datanm: str
     connuid: Optional[str] = None
     endpoint: Optional[str] = None
@@ -81,7 +80,6 @@ class DataColsResponse(BaseModel):
 
 class DbDataSaveRequest(BaseModel):
     datauid: Optional[str] = None
-    projectid: int
     datanm: str
     desc: Optional[str] = None
     connuid: Optional[str] = None

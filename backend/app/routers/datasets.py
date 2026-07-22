@@ -9,6 +9,61 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA
 router = APIRouter()
 
 
+def _tenant_project_ids(sb, user_id: str, tid: Optional[str]) -> list[int]:
+    """사용자가 매니저/뷰어인 프로젝트 중 현재 테넌트(tid) 소속만 필터링."""
+    if not tid:
+        return []
+    proj_rows = (
+        sb.schema(SUPABASE_SCHEMA)
+        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": user_id})
+        .execute().data or []
+    )
+    ids = [p["projectid"] for p in proj_rows]
+    if not ids:
+        return []
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("projects")
+        .select("projectid")
+        .in_("projectid", ids).eq("tenantid", int(tid))
+        .execute().data or []
+    )
+    return [r["projectid"] for r in rows]
+
+
+def _tenant_datas_candidates(sb, tid: Optional[str], user_id: str) -> list[dict]:
+    """데이터셋에 담을 수 있는 후보 데이터 목록.
+
+    db/api(+ 기업 테넌트의 ex)는 프로젝트 연결과 무관하게 테넌트 소속이면 전부 후보이고
+    (datas.py list_source_datas와 동일한 기준), 개인/시스템 테넌트의 ex만 프로젝트 기준을 유지한다.
+    """
+    if not tid:
+        return []
+
+    issystemtenant = True
+    t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tid)).maybe_single().execute()
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+
+    tenant_wide_types = ["db", "api"] if issystemtenant else ["db", "api", "ex"]
+    datas = (
+        sb.schema(SUPABASE_SCHEMA).table("datas")
+        .select("datauid, datanm, datasourcecd")
+        .eq("tenantid", tid).in_("datasourcecd", tenant_wide_types)
+        .execute().data or []
+    )
+
+    if issystemtenant:
+        project_ids = _tenant_project_ids(sb, user_id, tid)
+        if project_ids:
+            datas += (
+                sb.schema(SUPABASE_SCHEMA).table("datas")
+                .select("datauid, datanm, datasourcecd")
+                .eq("datasourcecd", "ex").in_("projectid", project_ids)
+                .execute().data or []
+            )
+
+    datas.sort(key=lambda r: (r.get("datanm") or "").lower())
+    return datas
+
 
 class DatasetSaveRequest(BaseModel):
     datasetuid: Optional[str] = None
@@ -92,24 +147,7 @@ def delete_dataset(datasetuid: str, token: str = Depends(get_token)):
 def list_available_datas(token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-
-    proj_rows = (
-        sb.schema(SUPABASE_SCHEMA)
-        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
-        .execute().data or []
-    )
-    project_ids = [p["projectid"] for p in proj_rows]
-    datas = []
-    if project_ids:
-        datas = (
-            sb.schema(SUPABASE_SCHEMA).table("datas")
-            .select("datauid, datanm, datasourcecd")
-            .in_("projectid", project_ids)
-            .in_("datasourcecd", ["db", "ex", "api"])
-            .order("datanm")
-            .execute().data or []
-        )
-    return {"datas": datas}
+    return {"datas": _tenant_datas_candidates(sb, tid, str(user.id))}
 
 
 # ── 테넌트 프로젝트 목록 (신규 dataset용) ─────────────────────────────────────
@@ -119,17 +157,12 @@ def list_available_projects(token: str = Depends(get_token), tid: Optional[str] 
     user = _get_user(token)
     sb = _sb(token)
 
-    proj_rows = (
-        sb.schema(SUPABASE_SCHEMA)
-        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
-        .execute().data or []
-    )
-    project_ids = [p["projectid"] for p in proj_rows]
+    project_ids = _tenant_project_ids(sb, str(user.id), tid)
     projects = []
     if project_ids:
         projects = (
             sb.schema(SUPABASE_SCHEMA).table("projects")
-            .select("projectid, projectnm")
+            .select("projectid, projectnm, servicecd")
             .in_("projectid", project_ids)
             .eq("useyn", True)
             .order("projectnm")
@@ -145,24 +178,7 @@ def get_dataset_members(datasetuid: str, token: str = Depends(get_token), tid: O
     user = _get_user(token)
     sb = _sb(token)
 
-
-    proj_rows = (
-        sb.schema(SUPABASE_SCHEMA)
-        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
-        .execute().data or []
-    )
-    project_ids = [p["projectid"] for p in proj_rows]
-
-    datas = []
-    if project_ids:
-        datas = (
-            sb.schema(SUPABASE_SCHEMA).table("datas")
-            .select("datauid, datanm, datasourcecd")
-            .in_("projectid", project_ids)
-            .in_("datasourcecd", ["db", "ex", "api"])
-            .order("datanm")
-            .execute().data or []
-        )
+    datas = _tenant_datas_candidates(sb, tid, str(user.id))
 
     members = (
         sb.schema(SUPABASE_SCHEMA).table("datasetmembers")
@@ -198,18 +214,12 @@ def get_dataset_projects(datasetuid: str, token: str = Depends(get_token), tid: 
     user = _get_user(token)
     sb = _sb(token)
 
-
-    proj_rows = (
-        sb.schema(SUPABASE_SCHEMA)
-        .rpc("fn_project_filtered__r_user_manager_viewer", {"p_useruid": str(user.id)})
-        .execute().data or []
-    )
-    project_ids = [p["projectid"] for p in proj_rows]
+    project_ids = _tenant_project_ids(sb, str(user.id), tid)
     projects = []
     if project_ids:
         projects = (
             sb.schema(SUPABASE_SCHEMA).table("projects")
-            .select("projectid, projectnm")
+            .select("projectid, projectnm, servicecd")
             .in_("projectid", project_ids)
             .eq("useyn", True)
             .order("projectnm")

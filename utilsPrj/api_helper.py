@@ -30,9 +30,14 @@ def call_api_key(
     key_name: str,
     key_value: str,
     location: str,
+    extra_headers: Optional[list] = None,
     timeout: int = 10,
 ) -> dict:
-    """API Key 인증으로 API 호출."""
+    """API Key 인증으로 API 호출.
+
+    extra_headers: Supabase처럼 apikey 헤더 외에 Authorization, Accept-Profile(스키마 지정) 등
+    추가 헤더가 동시에 필요한 API를 위한 선택적 보조 헤더 목록. [{"name": ..., "value": ...}, ...]
+    """
     headers: dict = {}
     params: dict = {}
     json_data = None
@@ -43,6 +48,11 @@ def call_api_key(
         params[key_name] = key_value
     elif location == "body":
         json_data = {key_name: key_value}
+
+    for h in (extra_headers or []):
+        name, value = h.get("name"), h.get("value")
+        if name and value:
+            headers[name] = value
 
     try:
         return _result(
@@ -142,6 +152,11 @@ def call_api_for_data(
             query_params[key_name] = key_value
         elif key_loc == "body":
             body_params[key_name] = key_value
+
+        for h in (secrets.get("extra_headers") or []):
+            hname, hvalue = h.get("name"), h.get("value")
+            if hname and hvalue:
+                headers[hname] = hvalue
 
     elif authtype == "BASIC":
         auth = (secrets.get("username", ""), secrets.get("password", ""))

@@ -79,6 +79,8 @@ def _merge_api_secret(authtype: str, body, existing: dict) -> dict:
     if authtype == "API_KEY":
         if body.api_key_value:
             merged["api_key_value"] = body.api_key_value
+        if body.extra_headers is not None:
+            merged["extra_headers"] = [h.model_dump() for h in body.extra_headers]
     elif authtype == "BASIC":
         if body.username is not None:
             merged["username"] = body.username
@@ -90,6 +92,11 @@ def _merge_api_secret(authtype: str, body, existing: dict) -> dict:
         if body.refresh_token is not None:
             merged["refresh_token"] = body.refresh_token
     return {k: v for k, v in merged.items() if v is not None}
+
+
+class ExtraHeaderItem(BaseModel):
+    name: str
+    value: str
 
 
 class ConnectorSaveRequest(BaseModel):
@@ -122,6 +129,9 @@ class ConnectorSaveRequest(BaseModel):
     password:            Optional[str] = None   # BASIC
     oauth_client_secret: Optional[str] = None   # OAUTH2
     refresh_token:       Optional[str] = None   # OAUTH2
+    # API_KEY 보조 헤더 목록 (Supabase처럼 apikey 외에 Authorization, Accept-Profile 등이
+    # 동시에 필요한 API용 — 개수 제한 없이 추가 가능)
+    extra_headers: Optional[list[ExtraHeaderItem]] = None
 
 
 @router.get("")
@@ -208,6 +218,7 @@ def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = D
         row["password"]            = secrets.get("password")
         row["oauth_client_secret"] = secrets.get("oauth_client_secret")
         row["refresh_token"]       = secrets.get("refresh_token")
+        row["extra_headers"]       = secrets.get("extra_headers") or []
 
         result.append(row)
 
@@ -369,6 +380,7 @@ class InlineAuthRequest(BaseModel):
     api_key_name: Optional[str] = None
     api_key_locationcd: Optional[str] = "header"
     api_key_value: Optional[str] = None
+    extra_headers: Optional[list[ExtraHeaderItem]] = None
     username: Optional[str] = None
     password: Optional[str] = None
     oauth_client_id: Optional[str] = None
@@ -389,7 +401,10 @@ def test_auth_inline(body: InlineAuthRequest, token: str = Depends(get_token)):
     if body.authtype == "API_KEY":
         if not body.api_key_value:
             raise HTTPException(status_code=400, detail="API Key가 설정되지 않았습니다.")
-        return ah.call_api_key(url, method, body.api_key_name or "", body.api_key_value, body.api_key_locationcd or "header")
+        return ah.call_api_key(
+            url, method, body.api_key_name or "", body.api_key_value, body.api_key_locationcd or "header",
+            extra_headers=[h.model_dump() for h in (body.extra_headers or [])],
+        )
     if body.authtype == "BASIC":
         if not body.username or not body.password:
             raise HTTPException(status_code=400, detail="Username 또는 Password가 설정되지 않았습니다.")
@@ -464,7 +479,7 @@ def test_auth(connuid: str, token: str = Depends(get_token), tenantid: Optional[
         raise HTTPException(status_code=400, detail="Auth Test 경로가 설정되지 않았습니다.")
 
     url     = _build_url(baseurl, authtest_path)
-    secrets = _parse_secret(cred.get("secret_path"))
+    secrets = _fetch_api_secret(cred.get("secret_path"), tenantid, connuid)
 
     from utilsPrj import api_helper as ah
 
@@ -480,6 +495,7 @@ def test_auth(connuid: str, token: str = Depends(get_token), tenantid: Optional[
             cred.get("api_key_name", ""),
             key_value,
             cred.get("api_key_locationcd", "header"),
+            extra_headers=secrets.get("extra_headers") or [],
         )
 
     if authtype == "BASIC":

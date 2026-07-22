@@ -43,7 +43,7 @@ export default function OrgTenantUsersPage() {
   const { tenantid, tenantnm, users = [], available_servicecds = [], service_summary = [] } = data
   const serviceCodes = allServiceCodes.filter((c) => available_servicecds.includes(c.codevalue))
 
-  const serviceLabels = (scds) => serviceCodes
+  const serviceLabels = (scds) => allServiceCodes
     .filter((c) => (scds || []).includes(c.codevalue))
     .map((c) => t(c.term_key) || c.default_name)
     .join(', ')
@@ -65,6 +65,7 @@ export default function OrgTenantUsersPage() {
   }
 
   const toggleFormServicecd = (v) => {
+    if (!available_servicecds.includes(v)) return
     setForm((f) => ({
       ...f,
       servicecds: f.servicecds.includes(v) ? f.servicecds.filter((x) => x !== v) : [...f.servicecds, v],
@@ -304,13 +305,20 @@ export default function OrgTenantUsersPage() {
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.servicecd')}:</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap', paddingLeft: 60 }}>
-              {serviceCodes.map((c) => (
-                <span key={c.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                  <input type="checkbox" checked={form.servicecds.includes(c.codevalue)}
-                    onChange={() => toggleFormServicecd(c.codevalue)} />
-                  <span>{t(c.term_key) || c.default_name}</span>
-                </span>
-              ))}
+              {allServiceCodes.map((c) => {
+                const subscribed = available_servicecds.includes(c.codevalue)
+                return (
+                  <span key={c.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', color: subscribed ? undefined : '#aaa' }}>
+                    <input type="checkbox" checked={form.servicecds.includes(c.codevalue)}
+                      disabled={!subscribed}
+                      onChange={() => toggleFormServicecd(c.codevalue)} />
+                    <span>
+                      {t(c.term_key) || c.default_name}
+                      {!subscribed && ` (${t('lbl.service.not_subscribed')})`}
+                    </span>
+                  </span>
+                )
+              })}
             </div>
           </div>
 
