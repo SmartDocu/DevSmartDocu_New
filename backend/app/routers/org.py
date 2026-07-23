@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
+from utilsPrj.user_lookup import get_usernm_email as _get_usernm_email
 
 router = APIRouter()
 
@@ -50,17 +51,6 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
-
-
-def _get_usernm_email(sb, useruid: str):
-    """public.users에서 이름/이메일 조회"""
-    try:
-        rows = sb.schema("public").table("users").select("full_name,email").eq("useruid", useruid).execute().data
-        if rows:
-            return rows[0].get("full_name", ""), rows[0].get("email", "")
-    except Exception:
-        pass
-    return "", ""
 
 
 def _require_not_system_tenant(sb, tenantid) -> None:

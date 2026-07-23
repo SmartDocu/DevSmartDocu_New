@@ -16,6 +16,7 @@ from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.notifications import create_notification
+from utilsPrj.user_lookup import get_usernm_email
 
 router = APIRouter()
 
@@ -741,11 +742,8 @@ def get_doc_content(
             ]:
                 uid = d.get(uid_field)
                 if uid:
-                    try:
-                        u = sb.schema("public").table("users").select("full_name").eq("useruid", uid).maybe_single().execute()
-                        doc_info[nm_field] = u.data.get("full_name", "") if u.data else ""
-                    except Exception:
-                        doc_info[nm_field] = ""
+                    nm, _ = get_usernm_email(sb, uid)
+                    doc_info[nm_field] = nm
                     ts = d.get(ts_field)
                     if ts:
                         try:

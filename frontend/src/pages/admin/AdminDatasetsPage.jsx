@@ -1,7 +1,9 @@
 import { useLocation } from 'react-router-dom'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
+import { useDocs } from '@/hooks/useDocs'
+import { useOrgProjects } from '@/hooks/useOrg'
 import { useDatasByProject, useDataDetail } from '@/hooks/useDatas'
 import { useState } from 'react'
 
@@ -13,40 +15,88 @@ export default function AdminDatasetsPage() {
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
-  const user = useAuthStore((s) => s.user)
-  const docnm = useAuthStore((s) => s.user?.docnm)
-  const projectid = user?.projectid ? String(user.projectid) : ''
-  const docid = user?.docid ? String(user.docid) : ''
+  const { data: serviceCodes = [] } = useMenuCodes('servicecd')
+  const serviceLabel = (servicecd) => {
+    const c = serviceCodes.find((sc) => sc.codevalue === servicecd)
+    return c ? (t(c.term_key) || c.default_name) : servicecd
+  }
+  const projectLabel = (p) => p.servicecd ? `${p.projectnm} - ${serviceLabel(p.servicecd)}` : p.projectnm
+
+  const tenantid = useAuthStore((s) => s.user?.tenantid)
+  const { data: orgProjectsData } = useOrgProjects(tenantid)
+  const projects = orgProjectsData?.projects || []
+  const { data: allDocs = [] } = useDocs()
+  const [projectId, setProjectId] = useState('')
+  const [docId, setDocId] = useState('')
+  const projectDocs = allDocs.filter((d) => String(d.projectid) === String(projectId))
 
   const [selectedItem, setSelectedItem] = useState(null)
 
-  const { data = {} } = useDatasByProject(projectid, docid)
+  const { data = {} } = useDatasByProject(projectId, docId)
   const { items = [] } = data
 
   const { data: detail } = useDataDetail(selectedItem?.datauid)
+
+  const handleProjectChange = (val) => {
+    setProjectId(val)
+    setDocId('')
+    setSelectedItem(null)
+  }
+
+  const handleDocChange = (val) => {
+    setDocId(val)
+    setSelectedItem(null)
+  }
 
   return (
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{menuNm}{docnm ? ` - ${docnm}` : ''}</div>
+          <div>{menuNm}</div>
         </div>
       </div>
 
-      <div style={{ marginBottom: 12, padding: '8px 14px', background: '#f0f5ff', borderRadius: 4, fontSize: 13, color: '#555' }}>
+      <div style={{ height: 'calc(100vh - 224px)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: 12, padding: '8px 14px', background: '#f0f5ff', borderRadius: 4, fontSize: 13, color: '#555', flexShrink: 0 }}>
         {t('inf.dataset.scope')}
       </div>
 
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 32, marginBottom: 20, alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label htmlFor="ds-projectid" style={{ whiteSpace: 'nowrap' }}>
+            <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:
+          </label>
+          <select id="ds-projectid" value={projectId} onChange={(e) => handleProjectChange(e.target.value)} style={{ minWidth: 200, minHeight: 25 }}>
+            <option value="">{t('msg.select.project')}</option>
+            {projects.map((p) => (
+              <option key={p.projectid} value={p.projectid}>{projectLabel(p)}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label htmlFor="ds-docid" style={{ whiteSpace: 'nowrap' }}>{t('lbl.docnm')}:</label>
+          <select id="ds-docid" value={docId} onChange={(e) => handleDocChange(e.target.value)} disabled={!projectId} style={{ minWidth: 200, minHeight: 25 }}>
+            <option value="">{t('msg.select.placeholder')}</option>
+            {projectDocs.map((d) => (
+              <option key={d.docid} value={d.docid}>{d.docnm}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {!projectId ? (
+        <div style={{ padding: 24, color: '#888' }}>{t('msg.select.project')}</div>
+      ) : (
+      <div style={{ display: 'flex', gap: 20, paddingRight: 10, flex: 1, minHeight: 0 }}>
 
         {/* 좌측: 목록 */}
-        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div style={{ flex: 3, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <div />
           </div>
-          <div className="table-container">
+          <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
             <table>
               <thead>
                 <tr>
@@ -84,11 +134,12 @@ export default function AdminDatasetsPage() {
         </div>
 
         {/* 우측: 상세 */}
-        <div style={{ flex: 4, padding: '0 10px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div style={{ flex: 4, padding: '0 10px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {selectedItem ? (
             <>
               {/* 기본 정보 */}
@@ -232,8 +283,11 @@ export default function AdminDatasetsPage() {
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.select')}</div>
           )}
+          </div>
         </div>
 
+      </div>
+      )}
       </div>
     </div>
   )

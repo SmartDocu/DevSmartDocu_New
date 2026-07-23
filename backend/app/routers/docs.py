@@ -59,7 +59,7 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
 # ─── 프로젝트 목록 (문서 생성 폼용) ──────────────────────────────────────────
 
 @router.get("/projects", response_model=ProjectsResponse)
-def list_projects(token: str = Depends(get_token)):
+def list_projects(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     rows = (
@@ -68,18 +68,17 @@ def list_projects(token: str = Depends(get_token)):
         .execute()
         .data or []
     )
-    # 활성 프로젝트만
-    active_ids = {
-        p["projectid"]
-        for p in (
-            sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("useyn", True).eq("servicecd", "Do").execute().data or []
-        )
-    }
+    # 활성 프로젝트 + 현재 테넌트 소속만. projectnm은 RPC가 붙이는 "(테넌트명)" 구분 표기 없이
+    # projects 테이블 원본 값을 그대로 사용한다(이미 테넌트로 필터링돼 있어 구분 표기가 불필요).
+    rpc_ids = {r["projectid"] for r in rows}
+    q = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid, projectnm, servicecd").eq("useyn", True).eq("servicecd", "Do")
+    if tenantid:
+        q = q.eq("tenantid", int(tenantid))
+    active_rows = [p for p in (q.execute().data or []) if p["projectid"] in rpc_ids]
     return ProjectsResponse(
         projects=[
-            ProjectItem(projectid=r["projectid"], projectnm=r["projectnm"])
-            for r in rows
-            if r["projectid"] in active_ids
+            ProjectItem(projectid=p["projectid"], projectnm=p["projectnm"], servicecd=p["servicecd"])
+            for p in active_rows
         ]
     )
 
@@ -527,7 +526,7 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
         .eq("projectid", projectid).in_("datasourcecd", ["db", "ex", "api"]) \
         .order("datanm").execute().data or []
 
-    # doc_datas에 등록된 df만 추가
+    # doc_datas에 이미 등록된 df도 후보에 포함 (문서 전환 시 기존 선택 유지용)
     doc_data_uids = [d["datauid"] for d in sb_svc.schema(SUPABASE_SCHEMA).table("doc_datas") \
         .select("datauid").eq("docid", docid).eq("useyn", True).execute().data or []]
     df_datas = []
@@ -538,7 +537,23 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
             .in_("datauid", doc_data_uids) \
             .order("datanm").execute().data or []
 
-    datas = sorted(base_datas + df_datas, key=lambda d: d["datanm"])
+    # 데이터 그룹(project_datasets) 매핑: is_directdatauid=true면 datauid 직접, false면 datasetmembers 경유
+    pd_rows = sb_svc.schema(SUPABASE_SCHEMA).table("project_datasets") \
+        .select("datasetuid, is_directdatauid").eq("projectid", projectid).execute().data or []
+    pd_uids = {r["datasetuid"] for r in pd_rows if r.get("is_directdatauid")}
+    group_ids = [r["datasetuid"] for r in pd_rows if not r.get("is_directdatauid")]
+    if group_ids:
+        member_rows = sb_svc.schema(SUPABASE_SCHEMA).table("datasetmembers") \
+            .select("datauid").in_("datasetuid", group_ids).execute().data or []
+        pd_uids |= {r["datauid"] for r in member_rows}
+    pd_datas = []
+    if pd_uids:
+        pd_datas = sb_svc.schema(SUPABASE_SCHEMA).table("dataunits") \
+            .select("datauid, datanm, datasourcecd").in_("datauid", list(pd_uids)) \
+            .order("datanm").execute().data or []
+
+    datas_by_uid = {d["datauid"]: d for d in base_datas + df_datas + pd_datas}
+    datas = sorted(datas_by_uid.values(), key=lambda d: d["datanm"])
 
     # 해당 데이터들의 datacols (orderno 순)
     data_uids = [d["datauid"] for d in datas]

@@ -69,6 +69,16 @@ export function useRegister() {
   })
 }
 
+export function useMe(enabled) {
+  return useQuery({
+    queryKey: ['auth-me'],
+    queryFn: () => apiClient.get('/auth/me').then((r) => r.data),
+    enabled,
+    staleTime: Infinity,
+    retry: false,
+  })
+}
+
 export function useInviteInfo(req) {
   return useQuery({
     queryKey: ['invite-info', req],

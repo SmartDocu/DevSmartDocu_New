@@ -5,6 +5,7 @@ from pydantic import BaseModel
 class ProjectItem(BaseModel):
     projectid: int
     projectnm: str
+    servicecd: Optional[str] = None
 
 
 class ProjectsResponse(BaseModel):

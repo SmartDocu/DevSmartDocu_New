@@ -42,7 +42,29 @@ uvicorn backend.app.main:app --reload --port 8001
 ```python
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client
 from utilsPrj.crypto_helper import encrypt_value, decrypt_value
+from utilsPrj.user_lookup import get_usernm_email, get_usernm_email_map
 ```
+
+---
+
+## creator/updater 컬럼을 화면에 표시할 때 — 반드시 공용 헬퍼 사용
+
+`creator`/`updater` 등 useruid를 저장하는 컬럼은 UUID라 그대로 화면에 뿌릴 수 없다. 이름/이메일로 변환해 보여줘야 하면 **각 라우터에서 `public.users`를 직접 조회하는 코드를 새로 짜지 말고 반드시 `utilsPrj/user_lookup.py`를 거칠 것.**
+
+```python
+from utilsPrj.user_lookup import get_usernm_email, get_usernm_email_map
+
+# 단건 (상세 화면 등)
+nm, email = get_usernm_email(sb, row.get("creator"))
+row["creatornm"] = nm
+
+# 여러 행 (목록 화면) — 행마다 조회하는 N+1 패턴 금지, 한 번에 조회
+user_map = get_usernm_email_map(sb, [r.get("creator") for r in rows])
+for r in rows:
+    r["creatornm"] = user_map.get(r.get("creator"), ("", ""))[0]
+```
+
+과거에 `org.py`/`settings.py`/`admin.py`/`misc.py`가 각자 `public.users` 또는 `sdoc.users`를 직접 조회하는 중복 코드를 갖고 있었는데(컬럼명도 `full_name`/`usernm`으로 제각각이었음), 전부 이 헬퍼로 통일했다(2026-07-23). 새 라우터에서 creator/updater를 노출해야 하면 이 패턴을 그대로 따를 것 — 직접 `public.users`나 `sdoc.users`를 조회하는 코드를 새로 작성하지 않는다.
 
 ---
 

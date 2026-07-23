@@ -356,22 +356,39 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 3. 문서 목록
+    # 3. 문서 목록 (활성 테넌트 소속 문서만 후보로 필터링 — 다른 테넌트 문서가 잡히는 것 방지)
     docid = None
     try:
         docs_row = sd.rpc("fn_docs_filtered__r_user_viewer", {"p_useruid": user_id}).execute()
+        candidates = docs_row.data or []
 
-        if docs_row.data:
+        if candidates and ctx.tenantid:
+            candidate_docids = [d["docid"] for d in candidates if d.get("docid")]
+            docs_detail = (
+                sd.table("docs").select("docid, projectid").in_("docid", candidate_docids).execute().data or []
+            )
+            project_ids = list({d["projectid"] for d in docs_detail if d.get("projectid")})
+            tenant_project_ids = set()
+            if project_ids:
+                tenant_project_ids = {
+                    p["projectid"]
+                    for p in sd.table("projects").select("projectid").in_("projectid", project_ids)
+                    .eq("tenantid", int(ctx.tenantid)).execute().data or []
+                }
+            doc_project_map = {d["docid"]: d.get("projectid") for d in docs_detail}
+            candidates = [d for d in candidates if doc_project_map.get(d.get("docid")) in tenant_project_ids]
+
+        if candidates:
             target_doc = None
 
             if mydocid:
                 target_doc = next(
-                    (d for d in docs_row.data if str(d.get("docid")) == str(mydocid)),
+                    (d for d in candidates if str(d.get("docid")) == str(mydocid)),
                     None,
                 )
 
             if not target_doc:
-                target_doc = docs_row.data[0]
+                target_doc = candidates[0]
 
             docid = target_doc.get("docid")
             ctx.docid = str(docid)

@@ -8,6 +8,7 @@ import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOut
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
+import { useMe } from '@/hooks/useAuth'
 import { useConfigs } from '@/hooks/useConfigs'
 import { useMenus } from '@/hooks/useMenus'
 import DocSelectModal from '@/components/DocSelectModal/DocSelectModal'
@@ -58,6 +59,8 @@ export default function AppLayout() {
   const isDark = !!user && colorTheme === 'dark'
   const headerBg = isDark ? '#081A2B' : '#163E64'
   const siderBg = isDark ? '#0E2740' : '#fff'
+
+  const { data: meData } = useMe(!!user)
 
   const { languageCd, setLanguageCd, setTranslations, resetLang } = useLangStore()
   const { data: languages = [] } = useLanguages()
@@ -158,6 +161,13 @@ export default function AppLayout() {
       setTranslations(translationsData.translations ?? {}, translationsData.defaults ?? {})
     }
   }, [translationsData, setTranslations])
+
+  // 로그인 이후 세션에 남아있던 docid/tenantid 등을 서버 최신 상태로 재검증
+  // (예: 로그인 시점 버그로 다른 테넌트 문서가 선택돼 있던 세션이 남아있는 경우 자동 교정)
+  useEffect(() => {
+    if (meData) updateUser(meData)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meData])
 
   const handleLanguageChange = (cd) => {
     setLanguageCd(cd)

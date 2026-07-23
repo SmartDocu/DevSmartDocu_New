@@ -246,7 +246,7 @@ def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, token: str
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete().eq("datasetuid", datasetuid).execute()
     if body.projectids:
         sb.schema(SUPABASE_SCHEMA).table("project_datasets").insert([
-            {"projectid": pid, "datasetuid": datasetuid, "tenantid": tid, "useyn": True, "creator": str(user.id)}
+            {"projectid": pid, "datasetuid": datasetuid, "tenantid": tid, "useyn": True, "creator": str(user.id), "is_directdatauid": False}
             for pid in body.projectids
         ]).execute()
     return {"message": "저장되었습니다."}
@@ -282,7 +282,7 @@ def save_dataset_all(body: DatasetSaveAllRequest, token: str = Depends(get_token
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete().eq("datasetuid", datasetuid).execute()
     if body.projectids:
         sb.schema(SUPABASE_SCHEMA).table("project_datasets").insert([
-            {"projectid": pid, "datasetuid": datasetuid, "tenantid": tid, "useyn": True, "creator": str(user.id)}
+            {"projectid": pid, "datasetuid": datasetuid, "tenantid": tid, "useyn": True, "creator": str(user.id), "is_directdatauid": False}
             for pid in body.projectids
         ]).execute()
 

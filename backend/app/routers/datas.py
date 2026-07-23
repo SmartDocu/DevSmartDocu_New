@@ -165,8 +165,8 @@ _DATASOURCE_LABEL = {
     "db": "DB",
     "ex": "Excel",
     "api": "API",
-    "df": "My DataSet - Dataset",
-    "dfv": "My DataSet - Variable",
+    "df": "AI DataSet - Dataset",
+    "dfv": "AI DataSet - Variable",
 }
 
 
@@ -221,7 +221,29 @@ def list_datas_by_project(
             .execute().data or []
         )
 
-    datas = base_datas + df_datas + dfv_datas
+    # 데이터 그룹(project_datasets) 매핑: is_directdatauid=true면 datauid 직접, false면 datasetmembers 경유
+    pd_rows = (
+        sb.schema(SUPABASE_SCHEMA).table("project_datasets")
+        .select("datasetuid, is_directdatauid").eq("projectid", int(projectid)).execute().data or []
+    )
+    pd_uids = {r["datasetuid"] for r in pd_rows if r.get("is_directdatauid")}
+    group_ids = [r["datasetuid"] for r in pd_rows if not r.get("is_directdatauid")]
+    if group_ids:
+        member_rows = (
+            sb.schema(SUPABASE_SCHEMA).table("datasetmembers")
+            .select("datauid").in_("datasetuid", group_ids).execute().data or []
+        )
+        pd_uids |= {r["datauid"] for r in member_rows}
+
+    pd_datas = []
+    if pd_uids:
+        pd_datas = (
+            sb.schema(SUPABASE_SCHEMA).table("dataunits")
+            .select("*").in_("datauid", list(pd_uids)).execute().data or []
+        )
+
+    datas_by_uid = {d["datauid"]: d for d in base_datas + df_datas + dfv_datas + pd_datas}
+    datas = list(datas_by_uid.values())
 
     # 사용 중 목록: doc_datas.docid 기준
     doc_use_set: set = set()
@@ -782,28 +804,39 @@ def get_apiparams(datauid: str, token: str = Depends(get_token)):
 # ── DF/DFV List ────────────────────────────────────────────────────────────────
 
 @router.get("/df-list")
-def list_df_datas(docid: int, token: str = Depends(get_token)):
+def list_df_datas(projectid: int, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
-    doc_datas_resp = (
-        sb.schema(SUPABASE_SCHEMA).table("doc_datas")
-        .select("datauid").eq("docid", docid).execute()
+
+    # df: project_datasets(is_directdatauid=true)로 이 프로젝트에 직접 연결된 datauid만
+    pd_resp = (
+        sb.schema(SUPABASE_SCHEMA).table("project_datasets")
+        .select("datasetuid").eq("projectid", projectid).eq("is_directdatauid", True).execute()
     )
-    df_uids = [r["datauid"] for r in (doc_datas_resp.data or [])]
+    df_uids = [r["datasetuid"] for r in (pd_resp.data or [])]
     df_rows = []
     if df_uids:
+        # datas 뷰는 doc_datas 매핑이 없는 df 행을 노출하지 않으므로(문서 미연결 df 존재 가능),
+        # 실제 저장 테이블인 dataunits에서 직접 조회한다.
         df_resp = (
-            sb.schema(SUPABASE_SCHEMA).table("datas")
-            .select("datauid, datanm, datasourcecd, projectid, sourcedatauid, gensentence, is_multirow")
-            .in_("datauid", df_uids).eq("datasourcecd", "df").execute()
+            sb.schema(SUPABASE_SCHEMA).table("dataunits")
+            .select("datauid, datanm, datasourcecd, sourcedatauid, gensentence, is_multirow")
+            .eq("datasourcecd", "df").in_("datauid", df_uids).execute()
         )
         df_rows = df_resp.data or []
-    dfv_resp = (
-        sb.schema(SUPABASE_SCHEMA).table("datas")
-        .select("datauid, datanm, datasourcecd, projectid, sourcedatauid, gensentence, is_multirow, dfv_docid")
-        .eq("datasourcecd", "dfv").eq("dfv_docid", docid).execute()
-    )
-    dfv_rows = dfv_resp.data or []
+
+    # dfv: 이 프로젝트 소속 문서에 연결된(dfv_docid) 것만
+    doc_resp = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid").eq("projectid", projectid).execute()
+    project_docids = [d["docid"] for d in (doc_resp.data or [])]
+    dfv_rows = []
+    if project_docids:
+        dfv_resp = (
+            sb.schema(SUPABASE_SCHEMA).table("dataunits")
+            .select("datauid, datanm, datasourcecd, sourcedatauid, gensentence, is_multirow, dfv_docid")
+            .eq("datasourcecd", "dfv").in_("dfv_docid", project_docids).execute()
+        )
+        dfv_rows = dfv_resp.data or []
+
     return {"datas": df_rows + dfv_rows}
 
 
@@ -815,12 +848,14 @@ def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
     sb = _sb(token)
 
     class _FakeRequest:
-        def __init__(self, t):
+        def __init__(self, t, projectid):
             self.session = {"access_token": t, "refresh_token": None}
             self.method = "GET"
+            if projectid:
+                self.projectid = projectid
 
     from utilsPrj.process_data_ai import process_data_ai_preview
-    result = process_data_ai_preview(sb, _FakeRequest(token), body.sourcedatauid, body.gensentence, docid=body.docid)
+    result = process_data_ai_preview(sb, _FakeRequest(token, body.projectid), body.sourcedatauid, body.gensentence, docid=body.docid)
     df = result.get("result")
     raw = df.head(15).to_dict(orient="records") if df is not None and not df.empty else []
     rows = [{k: (None if isinstance(v, float) and not math.isfinite(v) else v) for k, v in r.items()} for r in raw]
@@ -850,10 +885,19 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token), tenan
         record.update({"creator": str(user.id), "datasourcecd": "df"})
         resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
         datauid = resp.data[0]["datauid"]
-        sb.schema(SUPABASE_SCHEMA).table("doc_datas").upsert(
-            {"docid": body.docid, "datauid": datauid, "useyn": True, "creator": str(user.id)},
-            on_conflict="docid,datauid",
-        ).execute()
+
+    # project_datasets: datasetuid 자리에 datauid를 직접 넣어 프로젝트-데이터 연결(is_directdatauid=true)
+    sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete() \
+        .eq("datasetuid", datauid).eq("is_directdatauid", True).execute()
+    sb.schema(SUPABASE_SCHEMA).table("project_datasets").insert({
+        "projectid": body.projectid,
+        "datasetuid": datauid,
+        "tenantid": tenantid,
+        "useyn": True,
+        "creator": str(user.id),
+        "is_directdatauid": True,
+    }).execute()
+
     if body.cols:
         sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
         sb.schema(SUPABASE_SCHEMA).table("datacols").insert(
@@ -868,6 +912,11 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token), tenan
 def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+
+    doc_row = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid").eq("docid", body.dfv_docid).maybe_single().execute()
+    if not doc_row.data or doc_row.data.get("projectid") != body.projectid:
+        raise HTTPException(status_code=400, detail="msg.dfv.doc.project.mismatch")
+
     record = {
         "tenantid": tenantid,
         "datanm": body.datanm,
@@ -883,6 +932,13 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), ten
         record.update({"creator": str(user.id), "datasourcecd": "dfv"})
         resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
         datauid = resp.data[0]["datauid"]
+
+    # dfv는 문서 1개에만 귀속 — 기존 매핑(문서가 바뀐 경우 포함) 정리 후 재삽입
+    sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("doc_datas").insert(
+        {"docid": body.dfv_docid, "datauid": datauid, "useyn": True, "creator": str(user.id)}
+    ).execute()
+
     if body.cols:
         sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
         sb.schema(SUPABASE_SCHEMA).table("datacols").insert(
@@ -900,8 +956,9 @@ def delete_data(datauid: str, token: str = Depends(get_token)):
     res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl, datasourcecd").eq("datauid", datauid).execute()
     if res.data:
         _delete_storage(sb, res.data[0].get("excelurl"))
-        if res.data[0].get("datasourcecd") == "df":
-            sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete() \
+        .eq("datasetuid", datauid).eq("is_directdatauid", True).execute()
     sb.schema(SUPABASE_SCHEMA).table("data_api_params").delete().eq("datauid", datauid).execute()
     sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").delete().eq("datauid", datauid).execute()

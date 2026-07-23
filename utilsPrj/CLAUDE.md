@@ -50,6 +50,12 @@
 | `sms_sender.py` | Naver Cloud SMS 발송 |
 | `errorlogs.py` | 에러 로그 기록 |
 
+### 사용자 표시 정보
+
+| 파일 | 역할 |
+|------|------|
+| `user_lookup.py` | creator/updater(useruid) → 이름/이메일 변환. `get_usernm_email(sb, useruid)`(단건), `get_usernm_email_map(sb, useruids)`(목록, N+1 방지). creator/updater를 화면에 노출할 땐 반드시 이걸 거칠 것 — 각 라우터에서 `public.users` 직접 조회 금지. |
+
 ---
 
 ## supabase_client.py — 상세

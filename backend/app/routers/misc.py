@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from backend.app.config import settings
 from backend.app.dependencies import get_optional_token, get_token, get_sb as _sb_user, get_user as _get_user
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
+from utilsPrj.user_lookup import get_usernm_email_map
 
 router = APIRouter()
 
@@ -131,13 +132,12 @@ def list_qnas(token: str = Depends(get_token)):
 
     rows = sb.schema(SUPABASE_SCHEMA).table("qnas").select("*").order("createdts", desc=True).execute().data or []
 
-    users_rows = sb.schema(SUPABASE_SCHEMA).table("users").select("useruid,email").execute().data or []
-    user_map = {u["useruid"]: u.get("email", "") for u in users_rows}
+    user_map = get_usernm_email_map(sb, [q.get("creator") for q in rows] + [q.get("answeruseruid") for q in rows])
 
     result = []
     for q in rows:
-        q["creatornm"] = user_map.get(q.get("creator"), "")
-        q["answernm"] = user_map.get(q.get("answeruseruid"), "") if q.get("answeruseruid") else ""
+        q["creatornm"] = user_map.get(q.get("creator"), ("", ""))[1]
+        q["answernm"] = user_map.get(q.get("answeruseruid"), ("", ""))[1] if q.get("answeruseruid") else ""
         q["createdts"] = _fmt_dt(q.get("createdts"), offsetminutes)
         q["answerdts"] = _fmt_dt(q.get("answerdts"), offsetminutes)
         is_private = q.get("isprivate", False)

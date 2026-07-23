@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket
+from utilsPrj.user_lookup import get_usernm_email
 
 router = APIRouter()
 
@@ -288,12 +289,8 @@ def list_projects(token: str = Depends(get_token), tenantid: Optional[str] = Dep
 
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
-        if row.get("creator"):
-            try:
-                u = sb.schema(SUPABASE_SCHEMA).table("users").select("usernm").eq("useruid", row["creator"]).execute().data
-                row["creatornm"] = u[0]["usernm"] if u else ""
-            except Exception:
-                row["creatornm"] = ""
+        nm, _ = get_usernm_email(sb, row.get("creator"))
+        row["creatornm"] = nm
 
     return {"projects": rows, "tenantnm": tenantnm}
 
@@ -355,12 +352,8 @@ def list_tenants(token: str = Depends(get_token)):
 
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
-        if row.get("creator"):
-            try:
-                u = sb.schema(SUPABASE_SCHEMA).table("users").select("usernm").eq("useruid", row["creator"]).execute().data
-                row["creatornm"] = u[0]["usernm"] if u else ""
-            except Exception:
-                row["creatornm"] = ""
+        nm, _ = get_usernm_email(sb, row.get("creator"))
+        row["creatornm"] = nm
         acc = account_map.get(row.get("tenantid"))
         row["decemail"] = _decrypt(acc.get("encemail")) if acc else ""
         row["dectelno"] = _decrypt(acc.get("enctelno")) if acc else ""

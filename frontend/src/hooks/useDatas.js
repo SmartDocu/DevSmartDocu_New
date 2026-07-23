@@ -176,11 +176,11 @@ export function useSaveDatacols() {
   })
 }
 
-export function useDfDatas(docid) {
+export function useDfDatas(projectid) {
   return useQuery({
-    queryKey: ['datas', 'df-list', docid],
-    queryFn: () => apiClient.get('/datas/df-list', { params: { docid } }).then((r) => r.data.datas),
-    enabled: !!docid,
+    queryKey: ['datas', 'df-list', projectid],
+    queryFn: () => apiClient.get('/datas/df-list', { params: { projectid } }).then((r) => r.data.datas),
+    enabled: !!projectid,
   })
 }
 
@@ -191,7 +191,7 @@ export function useSaveDfData() {
     mutationFn: (body) => apiClient.post('/datas/df', body).then((r) => r.data),
     onSuccess: (_, body) => {
       message.success(t('msg.save.success'))
-      qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.docid] })
+      qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.projectid] })
     },
     onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
@@ -204,7 +204,7 @@ export function useSaveDfvData() {
     mutationFn: (body) => apiClient.post('/datas/dfv', body).then((r) => r.data),
     onSuccess: (_, body) => {
       message.success(t('msg.save.success'))
-      qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.dfv_docid] })
+      qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.projectid] })
     },
     onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
   })
@@ -257,9 +257,9 @@ export function useDeleteDfData() {
   const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ datauid }) => apiClient.delete(`/datas/${datauid}`).then((r) => r.data),
-    onSuccess: (_, { docid }) => {
+    onSuccess: (_, { projectid }) => {
       message.success(t('msg.delete.success'))
-      qc.invalidateQueries({ queryKey: ['datas', 'df-list', docid] })
+      qc.invalidateQueries({ queryKey: ['datas', 'df-list', projectid] })
     },
     onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
   })

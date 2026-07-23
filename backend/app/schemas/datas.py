@@ -110,7 +110,6 @@ class DfDataSaveRequest(BaseModel):
     datanm: str
     sourcedatauid: Optional[str] = None
     gensentence: Optional[str] = None
-    docid: int
     is_multirow: Optional[str] = None
     cols: Optional[list[DfColItem]] = None
 
@@ -130,3 +129,4 @@ class AiPreviewRequest(BaseModel):
     sourcedatauid: str
     gensentence: str
     docid: Optional[int] = None
+    projectid: Optional[int] = None

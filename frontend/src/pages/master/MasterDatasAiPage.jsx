@@ -4,13 +4,14 @@ import { App, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
+import { useDocs, useProjects } from '@/hooks/useDocs'
 import {
   useDfDatas, useSaveDfData, useSaveDfvData, useDeleteDfData,
   useAiDataPreview, useDatasSource, useDatacols,
 } from '@/hooks/useDatas'
 
 
-const EMPTY_FORM = { datauid: '', datanm: '', datasourcecd: 'df', sourcedatauid: '', gensentence: '' }
+const EMPTY_FORM = { datauid: '', datanm: '', datasourcecd: 'df', sourcedatauid: '', gensentence: '', dfv_docid: '' }
 
 function parseCols(colsInfoJson) {
   try {
@@ -32,20 +33,31 @@ export default function MasterDatasAiPage() {
   const translationVersion = useLangStore((s) => s.translationVersion)
 
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
+  const { data: serviceCodes = [] } = useMenuCodes('servicecd')
+  const serviceLabel = (servicecd) => {
+    const c = serviceCodes.find((sc) => sc.codevalue === servicecd)
+    return c ? (t(c.term_key) || c.default_name) : servicecd
+  }
+  const projectLabel = (p) => p.servicecd ? `${p.projectnm} - ${serviceLabel(p.servicecd)}` : p.projectnm
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
-  const docid = user?.docid ? Number(user.docid) : null
-  const docnm = useAuthStore((s) => s.user?.docnm)
-  const projectid = user?.projectid ? Number(user.projectid) : null
   const isEditYn = user?.editbuttonyn === 'Y'
 
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
-  const { data: datas = [] } = useDfDatas(docid)
-  const { data: sourceDatas = [] } = useDatasSource(projectid)
+  const { data: projects = [] } = useProjects()
+  const { data: allDocs = [] } = useDocs()
+  const [projectId, setProjectId] = useState('')
+  const projectIdNum = projectId ? Number(projectId) : null
+  const selectedProject = projects.find((p) => String(p.projectid) === String(projectId))
+  const projectNm = selectedProject ? projectLabel(selectedProject) : ''
+  const projectDocs = allDocs.filter((d) => String(d.projectid) === String(projectId))
+
+  const { data: datas = [] } = useDfDatas(projectIdNum)
+  const { data: sourceDatas = [] } = useDatasSource(projectIdNum)
   const saveDf = useSaveDfData()
   const saveDfv = useSaveDfvData()
   const deleteDf = useDeleteDfData()
@@ -89,6 +101,7 @@ export default function MasterDatasAiPage() {
       datasourcecd: d.datasourcecd || 'df',
       sourcedatauid: d.sourcedatauid || '',
       gensentence: d.gensentence || '',
+      dfv_docid: d.dfv_docid ? String(d.dfv_docid) : '',
     })
   }
 
@@ -101,11 +114,17 @@ export default function MasterDatasAiPage() {
     setIsTableValue(false)
   }
 
+  const handleProjectChange = (val) => {
+    setProjectId(val)
+    handleNew()
+  }
+
   const handlePreview = () => {
     if (!form.sourcedatauid) { alert(t('msg.source.select')); return }
     if (!form.gensentence.trim()) { alert(t('msg.prompt.required')); return }
+    const previewDocid = form.datasourcecd === 'dfv' && form.dfv_docid ? Number(form.dfv_docid) : null
     aiPreview.mutate(
-      { sourcedatauid: form.sourcedatauid, gensentence: form.gensentence, docid },
+      { sourcedatauid: form.sourcedatauid, gensentence: form.gensentence, docid: previewDocid, projectid: projectIdNum },
       {
         onSuccess: (data) => {
           setPreviewRows(data.rows || [])
@@ -126,14 +145,15 @@ export default function MasterDatasAiPage() {
   }
 
   const handleSave = () => {
+    if (!projectIdNum) { alert(t('msg.select.project')); return }
     if (!form.datanm.trim()) { alert(t('msg.datanm.required')); return }
     if (!form.sourcedatauid) { alert(t('msg.source.select')); return }
     if (!form.gensentence.trim()) { alert(t('msg.prompt.required')); return }
-    if (!projectid) { alert(t('msg.doc.select')); return }
+    if (form.datasourcecd === 'dfv' && !form.dfv_docid) { alert(t('msg.doc.select')); return }
 
     const body = {
       datauid: form.datauid || null,
-      projectid,
+      projectid: projectIdNum,
       datanm: form.datanm,
       sourcedatauid: form.sourcedatauid,
       gensentence: form.gensentence,
@@ -144,16 +164,16 @@ export default function MasterDatasAiPage() {
     const onSuccess = () => handleNew()
 
     if (form.datasourcecd === 'dfv') {
-      saveDfv.mutate({ ...body, dfv_docid: docid }, { onSuccess })
+      saveDfv.mutate({ ...body, dfv_docid: Number(form.dfv_docid) }, { onSuccess })
     } else {
-      saveDf.mutate({ ...body, docid }, { onSuccess })
+      saveDf.mutate(body, { onSuccess })
     }
   }
 
   const handleDelete = () => {
     if (!form.datauid) { alert(t('msg.select.delete')); return }
     if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteDf.mutate({ datauid: form.datauid, docid }, { onSuccess: handleNew })
+    deleteDf.mutate({ datauid: form.datauid, projectid: projectIdNum }, { onSuccess: handleNew })
   }
 
   const updateCol = (idx, field, value) => {
@@ -169,13 +189,32 @@ export default function MasterDatasAiPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{menuNm}{docnm ? ` - ${docnm}` : ''}</div>
+          <div>{menuNm}{projectNm ? ` - ${projectNm}` : ''}</div>
         </div>
       </div>
 
+      <div className="form-group" style={{ maxWidth: 320, marginBottom: 20 }}>
+        <label htmlFor="df-projectid">
+          <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:
+        </label>
+        <select
+          id="df-projectid"
+          value={projectId}
+          onChange={(e) => handleProjectChange(e.target.value)}
+        >
+          <option value="">{t('msg.select.project')}</option>
+          {projects.map((p) => (
+            <option key={p.projectid} value={p.projectid}>{projectLabel(p)}</option>
+          ))}
+        </select>
+      </div>
+
+      {!projectId ? (
+        <div style={{ padding: 24, color: '#888' }}>{t('msg.select.project')}</div>
+      ) : (
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측: 데이터 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 3.5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>
@@ -186,13 +225,14 @@ export default function MasterDatasAiPage() {
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  <th>{t('thd.datanm_thd')}</th>
-                  <th style={{ width: 80 }}>{t('thd.datasourcecd_thd')}</th>
+                  <th style={{ width: 150 }}>{t('thd.datanm_thd')}</th>
+                  <th style={{ width: 150 }}>{t('thd.datasourcecd_thd')}</th>
+                  <th style={{ width: 60 }}>{t('thd.docnm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {datas.length === 0 ? (
-                  <tr><td colSpan={2} style={{ textAlign: 'center' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={3} style={{ textAlign: 'center' }}>{t('msg.no.data')}</td></tr>
                 ) : datas.map((d) => (
                   <tr
                     key={d.datauid}
@@ -203,6 +243,11 @@ export default function MasterDatasAiPage() {
                     <td style={{ textAlign: 'center' }}>
                       {d.datasourcecd === 'dfv' ? t('cod.datasourcecd_dfv') : t('cod.datasourcecd_df')}
                     </td>
+                    <td>
+                      {d.datasourcecd === 'dfv'
+                        ? (allDocs.find((doc) => String(doc.docid) === String(d.dfv_docid))?.docnm || '-')
+                        : '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -211,8 +256,8 @@ export default function MasterDatasAiPage() {
         </div>
 
         {/* 중간: 입력 폼 */}
-        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <button
               className="btn btn-primary"
@@ -225,6 +270,7 @@ export default function MasterDatasAiPage() {
             </button>
           </div>
 
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="form-group">
             <label htmlFor="df-datanm">
               <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}:
@@ -249,13 +295,31 @@ export default function MasterDatasAiPage() {
               <select
                 id="df-datasourcecd"
                 value={form.datasourcecd}
-                onChange={(e) => setForm((f) => ({ ...f, datasourcecd: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, datasourcecd: e.target.value, dfv_docid: '' }))}
               >
                 <option value="df">{t('cod.datasourcecd_df')}</option>
                 <option value="dfv">{t('cod.datasourcecd_dfv')}</option>
               </select>
             )}
           </div>
+
+          {form.datasourcecd === 'dfv' && (
+            <div className="form-group">
+              <label htmlFor="df-dfvdoc">
+                <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.docnm')}:
+              </label>
+              <select
+                id="df-dfvdoc"
+                value={form.dfv_docid}
+                onChange={(e) => setForm((f) => ({ ...f, dfv_docid: e.target.value }))}
+              >
+                <option value="">{t('msg.select.placeholder')}</option>
+                {projectDocs.map((d) => (
+                  <option key={d.docid} value={d.docid}>{d.docnm}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="df-source">
@@ -299,10 +363,11 @@ export default function MasterDatasAiPage() {
               style={{ width: '100%', resize: 'vertical' }}
             />
           </div>
+          </div>
         </div>
 
         {/* 우측: 미리보기 결과 */}
-        <div style={{ flex: 4, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
             {isEditYn && (
@@ -421,6 +486,7 @@ export default function MasterDatasAiPage() {
           )}
         </div>
       </div>
+      )}
 
       {aiPreview.isPending && (
         <div style={{
