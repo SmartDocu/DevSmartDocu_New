@@ -59,6 +59,10 @@ export default function ReqChaptersReadPage() {
 
   const [generating,    setGenerating]    = useState(false)
 
+  // 문서/챕터 작성 "요청 중" 로딩 오버레이 (접수 완료까지만 표시)
+  const [requestLoading,    setRequestLoading]    = useState(false)
+  const [requestLoadingMsg, setRequestLoadingMsg] = useState('')
+
   const fileInputRef = useRef(null)
 
   const closeyn = gendoc?.closeyn ?? false
@@ -158,6 +162,8 @@ export default function ReqChaptersReadPage() {
   // ── 챕터 재작성 (SQS 비동기) ─────────────────────────────────────────────────
   const handleRewrite = async () => {
     if (!selectedChap) return
+    setRequestLoadingMsg(t('msg.chapter.write.requesting'))
+    setRequestLoading(true)
     try {
       const res = await apiClient.post(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`, {
         projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
@@ -166,10 +172,16 @@ export default function ReqChaptersReadPage() {
         message.warning(res.data.message || t('msg.chapter.already.writing'))
         return
       }
+      if (res.data.insufficient_credit) {
+        message.warning(res.data.message || t('msg.credit.insufficient'))
+        return
+      }
       setRewriting(true)
       message.success(t('msg.chapter.write.started'))
     } catch (e) {
       message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setRequestLoading(false)
     }
   }
 
@@ -212,6 +224,8 @@ export default function ReqChaptersReadPage() {
   const handleDocRewrite = async () => {
     if (!selectedGendocuid) return
     const results = chapters.map((c) => ({ genchapteruid: c.genchapteruid, mode: 'all' }))
+    setRequestLoadingMsg(t('msg.doc.write.requesting'))
+    setRequestLoading(true)
     try {
       const res = await apiClient.post(`/gendocs/${selectedGendocuid}/generate`, {
         results, projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
@@ -220,10 +234,16 @@ export default function ReqChaptersReadPage() {
         message.warning(res.data.message || t('msg.doc.already.writing'))
         return
       }
+      if (res.data.insufficient_credit) {
+        message.warning(res.data.message || t('msg.credit.insufficient'))
+        return
+      }
       setGenerating(true)
       message.success(t('msg.doc.write.started'))
     } catch (e) {
       message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setRequestLoading(false)
     }
   }
 
@@ -410,6 +430,26 @@ export default function ReqChaptersReadPage() {
           ) : null}
         </div>
       </div>
+
+      {/* 로딩 오버레이 — 문서/챕터 작성 요청 접수까지만 표시 */}
+      {requestLoading && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{requestLoadingMsg}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

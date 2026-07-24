@@ -137,26 +137,35 @@ DB는 UTC로 저장. 화면 표시 시 사용자 timezone을 적용해야 한다
 ### 1. offsetminutes 조회 헬퍼 — 신규 라우터에 복사해서 사용
 
 ```python
-def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
+    """tenantid를 주면 그 테넌트 기준으로, 없으면(다중 테넌트일 때 모호해질 수 있어) 활성(useyn=True) 소속 행을 사용."""
     try:
-        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
-        if not tu.data:
+        q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
             return None
-        tz = tu.data.get("timezone")
-        if not tz and tu.data.get("tenantid"):
-            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
-            if t.data:
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
                 tz = t.data.get("timezone")
         if not tz:
             return None
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
-        return tz_row.data.get("offsetminutes") if tz_row.data else None
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
     except Exception:
         return None
 ```
 
 - `tenantusers.timezone` → 없으면 `tenants.timezone` → `sdoc.timezone.offsetminutes` 조회
 - timezone 미설정 사용자는 `None` 반환 → UTC 그대로 표시 (허용)
+- **주의 — 과거 버그**: `tenantusers`를 `useruid`만으로 `.maybe_single()` 조회하면, 한 사용자가 **여러 테넌트에 소속**된 경우(행이 2개 이상) PostgREST가 406 에러를 던지고 `except`에 먹혀 `offsetminutes=None`(UTC 그대로 표시)이 되는 문제가 있었다(2026-07-24 발견, gendocs.py 등 7개 파일에서 재발). 반드시 `tenantid` 파라미터를 받아 필터링하고, `.maybe_single()` 대신 `.limit(1)` + 리스트 첫 행을 쓸 것 — 위 코드가 수정된 버전이다.
+- 호출부에서는 `tenantid: Optional[str] = Depends(get_tenantid)`를 엔드포인트에 추가하고 `_get_offsetminutes(sb, str(user.id), tenantid)`로 넘길 것.
 
 ### 2. 날짜 포맷 함수 — 신규 라우터에 복사해서 사용
 
@@ -182,10 +191,10 @@ def _fmt_dt(val, offsetminutes: Optional[int] = None) -> str:
 
 ```python
 @router.get("/items")
-def list_items(token: str = Depends(get_token)):
+def list_items(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    offsetminutes = _get_offsetminutes(sb, str(user.id))  # 엔드포인트 상단에서 1회
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)  # 엔드포인트 상단에서 1회
 
     rows = sb.schema(SUPABASE_SCHEMA).table("items").select("*").execute().data or []
     for row in rows:

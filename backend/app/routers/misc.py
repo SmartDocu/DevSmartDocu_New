@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 
 from backend.app.config import settings
-from backend.app.dependencies import get_optional_token, get_token, get_sb as _sb_user, get_user as _get_user
+from backend.app.dependencies import get_optional_token, get_tenantid, get_token, get_sb as _sb_user, get_user as _get_user
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 from utilsPrj.user_lookup import get_usernm_email_map
 
@@ -22,20 +22,27 @@ def _sb_svc():
     return get_service_client()
 
 
-def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
+    """tenantid를 주면 그 테넌트 기준으로, 없으면(다중 테넌트일 때 모호해질 수 있어) 활성(useyn=True) 소속 행을 사용."""
     try:
-        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
-        if not tu.data:
+        q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
             return None
-        tz = tu.data.get("timezone")
-        if not tz and tu.data.get("tenantid"):
-            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
-            if t.data:
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
                 tz = t.data.get("timezone")
         if not tz:
             return None
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
-        return tz_row.data.get("offsetminutes") if tz_row.data else None
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
     except Exception:
         return None
 
@@ -122,13 +129,13 @@ def delete_faq(faquid: str, token: str = Depends(get_token)):
 # ══════════════════════════════════════════════════════
 
 @router.get("/qnas")
-def list_qnas(token: str = Depends(get_token)):
+def list_qnas(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb_svc()
     roleid_row = sb.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", user.id).execute().data
     roleid = roleid_row[0].get("roleid", 1) if roleid_row else 1
 
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("qnas").select("*").order("createdts", desc=True).execute().data or []
 

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from backend.app.config import settings
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from utilsPrj.chapter_making import replace_doc
+from utilsPrj.credit_helper import apply_chapter_credit_deduction, apply_doc_credit_deduction
 from utilsPrj.html_to_docx import html_to_docx_merge
 from utilsPrj.notifications import create_notification
 
@@ -281,6 +282,12 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         end_iso = datetime.now(timezone.utc).isoformat()
         _update_queue(sb_svc, gendocjobuid, "E", end_dts=end_iso)
         logger.info("문서 완료: %s", gendocuid)
+
+        try:
+            apply_doc_credit_deduction(sb_svc, gendocjobuid)
+        except Exception:
+            logger.exception("크레딧 차감 실패: %s (gendocjobuid=%s)", gendocuid, gendocjobuid)
+
         create_notification(
             sb_svc, category="doc", status="info",
             title="문서 작성 완료", message=f"'{gendocnm}' 문서 작성이 완료되었습니다.",
@@ -499,6 +506,12 @@ def process_chapter_message(msg):
         end_iso = datetime.now(timezone.utc).isoformat()
         _update_chapter_queue(sb_svc, genchapterjobuid, "E", end_dts=end_iso)
         logger.info("챕터 완료: %s", genchapteruid)
+
+        try:
+            apply_chapter_credit_deduction(sb_svc, genchapterjobuid)
+        except Exception:
+            logger.exception("크레딧 차감 실패: %s (genchapterjobuid=%s)", genchapteruid, genchapterjobuid)
+
         if not is_start_doc:
             create_notification(
                 sb_svc, category="chapter", status="info",

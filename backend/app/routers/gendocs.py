@@ -98,20 +98,66 @@ def _get_user_context(sb, user_id: str) -> dict:
     return {"docid": docid, "tenantid": tenantid, "projectid": projectid}
 
 
-def _get_offsetminutes(sb, user_id: str) -> Optional[int]:
+def _get_chapteruids_for_gendoc(sb, gendocuid: str) -> list:
+    rows = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("chapteruid").eq("gendocuid", gendocuid).execute().data or []
+    return list({r["chapteruid"] for r in rows if r.get("chapteruid")})
+
+
+def _count_active_objects(sb, chapteruids: list) -> int:
+    """대상 챕터들의 활성/설정완료 objects 건수 (useyn=True AND objectsettingyn=True)
+    주의: 이 값은 사전 차단용 1차 필터(대략치)일 뿐 실제 사용 크레딧과 다를 수 있다.
+    챕터 생성 시 for문으로 항목 1개가 조건별로 여러 건(예: 5건)으로 확장될 수 있어,
+    실제 차감(genchapterlogs.count, genobjectlogs 기준 실제 생성 건수)이 이 값을 초과해
+    creditbuckets가 마이너스가 되는 것은 정상적인 사후 정산 케이스다."""
+    if not chapteruids:
+        return 0
+    res = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectuid", count="exact") \
+        .in_("chapteruid", chapteruids).eq("useyn", True).eq("objectsettingyn", True).execute()
+    return res.count or 0
+
+
+def _get_remain_credit(sb_svc, accountuid: str) -> int:
+    rows = sb_svc.schema(SUPABASE_SCHEMA).table("vw_creditbucketsums").select("remaincredit") \
+        .eq("accountuid", accountuid).eq("servicecd", "Do").execute().data or []
+    return sum(r.get("remaincredit") or 0 for r in rows)
+
+
+def _check_credit_gate(sb, sb_svc, accountuid: Optional[str], chapteruids: list) -> Optional[dict]:
+    """예정크레딧(대상 objects 건수)이 잔여크레딧을 초과하면 안내 dict 반환, 충분하면 None.
+    accountuid가 없으면(문서 조합 작성 화면 등 아직 미전달) 체크를 생략한다."""
+    if not accountuid:
+        return None
+    planned_credit = _count_active_objects(sb, chapteruids)
+    remain_credit = _get_remain_credit(sb_svc, accountuid)
+    if remain_credit < planned_credit:
+        return {
+            "insufficient_credit": True,
+            "message": f"잔여 크레딧이 부족하여 작성할 수 없습니다. (필요 크레딧: {planned_credit}, 잔여 크레딧: {remain_credit})",
+        }
+    return None
+
+
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
+    """tenantid를 주면 그 테넌트 기준으로, 없으면(다중 테넌트일 때 모호해질 수 있어) 활성(useyn=True) 소속 행을 사용."""
     try:
-        tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id).maybe_single().execute()
-        if not tu.data:
+        q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
             return None
-        tz = tu.data.get("timezone")
-        if not tz and tu.data.get("tenantid"):
-            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu.data["tenantid"]).maybe_single().execute()
-            if t.data:
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.schema(SUPABASE_SCHEMA).table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
                 tz = t.data.get("timezone")
         if not tz:
             return None
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
-        return tz_row.data.get("offsetminutes") if tz_row.data else None
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
     except Exception:
         return None
 
@@ -168,7 +214,7 @@ def list_gendocs(
     today = datetime.now(timezone.utc).date()
     sd = start_date or (today - timedelta(days=10)).strftime("%Y-%m-%d")
     ed = end_date or today.strftime("%Y-%m-%d")
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     # 사용자 로컬 날짜 → UTC 변환 후 RPC 전달
     # utc = local_midnight(UTC 기준) - offsetminutes분
@@ -248,12 +294,12 @@ def get_dataparams(token: str = Depends(get_token)):
 
 
 @router.get("/{gendocuid}/status")
-def get_gendoc_status(gendocuid: str, token: str = Depends(get_token)):
+def get_gendoc_status(gendocuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     status_rows = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendoc_status__r", {"p_gendocuid": gendocuid}).execute().data or []
     gendoc = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     for i in status_rows:
         i["createfiledts"] = _fmt(i.get("createfiledts"), offsetminutes)
@@ -265,10 +311,10 @@ def get_gendoc_status(gendocuid: str, token: str = Depends(get_token)):
 
 
 @router.get("/{gendocuid}/chapters")
-def get_genchapters(gendocuid: str, token: str = Depends(get_token)):
+def get_genchapters(gendocuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
     chapters = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
     for c in chapters:
         c["createfiledts"] = _fmt(c.get("createfiledts"), offsetminutes)
@@ -494,10 +540,10 @@ def check_objects(body: dict, token: str = Depends(get_token)):
 # ── Chapter Objects Read ──────────────────────────────────────────────────────────
 
 @router.get("/genchapters/{genchapteruid}/objects")
-def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
+def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    offsetminutes = _get_offsetminutes(sb, str(user.id))
+    offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid,docid,createfiledts").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
@@ -838,6 +884,13 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
     doc_gendocjobuid = docid_row[0]["gendocjobuid"] if docid_row else None
     gendocnm = docid_row[0].get("gendocnm", "") if docid_row else ""
 
+    sb_svc = get_service_client()
+
+    # 크레딧 체크 — 대상 챕터의 objects 건수 + 정산 대기 건수가 잔여 크레딧을 초과하면 차단
+    credit_block = _check_credit_gate(sb, sb_svc, body.accountuid, [chapteruid])
+    if credit_block:
+        return credit_block
+
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()
     timeout = timedelta(hours=2)
@@ -878,7 +931,6 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
     }, on_conflict="gendocuid,genchapteruid").execute()
 
     # genchapters_realtimes insert (처리 시작 상태) → genchapterjobuid 획득
-    sb_svc = get_service_client()
     res = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters_realtimes").insert({
         "genchapteruid": genchapteruid,
         "docid": docid,
@@ -1105,6 +1157,13 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     if not gendoc_check:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
 
+    sb_svc = get_service_client()
+
+    # 크레딧 체크 — 대상 챕터들의 objects 건수 + 정산 대기 건수가 잔여 크레딧을 초과하면 차단
+    credit_block = _check_credit_gate(sb, sb_svc, body.accountuid, _get_chapteruids_for_gendoc(sb, gendocuid))
+    if credit_block:
+        return credit_block
+
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()
     timeout = timedelta(hours=2)
@@ -1153,7 +1212,6 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     gendocnm = gendocnm_row[0]["gendocnm"] if gendocnm_row else ""
 
     # gendocs_realtimes insert (처리 시작 상태) → gendocjobuid 획득
-    sb_svc = get_service_client()
     res = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").insert({
         "gendocuid": gendocuid,
         "docid": docid,
