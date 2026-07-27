@@ -612,6 +612,238 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
     }
 
 
+@router.get("/myinfo/usage")
+def get_myinfo_usage(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """로그인한 사용자 본인의 생성 사용량.
+
+    - daily/totals: 문서 생성/챕터 생성은 genobjectlogs 기준 일자별 건수.
+      genobjectlogs는 objectuid 단위 로그라 문서/챕터 생성 1건에 여러 행이 남는다.
+      문서 생성은 gendocjobuid, 챕터 단독 생성(재작성 포함)은 genchapterjobuid 기준으로
+      distinct 처리해 '실행 횟수'로 집계한다.
+      날짜는 doc/chapter의 경우 gendoclogs/genchapterlogs.logdts(실제 완료 시점, 해당 job의
+      최신값)로 재확정한다.
+      단일 항목 재작성은 genobjectcounts(creator 컬럼 2026-08-17 추가)에서 시간당+인원별로
+      이미 정확히 집계된 count를 그대로 합산한다 — genobjectlogs로 직접 세면 액션 1건당
+      로그가 여러 줄 남는 문제(트리거/재upsert로 인한 중복)가 있어 부정확했음.
+      genobjectcounts.creator는 2026-08-17 이전 데이터는 값이 없거나 부정확할 수 있다.
+    - credit: 계정(테넌트) 공용 Do 서비스 크레딧 현황(충전/사용/잔여, 충전유형별) — 모든 인원 공통.
+    - credit_history: creditbucketuses 중 본인(creator)이 생성한 문서/챕터로 인해 차감된 건만
+      필터링한 개인 사용 내역. 단일 항목 재작성은 크레딧을 차감하지 않아 포함되지 않는다.
+    """
+    from datetime import datetime
+
+    if not tenantid:
+        return {"daily": [], "totals": {"doc_count": 0, "chapter_count": 0, "object_count": 0, "total": 0},
+                "start_date": start_date, "end_date": end_date, "credit": None, "credit_history": []}
+
+    user = _get_user(token)
+    sb = _sb(token)
+    user_id = str(user.id)
+
+    today = datetime.now(timezone.utc).date()
+    sd = start_date or (today - timedelta(days=29)).strftime("%Y-%m-%d")
+    ed = end_date or today.strftime("%Y-%m-%d")
+    offsetminutes = _get_offsetminutes(sb, user_id, tenantid)
+
+    if offsetminutes is not None:
+        sd_utc = datetime.strptime(sd, "%Y-%m-%d").replace(tzinfo=timezone.utc) - timedelta(minutes=offsetminutes)
+        ed_utc = datetime.strptime(ed, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1) - timedelta(minutes=offsetminutes)
+    else:
+        sd_utc = datetime.strptime(sd, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        ed_utc = datetime.strptime(ed, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+
+    # creditbuckets/creditbucketuses/genchapterlogs/gendoclogs는 RLS상 일반 인원이 못 볼 수 있어
+    # service client 사용. 조회 범위는 반드시 아래에서 직접 accountuid/creator/jobuid로 좁힌다.
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    rows = sb.schema(SUPABASE_SCHEMA).table("genobjectlogs").select(
+        "createdts,gendocjobuid,genchapterjobuid"
+    ).eq("creator", user_id).eq("tenantid", int(tenantid)).eq("is_success", True) \
+        .gte("createdts", sd_utc.isoformat()).lt("createdts", ed_utc.isoformat()).execute().data or []
+
+    def _local_date(raw):
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d")
+
+    doc_jobs = {}      # gendocjobuid -> 가장 이른 로컬 날짜
+    chapter_jobs = {}  # genchapterjobuid -> 가장 이른 로컬 날짜 (gendocjobuid 없는 것만 = 챕터 단독)
+
+    for r in rows:
+        d = _local_date(r.get("createdts"))
+        gdju = r.get("gendocjobuid")
+        gcju = r.get("genchapterjobuid")
+        if gdju:
+            if gdju not in doc_jobs or d < doc_jobs[gdju]:
+                doc_jobs[gdju] = d
+        elif gcju:
+            if gcju not in chapter_jobs or d < chapter_jobs[gcju]:
+                chapter_jobs[gcju] = d
+        # gdju/gcju 둘 다 없는 행(단일 항목 재작성)은 여기선 무시 — genobjectcounts(creator 포함,
+        # 2026-08-17 추가)가 이미 시간당+인원별로 정확히 집계해주므로 아래에서 그걸 직접 쓴다.
+        # genobjectlogs로 직접 세면 액션 1건당 로그가 여러 줄 남는 문제가 있어 부정확했음.
+
+    # 단일 항목 재작성 — genobjectcounts에서 creator+tenantid로 직접 집계(시간 버킷 → 로컬 날짜 합산)
+    oc_rows = svc.table("genobjectcounts").select("usedts,count") \
+        .eq("tenantid", int(tenantid)).eq("creator", user_id) \
+        .gte("usedts", sd_utc.isoformat()).lt("usedts", ed_utc.isoformat()).execute().data or []
+    object_by_date = {}
+    for r in oc_rows:
+        d = _local_date(r.get("usedts"))
+        object_by_date[d] = object_by_date.get(d, 0) + (r.get("count") or 0)
+    object_total = sum(object_by_date.values())
+
+    # doc/chapter는 genobjectlogs.createdts(=objects 최초 upsert 시점, 사실상 의미 없음) 대신
+    # gendoclogs/genchapterlogs.logdts(실제 생성 완료 시점)로 날짜를 재확정한다.
+    if doc_jobs:
+        gdl_date_rows = svc.table("gendoclogs").select("gendocjobuid,logdts") \
+            .in_("gendocjobuid", list(doc_jobs.keys())).execute().data or []
+        latest = {}
+        for r in gdl_date_rows:
+            jid, ld = r.get("gendocjobuid"), r.get("logdts")
+            if jid and ld and (jid not in latest or ld > latest[jid]):
+                latest[jid] = ld
+        for jid, ld in latest.items():
+            doc_jobs[jid] = _local_date(ld)
+
+    if chapter_jobs:
+        gcl_date_rows = svc.table("genchapterlogs").select("genchapterjobuid,logdts") \
+            .in_("genchapterjobuid", list(chapter_jobs.keys())).execute().data or []
+        latest = {}
+        for r in gcl_date_rows:
+            jid, ld = r.get("genchapterjobuid"), r.get("logdts")
+            if jid and ld and (jid not in latest or ld > latest[jid]):
+                latest[jid] = ld
+        for jid, ld in latest.items():
+            chapter_jobs[jid] = _local_date(ld)
+
+    daily_map = {}
+
+    def _bump(date_str, key, amount=1):
+        e = daily_map.setdefault(date_str, {"date": date_str, "doc_count": 0, "chapter_count": 0, "object_count": 0})
+        e[key] += amount
+
+    for d in doc_jobs.values():
+        _bump(d, "doc_count")
+    for d in chapter_jobs.values():
+        _bump(d, "chapter_count")
+    for d, cnt in object_by_date.items():
+        _bump(d, "object_count", cnt)
+
+    daily = sorted(daily_map.values(), key=lambda x: x["date"])
+    for e in daily:
+        e["total"] = e["doc_count"] + e["chapter_count"] + e["object_count"]
+
+    totals = {
+        "doc_count": len(doc_jobs),
+        "chapter_count": len(chapter_jobs),
+        "object_count": object_total,
+    }
+    totals["total"] = totals["doc_count"] + totals["chapter_count"] + totals["object_count"]
+
+    # ── 크레딧 현황(계정 공용) + 본인 소모 내역 ──────────────────────────────
+    _, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+
+    credit = None
+    credit_history = []
+
+    if accountuid:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        bucket_rows = svc.table("creditbuckets").select(
+            "creditchargecd,chargecredit,usecredit,remaincredit,granteddts,expiredts,startdt"
+        ).eq("accountuid", accountuid).eq("servicecd", "Do").gt("expiredts", now_iso) \
+            .order("priorityno").execute().data or []
+
+        for b in bucket_rows:
+            b["expiredts"] = _fmt_dt(b.get("expiredts"), offsetminutes)
+            b["granteddts"] = _fmt_dt(b.get("granteddts"), offsetminutes)
+
+        credit = {
+            "buckets": bucket_rows,
+            "total_charge": sum(b.get("chargecredit") or 0 for b in bucket_rows),
+            "total_use": sum(b.get("usecredit") or 0 for b in bucket_rows),
+            "total_remain": sum(b.get("remaincredit") or 0 for b in bucket_rows),
+        }
+
+        # 본인이 생성한 챕터/문서만 대상 (단일 항목 재작성은 크레딧 미차감이라 대상 아님)
+        # 날짜는 부모(genchapters/gendocs)의 createdts/createfiledts가 아니라
+        # genchapterlogs/gendoclogs.logdts를 쓴다 — credit_helper._apply_credit_deduction에서
+        # creditbucketuses.refuid로 쓰이는 로그가 바로 이 logdts 기준 최종 로그이므로
+        # "실제 크레딧이 차감된 시점"에 가장 가깝다. 기간(sd_utc~ed_utc) 필터도 이 값으로 건다.
+        chap_rows = svc.table("genchapters").select("genchapteruid,chapteruid") \
+            .eq("creator", user_id).eq("tenantid", int(tenantid)).execute().data or []
+        doc_rows = svc.table("gendocs").select("gendocuid,gendocnm") \
+            .eq("creator", user_id).eq("tenantid", int(tenantid)).execute().data or []
+
+        loguid_map = {}  # loguid -> {"kind": doc/chapter, "name": ..., "date": raw logdts}
+
+        chapteruids = [c["genchapteruid"] for c in chap_rows]
+        if chapteruids:
+            chapter_ids = list({c["chapteruid"] for c in chap_rows if c.get("chapteruid")})
+            chapternm_map = {}
+            if chapter_ids:
+                nm_rows = svc.table("chapters").select("chapteruid,chapternm").in_("chapteruid", chapter_ids).execute().data or []
+                chapternm_map = {r["chapteruid"]: r.get("chapternm") for r in nm_rows}
+            chap_by_uid = {c["genchapteruid"]: c for c in chap_rows}
+            gcl_rows = svc.table("genchapterlogs").select("loguid,genchapteruid,logdts") \
+                .in_("genchapteruid", chapteruids).eq("is_credituse", True) \
+                .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
+            for r in gcl_rows:
+                chap = chap_by_uid.get(r["genchapteruid"], {})
+                loguid_map[r["loguid"]] = {
+                    "kind": "chapter",
+                    "name": chapternm_map.get(chap.get("chapteruid")) or "",
+                    "date": r.get("logdts"),
+                }
+
+        docuids = [d["gendocuid"] for d in doc_rows]
+        if docuids:
+            doc_by_uid = {d["gendocuid"]: d for d in doc_rows}
+            gdl_rows = svc.table("gendoclogs").select("loguid,gendocuid,logdts") \
+                .in_("gendocuid", docuids).eq("is_credituse", True) \
+                .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
+            for r in gdl_rows:
+                doc = doc_by_uid.get(r["gendocuid"], {})
+                loguid_map[r["loguid"]] = {
+                    "kind": "doc",
+                    "name": doc.get("gendocnm") or "",
+                    "date": r.get("logdts"),
+                }
+
+        if loguid_map:
+            use_rows = svc.table("creditbucketuses").select(
+                "refuid,usetypecd,beforecredit,usecredit,aftercredit"
+            ).eq("accountuid", accountuid).in_("refuid", list(loguid_map.keys())).execute().data or []
+
+            for u in use_rows:
+                meta = loguid_map.get(u.get("refuid"), {})
+                credit_history.append({
+                    "date_raw": meta.get("date") or "",
+                    "date": _fmt_dt(meta.get("date"), offsetminutes),
+                    "kind": meta.get("kind"),
+                    "name": meta.get("name") or "",
+                    "beforecredit": u.get("beforecredit"),
+                    "usecredit": u.get("usecredit"),
+                    "aftercredit": u.get("aftercredit"),
+                })
+
+            credit_history.sort(key=lambda x: x["date_raw"], reverse=True)
+            for h in credit_history:
+                del h["date_raw"]
+
+    return {"daily": daily, "totals": totals, "start_date": sd, "end_date": ed,
+            "credit": credit, "credit_history": credit_history}
+
+
 @router.get("/upgrade-products")
 def get_upgrade_products(
     servicecd: str,

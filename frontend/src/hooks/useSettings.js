@@ -146,6 +146,15 @@ export function useMySubscriptions() {
   })
 }
 
+export function useMyUsage(startDate, endDate) {
+  return useQuery({
+    queryKey: ['myinfo-usage', startDate, endDate],
+    queryFn: () => apiClient.get('/settings/myinfo/usage', {
+      params: { start_date: startDate, end_date: endDate },
+    }).then((r) => r.data),
+  })
+}
+
 export function useUpgradeProducts(servicecd, plancd = 'Pr') {
   return useQuery({
     queryKey: ['upgrade-products', servicecd, plancd],

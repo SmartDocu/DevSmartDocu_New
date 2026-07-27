@@ -41,6 +41,7 @@ import SettingsLlmKeysPage from '@/pages/settings/SettingsLlmKeysPage'
 import UpgradePlanPage from '@/pages/upgrade/UpgradePlanPage'
 import TenantSubscriptionPage from '@/pages/tenant/TenantSubscriptionPage'
 import MyInfoPage from '@/pages/MyInfoPage'
+import MyUsagePage from '@/pages/MyUsagePage'
 import NotificationsPage from '@/pages/NotificationsPage'
 import MfaSetupPage from '@/pages/settings/MfaSetupPage'
 import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
@@ -163,6 +164,7 @@ export const router = createBrowserRouter([
       { path: 'settings/datasets', element: <SettingsDatasetsPage /> },
       { path: 'settings/llm-keys', element: <SettingsLlmKeysPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
+      { path: 'myusage', element: <MyUsagePage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'upgrade', element: <UpgradePlanPage /> },
       { path: 'tenant-subscription', element: <TenantSubscriptionPage /> },

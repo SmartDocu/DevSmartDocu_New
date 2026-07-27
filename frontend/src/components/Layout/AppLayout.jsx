@@ -114,6 +114,19 @@ export default function AppLayout() {
     navigate(navPath)
   }
 
+  const openMyUsageInTab = () => {
+    const effectiveAppcd = appcd || apps[0]?.appcd
+    const tabPath = effectiveAppcd ? `app/${effectiveAppcd}/myusage` : 'myusage'
+    const navPath = effectiveAppcd ? `/app/${effectiveAppcd}/myusage` : '/myusage'
+    const menu = allMenus.find((m) => m.route_path === 'myusage')
+    if (menu) {
+      openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text || 'My Usage'), labelKey: `mnu.${menu.menucd}`, path: tabPath })
+    } else {
+      openTab({ key: 'myusage', label: t('ttl.myusage', 'My Usage') || 'My Usage', labelKey: 'ttl.myusage', path: tabPath })
+    }
+    navigate(navPath)
+  }
+
   // launcher 화면(appcd 없음)에서도 알림 클릭이 동작해야 하므로 openMyInfoInTab과 동일하게
   // effectiveAppcd(현재 appcd 없으면 첫 번째 앱)로 폴백해서 이동한다 — useOpenInTab은 appcd가
   // 없으면 /app/:appcd 하위에만 등록된 라우트로 못 감(그냥 launcher로 리다이렉트됨).
@@ -631,6 +644,11 @@ export default function AppLayout() {
                         key: 'myinfo',
                         label: user?.email,
                         onClick: openMyInfoInTab,
+                      },
+                      {
+                        key: 'myusage',
+                        label: t('ttl.myusage', 'My Usage') || 'My Usage',
+                        onClick: openMyUsageInTab,
                       },
                       { type: 'divider' },
                       {

@@ -649,14 +649,15 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
 
 
 def _increment_genobjectcount(sb, genchapteruid: str, objectuid: str):
-    """단일 항목 재작성(gencontenttypecd='O') 1회당 genobjectcounts에 시간당(1시간 버킷) 사용량 1건 집계"""
+    """단일 항목 재작성(gencontenttypecd='O') 1회당 genobjectcounts에 시간당(1시간 버킷)+인원별 사용량 1건 집계"""
     try:
-        row = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("accountuid,tenantid") \
+        row = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("accountuid,tenantid,creator") \
             .eq("genchapteruid", genchapteruid).eq("objectuid", objectuid).execute().data
         if not row or not row[0].get("accountuid") or row[0].get("tenantid") is None:
             return
         accountuid = row[0]["accountuid"]
         tenantid = row[0]["tenantid"]
+        creator = row[0].get("creator")
 
         now = datetime.now(timezone.utc)
         usedts = now.replace(minute=0, second=0, microsecond=0).isoformat()
@@ -664,7 +665,7 @@ def _increment_genobjectcount(sb, genchapteruid: str, objectuid: str):
 
         sb_svc = get_service_client()
         existing = sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").select("countuid,count") \
-            .eq("accountuid", accountuid).eq("tenantid", tenantid).eq("usedts", usedts).execute().data
+            .eq("accountuid", accountuid).eq("tenantid", tenantid).eq("usedts", usedts).eq("creator", creator).execute().data
         if existing:
             sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").update({
                 "count": existing[0]["count"] + 1,
@@ -676,6 +677,7 @@ def _increment_genobjectcount(sb, genchapteruid: str, objectuid: str):
                 "usedts": usedts,
                 "accountuid": accountuid,
                 "tenantid": tenantid,
+                "creator": creator,
                 "count": 1,
                 "updatedts": now_iso,
             }).execute()
@@ -879,9 +881,8 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
 
-    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,gendocjobuid,gendocnm").eq("gendocuid", gendocuid).execute().data
+    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,gendocnm").eq("gendocuid", gendocuid).execute().data
     docid = docid_row[0]["docid"] if docid_row else ctx.get("docid")
-    doc_gendocjobuid = docid_row[0]["gendocjobuid"] if docid_row else None
     gendocnm = docid_row[0].get("gendocnm", "") if docid_row else ""
 
     sb_svc = get_service_client()
@@ -956,7 +957,7 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
             "genchapteruid": genchapteruid,
             "genchapterjobuid": genchapterjobuid,
             "gendocuid": gendocuid,
-            "gendocjobuid": doc_gendocjobuid,
+            "gendocjobuid": None,  # 챕터 단독 작성 — gendocjobuid는 공백으로 둔다 (genobjects gencontenttypecd='C' 판정 근거)
             "chapteruid": chapteruid,
             "docid": docid,
             "tenantid": body.tenantid,
@@ -1381,12 +1382,13 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             .select("datauid").eq("datasourcecd", "dfv").eq("dfv_docid", docid).execute().data
         dfv_datauids = [r["datauid"] for r in dfv_rows]
 
-    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
-    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
-    if genchapterjobuid:
-        gencontenttypecd = "C"
-    elif gendocjobuid:
+    # gencontenttypecd: 문서 전체 생성(D) > 챕터 단위 처리(C) > 단일 항목 재작성(O)
+    # 문서 전체 작성 시에는 gendocjobuid+genchapterjobuid 둘 다 들어오므로 gendocjobuid를 먼저 판별해야
+    # 문서/챕터 단독 생성이 구분된다(gendocjobuid 없이 genchapterjobuid만 있으면 챕터 단독 생성).
+    if gendocjobuid:
         gencontenttypecd = "D"
+    elif genchapterjobuid:
+        gencontenttypecd = "C"
     else:
         gencontenttypecd = "O"
 

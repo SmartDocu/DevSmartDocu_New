@@ -246,12 +246,13 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
     genchapterjobuid = kwargs.get("genchapterjobuid")
     project_id = request.session.get("user", {}).get("projectid")
 
-    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
-    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
-    if genchapterjobuid:
-        gencontenttypecd = "C"
-    elif gendocjobuid:
+    # gencontenttypecd: 문서 전체 생성(D) > 챕터 단위 처리(C) > 단일 항목 재작성(O)
+    # 문서 전체 작성 시에는 gendocjobuid+genchapterjobuid 둘 다 들어오므로 gendocjobuid를 먼저 판별해야
+    # 문서/챕터 단독 생성이 구분된다(gendocjobuid 없이 genchapterjobuid만 있으면 챕터 단독 생성).
+    if gendocjobuid:
         gencontenttypecd = "D"
+    elif genchapterjobuid:
+        gencontenttypecd = "C"
     else:
         gencontenttypecd = "O"
 
@@ -592,12 +593,13 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
                                     sep, gendocjobuid=None, genchapterjobuid=None):
     """UI 객체들을 순차적으로 처리"""
 
-    # gencontenttypecd: 챕터 단위 처리(C) > 문서 전체 생성(D) > 단일 항목 재작성(O)
-    # 문서 전체 작성 시에도 챕터별로 genchapterjobuid가 함께 부여되므로 genchapterjobuid를 먼저 판별한다
-    if genchapterjobuid:
-        gencontenttypecd = "C"
-    elif gendocjobuid:
+    # gencontenttypecd: 문서 전체 생성(D) > 챕터 단위 처리(C) > 단일 항목 재작성(O)
+    # 문서 전체 작성 시에는 gendocjobuid+genchapterjobuid 둘 다 들어오므로 gendocjobuid를 먼저 판별해야
+    # 문서/챕터 단독 생성이 구분된다(gendocjobuid 없이 genchapterjobuid만 있으면 챕터 단독 생성).
+    if gendocjobuid:
         gencontenttypecd = "D"
+    elif genchapterjobuid:
+        gencontenttypecd = "C"
     else:
         gencontenttypecd = "O"
 
