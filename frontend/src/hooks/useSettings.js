@@ -289,6 +289,23 @@ export function usePurchaseTenantManageCreditSubscription() {
   })
 }
 
+export function useMyInfoCreditPurchase() {
+  return useQuery({
+    queryKey: ['myinfo-credit-purchase'],
+    queryFn: () => apiClient.get('/settings/myinfo/credit-purchase').then((r) => r.data),
+  })
+}
+
+export function usePurchaseMyInfoCredit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/myinfo/credit-purchase', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myinfo-credit-purchase'] })
+    },
+  })
+}
+
 export function useTenantManageOverview() {
   return useQuery({
     queryKey: ['tenant-manage-overview'],

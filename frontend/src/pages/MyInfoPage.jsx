@@ -4,7 +4,10 @@ import {
   Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
-import { useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions } from '@/hooks/useSettings'
+import {
+  useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions,
+  useMyInfoCreditPurchase,
+} from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useLangStore, t } from '@/stores/langStore'
 
@@ -21,6 +24,7 @@ export default function MyInfoPage() {
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
   const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
   const { data: otherSubData } = useTenantManageOtherSubscriptions()
+  const { data: creditPurchaseData, isLoading: creditPurchaseLoading } = useMyInfoCreditPurchase()
   const hasMfaFeature = (otherSubData?.owned || []).some((o) => o.productcd === 'mfa')
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
@@ -37,6 +41,7 @@ export default function MyInfoPage() {
   const isMfaEnabled = factorsData?.mfa_enabled ?? false
   const subscriptions = subsData?.subscriptions || []
   const isSystemTenant = tenant.issystemtenant === true
+  const ownedCredits = creditPurchaseData?.owned || []
 
   const isAgreed = (v) => v === 'Y' || v === true
 
@@ -127,6 +132,38 @@ export default function MyInfoPage() {
           </Card>
         </Col>
 
+        {/* 약관 동의 여부 */}
+        <Col span={12}>
+          <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ height: '100%' }}>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label={`${t('lbl.terms.service')} (${t('lbl.required')})`}>
+                {isAgreed(userInfo.termsofuseyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label={`${t('lbl.terms.privacy')} (${t('lbl.required')})`}>
+                {isAgreed(userInfo.userinfoyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label={`${t('lbl.terms.marketing')} (${t('lbl.optional')})`}>
+                <Popconfirm
+                  title={t('msg.marketing.consent.confirm')}
+                  okText={t('btn.confirm')}
+                  cancelText={t('btn.cancel')}
+                  onConfirm={handleToggleMarketing}
+                  rootClassName="popconfirm-reverse-actions"
+                >
+                  <Switch
+                    checked={isAgreed(userInfo.marketingyn)}
+                    loading={updateMarketing.isPending}
+                    checkedChildren={t('lbl.agreed')}
+                    unCheckedChildren={t('lbl.not.agreed')}
+                  />
+                </Popconfirm>
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={16} style={{ marginBottom: 16 }}>
         {/* 요금제 */}
         <Col span={12}>
           <Card
@@ -159,6 +196,33 @@ export default function MyInfoPage() {
             />
           </Card>
         </Col>
+
+        {/* 크레딧 구매 — 개인(시스템 테넌트) 계정 전용. 보유 내역만 여기 표시하고,
+            실제 구매(상품 선택)는 요금제 카드의 '구독 관리'와 동일한 패턴으로 별도 페이지에서 진행 */}
+        {isSystemTenant && (
+          <Col span={12}>
+            <Card
+              size="small"
+              title={t('ttl.myinfo.credit.purchase')}
+              extra={<Button size="small" onClick={() => openInTab('credit-purchase', '', t('ttl.myinfo.credit.purchase'))}>{t('btn.purchase')}</Button>}
+              loading={creditPurchaseLoading}
+              style={{ height: '100%' }}
+            >
+              <Table
+                size="small"
+                pagination={false}
+                dataSource={ownedCredits}
+                rowKey="subscriptionuid"
+                locale={{ emptyText: t('msg.no.data') }}
+                columns={[
+                  { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
+                  { title: t('lbl.credit'), dataIndex: 'quantity', key: 'quantity', align: 'right' },
+                  { title: t('lbl.expiresdts'), dataIndex: 'expiresdts', key: 'expiresdts' },
+                ]}
+              />
+            </Card>
+          </Col>
+        )}
       </Row>
 
       {/* 보안 설정 (MFA) — 현재 테넌트가 MFA 기능을 구독 중일 때만 노출 ───────── */}
@@ -197,34 +261,6 @@ export default function MyInfoPage() {
           </Descriptions>
         </Card>
       )}
-
-      {/* 약관 동의 여부 */}
-      <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ marginBottom: 16 }}>
-        <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label={`${t('lbl.terms.service')} (${t('lbl.required')})`}>
-            {isAgreed(userInfo.termsofuseyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
-          </Descriptions.Item>
-          <Descriptions.Item label={`${t('lbl.terms.privacy')} (${t('lbl.required')})`}>
-            {isAgreed(userInfo.userinfoyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
-          </Descriptions.Item>
-          <Descriptions.Item label={`${t('lbl.terms.marketing')} (${t('lbl.optional')})`}>
-            <Popconfirm
-              title={t('msg.marketing.consent.confirm')}
-              okText={t('btn.confirm')}
-              cancelText={t('btn.cancel')}
-              onConfirm={handleToggleMarketing}
-              rootClassName="popconfirm-reverse-actions"
-            >
-              <Switch
-                checked={isAgreed(userInfo.marketingyn)}
-                loading={updateMarketing.isPending}
-                checkedChildren={t('lbl.agreed')}
-                unCheckedChildren={t('lbl.not.agreed')}
-              />
-            </Popconfirm>
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
 
       {/* 소속 */}
       <Card size="small" title={t('ttl.myinfo.belong')} loading={isLoading} style={{ marginBottom: 16 }}>

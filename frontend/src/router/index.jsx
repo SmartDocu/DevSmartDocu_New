@@ -39,6 +39,7 @@ import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
 import SettingsDatasetsPage from '@/pages/settings/SettingsDatasetsPage'
 import SettingsLlmKeysPage from '@/pages/settings/SettingsLlmKeysPage'
 import UpgradePlanPage from '@/pages/upgrade/UpgradePlanPage'
+import CreditPurchasePage from '@/pages/upgrade/CreditPurchasePage'
 import TenantSubscriptionPage from '@/pages/tenant/TenantSubscriptionPage'
 import MyInfoPage from '@/pages/MyInfoPage'
 import MyUsagePage from '@/pages/MyUsagePage'
@@ -167,6 +168,7 @@ export const router = createBrowserRouter([
       { path: 'myusage', element: <MyUsagePage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'upgrade', element: <UpgradePlanPage /> },
+      { path: 'credit-purchase', element: <CreditPurchasePage /> },
       { path: 'tenant-subscription', element: <TenantSubscriptionPage /> },
       { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },

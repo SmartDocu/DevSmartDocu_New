@@ -47,9 +47,9 @@ export default function MyUsagePage() {
     { title: t('thd.date_thd'), dataIndex: 'date', key: 'date' },
     {
       title: t('thd.usetypecd_thd'), dataIndex: 'kind', key: 'kind',
-      render: (v) => v === 'doc' ? t('lbl.doc') : v === 'chapter' ? t('lbl.chapter') : v,
+      render: (v) => v === 'doc' ? t('lbl.doc') : v === 'chapter' ? t('lbl.chapter') : v === 'object' ? t('lbl.object') : v,
     },
-    { title: t('lbl.name'), dataIndex: 'name', key: 'name' },
+    { title: t('lbl.name'), dataIndex: 'name', key: 'name', render: (v, r) => v || (r.kind === 'object' ? t('lbl.myusage.object_count') : v) },
     { title: t('thd.beforecredit_thd'), dataIndex: 'beforecredit', key: 'beforecredit', align: 'right' },
     { title: t('lbl.myusage.credit.used'), dataIndex: 'usecredit', key: 'usecredit', align: 'right' },
     { title: t('thd.aftercredit_thd'), dataIndex: 'aftercredit', key: 'aftercredit', align: 'right' },
@@ -128,7 +128,7 @@ export default function MyUsagePage() {
           columns={historyColumns}
           dataSource={creditHistory}
           rowKey={(r, idx) => idx}
-          pagination={{ pageSize: 15 }}
+          pagination={{ pageSize: 10 }}
           locale={{ emptyText: t('msg.no.data') }}
         />
       </Card>

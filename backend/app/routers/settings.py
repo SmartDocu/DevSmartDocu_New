@@ -632,8 +632,11 @@ def get_myinfo_usage(
       로그가 여러 줄 남는 문제(트리거/재upsert로 인한 중복)가 있어 부정확했음.
       genobjectcounts.creator는 2026-08-17 이전 데이터는 값이 없거나 부정확할 수 있다.
     - credit: 계정(테넌트) 공용 Do 서비스 크레딧 현황(충전/사용/잔여, 충전유형별) — 모든 인원 공통.
-    - credit_history: creditbucketuses 중 본인(creator)이 생성한 문서/챕터로 인해 차감된 건만
-      필터링한 개인 사용 내역. 단일 항목 재작성은 크레딧을 차감하지 않아 포함되지 않는다.
+    - credit_history: creditbucketuses 중 본인(creator)이 생성한 문서/챕터로 인해 차감된 건 +
+      본인의 genobjectcount_historys(단일 항목 재작성 배치 크레딧 차감, usetypecd='do')로 차감된
+      건을 합친 개인 사용 내역. genobjectcounts는 sdoc.fn_apply_genobjectcount_credit()
+      배치가 처리해야 genobjectcount_historys로 넘어가고 creditbucketuses가 생기므로,
+      배치가 아직 안 돌았으면(is_applied=false로 남아있으면) 여기 안 잡힌다.
     """
     from datetime import datetime
 
@@ -818,6 +821,19 @@ def get_myinfo_usage(
                     "name": doc.get("gendocnm") or "",
                     "date": r.get("logdts"),
                 }
+
+        # 단일 항목 재작성 배치 크레딧 차감 내역 — genobjectcounts가 처리되면
+        # genobjectcount_historys로 이관되며(sdoc.fn_apply_genobjectcount_credit),
+        # creditbucketuses.refuid에는 그 countuid가 usetypecd='do'로 기록된다.
+        oc_hist_rows = svc.table("genobjectcount_historys").select("countuid,logdts") \
+            .eq("creator", user_id).eq("tenantid", int(tenantid)) \
+            .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
+        for r in oc_hist_rows:
+            loguid_map[r["countuid"]] = {
+                "kind": "object",
+                "name": "",
+                "date": r.get("logdts"),
+            }
 
         if loguid_map:
             use_rows = svc.table("creditbucketuses").select(
@@ -1050,6 +1066,14 @@ def _require_not_system_tenant(svc, tenantid: str) -> None:
     t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
     if t_row.data and t_row.data.get("issystemtenant"):
         raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
+
+
+def _require_system_tenant(svc, tenantid: str) -> None:
+    """개인 계정 전용 화면(예: 내 정보 크레딧 구매)은 조직 테넌트에서 의미가 없어 차단한다.
+    (org/credit-manage와 반대 방향 가드 — 이쪽은 개인 계정 전용, 그쪽은 조직 전용으로 서로 겹치지 않게 분리)"""
+    t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+    if not t_row.data or not t_row.data.get("issystemtenant"):
+        raise HTTPException(status_code=403, detail="msg.feature.unavailable.org.tenant")
 
 
 @router.get("/tenant-manage/subscriptions")
@@ -1645,23 +1669,16 @@ def cancel_tenant_manage_other_subscription(
     return {"result": "success"}
 
 
-@router.get("/tenant-manage/credit-subscriptions")
-def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """크레딧 구매 관리 화면: 구매 내역 + 구매 가능 크레딧 상품 목록."""
-    user = _get_user(token)
-    user_id = str(user.id)
-    svc = get_service_client().schema(SUPABASE_SCHEMA)
-
-    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
-    _require_tenant_manager(svc, user_id, tenantid)
-    _require_not_system_tenant(svc, tenantid)
-
+def _get_credit_subscriptions_data(svc, user_id: str, tenantid: str, accountuid: Optional[str]) -> dict:
+    """크레딧 구매 내역 + 구매 가능 상품 조회 — 조직(tenant-manage)/개인(myinfo) 화면 공용 로직."""
     subscribed_servicecds = set()
     if accountuid:
+        # plancd='Fr'(Free 플랜)인 서비스는 추가 크레딧 구매 대상에서 제외한다.
         subscribed_servicecds = {
             r["servicecd"] for r in (
-                svc.table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
+                svc.table("accountservices").select("servicecd,plancd").eq("accountuid", accountuid).execute().data or []
             )
+            if r.get("plancd") != "Fr"
         }
 
     all_products = (
@@ -1704,17 +1721,8 @@ def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tena
     return {"owned": owned, "products": products, "accountuid": accountuid}
 
 
-class CreditSubscriptionPurchaseRequest(BaseModel):
-    productcd: str
-
-
-@router.post("/tenant-manage/credit-subscription-purchase")
-def purchase_tenant_manage_credit_subscription(
-    body: CreditSubscriptionPurchaseRequest,
-    token: str = Depends(get_token),
-    tenantid: Optional[str] = Depends(get_tenantid),
-):
-    """크레딧 구매 관리 화면: 크레딧 상품 구매.
+def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: str, productcd: str) -> None:
+    """크레딧 상품 구매 — 조직(tenant-manage)/개인(myinfo) 화면 공용 로직.
 
     결제 연동 전까지는 저장 즉시 subscription_credits / creditbuckets에 반영한다.
     추후 결제 게이트가 추가되면 결제 성공 콜백에서 이 로직을 호출하도록 변경해야 한다.
@@ -1722,29 +1730,21 @@ def purchase_tenant_manage_credit_subscription(
     from datetime import datetime, timezone as tz
     from dateutil.relativedelta import relativedelta
 
-    user = _get_user(token)
-    user_id = str(user.id)
-    svc = get_service_client().schema(SUPABASE_SCHEMA)
-
-    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
-    _require_tenant_manager(svc, user_id, tenantid)
-    _require_not_system_tenant(svc, tenantid)
-    if not accountuid:
-        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
-
     prod_row = svc.table("products").select(
         "productcd,productnm,servicecd,producttype,credit"
-    ).eq("productcd", body.productcd).maybe_single().execute()
+    ).eq("productcd", productcd).maybe_single().execute()
     product = prod_row.data if prod_row else None
     if not product or product.get("producttype") != "Credit":
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
 
     if product.get("servicecd"):
-        svcrow = svc.table("accountservices").select("servicecd").eq(
+        svcrow = svc.table("accountservices").select("servicecd,plancd").eq(
             "accountuid", accountuid
         ).eq("servicecd", product["servicecd"]).maybe_single().execute()
         if not svcrow or not svcrow.data:
             raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
+        if svcrow.data.get("plancd") == "Fr":
+            raise HTTPException(status_code=400, detail="Free 플랜은 추가 크레딧을 구매할 수 없습니다.")
 
     now_utc = datetime.now(tz.utc)
     # creditchargecd가 Ba가 아닌 크레딧은 구매 시점 + 1년 - 1일을 만료일로 고정
@@ -1794,6 +1794,76 @@ def purchase_tenant_manage_credit_subscription(
         "startdt": startdt,
     }).execute()
 
+
+class CreditSubscriptionPurchaseRequest(BaseModel):
+    productcd: str
+
+
+@router.get("/tenant-manage/credit-subscriptions")
+def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """크레딧 구매 관리 화면(조직 전용): 구매 내역 + 구매 가능 크레딧 상품 목록."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+
+    return _get_credit_subscriptions_data(svc, user_id, tenantid, accountuid)
+
+
+@router.post("/tenant-manage/credit-subscription-purchase")
+def purchase_tenant_manage_credit_subscription(
+    body: CreditSubscriptionPurchaseRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """크레딧 구매 관리 화면(조직 전용): 크레딧 상품 구매."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    _purchase_credit_subscription(svc, user_id, tenantid, accountuid, body.productcd)
+    return {"result": "success"}
+
+
+@router.get("/myinfo/credit-purchase")
+def get_myinfo_credit_purchase(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """개인(시스템 테넌트) 계정용 크레딧 구매 화면: 구매 내역 + 구매 가능 크레딧 상품 목록."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_system_tenant(svc, tenantid)
+
+    return _get_credit_subscriptions_data(svc, user_id, tenantid, accountuid)
+
+
+@router.post("/myinfo/credit-purchase")
+def purchase_myinfo_credit(
+    body: CreditSubscriptionPurchaseRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """개인(시스템 테넌트) 계정용 크레딧 구매 화면: 크레딧 상품 구매."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    _purchase_credit_subscription(svc, user_id, tenantid, accountuid, body.productcd)
     return {"result": "success"}
 
 

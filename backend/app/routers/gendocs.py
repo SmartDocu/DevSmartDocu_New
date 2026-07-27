@@ -176,6 +176,19 @@ def _fmt(val: Optional[str], offsetminutes: Optional[int] = None) -> str:
         return ""
 
 
+def _parse_ts(val):
+    """비교용 — raw timestamp 문자열/값을 tz-aware datetime으로. 실패/빈값이면 None."""
+    if not val:
+        return None
+    try:
+        dt = dp.parse(val) if isinstance(val, str) else val
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
 class FakeRequest:
     """Minimal Django-like request stub for utilsPrj compatibility."""
     def __init__(self, access_token: str, user_id: str, docid: Optional[int] = None,
@@ -315,12 +328,24 @@ def get_genchapters(gendocuid: str, token: str = Depends(get_token), tenantid: O
     user = _get_user(token)
     sb = _sb(token)
     offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
-    chapters = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
-    for c in chapters:
-        c["createfiledts"] = _fmt(c.get("createfiledts"), offsetminutes)
-        c["updatefiledts"] = _fmt(c.get("updatefiledts"), offsetminutes)
+
     gendoc = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs__r", {"p_gendocuid": gendocuid}).execute().data or []
     gendoc_info = gendoc[0] if gendoc else {}
+    doc_createfiledts_dt = _parse_ts(gendoc_info.get("createfiledts"))
+
+    chapters = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
+    for c in chapters:
+        # 신규작성/신규업로드 — 챕터가 문서 최종 병합(gendocs.createfiledts)보다 나중에
+        # (재)작성/업로드됐으면 체크 → 지금 문서 파일엔 이 챕터의 최신 내용이 반영 안 된 상태.
+        # RPC(fn_genchapters__r_gendocuid)가 반환하는 chaptercreate/uploadchapter는 이 비교와
+        # 무관한(작성방식 출처) 값이라 여기서 직접 계산해 덮어쓴다.
+        chap_created_dt = _parse_ts(c.get("createfiledts"))
+        chap_updated_dt = _parse_ts(c.get("updatefiledts"))
+        c["new_chapteryn"] = bool(chap_created_dt and doc_createfiledts_dt and chap_created_dt > doc_createfiledts_dt)
+        c["new_uploadyn"] = bool(chap_updated_dt and doc_createfiledts_dt and chap_updated_dt > doc_createfiledts_dt)
+        c["createfiledts"] = _fmt(c.get("createfiledts"), offsetminutes)
+        c["updatefiledts"] = _fmt(c.get("updatefiledts"), offsetminutes)
+
     gendoc_info["createfiledts"] = _fmt(gendoc_info.get("createfiledts"), offsetminutes)
     gendoc_info["updatefiledts"] = _fmt(gendoc_info.get("updatefiledts"), offsetminutes)
     finaldts_raw = gendoc_info.get("finaldts")
@@ -551,6 +576,7 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token), ten
     gendocuid = genchap[0]["gendocuid"]
     chapteruid = genchap[0]["chapteruid"]
     docid = genchap[0].get("docid")
+    createfiledts_dt = _parse_ts(genchap[0].get("createfiledts"))
     createfiledts = _fmt(genchap[0].get("createfiledts"), offsetminutes)
 
     chapter = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", chapteruid).execute().data
@@ -568,11 +594,23 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token), ten
     go_rows = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", genchapteruid).order("createdts").execute().data or []
     objects = []
     for go in go_rows:
-        obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectnm,objectdesc,objecttypecd,orderno,createdts").eq("objectuid", go["objectuid"]).execute().data
+        obj_rows = sb.schema(SUPABASE_SCHEMA).table("objects").select("objectnm,objectdesc,objecttypecd,orderno,createdts,modifydts").eq("objectuid", go["objectuid"]).execute().data
         if not obj_rows:
             continue
         obj = obj_rows[0]
         typecd = go.get("objecttypecd") or obj.get("objecttypecd")
+
+        go_created_dt = _parse_ts(go.get("createdts"))
+        obj_modified_dt = _parse_ts(obj.get("modifydts")) or _parse_ts(obj.get("createdts"))
+
+        # 설정 미반영 — 항목(objects) 설정이 이 genobject 콘텐츠가 생성된 시점보다 나중에 바뀌었으면 True
+        new_objectyn = bool(obj_modified_dt and go_created_dt and obj_modified_dt > go_created_dt)
+        # 항목 미반영 — 아직 한 번도 생성 안 됐거나(resulttext 없음), genobject 콘텐츠가 챕터 파일
+        # 확정(createfiledts)보다 나중에 생성/재작성됐으면 True (예: 항목만 단독 재작성한 경우)
+        new_genobjectyn = (not bool(go.get("resulttext"))) or bool(
+            go_created_dt and createfiledts_dt and go_created_dt > createfiledts_dt
+        )
+
         objects.append({
             "genobjectuid": go["genobjectuid"],
             "objectuid": go["objectuid"],
@@ -586,8 +624,8 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token), ten
             "replacestring": go.get("replacestring"),
             "objcreatedts": _fmt(obj.get("createdts"), offsetminutes),
             "genobjcreatedts": _fmt(go.get("createdts"), offsetminutes),
-            "new_objectyn": False,
-            "new_genobjectyn": not bool(go.get("resulttext")),
+            "new_objectyn": new_objectyn,
+            "new_genobjectyn": new_genobjectyn,
             "chapteruid": chapteruid,
         })
     objects = sorted(objects, key=lambda x: (x.get("orderno", 0), str(x.get("filterjson") or "")))
@@ -1069,19 +1107,6 @@ async def upload_chapter_file(
         "updateuserid": user_id,
     }).eq("genchapteruid", genchapteruid).execute()
 
-    docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
-    if docid_row:
-        sb.schema(SUPABASE_SCHEMA).table("loguploads").insert({
-            "objecttypenm": "C",
-            "docid": docid_row[0]["docid"],
-            "gendocuid": gendocuid,
-            "genchapteruid": genchapteruid,
-            "updatefileurl": public_url,
-            "updatefilenm": file.filename,
-            "updatefiledts": now,
-            "updateuserid": user_id,
-        }).execute()
-
     return {"success": True, "message": "업로드되었습니다.", "url": public_url}
 
 
@@ -1120,18 +1145,6 @@ async def upload_file(
         "updatefiledts": now,
         "updateuserid": user_id,
     }).eq("gendocuid", gendocuid).execute()
-
-    docid = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
-    if docid:
-        sb.schema(SUPABASE_SCHEMA).table("loguploads").insert({
-            "objecttypenm": "D",
-            "docid": docid[0]["docid"],
-            "gendocuid": gendocuid,
-            "updatefileurl": public_url,
-            "updatefilenm": file.filename,
-            "updatefiledts": now,
-            "updateuserid": user_id,
-        }).execute()
 
     return {"message": "업로드되었습니다.", "url": public_url}
 
