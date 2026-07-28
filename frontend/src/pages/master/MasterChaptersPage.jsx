@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import { useMenus } from '@/hooks/useMenus'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useChapters, useSaveChapter, useDeleteChapter } from '@/hooks/useChapters'
@@ -8,6 +9,7 @@ import { useLangStore, t } from '@/stores/langStore'
 
 export default function MasterChaptersPage() {
   useLangStore((s) => s.translations)
+  const { message, modal } = App.useApp()
 
   const [searchParams] = useSearchParams()
   const location = useLocation()
@@ -54,8 +56,8 @@ export default function MasterChaptersPage() {
   }
 
   const handleSave = () => {
-    if (!form.chapterno) { alert(t('msg.chapter.required')); return }
-    if (!selectedDocid) { alert(t('msg.doc.select')); return }
+    if (!form.chapterno) { message.warning(t('msg.chapter.required')); return }
+    if (!selectedDocid) { message.warning(t('msg.doc.select')); return }
     setSaving(true)
     const fd = new FormData()
     fd.append('docid', selectedDocid)
@@ -74,12 +76,16 @@ export default function MasterChaptersPage() {
   }
 
   const handleDelete = () => {
-    if (!selectedChap) { alert(t('msg.chapter.select.delete')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteChapter.mutate(
-      { chapteruid: selectedChap.chapteruid, docid: selectedDocid },
-      { onSuccess: () => { setSelectedChap(null); setForm({ chapternm: '', chapterno: '', useyn: true }) } },
-    )
+    if (!selectedChap) { message.warning(t('msg.chapter.select.delete')); return }
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteChapter.mutate(
+          { chapteruid: selectedChap.chapteruid, docid: selectedDocid },
+          { onSuccess: () => { setSelectedChap(null); setForm({ chapternm: '', chapterno: '', useyn: true }) } },
+        )
+      },
+    })
   }
 
   const isEditYn = user?.editbuttonyn === 'Y'

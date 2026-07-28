@@ -20,7 +20,7 @@ const EMPTY_TERM = {
 }
 
 export default function AdminTermsPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: terms = [] } = useAdminTerms()
@@ -72,7 +72,7 @@ export default function AdminTermsPage() {
   }
 
   const handleTermSave = async () => {
-    if (!form.termkey.trim()) { alert(t('msg.term.required')); return }
+    if (!form.termkey.trim()) { message.warning(t('msg.term.required')); return }
     const termkey = form.termkey
     await saveTerm.mutateAsync({ ...form, isNew, origTermgroupcd: selectedTerm?.termgroupcd })
     if (isNew) {
@@ -92,7 +92,7 @@ export default function AdminTermsPage() {
   }
 
   const handleTermDelete = () => {
-    if (!selectedTerm) { alert(t('msg.term.select.delete')); return }
+    if (!selectedTerm) { message.warning(t('msg.term.select.delete')); return }
     modal.confirm({
       title: t('msg.confirm.delete'),
       okText: t('btn.delete'),

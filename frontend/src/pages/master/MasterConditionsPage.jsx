@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
@@ -26,6 +27,7 @@ const EMPTY_FORM = {
 
 export default function MasterConditionsPage() {
   useLangStore((s) => s.translations)
+  const { message, modal } = App.useApp()
 
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
 
@@ -112,12 +114,12 @@ export default function MasterConditionsPage() {
   }
 
   const handleSave = () => {
-    if (!docid) { alert(t('msg.doc.select')); return }
-    if (!form.paramnm) { alert(t('msg.required') + ': ' + t('lbl.paramnm_lbl')); return }
-    if (!form.operator) { alert(t('msg.required') + ': ' + t('lbl.operator_lbl')); return }
-    if (!form.samplevalue) { alert(t('msg.required') + ': ' + t('lbl.samplevalue')); return }
+    if (!docid) { message.warning(t('msg.doc.select')); return }
+    if (!form.paramnm) { message.warning(t('msg.required') + ': ' + t('lbl.paramnm_lbl')); return }
+    if (!form.operator) { message.warning(t('msg.required') + ': ' + t('lbl.operator_lbl')); return }
+    if (!form.samplevalue) { message.warning(t('msg.required') + ': ' + t('lbl.samplevalue')); return }
     if (form.datasetyn === 'Y' && !form.datauid) {
-      alert(t('msg.required') + ': ' + t('lbl.datauid'))
+      message.warning(t('msg.required') + ': ' + t('lbl.datauid'))
       return
     }
 
@@ -145,9 +147,11 @@ export default function MasterConditionsPage() {
   }
 
   const handleDelete = () => {
-    if (!form.paramuid) { alert(t('msg.select.delete')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteParam.mutate(form.paramuid, { onSuccess: handleNew })
+    if (!form.paramuid) { message.warning(t('msg.select.delete')); return }
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => { deleteParam.mutate(form.paramuid, { onSuccess: handleNew }) },
+    })
   }
 
   if (!docid) {

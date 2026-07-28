@@ -37,7 +37,7 @@ const EMPTY_FORM = {
 const EMPTY_MODAL = { translated_title: '', translated_text1: '', translated_text2: '' }
 
 export default function AdminSamplePromptPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
   const user = useAuthStore((s) => s.user)
 
@@ -116,8 +116,8 @@ export default function AdminSamplePromptPage() {
   }
 
   const handlePromptSave = async () => {
-    if (!form.promptkey.trim()) { alert(t('msg.prompt.key.required')); return }
-    if (!form.prompttypecd) { alert(t('msg.prompt.prompttypecd.required')); return }
+    if (!form.promptkey.trim()) { message.warning(t('msg.prompt.key.required')); return }
+    if (!form.prompttypecd) { message.warning(t('msg.prompt.prompttypecd.required')); return }
     const { promptkey } = form
     await savePrompt.mutateAsync({
       ...form,
@@ -132,7 +132,7 @@ export default function AdminSamplePromptPage() {
   }
 
   const handlePromptDelete = () => {
-    if (!selectedPrompt) { alert(t('msg.prompt.select.delete')); return }
+    if (!selectedPrompt) { message.warning(t('msg.prompt.select.delete')); return }
     modal.confirm({
       title: t('msg.confirm.delete'),
       okText: t('btn.delete'),
@@ -143,7 +143,7 @@ export default function AdminSamplePromptPage() {
   }
 
   const handlePreview = async () => {
-    if (!modalForm.translated_text1.trim()) { alert(t('msg.prompt.text1.required')); return }
+    if (!modalForm.translated_text1.trim()) { message.warning(t('msg.prompt.text1.required')); return }
     setPreviewLoading(true)
     try {
       const resp = await apiClient.post('/admin/sample-prompts/preview', {

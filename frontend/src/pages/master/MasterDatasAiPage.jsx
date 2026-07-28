@@ -28,7 +28,7 @@ function parseCols(colsInfoJson) {
 }
 
 export default function MasterDatasAiPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
   const translationVersion = useLangStore((s) => s.translationVersion)
 
@@ -120,8 +120,8 @@ export default function MasterDatasAiPage() {
   }
 
   const handlePreview = () => {
-    if (!form.sourcedatauid) { alert(t('msg.source.select')); return }
-    if (!form.gensentence.trim()) { alert(t('msg.prompt.required')); return }
+    if (!form.sourcedatauid) { message.warning(t('msg.source.select')); return }
+    if (!form.gensentence.trim()) { message.warning(t('msg.prompt.required')); return }
     const previewDocid = form.datasourcecd === 'dfv' && form.dfv_docid ? Number(form.dfv_docid) : null
     aiPreview.mutate(
       { sourcedatauid: form.sourcedatauid, gensentence: form.gensentence, docid: previewDocid, projectid: projectIdNum },
@@ -145,11 +145,11 @@ export default function MasterDatasAiPage() {
   }
 
   const handleSave = () => {
-    if (!projectIdNum) { alert(t('msg.select.project')); return }
-    if (!form.datanm.trim()) { alert(t('msg.datanm.required')); return }
-    if (!form.sourcedatauid) { alert(t('msg.source.select')); return }
-    if (!form.gensentence.trim()) { alert(t('msg.prompt.required')); return }
-    if (form.datasourcecd === 'dfv' && !form.dfv_docid) { alert(t('msg.doc.select')); return }
+    if (!projectIdNum) { message.warning(t('msg.select.project')); return }
+    if (!form.datanm.trim()) { message.warning(t('msg.datanm.required')); return }
+    if (!form.sourcedatauid) { message.warning(t('msg.source.select')); return }
+    if (!form.gensentence.trim()) { message.warning(t('msg.prompt.required')); return }
+    if (form.datasourcecd === 'dfv' && !form.dfv_docid) { message.warning(t('msg.doc.select')); return }
 
     const body = {
       datauid: form.datauid || null,
@@ -171,9 +171,11 @@ export default function MasterDatasAiPage() {
   }
 
   const handleDelete = () => {
-    if (!form.datauid) { alert(t('msg.select.delete')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteDf.mutate({ datauid: form.datauid, projectid: projectIdNum }, { onSuccess: handleNew })
+    if (!form.datauid) { message.warning(t('msg.select.delete')); return }
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => { deleteDf.mutate({ datauid: form.datauid, projectid: projectIdNum }, { onSuccess: handleNew }) },
+    })
   }
 
   const updateCol = (idx, field, value) => {

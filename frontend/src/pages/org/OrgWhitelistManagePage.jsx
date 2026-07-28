@@ -19,7 +19,7 @@ function ipvalueHint(iptype) {
 }
 
 export default function OrgWhitelistManagePage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
   const user = useAuthStore((s) => s.user)
   const isEditYn = user?.tenantmanager === 'Y'
@@ -43,7 +43,7 @@ export default function OrgWhitelistManagePage() {
 
   const handleSaveConfig = () => {
     if ((configForm.is_manager_ip_allow || configForm.is_user_ip_allow) && whitelists.length === 0) {
-      alert(t('msg.whitelist.config.empty.warning'))
+      message.warning(t('msg.whitelist.config.empty.warning'))
       return
     }
     saveConfig.mutate(configForm)
@@ -69,7 +69,7 @@ export default function OrgWhitelistManagePage() {
   }
 
   const handleSave = () => {
-    if (!form.iptype || !form.ipvalue.trim()) { alert(t('msg.whitelist.required')); return }
+    if (!form.iptype || !form.ipvalue.trim()) { message.warning(t('msg.whitelist.required')); return }
     const payload = {
       whitelistuid: form.whitelistuid || null,
       iptype: form.iptype,
@@ -81,7 +81,7 @@ export default function OrgWhitelistManagePage() {
   }
 
   const handleDelete = () => {
-    if (!form.whitelistuid) { alert(t('msg.whitelist.select.delete')); return }
+    if (!form.whitelistuid) { message.warning(t('msg.whitelist.select.delete')); return }
     modal.confirm({
       content: t('msg.confirm.delete'),
       okType: 'danger',

@@ -38,7 +38,7 @@ function PaletteSwatch({ option }) {
 
 export default function MasterChartsPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const chapteruid = searchParams.get('chapteruid') || ''
   const objectnm   = searchParams.get('objectnm')   || ''
@@ -180,17 +180,21 @@ export default function MasterChartsPage() {
   }
 
   const handleDelete = () => {
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteChart.mutate(
-      { chapteruid, objectnm },
-      {
-        onSuccess: () => {
-          message.success(t('msg.delete.success'))
-          handleReset()
-        },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
-      }
-    )
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteChart.mutate(
+          { chapteruid, objectnm },
+          {
+            onSuccess: () => {
+              message.success(t('msg.delete.success'))
+              handleReset()
+            },
+            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+          }
+        )
+      },
+    })
   }
 
   const handlePreview = async () => {

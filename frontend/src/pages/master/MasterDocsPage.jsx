@@ -7,7 +7,7 @@ import { useDocDatasets } from '@/hooks/useDocDatasets'
 import DocGroupSelectModal from './DocGroupSelectModal'
 
 export default function MasterDocsPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   const { data: docs = [] } = useDocs()
   const { data: projects = [] } = useProjects()
   const saveDoc = useSaveDoc()
@@ -42,7 +42,7 @@ export default function MasterDocsPage() {
   }
 
   const handleDocSave = () => {
-    if (!docForm.projectid || !docForm.docnm) { alert(t('msg.doc.required')); return }
+    if (!docForm.projectid || !docForm.docnm) { message.warning(t('msg.doc.required')); return }
     setDocSaving(true)
     const fd = new FormData()
     fd.append('projectid', docForm.projectid)
@@ -58,7 +58,7 @@ export default function MasterDocsPage() {
   }
 
   const handleDocDelete = () => {
-    if (!docForm.docid) { alert(t('msg.doc.select.delete')); return }
+    if (!docForm.docid) { message.warning(t('msg.doc.select.delete')); return }
     modal.confirm({
       content: t('msg.confirm.delete'),
       okType: 'danger',

@@ -16,7 +16,7 @@ const ALIGN_OPTIONS = ['left', 'center', 'right']
 
 export default function MasterTablesPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const chapteruid = searchParams.get('chapteruid') || ''
   const objectnm   = searchParams.get('objectnm')   || ''
@@ -177,19 +177,23 @@ export default function MasterTablesPage() {
   }
 
   const handleDelete = () => {
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteTable.mutate(
-      { chapteruid, objectnm },
-      {
-        onSuccess: () => {
-          message.success(t('msg.delete.success'))
-          setSelectedDatauid('')
-          setColjson({})
-          setColOrder([])
-        },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
-      }
-    )
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteTable.mutate(
+          { chapteruid, objectnm },
+          {
+            onSuccess: () => {
+              message.success(t('msg.delete.success'))
+              setSelectedDatauid('')
+              setColjson({})
+              setColOrder([])
+            },
+            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+          }
+        )
+      },
+    })
   }
 
   const handleReset = () => {

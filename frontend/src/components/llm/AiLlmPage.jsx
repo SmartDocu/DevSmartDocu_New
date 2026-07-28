@@ -20,7 +20,7 @@ import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils
 
 export default function AiLlmPage({ objecttypecd, pageTitle }) {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
   const docnm = user?.docnm
@@ -189,22 +189,26 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
     }
   }
 
-  const handleDelete = async () => {
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    setDeleteLoading(true)
-    try {
-      await apiClient.delete('/llm/delete', {
-        data: { chapteruid, objectnm, objecttypecd },
-      })
-      message.success(t('msg.delete.success'))
-      handleReset()
-      setSelectedDatauid('')
-      setSelectedDisplayType('')
-    } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.delete.error'))
-    } finally {
-      setDeleteLoading(false)
-    }
+  const handleDelete = () => {
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: async () => {
+        setDeleteLoading(true)
+        try {
+          await apiClient.delete('/llm/delete', {
+            data: { chapteruid, objectnm, objecttypecd },
+          })
+          message.success(t('msg.delete.success'))
+          handleReset()
+          setSelectedDatauid('')
+          setSelectedDisplayType('')
+        } catch (e) {
+          message.error(e.response?.data?.detail || t('msg.delete.error'))
+        } finally {
+          setDeleteLoading(false)
+        }
+      },
+    })
   }
 
   // ─────────────────────────────────────────────────────────────────────────

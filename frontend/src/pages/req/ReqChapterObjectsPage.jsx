@@ -43,6 +43,7 @@ function useApplyObjects(genchapteruid) {
 
 export default function ReqChapterObjectsPage() {
   useLangStore((s) => s.translations)
+  const { message, modal } = App.useApp()
 
   const { user } = useAuthStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
@@ -111,29 +112,33 @@ export default function ReqChapterObjectsPage() {
     setShowLoading(true)
     try {
       await rewriteMutation.mutateAsync(row.objectuid)
-      alert(t('msg.object.write.complete'))
+      message.success(t('msg.object.write.complete'))
       setSelectedRow((prev) => prev)
     } catch (err) {
-      alert(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
+      message.error(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
     } finally {
       setShowLoading(false)
       setLoadingText('')
     }
   }
 
-  const handleApply = async () => {
-    if (!window.confirm(t('msg.confirm.object.apply'))) return
-    setLoadingText(t('msg.loading.object.applying'))
-    setShowLoading(true)
-    try {
-      await applyMutation.mutateAsync()
-      alert(t('msg.object.apply.complete'))
-    } catch (err) {
-      alert(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
-    } finally {
-      setShowLoading(false)
-      setLoadingText('')
-    }
+  const handleApply = () => {
+    modal.confirm({
+      content: t('msg.confirm.object.apply'),
+      onOk: async () => {
+        setLoadingText(t('msg.loading.object.applying'))
+        setShowLoading(true)
+        try {
+          await applyMutation.mutateAsync()
+          message.success(t('msg.object.apply.complete'))
+        } catch (err) {
+          message.error(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
+        } finally {
+          setShowLoading(false)
+          setLoadingText('')
+        }
+      },
+    })
   }
 
   return (

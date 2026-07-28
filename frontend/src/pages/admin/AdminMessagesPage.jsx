@@ -20,7 +20,7 @@ const EMPTY_MESSAGE = {
 }
 
 export default function AdminMessagesPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: messages = [] } = useAdminMessages()
@@ -72,7 +72,7 @@ setSelectedMessage(msg)
   }
 
   const handleSave = async () => {
-    if (!form.messagekey.trim()) { alert(t('msg.message.required')); return }
+    if (!form.messagekey.trim()) { message.warning(t('msg.message.required')); return }
     const messagekey = form.messagekey
     await saveMessage.mutateAsync({ ...form, isNew })
     if (isNew) {
@@ -92,7 +92,7 @@ setSelectedMessage(msg)
   }
 
   const handleDelete = () => {
-    if (!selectedMessage) { alert(t('msg.message.select.delete')); return }
+    if (!selectedMessage) { message.warning(t('msg.message.select.delete')); return }
     modal.confirm({
       title: t('msg.confirm.delete'),
       okText: t('btn.delete'),

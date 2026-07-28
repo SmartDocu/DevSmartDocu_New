@@ -28,7 +28,7 @@ const EMPTY_FORM = {
 }
 
 export default function MasterChatTablesPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const location = useLocation()
@@ -97,14 +97,18 @@ export default function MasterChatTablesPage() {
 
   const handleDelete = () => {
     if (!selectedUid) { message.warning(t('msg.select.delete')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteDataMeta.mutate(selectedUid, {
-      onSuccess: () => {
-        message.success(t('msg.delete.success'))
-        setSelectedUid(null)
-        setForm(EMPTY_FORM)
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteDataMeta.mutate(selectedUid, {
+          onSuccess: () => {
+            message.success(t('msg.delete.success'))
+            setSelectedUid(null)
+            setForm(EMPTY_FORM)
+          },
+          onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+        })
       },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
     })
   }
 

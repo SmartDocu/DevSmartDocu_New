@@ -12,7 +12,7 @@ import {
 const EMPTY_COLS = []
 
 export default function MasterDatasExPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
@@ -65,46 +65,61 @@ export default function MasterDatasExPage() {
     setEditCols([])
   }
 
-  const handleSave = async () => {
-    if (!form.datanm) { alert(t('msg.datanm.required')); return }
-    if (!excelFile && !form.datauid) { alert(t('msg.file.required')); return }
-    if (excelFile && form.datauid && !window.confirm(t('msg.confirm.file.overwrite'))) return
-    setSaving(true)
-    const fd = new FormData()
-    fd.append('datanm', form.datanm)
-    if (form.datauid) fd.append('datauid', form.datauid)
-    if (user?.accountuid) fd.append('accountuid', user.accountuid)
-    if (excelFile) fd.append('excelfile', excelFile)
-    try {
-      const res = await saveData.mutateAsync(fd)
-      const newUid = res?.datauid || form.datauid
-      if (newUid) {
-        try {
-          await createCols.mutateAsync({ datauid: newUid })
-        } catch {
-          message.warning(t('msg.save.col.warn'))
+  const handleSave = () => {
+    if (!form.datanm) { message.warning(t('msg.datanm.required')); return }
+    if (!excelFile && !form.datauid) { message.warning(t('msg.file.required')); return }
+
+    const doSave = async () => {
+      setSaving(true)
+      const fd = new FormData()
+      fd.append('datanm', form.datanm)
+      if (form.datauid) fd.append('datauid', form.datauid)
+      if (user?.accountuid) fd.append('accountuid', user.accountuid)
+      if (excelFile) fd.append('excelfile', excelFile)
+      try {
+        const res = await saveData.mutateAsync(fd)
+        const newUid = res?.datauid || form.datauid
+        if (newUid) {
+          try {
+            await createCols.mutateAsync({ datauid: newUid })
+          } catch {
+            message.warning(t('msg.save.col.warn'))
+          }
         }
+      } catch {
+        // saveData의 onError에서 이미 메시지 처리함
+      } finally {
+        setSaving(false)
       }
-    } catch {
-      // saveData의 onError에서 이미 메시지 처리함
-    } finally {
-      setSaving(false)
     }
+
+    if (excelFile && form.datauid) {
+      modal.confirm({
+        content: t('msg.confirm.file.overwrite'),
+        onOk: doSave,
+      })
+      return
+    }
+    doSave()
   }
 
-  const handleDelete = async () => {
-    if (!form.datauid) { alert(t('msg.select.data')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    try {
-      await deleteData.mutateAsync(form.datauid)
-      handleNew()
-    } catch {
-      // deleteData의 onError에서 이미 메시지 처리함
-    }
+  const handleDelete = () => {
+    if (!form.datauid) { message.warning(t('msg.select.data')); return }
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: async () => {
+        try {
+          await deleteData.mutateAsync(form.datauid)
+          handleNew()
+        } catch {
+          // deleteData의 onError에서 이미 메시지 처리함
+        }
+      },
+    })
   }
 
   const handleSaveCols = () => {
-    if (editCols.length === 0) { alert(t('msg.no.data.to.save')); return }
+    if (editCols.length === 0) { message.warning(t('msg.no.data.to.save')); return }
     saveCols.mutate(editCols.map((c) => ({ ...c, datauid: selectedColDatauid })))
   }
 

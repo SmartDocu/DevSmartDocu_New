@@ -245,6 +245,7 @@ def list_gendocs(
 
     for item in rows:
         item["createfiledts"] = _fmt(item.get("createfiledts"), offsetminutes)
+        item["updatefiledts"] = _fmt(item.get("updatefiledts"), offsetminutes)
         item["closedts"] = _fmt(item.get("closedts"), offsetminutes)
         item["createdts"] = _fmt(item.get("createdts"), offsetminutes)
         # params
@@ -348,9 +349,13 @@ def get_genchapters(gendocuid: str, token: str = Depends(get_token), tenantid: O
 
     gendoc_info["createfiledts"] = _fmt(gendoc_info.get("createfiledts"), offsetminutes)
     gendoc_info["updatefiledts"] = _fmt(gendoc_info.get("updatefiledts"), offsetminutes)
+    # fn_gendocs__r는 finaldts 미확정 시 NULL 대신 1900-01-01(UTC) 센티널을 반환한다.
+    # 타임존 오프셋 적용 후 문자열로 비교하면(예: KST) "1900-01-01 09:00"처럼 오프셋만큼
+    # 시각이 밀려 표시되므로, 오프셋 적용 전 원본(UTC) 날짜를 기준으로 판정해야 한다.
     finaldts_raw = gendoc_info.get("finaldts")
-    formatted_finaldts = _fmt(finaldts_raw, offsetminutes)
-    gendoc_info["finaldts"] = "" if formatted_finaldts == "00-01-01 00:00" else formatted_finaldts
+    finaldts_dt = _parse_ts(finaldts_raw)
+    finaldts_unset = bool(finaldts_dt and (finaldts_dt.year, finaldts_dt.month, finaldts_dt.day) == (1900, 1, 1))
+    gendoc_info["finaldts"] = "" if finaldts_unset else _fmt(finaldts_raw, offsetminutes)
     return {"chapters": chapters, "gendoc": gendoc_info}
 
 
@@ -789,6 +794,7 @@ def get_doc_content(
     gendocuid: str,
     type: str = "auto",
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     """전체 문서 HTML 내용 반환 (sep='doc') — Django chapter_read?sep=doc 에 해당"""
     user = _get_user(token)
@@ -796,6 +802,7 @@ def get_doc_content(
     user_id = str(user.id)
     ctx = _get_user_context(sb, user_id)
     docid = ctx["docid"]
+    offsetminutes = _get_offsetminutes(sb, user_id, tenantid)
     req = FakeRequest(token, user_id, docid, tenantid=ctx["tenantid"], projectid=ctx["projectid"])
 
     try:
@@ -830,13 +837,7 @@ def get_doc_content(
                 if uid:
                     nm, _ = get_usernm_email(sb, uid)
                     doc_info[nm_field] = nm
-                    ts = d.get(ts_field)
-                    if ts:
-                        try:
-                            from dateutil import parser as dp
-                            doc_info[ts_field] = dp.parse(ts).strftime("%Y-%m-%d %H:%M")
-                        except Exception:
-                            doc_info[ts_field] = ts
+                    doc_info[ts_field] = _fmt(d.get(ts_field), offsetminutes)
     except Exception:
         pass
 

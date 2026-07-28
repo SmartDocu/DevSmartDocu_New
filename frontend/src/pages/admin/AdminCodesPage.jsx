@@ -21,7 +21,7 @@ const EMPTY_CODE = {
 }
 
 export default function AdminCodesPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: codes = [] } = useAdminCodes()
@@ -75,8 +75,8 @@ export default function AdminCodesPage() {
   }
 
   const handleCodeSave = async () => {
-    if (!form.codegroupcd.trim()) { alert(t('msg.code.groupcd.required')); return }
-    if (!form.codevalue.trim()) { alert(t('msg.code.value.required')); return }
+    if (!form.codegroupcd.trim()) { message.warning(t('msg.code.groupcd.required')); return }
+    if (!form.codevalue.trim()) { message.warning(t('msg.code.value.required')); return }
     const { codegroupcd, codevalue } = form
     await saveCode.mutateAsync({ ...form, orderno: form.orderno === '' ? null : Number(form.orderno), isNew })
     if (isNew) {
@@ -97,7 +97,7 @@ export default function AdminCodesPage() {
   }
 
   const handleCodeDelete = () => {
-    if (!selectedCode) { alert(t('msg.code.select.delete')); return }
+    if (!selectedCode) { message.warning(t('msg.code.select.delete')); return }
     modal.confirm({
       title: t('msg.confirm.delete'),
       okText: t('btn.delete'),

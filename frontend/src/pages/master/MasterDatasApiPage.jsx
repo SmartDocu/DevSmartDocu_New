@@ -22,7 +22,7 @@ const EMPTY_PARAM = {
 
 export default function MasterDatasApiPage() {
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const location = useLocation()
@@ -115,9 +115,13 @@ export default function MasterDatasApiPage() {
 
   const handleDelete = () => {
     if (!form.datauid) { message.warning(t('msg.select.delete')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteData.mutate(form.datauid, {
-      onSuccess: () => { handleNew() },
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteData.mutate(form.datauid, {
+          onSuccess: () => { handleNew() },
+        })
+      },
     })
   }
 

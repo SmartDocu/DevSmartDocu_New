@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
+import { App } from 'antd'
 import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils/colorData'
 
 const publicClient = axios.create({ baseURL: '/api' })
@@ -18,6 +19,7 @@ function getDisplayName(p) {
 }
 
 export default function ExperiencePage() {
+  const { message } = App.useApp()
   const [allPrompts,        setAllPrompts]        = useState([])
   const [objectType,        setObjectType]        = useState('CA')
   const [selectedPromptuid, setSelectedPromptuid] = useState('')
@@ -109,8 +111,8 @@ export default function ExperiencePage() {
   }
 
   const handlePreview = async () => {
-    if (!prompt.trim()) { alert('프롬프트를 입력해주세요.'); return }
-    if (!selectedDatauid) { alert('샘플 프롬프트를 먼저 선택해주세요.'); return }
+    if (!prompt.trim()) { message.warning('프롬프트를 입력해주세요.'); return }
+    if (!selectedDatauid) { message.warning('샘플 프롬프트를 먼저 선택해주세요.'); return }
     setPreviewLoading(true)
     setPreviewResult(null)
     try {

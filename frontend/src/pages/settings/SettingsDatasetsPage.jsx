@@ -13,7 +13,7 @@ import {
 
 export default function SettingsDatasetsPage() {
   useLangStore((s) => s.translations)
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.editbuttonyn === 'Y'
   const { data: serviceCodes = [] } = useMenuCodes('servicecd')
@@ -53,7 +53,7 @@ export default function SettingsDatasetsPage() {
   }
 
   const handleSave = () => {
-    if (!form.datasetnm.trim()) { alert(t('msg.dataset.required')); return }
+    if (!form.datasetnm.trim()) { message.warning(t('msg.dataset.required')); return }
     saveAll.mutate(
       {
         datasetuid: form.datasetuid || undefined,

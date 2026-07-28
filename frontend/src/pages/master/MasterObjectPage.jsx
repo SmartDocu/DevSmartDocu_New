@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import { useChapters } from '@/hooks/useChapters'
 import { useObjects, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
@@ -27,6 +28,7 @@ const TYPE_TAB_LABEL_KEY = {
 
 export default function MasterObjectPage() {
   useLangStore((s) => s.translations)
+  const { message, modal } = App.useApp()
   const location = useLocation()
   const openInTab = useOpenInTab()
 
@@ -100,41 +102,54 @@ export default function MasterObjectPage() {
   }
 
   const handleNew = () => {
-    if (!selectedChapteruid) { alert(t('msg.select.chapter')); return }
+    if (!selectedChapteruid) { message.warning(t('msg.select.chapter')); return }
     resetForm()
   }
 
   const handleSave = () => {
-    if (!selectedChapteruid) { alert(t('msg.select.chapter')); return }
-    if (!form.objectuid && !form.objectnm.trim()) { alert(t('msg.objectnm.required')); return }
-    if (form.objecttypecd !== form.objecttypecd_orig && form.objecttypecd_orig) {
-      if (!window.confirm(t('msg.confirm.objecttype.change'))) return
+    if (!selectedChapteruid) { message.warning(t('msg.select.chapter')); return }
+    if (!form.objectuid && !form.objectnm.trim()) { message.warning(t('msg.objectnm.required')); return }
+
+    const doSave = () => {
+      saveObject.mutate({
+        chapteruid: selectedChapteruid,
+        objectuid: form.objectuid || undefined,
+        objectnm: form.objectnm || undefined,
+        objectdesc: form.objectdesc,
+        objecttypecd: form.objecttypecd,
+        objecttypecd_orig: form.objecttypecd_orig,
+        useyn: form.useyn,
+        orderno: form.orderno,
+      })
     }
-    saveObject.mutate({
-      chapteruid: selectedChapteruid,
-      objectuid: form.objectuid || undefined,
-      objectnm: form.objectnm || undefined,
-      objectdesc: form.objectdesc,
-      objecttypecd: form.objecttypecd,
-      objecttypecd_orig: form.objecttypecd_orig,
-      useyn: form.useyn,
-      orderno: form.orderno,
-    })
+
+    if (form.objecttypecd !== form.objecttypecd_orig && form.objecttypecd_orig) {
+      modal.confirm({
+        content: t('msg.confirm.objecttype.change'),
+        onOk: doSave,
+      })
+      return
+    }
+    doSave()
   }
 
   const handleDelete = () => {
-    if (!form.objectuid) { alert(t('msg.select.object')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteObject.mutate({ objectuid: form.objectuid, chapteruid: selectedChapteruid }, {
-      onSuccess: resetForm,
+    if (!form.objectuid) { message.warning(t('msg.select.object')); return }
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteObject.mutate({ objectuid: form.objectuid, chapteruid: selectedChapteruid }, {
+          onSuccess: resetForm,
+        })
+      },
     })
   }
 
   const handleConfig = () => {
-    if (!form.objectuid || !selectedObj) { alert(t('msg.select.object')); return }
-    if (!selectedChapteruid) { alert(t('msg.select.chapter')); return }
+    if (!form.objectuid || !selectedObj) { message.warning(t('msg.select.object')); return }
+    if (!selectedChapteruid) { message.warning(t('msg.select.chapter')); return }
     const route = TYPE_CONFIG_ROUTE[form.objecttypecd]
-    if (!route) { alert(t('msg.invalid.objecttype')); return }
+    if (!route) { message.warning(t('msg.invalid.objecttype')); return }
     const selectedChapter = chapters.find(c => c.chapteruid === selectedChapteruid)
     const chapternm = selectedChapter?.chapternm || ''
     const tabLabel = TYPE_TAB_LABEL_KEY[form.objecttypecd] ? t(TYPE_TAB_LABEL_KEY[form.objecttypecd]) : form.objectnm

@@ -27,7 +27,7 @@ const EMPTY_MENU = {
 }
 
 export default function AdminMenusPage() {
-  const { modal } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: menus = [] } = useAdminMenus()
@@ -84,7 +84,7 @@ export default function AdminMenusPage() {
   }
 
   const handleMenuSave = async () => {
-    if (!form.menucd.trim()) { alert(t('msg.menu.required')); return }
+    if (!form.menucd.trim()) { message.warning(t('msg.menu.required')); return }
     const menucd = form.menucd
     await saveMenu.mutateAsync(
       { ...form, orderno: form.orderno !== '' ? Number(form.orderno) : null, isNew }
@@ -106,7 +106,7 @@ export default function AdminMenusPage() {
   }
 
   const handleMenuDelete = () => {
-    if (!selectedMenu) { alert(t('msg.menu.select.delete')); return }
+    if (!selectedMenu) { message.warning(t('msg.menu.select.delete')); return }
     modal.confirm({
       title: t('msg.confirm.delete'),
       okText: t('btn.delete'),

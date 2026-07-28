@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus } from '@/hooks/useMenus'
@@ -7,6 +8,7 @@ import { useDocDatasets, useSaveDocDatasets } from '@/hooks/useDocDatasets'
 
 export default function MasterDatasetPage() {
   useLangStore((s) => s.translations)
+  const { message } = App.useApp()
 
   const location = useLocation()
   const { data: allMenus = [] } = useMenus()
@@ -60,7 +62,7 @@ export default function MasterDatasetPage() {
   }
 
   const handleSave = () => {
-    if (!docid) { alert(t('msg.doc.select')); return }
+    if (!docid) { message.warning(t('msg.doc.select')); return }
 
     // API param 매핑 완료 여부 검증
     for (const datauid of checkedDatauids) {
@@ -68,7 +70,7 @@ export default function MasterDatasetPage() {
       for (const paramnm of paramnms) {
         if (!apiMapping[datauid]?.[paramnm]) {
           const datanm = datas.find((d) => d.datauid === datauid)?.datanm || datauid
-          alert(`[${datanm}] ${t('msg.api.param.required')}: ${paramnm}`)
+          message.warning(`[${datanm}] ${t('msg.api.param.required')}: ${paramnm}`)
           return
         }
       }

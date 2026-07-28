@@ -33,6 +33,7 @@ function initDates() {
    값 찾기 모달 (modal_search_params.html 동일 구조)
 ────────────────────────────────────────────────────── */
 function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
+  const { message } = App.useApp()
   const [search,  setSearch]  = useState('')
   const [selRow,  setSelRow]  = useState(null)
 
@@ -53,7 +54,7 @@ function SearchParamsModal({ dp, rows, columns, onSelect, onClose }) {
   }, [onClose])
 
   const handleOk = () => {
-    if (!selRow) { alert(t('msg.select')); return }
+    if (!selRow) { message.warning(t('msg.select')); return }
     onSelect(String(selRow[keyCol] ?? ''), String(selRow[nmCol] ?? selRow[keyCol] ?? ''))
     onClose()
   }
@@ -207,6 +208,10 @@ export default function ReqDocListPage() {
     ? (selectedRow.params || [])
     : dataparams
 
+  // 마감/마감해제 버튼 토글 기준 — selectedRow는 선택 시점의 스냅샷이라 마감 처리 후에도
+  // closeyn이 그대로 남아있음. 목록(gendocs, react-query 캐시)에서 최신 행을 찾아 사용한다.
+  const selectedGendocRow = gendocs.find((r) => r.gendocuid === selectedGendocuid) || selectedRow
+
   // 값 찾기 모달 상태
   const [searchModal, setSearchModal] = useState(null)  // null | { dp, rows, columns }
 
@@ -305,25 +310,32 @@ export default function ReqDocListPage() {
           return
         }
 
+        const doCreate = () => {
+          createGendoc.mutate(
+            { docid, docnm: docnmInput, params, projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid },
+            {
+              onSuccess: (data) => {
+                hideLoading()
+                saveSession(data.gendocuid)
+                setActiveGendocuid(data.gendocuid)
+                refetch()
+              },
+              onError: () => hideLoading(),
+            },
+          )
+        }
+
         const chk = await apiClient.post('/gendocs/params/check', { docid, params })
         if (chk.data.exists) {
           hideLoading()
-          if (!window.confirm(t('msg.doc.param.duplicate'))) return
-          showLoading(t('msg.loading.gendoc'))
+          modal.confirm({
+            content: t('msg.doc.param.duplicate'),
+            onOk: () => { showLoading(t('msg.loading.gendoc')); doCreate() },
+          })
+          return
         }
 
-        createGendoc.mutate(
-          { docid, docnm: docnmInput, params, projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid },
-          {
-            onSuccess: (data) => {
-              hideLoading()
-              saveSession(data.gendocuid)
-              setActiveGendocuid(data.gendocuid)
-              refetch()
-            },
-            onError: () => hideLoading(),
-          },
-        )
+        doCreate()
       } catch (e) {
         hideLoading()
         message.error(e.response?.data?.detail || t('msg.server.error'))
@@ -334,31 +346,43 @@ export default function ReqDocListPage() {
   // 삭제
   const handleDelete = () => {
     if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    showLoading(t('msg.loading.gendoc.delete'))
-    deleteGendoc.mutate(selectedGendocuid, {
-      onSuccess: () => { hideLoading(); handleNew(); refetch() },
-      onError:   () => hideLoading(),
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        showLoading(t('msg.loading.gendoc.delete'))
+        deleteGendoc.mutate(selectedGendocuid, {
+          onSuccess: async () => { await refetch(); hideLoading(); handleNew() },
+          onError:   () => hideLoading(),
+        })
+      },
     })
   }
 
   // 마감
   const handleClose = () => {
-    if (!window.confirm(t('msg.confirm.doc.close'))) return
-    showLoading(t('msg.loading.doc.close'))
-    closeGendoc.mutate(selectedGendocuid, {
-      onSuccess: () => { hideLoading(); refetch() },
-      onError:   () => hideLoading(),
+    modal.confirm({
+      content: t('msg.confirm.doc.close'),
+      onOk: () => {
+        showLoading(t('msg.loading.doc.close'))
+        closeGendoc.mutate(selectedGendocuid, {
+          onSuccess: async () => { await refetch(); hideLoading() },
+          onError:   () => hideLoading(),
+        })
+      },
     })
   }
 
   // 마감 해제
   const handleOpen = () => {
-    if (!window.confirm(t('msg.confirm.doc.open'))) return
-    showLoading(t('msg.loading.doc.open'))
-    openGendoc.mutate(selectedGendocuid, {
-      onSuccess: () => { hideLoading(); refetch() },
-      onError:   () => hideLoading(),
+    modal.confirm({
+      content: t('msg.confirm.doc.open'),
+      onOk: () => {
+        showLoading(t('msg.loading.doc.open'))
+        openGendoc.mutate(selectedGendocuid, {
+          onSuccess: async () => { await refetch(); hideLoading() },
+          onError:   () => hideLoading(),
+        })
+      },
     })
   }
 
@@ -560,7 +584,7 @@ export default function ReqDocListPage() {
               {editbuttonyn && selectedGendocuid && (
                 <>
                   <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
-                  {selectedRow?.closeyn ? (
+                  {selectedGendocRow?.closeyn ? (
                     <button className="btn btn-secondary" type="button" onClick={handleOpen} disabled={openGendoc.isPending}>
                       {t('btn.doc.open')}
                     </button>

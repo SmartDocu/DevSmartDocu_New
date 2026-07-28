@@ -15,7 +15,7 @@ import { useObjectFilterDatauid } from '@/hooks/useTables'
 
 export default function MasterSentencesPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const chapteruid = searchParams.get('chapteruid') || ''
   const objectnm   = searchParams.get('objectnm')   || ''
@@ -107,20 +107,24 @@ export default function MasterSentencesPage() {
   }
 
   const handleDelete = () => {
-    if (!window.confirm(t('msg.confirm.delete'))) return
-    deleteSentence.mutate(
-      { chapteruid, objectnm },
-      {
-        onSuccess: () => {
-          message.success(t('msg.delete.success'))
-          setTemplateText('')
-          setPreviewResult('')
-          setSelectedDatauid('')
-          setDataRows([])
-        },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
-      }
-    )
+    modal.confirm({
+      content: t('msg.confirm.delete'),
+      onOk: () => {
+        deleteSentence.mutate(
+          { chapteruid, objectnm },
+          {
+            onSuccess: () => {
+              message.success(t('msg.delete.success'))
+              setTemplateText('')
+              setPreviewResult('')
+              setSelectedDatauid('')
+              setDataRows([])
+            },
+            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+          }
+        )
+      },
+    })
   }
 
   const handleReset = () => {
