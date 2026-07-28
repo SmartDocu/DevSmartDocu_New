@@ -211,14 +211,26 @@ def _add_total_pages(paragraph):
     paragraph._element.append(fld)
 
 
-def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, gendocjobuid):
-    """마지막 챕터 완료 후 DOCX 병합 + Storage 업로드 + 완료 처리"""
+def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, gendocjobuid, selected_chapters=None):
+    """DOCX 병합 + Storage 업로드 + 완료 처리.
+
+    selected_chapters(list[{genchapteruid, mode}])가 주어지면(문서 조합 작성) 그 챕터들만,
+    각자 지정된 mode('create'=작성본 / 'update'=업로드본)로 병합한다.
+    None이면(문서 전체 작성 fan-out 완료 후 호출) 기존 동작대로 gendocuid의 전체 챕터를
+    모두 'create'(작성본) 기준으로 병합한다.
+    """
     from docx import Document
 
     try:
+        mode_by_uid = None
+        if selected_chapters is not None:
+            mode_by_uid = {c["genchapteruid"]: c.get("mode") or "create" for c in selected_chapters}
+
         # genchapters → chapters.chapterno 기준 정렬
         gc_rows = sb_svc.schema(SUPABASE_SCHEMA).table("genchapters") \
             .select("genchapteruid,chapteruid").eq("gendocuid", gendocuid).execute().data
+        if mode_by_uid is not None:
+            gc_rows = [r for r in gc_rows if r["genchapteruid"] in mode_by_uid]
         chapter_uids = [r["chapteruid"] for r in gc_rows]
         ch_rows = sb_svc.schema(SUPABASE_SCHEMA).table("chapters") \
             .select("chapteruid,chapterno").in_("chapteruid", chapter_uids).execute().data
@@ -232,8 +244,9 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
 
         for i, gc in enumerate(sorted_gc, 1):
             _genchapteruid = gc["genchapteruid"]
+            make_type = mode_by_uid.get(_genchapteruid, "create") if mode_by_uid is not None else "create"
             response = None
-            for result in replace_doc(req, sb, user_id, _genchapteruid, "create", "write", "Not",
+            for result in replace_doc(req, sb, user_id, _genchapteruid, make_type, "write", "Not",
                                        genChapterDirectYn=False, divide="Doc"):
                 if result.get("type") == "complete":
                     response = result.get("texttemplate")
@@ -329,7 +342,6 @@ def process_message(msg):
     gendocjobuid = body["gendocjobuid"]
     user_id = body["user_id"]
     access_token = body["access_token"]
-    results = body["results"]
     docid = body.get("docid")
     tenantid = body.get("tenantid")
     projectid = body.get("projectid")
@@ -340,6 +352,22 @@ def process_message(msg):
     sb = get_thread_supabase(access_token=access_token)
     sb_svc = get_service_client()
     sqs = boto3.client("sqs", region_name=AWS_REGION)
+
+    # 문서 조합 작성 — 이미 작성된 챕터만 선택 그대로 병합 (Phase 1 fan-out/LLM 생성 없음 → 크레딧 차감 없음)
+    if body.get("combine_only"):
+        logger.info("문서 조합 작성 시작 (병합만, fan-out 없음): %s", gendocuid)
+        req = FakeRequest(access_token, user_id, docid, tenantid=tenantid, projectid=projectid)
+        try:
+            _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, gendocjobuid,
+                                   selected_chapters=body.get("chapters"))
+        finally:
+            try:
+                sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+            except Exception:
+                logger.exception("SQS 메시지 삭제 실패 (조합 작성): %s", gendocuid)
+        return
+
+    results = body["results"]
 
     sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").update({
         "total_chapter_count": len(results),

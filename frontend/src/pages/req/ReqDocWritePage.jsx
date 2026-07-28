@@ -1,28 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Spin } from 'antd'
+import { App, Spin } from 'antd'
 import { useGenchapters } from '@/hooks/useGendocs'
+import apiClient from '@/api/client'
+import { supabase } from '@/lib/supabaseClient'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-
-// SSE progress 이벤트 → i18n 메시지 변환
-function getProgressMessage(progress) {
-  if (!progress) return ''
-  const { type, obj, chapter_name, chapter_index, chapter_total } = progress
-  if (type === 'wait') return t('msg.loading.preparing')
-  if (obj === 'chapter') {
-    if (chapter_index != null && chapter_total != null) {
-      return t('msg.loading.chapter.count')
-        .replace('{index}', chapter_index)
-        .replace('{total}', chapter_total)
-    }
-    return chapter_name || t('msg.loading.chapter.preparing')
-  }
-  if (obj === 'chapter_done') return t('msg.loading.chapter.finalizing')
-  if (obj === 'doc') return t('msg.loading.doc.merging')
-  if (chapter_name) return chapter_name
-  return ''
-}
 
 // 라디오 초기값 계산: createfiledts vs updatefiledts 비교
 function getInitialMode(ch) {
@@ -38,11 +21,12 @@ function getInitialMode(ch) {
 export default function ReqDocWritePage() {
   useLangStore((s) => s.translations)
 
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const { appcd } = useParams()
   const [searchParams] = useSearchParams()
   const gendocuid = searchParams.get('gendocs')
-  const { accessToken, user } = useAuthStore()
+  const { user } = useAuthStore()
 
   const { data: chapData = {}, isLoading } = useGenchapters(gendocuid)
   const chapters = chapData.chapters || []
@@ -63,87 +47,72 @@ export default function ReqDocWritePage() {
     setModes(initial)
   }, [chapters.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [generating, setGenerating] = useState(false)
-  const [progress, setProgress] = useState(null)   // { step, total, message, status }
+  const [generating,     setGenerating]     = useState(false)
+  const [requestLoading, setRequestLoading] = useState(false)
 
   const handleModeChange = (genchapteruid, value) => {
     setModes((prev) => ({ ...prev, [genchapteruid]: value }))
   }
 
-  const handleGenerate = () => {
-    const unselected = chapters.filter((ch) => !modes[ch.genchapteruid])
-    if (unselected.length > 0) {
-      alert(t('msg.chapter.unselected'))
+  // 탭 재진입 시 조합 작성 진행 상태 자동 조회
+  useEffect(() => {
+    if (!gendocuid) return
+    apiClient.get(`/gendocs/${gendocuid}/generate/status`)
+      .then((res) => { if (res.data.JobStatusCD === 'S') setGenerating(true) })
+      .catch(() => {})
+  }, [gendocuid])
+
+  // 문서 조합 작성 완료 감지 (Realtime)
+  useEffect(() => {
+    if (!generating || !gendocuid) return
+    const channel = supabase
+      .channel(`doc_combine_${gendocuid}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'sdoc', table: 'gendocs_realtimes', filter: `gendocuid=eq.${gendocuid}` },
+        (payload) => {
+          if (payload.new.jobstatuscd !== 'E') return  // 'S'->'merging'->'E' 순서로 바뀌므로 'E'일 때만 완료로 판단
+          setGenerating(false)
+          if (payload.new.errorcd) {
+            message.error(payload.new.errormessage || t('msg.server.error'))
+            return
+          }
+          message.success(`${t('msg.doc.write.complete')}: ${gendoc.gendocnm || ''}`)
+          navigate(`/app/${appcd}/req/doc-read?gendocs=${gendocuid}&type=auto`)
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [generating, gendocuid]) // eslint-disable-line
+
+  // ── 문서 조합 작성 (SQS 비동기 — 이미 작성된 챕터만 선택 그대로 병합, 신규 생성 없음) ──
+  const handleCombine = async () => {
+    if (!gendocuid) return
+    const written = chapters.filter((ch) => modes[ch.genchapteruid])
+    if (written.length === 0) {
+      message.warning(t('msg.chapter.combine.none'))
       return
     }
 
-    setGenerating(true)
-    setProgress({ step: 0, total: 1, message: t('msg.loading.preparing'), status: 'processing' })
-
-    const results = chapters.map((ch) => ({
-      genchapteruid: ch.genchapteruid,
-      mode: modes[ch.genchapteruid],
-    }))
-
-    fetch(`/api/gendocs/${gendocuid}/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ results }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(t('msg.server.error'))
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
-
-        const read = () => {
-          reader.read().then(({ done, value }) => {
-            if (done) {
-              setGenerating(false)
-              return
-            }
-            buf += decoder.decode(value, { stream: true })
-            const parts = buf.split('\n\n')
-            buf = parts.pop() || ''
-            parts.forEach((part) => {
-              if (!part.trim().startsWith('data:')) return
-              try {
-                const jsonStr = part.trim().replace(/^data:\s*/, '')
-                if (!jsonStr) return
-                const data = JSON.parse(jsonStr)
-
-                if (data.type === 'locked') {
-                  setGenerating(false)
-                  alert(t('msg.doc.already.writing'))
-                  return
-                }
-
-                setProgress(data)
-
-                if (data.status === 'completed') {
-                  setGenerating(false)
-                  setTimeout(() => {
-                    alert(`${t('msg.doc.write.complete')}: ${data.docnm || ''}`)
-                    navigate(`/app/${appcd}/req/doc-read?gendocs=${gendocuid}&type=auto`)
-                  }, 1000)
-                } else if (data.status === 'error') {
-                  setGenerating(false)
-                  alert(t('msg.server.error') + ': ' + data.message)
-                }
-              } catch (_) {}
-            })
-            read()
-          })
-        }
-        read()
+    setRequestLoading(true)
+    try {
+      const res = await apiClient.post(`/gendocs/${gendocuid}/combine`, {
+        chapters: written.map((ch) => ({ genchapteruid: ch.genchapteruid, mode: modes[ch.genchapteruid] })),
+        projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
       })
-      .catch((e) => {
-        setGenerating(false)
-        alert(t('msg.server.error') + ': ' + e.message)
-      })
+      if (res.data.locked) {
+        message.warning(res.data.message || t('msg.doc.already.writing'))
+        return
+      }
+      if (res.data.no_written_chapters) {
+        message.warning(res.data.message || t('msg.chapter.combine.none'))
+        return
+      }
+      setGenerating(true)
+      message.success(t('msg.doc.write.started'))
+    } catch (e) {
+      message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setRequestLoading(false)
+    }
   }
 
   const handleBack = () => {
@@ -151,10 +120,6 @@ export default function ReqDocWritePage() {
     const target = stored || gendocuid
     navigate(`/app/${appcd}/req/chapters-read?gendocs=${target}`)
   }
-
-  const percentage = progress && progress.total > 0
-    ? Math.round((progress.step / progress.total) * 100)
-    : 0
 
   return (
     <div>
@@ -241,25 +206,27 @@ export default function ReqDocWritePage() {
               })}
             </tbody>
           </table>
-        ) : null}
+        ) : (
+          <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</div>
+        )}
       </div>
 
-      {/* 문서 작성 버튼 */}
+      {/* 문서 조합 작성 버튼 */}
       <div style={{ marginTop: 10, textAlign: 'center' }}>
         {editbuttonyn && (
           <button
             id="docWriteBtn"
             className="btn btn-primary"
             disabled={gendoc.closeyn || generating}
-            onClick={handleGenerate}
+            onClick={handleCombine}
           >
-            {t('btn.doc.write')}
+            {generating ? t('msg.doc.writing') : t('btn.doc.write')}
           </button>
         )}
       </div>
 
       {/* 로딩 오버레이 */}
-      {generating && (
+      {(requestLoading || generating) && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
           background: 'rgba(0,0,0,0.5)',
@@ -268,36 +235,12 @@ export default function ReqDocWritePage() {
         }}>
           <div style={{
             background: '#fafae5', padding: '20px 30px', borderRadius: 8,
-            color: '#6c757d', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-            width: 330, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
           }}>
             <Spin />
-            <div style={{ fontSize: 16, fontWeight: 'bold' }}>
-              {t('msg.loading.doc.writing')}
-            </div>
-            <div style={{
-              width: '100%', backgroundColor: '#e0e0e0', borderRadius: 10, overflow: 'hidden',
-            }}>
-              <div style={{
-                height: 20,
-                background: 'linear-gradient(90deg,#007bff,#0056b3)',
-                borderRadius: 10,
-                transition: 'width 0.3s ease',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', fontSize: 12, fontWeight: 'bold',
-                width: `${percentage}%`,
-                minWidth: percentage > 0 ? 30 : 0,
-              }}>
-                {percentage > 0 ? `${percentage}%` : ''}
-              </div>
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 'bold' }}>
-              {progress ? `${progress.step} / ${progress.total} ${t('lbl.step')}` : t('msg.loading.preparing')}
-            </div>
-            <div style={{ fontSize: 13 }}>
-              {getProgressMessage(progress)}
-            </div>
-            <div style={{ fontSize: 14 }}>{t('msg.loading.wait')}</div>
+            <span>{t('msg.loading.wait')}</span>
           </div>
         </div>
       )}

@@ -1312,6 +1312,125 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
     }
 
 
+# ── Combine (SQS, 신규 생성 없이 이미 작성된 챕터만 병합) ─────────────────────────
+# 문서 조합 작성 — 각 챕터의 작성본(create) 또는 업로드본(update) 중 선택된 그대로
+# 순서대로 병합만 한다. LLM 재생성이 없으므로 크레딧 차감도 발생하지 않는다
+# (worker의 _run_merge_and_upload가 신규 gendocjobuid에 연결된 genobjectlogs가 없으면
+# apply_doc_credit_deduction에서 자연히 0건 차감으로 종료됨).
+
+class CombineChapterItem(BaseModel):
+    genchapteruid: str
+    mode: str  # 'create'(작성본) | 'update'(업로드본)
+
+
+class CombineRequest(BaseModel):
+    chapters: list[CombineChapterItem]
+    projectid: Optional[int] = None
+    tenantid: Optional[int] = None
+    accountuid: Optional[str] = None
+
+
+@router.post("/{gendocuid}/combine")
+def combine_doc(gendocuid: str, body: CombineRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    user_id = str(user.id)
+    ctx = _get_user_context(sb, user_id)
+    docid = ctx["docid"]
+
+    gendoc_check = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("gendocuid", gendocuid).execute().data
+    if not gendoc_check:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+
+    if not body.chapters:
+        return {"no_written_chapters": True, "message": "조합할 작성된 챕터가 없습니다."}
+
+    sb_svc = get_service_client()
+
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    timeout = timedelta(hours=2)
+
+    # 스테일 락 해제
+    genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("*").eq("gendocuid", gendocuid).execute().data or []
+    for lock in genlocks:
+        upd = {}
+        if lock.get("doclocked") and lock.get("docstartdts"):
+            start = datetime.fromisoformat(lock["docstartdts"])
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if now_dt - start > timeout:
+                upd["doclocked"] = False
+                upd["docenddts"] = now_iso
+        if lock.get("chapterlocked") and lock.get("chapterstartdts"):
+            start = datetime.fromisoformat(lock["chapterstartdts"])
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if now_dt - start > timeout:
+                upd["chapterlocked"] = False
+                upd["chapterenddts"] = now_iso
+        if upd:
+            sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
+
+    # 남은 락 확인
+    genlocks = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
+    if any(r.get("doclocked") or r.get("chapterlocked") for r in genlocks):
+        return {"locked": True, "message": "이 문서가 이미 작성 중입니다."}
+
+    # 문서 락 설정
+    sb.schema(SUPABASE_SCHEMA).table("genlocks").upsert({
+        "gendocuid": gendocuid,
+        "genchapteruid": "",
+        "doclocked": True,
+        "chapterlocked": False,
+        "docstartdts": now_iso,
+        "docenddts": None,
+        "chapterstartdts": None,
+        "chapterenddts": None,
+        "useruid": user_id,
+    }, on_conflict="gendocuid,genchapteruid").execute()
+
+    gendocnm_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
+    gendocnm = gendocnm_row[0]["gendocnm"] if gendocnm_row else ""
+
+    # gendocs_realtimes insert (처리 시작 상태) → gendocjobuid 획득
+    res = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").insert({
+        "gendocuid": gendocuid,
+        "docid": docid,
+        "gendocnm": gendocnm,
+        "jobstatuscd": "S",
+        "startdts": now_iso,
+        "errorcd": None,
+        "errormessage": None,
+        "creator": user_id,
+    }).execute()
+    gendocjobuid = res.data[0]["gendocjobuid"]
+    sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").update({
+        "gendocjobuid": gendocjobuid,
+    }).eq("gendocuid", gendocuid).execute()
+
+    # SQS 메시지 전송 — combine_only=True: 워커가 Phase 1(fan-out/LLM 생성) 없이 Phase 2+3(병합/업로드)만 수행
+    sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+    sqs.send_message(
+        QueueUrl=settings.SQS_QUEUE_URL,
+        MessageBody=json.dumps({
+            "combine_only": True,
+            "gendocuid": gendocuid,
+            "gendocjobuid": gendocjobuid,
+            "user_id": user_id,
+            "access_token": token,
+            "chapters": [c.model_dump() for c in body.chapters],
+            "docid": docid,
+            "tenantid": body.tenantid,
+            "projectid": body.projectid,
+            "accountuid": body.accountuid,
+            "gendocnm": gendocnm,
+        }, ensure_ascii=False),
+    )
+
+    return {"gendocuid": gendocuid}
+
+
 # 2026-05-06 Min 헬퍼 함수 수정 >> 실제 데이터를 동작시켜서 내용 작성
 def _build_context(sb, variables: list, req, docid) -> dict:
     """req_chapters_read.py의 _build_context와 동일"""
