@@ -21,8 +21,13 @@ from utilsPrj.user_lookup import get_usernm_email
 router = APIRouter()
 
 
-def _get_docid(sb, user_id: str) -> Optional[int]:
-    row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do").execute().data
+def _get_docid(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
+    # serviceusers는 (useruid, servicecd) 조합이 활성 테넌트별로 행이 나뉘므로
+    # tenantid로 제한하지 않으면 다중 테넌트 계정에서 임의의(엉뚱한) 행이 잡힐 수 있다.
+    query = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do")
+    if tenantid:
+        query = query.eq("tenantid", int(tenantid))
+    row = query.execute().data
     docid = row[0].get("mydocid") if row else None
     return int(docid) if docid else None
 
@@ -41,7 +46,7 @@ def _resolve_docid(sb, user_id: str, tenantid: Optional[str], requested_docid: O
     serviceusers.mydocid(마지막 선택 문서)는 테넌트 구분 없이 전역으로 저장되므로,
     다른 테넌트로 전환한 상태에서 그대로 쓰면 이전 테넌트의 문서가 노출될 수 있다.
     """
-    candidate = requested_docid or _get_docid(sb, user_id)
+    candidate = requested_docid or _get_docid(sb, user_id, tenantid)
     if candidate and (not tenantid or _tenant_of_doc(sb, candidate) == str(tenantid)):
         return candidate
 
@@ -69,11 +74,19 @@ def _resolve_docid(sb, user_id: str, tenantid: Optional[str], requested_docid: O
     return None
 
 
-def _get_user_context(sb, user_id: str) -> dict:
-    """docid → projectid → tenantid 순으로 조회하여 LLM 모델 선택에 필요한 컨텍스트 반환"""
-    docid = tenantid = projectid = None
+def _get_user_context(sb, user_id: str, tenantid: Optional[str] = None) -> dict:
+    """docid → projectid → tenantid 순으로 조회하여 LLM 모델 선택에 필요한 컨텍스트 반환.
+
+    serviceusers는 (useruid, servicecd) 조합이 활성 테넌트별로 행이 나뉘므로,
+    호출부에서 현재 활성 테넌트(tenantid, X-Tenant-ID)를 넘겨 그 행만 조회한다
+    (안 넘기면 다중 테넌트 계정에서 임의의 테넌트 행이 잡힐 수 있음).
+    """
+    docid = doc_tenantid = projectid = None
     try:
-        row = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do").execute().data
+        query = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do")
+        if tenantid:
+            query = query.eq("tenantid", int(tenantid))
+        row = query.execute().data
         if row and row[0].get("mydocid"):
             docid = int(row[0]["mydocid"])
     except Exception:
@@ -91,11 +104,11 @@ def _get_user_context(sb, user_id: str) -> dict:
         if projectid:
             proj_row = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", projectid).execute().data
             if proj_row and proj_row[0].get("tenantid"):
-                tenantid = proj_row[0]["tenantid"]
+                doc_tenantid = proj_row[0]["tenantid"]
     except Exception:
         pass
 
-    return {"docid": docid, "tenantid": tenantid, "projectid": projectid}
+    return {"docid": docid, "tenantid": doc_tenantid, "projectid": projectid}
 
 
 def _get_chapteruids_for_gendoc(sb, gendocuid: str) -> list:
@@ -261,10 +274,10 @@ def list_gendocs(
 # ── Gendoc Detail ───────────────────────────────────────────────────────────────
 
 @router.get("/dataparams")
-def get_dataparams(token: str = Depends(get_token)):
+def get_dataparams(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    ctx = _get_user_context(sb, str(user.id))
+    ctx = _get_user_context(sb, str(user.id), tenantid)
     docid = ctx["docid"]
     if not docid:
         return {"dataparams": [], "params_value": []}
@@ -654,11 +667,11 @@ class ObjectRewriteRequest(BaseModel):
 
 
 @router.post("/genchapters/{genchapteruid}/objects/{objectuid}/rewrite")
-def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_token)):
+def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    ctx = _get_user_context(sb, user_id)
+    ctx = _get_user_context(sb, user_id, tenantid)
     docid = ctx["docid"]
 
     genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
@@ -800,7 +813,7 @@ def get_doc_content(
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    ctx = _get_user_context(sb, user_id)
+    ctx = _get_user_context(sb, user_id, tenantid)
     docid = ctx["docid"]
     offsetminutes = _get_offsetminutes(sb, user_id, tenantid)
     req = FakeRequest(token, user_id, docid, tenantid=ctx["tenantid"], projectid=ctx["projectid"])
@@ -858,11 +871,12 @@ def get_chapter_content(
     genchapteruid: str,
     type: str = "auto",
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    ctx = _get_user_context(sb, user_id)
+    ctx = _get_user_context(sb, user_id, tenantid)
     docid = ctx["docid"]
 
     genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid").eq("genchapteruid", genchapteruid).execute().data
@@ -908,11 +922,11 @@ class RewriteChapterRequest(BaseModel):
 
 
 @router.post("/genchapters/{genchapteruid}/rewrite")
-def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteChapterRequest(), token: str = Depends(get_token)):
+def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteChapterRequest(), token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    ctx = _get_user_context(sb, user_id)
+    ctx = _get_user_context(sb, user_id, tenantid)
 
     genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,chapteruid").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
@@ -1160,11 +1174,11 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/{gendocuid}/generate")
-def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get_token)):
+def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    ctx = _get_user_context(sb, user_id)
+    ctx = _get_user_context(sb, user_id, tenantid)
     docid = ctx["docid"]
     results = body.results
 
@@ -1332,11 +1346,11 @@ class CombineRequest(BaseModel):
 
 
 @router.post("/{gendocuid}/combine")
-def combine_doc(gendocuid: str, body: CombineRequest, token: str = Depends(get_token)):
+def combine_doc(gendocuid: str, body: CombineRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
-    ctx = _get_user_context(sb, user_id)
+    ctx = _get_user_context(sb, user_id, tenantid)
     docid = ctx["docid"]
 
     gendoc_check = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("gendocuid", gendocuid).execute().data
@@ -1527,7 +1541,7 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
 
     rows = []
     for item in extracted:
-        object_data = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("objectnm", item["objectNm"]).execute().data
+        object_data = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("chapteruid", chapteruid).eq("objectnm", item["objectNm"]).execute().data
         if not object_data:
             continue
         objecttypecd = object_data[0].get("objecttypecd")
