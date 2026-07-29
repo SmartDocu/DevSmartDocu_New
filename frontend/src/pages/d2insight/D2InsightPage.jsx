@@ -11,7 +11,7 @@ import chatbotHuman from '@/assets/icons/chatbot_human.svg'
 import '../d2shared/d2common.css'
 import './d2insight.css'
 
-const CHAT_TIMEOUT = { timeout: 360000 } // 보고서 생성 최대 6분
+const CHAT_TIMEOUT = { timeout: 3600000 } // 보고서 생성 최대 6분
 
 function getInitialMessage() {
   return {

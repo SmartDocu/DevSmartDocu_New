@@ -1,59 +1,59 @@
 # ── FastAPI 핵심 ──────────────────────────────────────────────
-fastapi
-uvicorn[standard]
-python-multipart
-pydantic
-pydantic-settings
-httpx
+fastapi==0.115.0
+uvicorn[standard]==0.44.0
+python-multipart==0.0.26
+pydantic==2.12.4
+pydantic-settings==2.14.0
+httpx==0.28.1
 
 # ── 환경변수 ──────────────────────────────────────────────────
-python-dotenv
+python-dotenv==1.2.1
 
 # ── Supabase / 인증 ───────────────────────────────────────────
-supabase
-supabase-auth
-gotrue
+supabase==2.15.0
+supabase-auth==2.28.3
+gotrue==2.12.0
 
 # ── LLM / AI ─────────────────────────────────────────────────
-anthropic
-langchain-anthropic
-langchain-core
-langchain-community
-langchain-openai
-langchain-google-genai
-langgraph
-langdetect
-faiss-cpu
+anthropic==0.91.0
+langchain-anthropic==1.4.0
+langchain-core==1.2.28
+langchain-community==0.4.1
+langchain-openai==1.1.7
+langchain-google-genai==4.2.1
+langgraph==1.1.6
+langdetect==1.0.9
+faiss-cpu==1.13.2
 
 # ── 데이터 처리 ───────────────────────────────────────────────
-pandas
-numpy
-matplotlib
-scipy
-pillow
-python-dateutil
-beautifulsoup4
-python-docx
-openpyxl
-xlrd
+pandas==2.3.3
+numpy==2.4.6
+matplotlib==3.10.8
+scipy==1.18.0
+pillow==12.3.0
+python-dateutil==2.9.0.post0
+beautifulsoup4==4.12.3
+python-docx==1.2.0
+openpyxl==3.1.2
+xlrd==2.0.1
 
 # ── 외부 DB ───────────────────────────────────────────────────
-pyodbc
-oracledb
-SQLAlchemy
+pyodbc==5.1.0
+oracledb==3.4.1
+SQLAlchemy==2.0.35
 
 # ── 보안 ─────────────────────────────────────────────────────
-cryptography
+cryptography==48.0.0
 
 # ── AWS / Azure ──────────────────────────────────────────────
-boto3
-azure-storage-blob
+boto3==1.43.26
+azure-storage-blob==12.25.1
 
 # ── PDF / 문서 변환 ───────────────────────────────────────────
-markdown
-reportlab
-xhtml2pdf
+markdown==3.10.2
+reportlab==4.5.0
+xhtml2pdf==0.2.17
 
 # ── 기타 ─────────────────────────────────────────────────────
-requests
-email-validator
+requests==2.33.1
+email-validator==2.2.0
