@@ -303,7 +303,10 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
     editbuttonyn = "Y" if (projectmanager == "Y" or tenantmanager == "Y") else "N"
 
     # 7. users 테이블 mydocid 업데이트 (D2DOC 서비스 행만)
-    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).eq("servicecd", "Do").execute()
+    # serviceusers는 (useruid, servicecd) 조합이 테넌트별로 행이 나뉘므로 tenantid로 반드시 제한
+    # (안 그러면 다른 테넌트의 "마지막 선택 문서" 행까지 이 docid로 덮어써버림)
+    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"mydocid": docid}) \
+        .eq("useruid", user_id).eq("servicecd", "Do").eq("tenantid", int(tenantid)).execute()
 
     return DocSelectResponse(
         docid=docid,

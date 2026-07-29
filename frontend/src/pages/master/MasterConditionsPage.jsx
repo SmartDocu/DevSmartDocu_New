@@ -171,7 +171,7 @@ export default function MasterConditionsPage() {
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측: 조건 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <button className="btn btn-primary" type="button" onClick={handleNew}>
@@ -185,12 +185,13 @@ export default function MasterConditionsPage() {
                   <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
                   <th>{t('thd.paramnm_thd')}</th>
                   <th style={{ width: '15%', textAlign: 'center' }}>{t('thd.operator_thd')}</th>
+                  <th>{t('thd.samplevalue_thd')}</th>
                   <th>{t('thd.datanm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {params.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
                 ) : params.map((p) => (
                   <tr
                     key={p.paramuid}
@@ -201,6 +202,7 @@ export default function MasterConditionsPage() {
                     <td style={{ textAlign: 'center' }}>{p.orderno ?? ''}</td>
                     <td>{p.paramnm}</td>
                     <td style={{ textAlign: 'center' }}>{p.operator}</td>
+                    <td>{p.samplevalue || ''}</td>
                     <td>{p.datanm || ''}</td>
                   </tr>
                 ))}
@@ -210,7 +212,7 @@ export default function MasterConditionsPage() {
         </div>
 
         {/* 우측: 상세 폼 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {canEdit && (
