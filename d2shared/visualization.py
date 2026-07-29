@@ -278,8 +278,11 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
 
     try:
         # 폰트 설정: NanumGothic → Malgun Gothic(Windows) → AppleGothic(macOS) → 기본 폰트 순
+        # font_path = os.path.abspath(
+        #     os.path.join(os.path.dirname(__file__), 'fonts', 'NanumGothic-Regular.ttf')
+        # )
         font_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), 'fonts', 'NanumGothic-Regular.ttf')
+            os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'NanumGothic-Regular.ttf')
         )
         if os.path.exists(font_path):
             fm.fontManager.addfont(font_path)
