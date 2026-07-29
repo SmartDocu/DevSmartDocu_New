@@ -285,7 +285,6 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     sd = supabase.schema(SUPABASE_SCHEMA)
 
     # 1. 사용자 기본 정보
-    mydocid = None
     try:
         user_row = (
             sd.table("users")
@@ -296,20 +295,6 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         )
         if user_row.data:
             ctx.roleid = user_row.data.get("roleid")
-    except Exception:
-        pass
-
-    try:
-        svc_row = (
-            sd.table("serviceusers")
-            .select("mydocid")
-            .eq("useruid", user_id)
-            .eq("servicecd", "Do")
-            .maybe_single()
-            .execute()
-        )
-        if svc_row.data:
-            mydocid = svc_row.data.get("mydocid")
     except Exception:
         pass
 
@@ -356,6 +341,20 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
+    # 2-1. mydocid(마지막 선택 문서) 조회
+    # serviceusers는 (useruid, servicecd) 조합이 테넌트별로 행이 나뉘어 있으므로
+    # tenantid 없이 조회하면 다중 테넌트 계정에서 .maybe_single()이 406(복수 행)으로 실패한다.
+    mydocid = None
+    try:
+        svc_q = sd.table("serviceusers").select("mydocid").eq("useruid", user_id).eq("servicecd", "Do")
+        if ctx.tenantid:
+            svc_q = svc_q.eq("tenantid", int(ctx.tenantid))
+        svc_row = svc_q.maybe_single().execute()
+        if svc_row.data:
+            mydocid = svc_row.data.get("mydocid")
+    except Exception:
+        pass
+
     # 3. 문서 목록 (활성 테넌트 소속 문서만 후보로 필터링 — 다른 테넌트 문서가 잡히는 것 방지)
     docid = None
     try:
@@ -394,10 +393,13 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
             ctx.docid = str(docid)
             ctx.docnm = target_doc.get("docnm", "")
 
-            # mydocid가 실제 선택 docid와 다를 때 DB 동기화
+            # mydocid가 실제 선택 docid와 다를 때 DB 동기화 (현재 활성 테넌트 행만 갱신)
             if str(docid) != str(mydocid or ""):
                 try:
-                    sd.table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).eq("servicecd", "Do").execute()
+                    sync_q = sd.table("serviceusers").update({"mydocid": docid}).eq("useruid", user_id).eq("servicecd", "Do")
+                    if ctx.tenantid:
+                        sync_q = sync_q.eq("tenantid", int(ctx.tenantid))
+                    sync_q.execute()
                 except Exception:
                     pass
 

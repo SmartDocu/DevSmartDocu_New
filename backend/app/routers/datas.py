@@ -129,14 +129,18 @@ def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(ge
 
     myprojectid = None
     if servicecd:
-        su_row = (
-            sb.schema(SUPABASE_SCHEMA).table("serviceusers")
-            .select("myprojectid")
-            .eq("useruid", str(user.id)).eq("servicecd", servicecd)
-            .maybe_single().execute()
-        )
-        if su_row and su_row.data:
-            myprojectid = su_row.data.get("myprojectid")
+        # serviceusers는 (useruid, servicecd) 조합이 테넌트별로 행이 나뉘므로
+        # tenantid 없이 조회하면 다중 테넌트 계정에서 .maybe_single()이 406(복수 행)으로 실패한다.
+        try:
+            su_q = sb.schema(SUPABASE_SCHEMA).table("serviceusers") \
+                .select("myprojectid").eq("useruid", str(user.id)).eq("servicecd", servicecd)
+            if tenantid:
+                su_q = su_q.eq("tenantid", int(tenantid))
+            su_row = su_q.maybe_single().execute()
+            if su_row and su_row.data:
+                myprojectid = su_row.data.get("myprojectid")
+        except Exception:
+            pass
 
     return {
         "projects": [
@@ -152,10 +156,16 @@ class MyProjectRequest(BaseModel):
     servicecd: str
 
 @router.post("/myproject")
-def update_my_project(body: MyProjectRequest, token: str = Depends(get_token)):
+def update_my_project(body: MyProjectRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"myprojectid": body.myprojectid}).eq("useruid", str(user.id)).eq("servicecd", body.servicecd).execute()
+    # serviceusers는 (useruid, servicecd) 조합이 테넌트별로 행이 나뉘므로 tenantid로 반드시 제한
+    # (안 그러면 다른 테넌트의 myprojectid 행까지 덮어써버림)
+    query = sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"myprojectid": body.myprojectid}) \
+        .eq("useruid", str(user.id)).eq("servicecd", body.servicecd)
+    if tenantid:
+        query = query.eq("tenantid", int(tenantid))
+    query.execute()
     return {"status": "ok"}
 
 
@@ -469,12 +479,20 @@ def list_datas(
         return {"datas": rows}
 
     # db/api 타입은 프로젝트 연결과 무관하게 테넌트 소속이면 바로 노출
+    # (단, 시스템 테넌트는 여러 개인 계정이 tenantid를 공유하므로 creator로 추가 제한)
     if datasourcecd in ("db", "api") and not chapteruid:
-        rows = (
+        issystemtenant = True
+        if tenantid:
+            t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+
+        query = (
             sb.schema(SUPABASE_SCHEMA).table("dataunits")
             .select("*").eq("tenantid", tenantid).eq("datasourcecd", datasourcecd)
-            .execute().data or []
         )
+        if issystemtenant:
+            query = query.eq("creator", str(user.id))
+        rows = query.execute().data or []
         if rows:
             cids = list({r["connuid"] for r in rows if r.get("connuid")})
             if cids:
@@ -545,6 +563,31 @@ def list_datas(
         allowed_uids = {d["datauid"] for d in doc_datas_rows}
         rows = [r for r in rows if r["datauid"] in allowed_uids]
 
+    # AI로 만든 데이터(df/dfv)는 시스템 테넌트에서 본인이 등록한 것이면
+    # doc_datas 등록 여부와 무관하게 노출 (master/datas/ai에서 아직 doc_datas에 매핑할 방법이 없음)
+    if chapter_docid and (not datasourcecd or datasourcecd in ("df", "dfv")):
+        issystemtenant = True
+        if tenantid:
+            t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+
+        if issystemtenant:
+            ai_rows = []
+            if single_pid is not None and (not datasourcecd or datasourcecd == "df"):
+                ai_rows += (
+                    sb.schema(SUPABASE_SCHEMA).table("datas").select("*")
+                    .eq("projectid", single_pid).eq("datasourcecd", "df").eq("creator", str(user.id))
+                    .execute().data or []
+                )
+            if not datasourcecd or datasourcecd == "dfv":
+                ai_rows += (
+                    sb.schema(SUPABASE_SCHEMA).table("datas").select("*")
+                    .eq("dfv_docid", chapter_docid).eq("datasourcecd", "dfv").eq("creator", str(user.id))
+                    .execute().data or []
+                )
+            existing_uids = {r["datauid"] for r in rows}
+            rows += [r for r in ai_rows if r["datauid"] not in existing_uids]
+
     for r in rows:
         pid = r.get("projectid")
         r["projectnm"] = pmap.get(pid)
@@ -598,13 +641,16 @@ def list_source_datas(projectid: int = None, token: str = Depends(get_token), te
         issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
 
     # db/api (+ 기업 테넌트의 ex): 프로젝트 연결과 무관하게 테넌트 소속이면 전부 후보
+    # (단, 시스템 테넌트는 여러 개인 계정이 tenantid를 공유하므로 creator로 추가 제한)
     tenant_wide_types = ["db", "api"] if issystemtenant else ["db", "api", "ex"]
-    rows = (
+    tenant_wide_query = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd, projectid")
         .eq("tenantid", tenantid).in_("datasourcecd", tenant_wide_types)
-        .execute().data or []
     )
+    if issystemtenant:
+        tenant_wide_query = tenant_wide_query.eq("creator", str(user.id))
+    rows = tenant_wide_query.execute().data or []
 
     # 개인/시스템 테넌트의 ex: 기존처럼 프로젝트(=creator가 매니저인 프로젝트) 기준
     if issystemtenant:

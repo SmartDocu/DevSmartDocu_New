@@ -35,6 +35,7 @@ def _tenant_datas_candidates(sb, tid: Optional[str], user_id: str) -> list[dict]
 
     db/api(+ 기업 테넌트의 ex)는 프로젝트 연결과 무관하게 테넌트 소속이면 전부 후보이고
     (datas.py list_source_datas와 동일한 기준), 개인/시스템 테넌트의 ex만 프로젝트 기준을 유지한다.
+    단, 시스템 테넌트는 여러 개인 계정이 tenantid를 공유하므로 db/api도 creator로 추가 제한한다.
     """
     if not tid:
         return []
@@ -44,12 +45,14 @@ def _tenant_datas_candidates(sb, tid: Optional[str], user_id: str) -> list[dict]
     issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
 
     tenant_wide_types = ["db", "api"] if issystemtenant else ["db", "api", "ex"]
-    datas = (
+    tenant_wide_query = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
         .select("datauid, datanm, datasourcecd")
         .eq("tenantid", tid).in_("datasourcecd", tenant_wide_types)
-        .execute().data or []
     )
+    if issystemtenant:
+        tenant_wide_query = tenant_wide_query.eq("creator", user_id)
+    datas = tenant_wide_query.execute().data or []
 
     if issystemtenant:
         project_ids = _tenant_project_ids(sb, user_id, tid)
