@@ -238,7 +238,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
     from utilsPrj.process_data import process_data
     from utilsPrj.ai_chain import (
         get_charts_prompt, get_sentences_prompt, get_tables_prompt,
-        get_full_chain,
+        get_full_chain, detect_date_type_issues,
     )
 
     sb = get_sb(token)
@@ -311,6 +311,9 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ process_data 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=400, detail=f"데이터 조회 오류: {str(e)}")
+
+    # ⑥-1 데이터 타입 검증 — 결과에 영향을 줄 수 있는 값(예: 존재하지 않는 날짜) 탐지
+    data_warnings = detect_date_type_issues(result_df)
 
     # ⑦ 열이름 매핑 — df 타입은 sourcedatauid 기준 (Django ai_chain.py 참조)
     try:
@@ -397,15 +400,21 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
             "message_type": "image",
             "image_data": response["image_bytes"],
             "question": response.get("question", ""),
+            "data_warnings": data_warnings,
         }
     elif status == "analysis_comment":
-        return {"message_type": "text", "message": response.get("result", "")}
+        return {
+            "message_type": "text",
+            "message": response.get("result", ""),
+            "data_warnings": data_warnings,
+        }
     elif status == "data_table":
         return {
             "message_type": "table",
             "data": response.get("result", []),
             "table_header_json": response.get("table_header_json", ""),
             "table_data_json": response.get("table_data_json", ""),
+            "data_warnings": data_warnings,
         }
     elif status == "error":
         raise HTTPException(status_code=500, detail=response.get("error", "LLM 오류"))

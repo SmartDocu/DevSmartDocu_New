@@ -29,15 +29,17 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
 
     # 원본 가져오기 (엑셀)
     if sourcedatasourcecd == "ex":
-        df = process_data_excel(supabase, request, sourcedatauid, docid, gendoc_uid, all)
+        df = process_data_excel(supabase, request, sourcedatauid, docid, gendoc_uid, all=True)
 
     # 원본 가져오기 (DB)
     if sourcedatasourcecd == "db":
-        df = process_data_db(supabase, request, sourcedatauid, docid, gendoc_uid, all)
+        df = process_data_db(supabase, request, sourcedatauid, docid, gendoc_uid, all=True)
 
     # 원본이 api 데이터 화면일 경우
     if sourcedatasourcecd == "api":
         df = process_data_api(supabase, sourcedatauid, gendoc_uid)
+
+    print(f"jeff supabase df : {df}")
 
     # AI 재집계
     result_datacols = (

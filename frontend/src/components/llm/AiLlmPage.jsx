@@ -159,6 +159,22 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         objecttypecd,
       })
       setPreviewResult(res.data)
+      const warnings = res.data?.data_warnings || []
+      if (warnings.length > 0) {
+        modal.warning({
+          title: t('ttl.data.type.warning'),
+          content: (
+            <div>
+              {warnings.map((w) => (
+                <div key={w.column} style={{ marginBottom: 8 }}>
+                  <div>{t('msg.data.type.warning.detail').replace('{column}', w.column).replace('{count}', w.invalid_count)}</div>
+                  <div style={{ color: '#888', fontSize: 12 }}>{t('lbl.examples')}: {w.examples.join(', ')}</div>
+                </div>
+              ))}
+            </div>
+          ),
+        })
+      }
     } catch (e) {
       message.error(e.response?.data?.detail || t('msg.preview.error'))
     } finally {

@@ -334,6 +334,11 @@ prompt_common_text = """작업: df 분석 및 처리
 - 예: df['시험항목'] (X)
 
 사용자 지정 컬럼명(VALUE)은 시각화나 레이블에만 사용하세요.
+
+**중요: df는 이미 실행 환경에 실제 데이터로 정의되어 있습니다.**
+- df = pd.DataFrame({{...}}) 형태로 df를 새로 생성하거나 샘플/예시 데이터로 재정의하지 마세요.
+- 주석으로도 샘플 데이터 생성 코드를 작성하지 마세요.
+- 주어진 df를 그대로 사용해서 분석 코드만 작성하세요.
 """
 
 
@@ -396,6 +401,30 @@ prompt_common_python_text = """
     - groupby().agg() 형식: Named aggregation(새컬럼명=('원본컬럼명', 집계함수))은 DataFrame의 agg()에서만 사용 가능합니다. Series의 agg()에서는 사용 불가능합니다.
 
 """
+
+
+def detect_date_type_issues(df):
+    """
+    컬럼명에 'date'가 포함된 열에서, 날짜로 파싱되지 않는 값을 탐지한다.
+    (예: 2025년은 윤년이 아닌데 "2025-02-29"처럼 존재하지 않는 날짜가 입력된 경우)
+
+    Returns:
+        list[dict]: [{"column": str, "invalid_count": int, "examples": [str, ...]}, ...]
+    """
+    issues = []
+    date_cols = [col for col in df.columns if 'date' in col.lower()]
+    for col in date_cols:
+        original = df[col]
+        parsed = pd.to_datetime(original, errors='coerce')
+        invalid_mask = parsed.isna() & original.notna() & (original.astype(str).str.strip() != '')
+        if invalid_mask.any():
+            examples = original[invalid_mask].astype(str).unique().tolist()[:5]
+            issues.append({
+                "column": col,
+                "invalid_count": int(invalid_mask.sum()),
+                "examples": examples,
+            })
+    return issues
 
 
 def get_dataframe_information(df):
