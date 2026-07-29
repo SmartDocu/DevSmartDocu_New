@@ -1,11 +1,14 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # ── 시스템 패키지 + MS SQL ODBC 드라이버 설치 ──────────────────────────
 RUN apt-get update && apt-get install -y \
     curl gnupg2 apt-transport-https ca-certificates \
     build-essential unixodbc-dev \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
+    && curl -sSL https://packages.microsoft.com/config/debian/12/prod.list \
+        | sed 's#deb \[arch=amd64,armhf,arm64\] #deb [arch=amd64,armhf,arm64 signed-by=/etc/apt/keyrings/microsoft.gpg] #' \
+        > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
