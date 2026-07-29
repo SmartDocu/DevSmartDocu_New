@@ -123,7 +123,7 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
 
     rows = []
     for item in extracted:
-        obj = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("objectnm", item["objectNm"]).execute().data
+        obj = sb.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("chapteruid", chapteruid).eq("objectnm", item["objectNm"]).execute().data
         if not obj:
             continue
         objecttypecd = obj[0].get("objecttypecd")
