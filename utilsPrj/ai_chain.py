@@ -403,7 +403,9 @@ def get_dataframe_information(df):
     date_info = ""
     if date_cols:
         date_col = date_cols[0]
-        date_info = f"\n    - 날짜: {df[date_col].min()}~{df[date_col].max()}"
+        parsed_dates = pd.to_datetime(df[date_col], errors='coerce')
+        if parsed_dates.notna().any():
+            date_info = f"\n    - 날짜: {parsed_dates.min()}~{parsed_dates.max()}"
     
     total_cols = len(df.columns)
     
