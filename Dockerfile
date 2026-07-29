@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.12.8
 
 # ── 시스템 패키지 + MS SQL ODBC 드라이버 설치 ──────────────────────────
 RUN apt-get update && apt-get install -y \
