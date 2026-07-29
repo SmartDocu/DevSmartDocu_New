@@ -23,7 +23,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── 전체 소스 복사 ─────────────────────────────────────────────────────
 COPY . .
 
-# ── 프론트엔드 빌드 ────────────────────────────────────────────────────
+# ── 프론트엔드 빌드 (Vite는 빌드 시점에 환경변수가 필요하므로 ARG로 전달받음) ──
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 RUN cd frontend && npm install && npm run build
 
 EXPOSE 8000
