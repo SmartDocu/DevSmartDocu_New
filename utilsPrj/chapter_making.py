@@ -1124,13 +1124,21 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         obj = obj_rows[0]
                         if not obj.get("useyn"):
                             # 사용여부=아니오인 항목은 재작성 대상에서 제외하고,
-                            # flattexttemplate에 남아있는 placeholder는 빈 문자열로 치환해 원문 노출을 막는다
-                            place_holder = f"{{{obj.get('objectnm')}}}"
-                            place_holder_with_p = f"<p>{place_holder}</p>"
-                            if place_holder_with_p in text_template:
-                                text_template = text_template.replace(place_holder_with_p, "")
-                            elif place_holder in text_template:
-                                text_template = text_template.replace(place_holder, "")
+                            # flattexttemplate에 남아있는 placeholder는 빈 문자열로 치환해 원문 노출을 막는다.
+                            # 실제 placeholder는 홑중괄호 {objectnm}가 아니라 겹중괄호 {{objectnm}}(+[params])
+                            # 형태이며, genobjects.replacestring에 추출 당시 원문 그대로 저장돼 있으므로 그걸 우선 사용한다.
+                            replace_targets = []
+                            replacestring = go.get("replacestring")
+                            if replacestring:
+                                replace_targets.append(replacestring)
+                            objectnm = obj.get("objectnm") or ""
+                            replace_targets.append(f"{{{{{objectnm}}}}}")
+                            for target in replace_targets:
+                                target_with_p = f"<p>{target}</p>"
+                                if target_with_p in text_template:
+                                    text_template = text_template.replace(target_with_p, "")
+                                elif target in text_template:
+                                    text_template = text_template.replace(target, "")
                             continue
                         typecd = go.get("objecttypecd") or obj.get("objecttypecd")
                         domain_row = {}
