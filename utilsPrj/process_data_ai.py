@@ -14,6 +14,50 @@ from utilsPrj.process_data_api import process_data_api
 
 _logger = logging.getLogger(__name__)
 
+def _apply_doc_param_filter(supabase, df, datauid, docid, gendoc_uid):
+    """AI 재집계 원본(df)에 문서 매개변수(예: Drug B) 필터를 적용한다."""
+    from utilsPrj.process_data_excel import apply_filter
+
+    # 마스터 항목설정 화면 (docid만 있음) → docparams.samplevalue 사용
+    if docid is not None and gendoc_uid is None:
+        dtls = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
+            .select("*").eq("docid", docid).eq("datauid", datauid).execute()
+        params = supabase.schema(SUPABASE_SCHEMA).table("docparams") \
+            .select("*").eq("docid", docid).execute()
+        if not dtls.data or not params.data:
+            return df
+        df_dtls = pd.DataFrame(dtls.data).merge(
+            pd.DataFrame(params.data)[["paramuid", "samplevalue", "operator"]],
+            on="paramuid", how="left"
+        )
+        filtered = df.copy()
+        for _, row in df_dtls.iterrows():
+            col, val, op = row["querycolnm"], row["samplevalue"], row.get("operator", "=")
+            if col in filtered.columns and pd.notna(val):
+                filtered = apply_filter(filtered, col, op, val)
+        return filtered
+
+    # 실제 문서 생성 화면 (gendoc_uid만 있음) → gendoc_params.paramvalue 사용
+    if docid is None and gendoc_uid is not None:
+        resolved_docid = supabase.schema(SUPABASE_SCHEMA).table("gendocs") \
+            .select("docid").eq("gendocuid", gendoc_uid).single().execute().data["docid"]
+        dtls = supabase.schema(SUPABASE_SCHEMA).table("docparamdtls") \
+            .select("*").eq("docid", resolved_docid).eq("datauid", datauid).execute()
+        gp = supabase.schema(SUPABASE_SCHEMA).table("gendoc_params") \
+            .select("paramuid, paramvalue").eq("gendocuid", gendoc_uid).execute()
+        if not dtls.data or not gp.data:
+            return df
+        df_dtls = pd.DataFrame(dtls.data).merge(pd.DataFrame(gp.data), on="paramuid", how="left")
+        filtered = df.copy()
+        for _, row in df_dtls.iterrows():
+            col, val = row["querycolnm"], row["paramvalue"]
+            if col in filtered.columns and pd.notna(val):
+                filtered = apply_filter(filtered, col, "=", val)
+        return filtered
+
+    return df
+
+
 def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_mode, docid=None, gendoc_uid=None, all=None):
     """원본 데이터 조회 → column_dict 구성 → AI 체인 실행의 공통 로직"""
 
@@ -38,6 +82,8 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
     # 원본이 api 데이터 화면일 경우
     if sourcedatasourcecd == "api":
         df = process_data_api(supabase, sourcedatauid, gendoc_uid)
+
+    df = _apply_doc_param_filter(supabase, df, sourcedatauid, docid, gendoc_uid)
 
     # AI 재집계
     result_datacols = (
