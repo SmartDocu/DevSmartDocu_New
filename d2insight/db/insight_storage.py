@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 from d2insight.db import supabase_client as _sc
@@ -99,7 +100,11 @@ def delete_session(session_uid: str, creator: str) -> bool:
 
 
 def get_history_by_date(creator: str, offsetminutes: int | None = None) -> dict:
-    """날짜별로 그룹화된 세션 목록을 반환한다."""
+    """날짜별로 그룹화된 세션 목록을 반환한다.
+
+    정기 보고서로 등록된 세션은 is_schedule=True, schedule_active, title(템플릿명)을
+    덧붙인다 — 사이드바가 "정기 보고서" 섹션과 일반 "대화 목록"을 구분해 보여준다.
+    """
     try:
         q = (
             _sc.table("insight_sessions")
@@ -111,20 +116,87 @@ def get_history_by_date(creator: str, offsetminutes: int | None = None) -> dict:
         if creator:
             q = q.eq("creator", creator)
         res = q.execute()
+
+        templates_by_session: dict[str, dict] = {}
+        try:
+            tres = (
+                _sc.table("analytictemplates")
+                .select("sessionuid, templatenm, scheduleactive")
+                .eq("creator", creator)
+                .execute()
+            )
+            for t in (tres.data or []):
+                templates_by_session[t["sessionuid"]] = t
+        except Exception:
+            pass
+
         grouped: dict = {}
         for row in (res.data or []):
             formatted = _fmt_dt(row.get("createdts", ""), offsetminutes)
             date_key = formatted[:10]
             if date_key not in grouped:
                 grouped[date_key] = []
-            grouped[date_key].append({
+            template = templates_by_session.get(row["sessionuid"])
+            item = {
                 "session_id": row["sessionuid"],
-                "title": row.get("sessiontitles", ""),
+                "title": template["templatenm"] if template else row.get("sessiontitles", ""),
                 "created_at": formatted,
-            })
+            }
+            if template:
+                item["is_schedule"] = True
+                item["schedule_active"] = bool(template.get("scheduleactive"))
+            grouped[date_key].append(item)
         return grouped
     except Exception:
         return {}
+
+
+_PERIOD_FROM_FILENAME = re.compile(r"^[^_]+_([^_]+)_\d{8}_\d{6}\.md$")
+
+
+def _parse_target_period(filenm: str | None) -> str | None:
+    """생성 파일명에서 대상 기간(예: "2026-07")을 뽑는다. 못 뽑으면 None."""
+    if not filenm:
+        return None
+    m = _PERIOD_FROM_FILENAME.match(filenm)
+    return m.group(1) if m else None
+
+
+def get_schedule_turns(session_uid: str) -> list[dict]:
+    """정기 보고서 세션의 실행 턴 목록(최근 대상기간순) — 사이드바가 펼쳐 보여줄 때 쓴다."""
+    res = (
+        _sc.table("insight_qas")
+        .select("qauid, question, answer, filenm, fileurl, createdts")
+        .eq("sessionuid", session_uid)
+        .order("createdts", desc=True)
+        .execute()
+    )
+    turns: list[dict] = []
+    for row in (res.data or []):
+        try:
+            obj = json.loads(row["answer"])
+            if isinstance(obj, dict):
+                answer_text = obj.get("answer", "")
+                applied_steps = obj.get("applied_steps")
+                scenario = obj.get("scenario")
+            else:
+                answer_text, applied_steps, scenario = str(obj), None, None
+        except (json.JSONDecodeError, TypeError):
+            answer_text, applied_steps, scenario = row.get("answer") or "", None, None
+        turns.append({
+            "qauid": row["qauid"],
+            "question": row["question"],
+            "answer": answer_text,
+            "filenm": row.get("filenm"),
+            "fileurl": row.get("fileurl"),
+            "target_period": _parse_target_period(row.get("filenm")),
+            "created_at": row.get("createdts"),
+            "appliedSteps": applied_steps,
+            "scenario": scenario,
+        })
+    turns.sort(key=lambda t: (t["target_period"] is not None, t["target_period"] or "", t["created_at"] or ""),
+               reverse=True)
+    return turns
 
 
 # ── Q&A ──────────────────────────────────────────────────────────
@@ -176,7 +248,11 @@ def append_qa(
 
 
 def get_session_messages(session_uid: str) -> list[dict]:
-    """LLM 컨텍스트 + 히스토리 뷰용 메시지 배열 반환."""
+    """LLM 컨텍스트 + 히스토리 뷰용 메시지 배열 반환.
+
+    assistant 메시지의 appliedSteps는 그 보고서 생성 시 실제로 호출된 도구/파라미터
+    내역이다(우측 옵션 패널이 히스토리 조회 시 이 값으로 당시 내역을 복원한다).
+    """
     res = (
         _sc.table("insight_qas")
         .select("qauid, question, answer, filenm, fileurl")
@@ -189,15 +265,20 @@ def get_session_messages(session_uid: str) -> list[dict]:
         messages.append({"role": "user", "content": row["question"], "qauid": row["qauid"]})
         try:
             obj = json.loads(row["answer"])
-            answer_text = obj.get("answer", "") if isinstance(obj, dict) else str(obj)
+            if isinstance(obj, dict):
+                answer_text = obj.get("answer", "")
+                applied_steps = obj.get("applied_steps")
+            else:
+                answer_text, applied_steps = str(obj), None
         except (json.JSONDecodeError, TypeError):
-            answer_text = row["answer"] or ""
+            answer_text, applied_steps = row["answer"] or "", None
         messages.append({
             "role": "assistant",
             "content": answer_text,
             "reportPath": row.get("filenm"),
             "fileurl": row.get("fileurl"),
             "qauid": row["qauid"],
+            "appliedSteps": applied_steps,
         })
     return messages
 
@@ -205,6 +286,140 @@ def get_session_messages(session_uid: str) -> list[dict]:
 def get_qa(qauid: str) -> dict | None:
     res = _sc.table("insight_qas").select("*").eq("qauid", qauid).execute()
     return res.data[0] if res.data else None
+
+
+def get_last_report_qa(session_uid: str) -> dict | None:
+    """이 세션에서 가장 최근에 생성된 보고서 QA 한 건을 반환한다(없으면 None).
+
+    정기 보고서 등록 시 이 QA의 applied_steps를 스냅샷으로 떠서 analytictemplates에 저장한다.
+    """
+    res = (
+        _sc.table("insight_qas")
+        .select("qauid, question, answer, filenm, fileurl, createdts")
+        .eq("sessionuid", session_uid)
+        .not_.is_("filenm", "null")
+        .order("createdts", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return None
+    row = res.data[0]
+    try:
+        obj = json.loads(row["answer"])
+    except (json.JSONDecodeError, TypeError):
+        obj = {}
+    return {
+        "qauid": row["qauid"],
+        "question": row["question"],
+        "filenm": row.get("filenm"),
+        "fileurl": row.get("fileurl"),
+        "applied_steps": obj.get("applied_steps") if isinstance(obj, dict) else None,
+        "analytic_uid": obj.get("analytic_uid") if isinstance(obj, dict) else None,
+    }
+
+
+# ── 실행 로그 (Analytics / AnalyticSteps / AnalyticModules) ────────
+# 카탈로그(ScenarioModules/ScenarioTools) 없이 자유 텍스트 + params JSON만으로 기록한다.
+# scenariouid/tool_uid 등 카탈로그 FK 컬럼은 이 프로젝트에 카탈로그가 없어 항상 null —
+# pr_module_insight도 카탈로그 미등록 항목은 이미 이렇게 null로 기록하고 있다(실측 확인).
+
+def record_analytics(
+    tenant_id: int | None,
+    project_id: int | None,
+    scenario_nm: str,
+    applied_steps: list[dict] | None,
+    creator: str | None,
+) -> str | None:
+    """보고서 한 건의 실행 내역을 Analytics/AnalyticSteps/AnalyticModules에 기록하고
+    analyticuid를 반환한다. applied_steps가 비어 있으면 기록하지 않고 None을 반환한다."""
+    if not applied_steps:
+        return None
+
+    analytic = (
+        _sc.table("analytics")
+        .insert({
+            "tenantid": tenant_id,
+            "projectid": project_id,
+            "scenarionm": scenario_nm,
+            "creator": creator,
+        })
+        .execute()
+    )
+    analytic_uid = analytic.data[0]["analyticuid"]
+
+    for step_idx, step in enumerate(applied_steps):
+        step_row = (
+            _sc.table("analyticsteps")
+            .insert({
+                "tenantid": tenant_id,
+                "projectid": project_id,
+                "analyticuid": analytic_uid,
+                "stepnm": step.get("section") or f"섹션 {step_idx + 1}",
+                "orderno": step_idx,
+                "useyn": True,
+            })
+            .execute()
+        )
+        step_uid = step_row.data[0]["stepuid"]
+
+        for tool_idx, call in enumerate(step.get("tools") or []):
+            tools_json = {
+                "module_id": call.get("tool"),
+                "tool_uid": None,
+                "tool_nm": None,
+                "desc": None,
+                "params": call.get("params"),
+            }
+            _sc.table("analyticmodules").insert({
+                "tenantid": tenant_id,
+                "projectid": project_id,
+                "analyticuid": analytic_uid,
+                "stepuid": step_uid,
+                "tools": json.dumps(tools_json, ensure_ascii=False),
+                "orderno": tool_idx,
+            }).execute()
+
+    return analytic_uid
+
+
+def create_analytic_template(
+    tenant_id: int | None,
+    project_id: int | None,
+    session_uid: str,
+    template_nm: str,
+    period_json: dict,
+    global_json: dict,
+    steps_json: list | None,
+    schedule_cron: str,
+    schedule_start_dt: str,
+    creator: str | None,
+    analytic_uid: str | None = None,
+) -> str:
+    """정기 보고서 정의를 analytictemplates에 기록하고 templateuid를 반환한다.
+
+    실제 스케줄 트리거·다음 실행일 계산은 본프로젝트 Schedule 쪽(UserScheduleMasters 등)이
+    담당한다 — 여기서는 "무엇을 어떤 조건으로 반복 생성할지"의 스냅샷만 남긴다.
+    analytic_uid는 이 템플릿의 출처가 된 실행(Analytics) 1건을 가리킨다 — 없으면 null.
+    """
+    row = {
+        "tenantid": tenant_id,
+        "projectid": project_id,
+        "sessionuid": session_uid,
+        "analyticuid": analytic_uid,
+        "templatenm": template_nm,
+        "is_standard": False,
+        "periodjson": json.dumps(period_json, ensure_ascii=False),
+        "globaljson": json.dumps(global_json or {}, ensure_ascii=False),
+        "stepsjson": json.dumps(steps_json or [], ensure_ascii=False),
+        "schedulecron": schedule_cron,
+        "schedulestartdt": schedule_start_dt,
+        "scheduleactive": True,
+        "useyn": True,
+        "creator": creator,
+    }
+    res = _sc.table("analytictemplates").insert(row).execute()
+    return res.data[0]["templateuid"]
 
 
 def get_qa_count(session_uid: str) -> int:

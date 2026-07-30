@@ -330,6 +330,11 @@ def _build_system_prompt(
    - 사용자가 특정 분석 방법을 요청하면 반드시 해당 방법을 사용하세요.
 {query_step}
 3. 필요시 run_stats / run_trend / run_outlier 툴로 추가 분석하세요.
+   - 차원별 증감 영향도(어느 차원이 변화를 주도했는지)가 필요하면 run_variance_impact를 쓰세요.
+     이번기간·비교기간을 각각 execute_query로 조회한 뒤 두 결과를 전달하세요.
+   - 매출 증감을 항목별 신규/단종/수량효과/단가효과로 분해하려면 run_sales_bridge를 쓰세요.
+   - 매출→매출원가→매출총이익→판관비→영업이익 손익 계단이 필요하면 run_pnl_waterfall을 쓰세요
+     (각 단계 금액을 execute_query로 미리 집계해서 전달).
 4. 데이터가 있는 모든 주요 섹션에서 create_chart 툴로 시각화하세요. (의무)
    - create_chart 호출 후 tool result의 markdown_tag 값을 반드시 해당 위치의 텍스트에 삽입하세요.
    - 예: tool result = {{"markdown_tag": "![오류 추이](data:image/png;base64,...)"}}
@@ -655,11 +660,15 @@ class ReportAgent:
         }
         return defaults.get(report_type, ["분석 개요", "핵심 지표", "세부 분석", "종합"])
 
-    def _run_section(self, system: str, section_name: str, date_range: tuple[str, str]) -> tuple[str, dict]:
+    def _run_section(
+        self, system: str, section_name: str, date_range: tuple[str, str],
+    ) -> tuple[str, dict, list[dict]]:
         """섹션 하나를 독립 LangGraph 컨텍스트에서 실행한다.
 
         Worker 스레드에서 호출될 수 있으므로 token_tracker를 스레드-로컬로 초기화한다.
-        Returns: (markdown_text, token_data)
+        Returns: (markdown_text, token_data, tool_calls) — tool_calls는 이 섹션에서 실제로
+        호출된 도구명/파라미터 목록이다(우측 옵션 패널이 "이 섹션은 어떤 툴/조건으로
+        만들어졌는지" 보여주는 데 쓴다).
         """
         token_tracker.reset()
         token_tracker.set_current_section(section_name)
@@ -689,6 +698,7 @@ class ReportAgent:
         )
 
         parts: list[str] = []
+        tool_calls: list[dict] = []
         for msg in result["messages"]:
             if isinstance(msg, AIMessage):
                 content = msg.content
@@ -700,9 +710,11 @@ class ReportAgent:
                             text = block.get("text", "").strip()
                             if text:
                                 parts.append(text)
+                for call in getattr(msg, "tool_calls", None) or []:
+                    tool_calls.append({"tool": call.get("name"), "params": call.get("args")})
 
         md = "\n\n".join(p for p in parts if p.strip())
-        return md, token_tracker.get()
+        return md, token_tracker.get(), tool_calls
 
     def _check_upload_feasibility(
         self, report_type: str, user_request: str | None, date_range: tuple[str, str],
@@ -779,6 +791,7 @@ class ReportAgent:
                     "md_filename": "",
                     "report_type": report_type,
                     "skipped_reason": skip_reason,
+                    "applied_steps": [],
                 }
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -806,6 +819,7 @@ class ReportAgent:
         conclusion_section = section_plan[-1]
 
         section_results: dict[int, str] = {}
+        section_tool_calls: dict[int, list[dict]] = {}
         _t0 = datetime.now()
         print(f"[parallel] 병렬 섹션 {len(parallel_sections)}개 시작 (max_workers={REPORT_MAX_WORKERS})")
 
@@ -818,13 +832,15 @@ class ReportAgent:
                 idx = future_to_idx[future]
                 name = parallel_sections[idx]
                 try:
-                    md, token_data = future.result()
+                    md, token_data, tool_calls = future.result()
                     section_results[idx] = md
+                    section_tool_calls[idx] = tool_calls
                     token_tracker.merge_calls(token_data["calls"])
                     print(f"[parallel] 완료: {name} ({(datetime.now() - _t0).seconds}s)")
                 except Exception as e:
                     print(f"[parallel] 실패: {name} — {e}")
                     section_results[idx] = ""
+                    section_tool_calls[idx] = []
 
         # 계획 순서 재배열
         section_parts = [
@@ -832,16 +848,22 @@ class ReportAgent:
             for i in range(len(parallel_sections))
             if section_results.get(i, "").strip()
         ]
+        applied_steps = [
+            {"section": parallel_sections[i], "tools": section_tool_calls.get(i, [])}
+            for i in range(len(parallel_sections))
+            if section_results.get(i, "").strip()
+        ]
 
         # 결론 항목: 전체 본문 완성 후 순차 실행
         print(f"[parallel] 결론 섹션 시작: {conclusion_section}")
-        conclusion_md, conclusion_token_data = self._run_section(
+        conclusion_md, conclusion_token_data, conclusion_tool_calls = self._run_section(
             section_system, conclusion_section, date_range
         )
         token_tracker.merge_calls(conclusion_token_data["calls"])
         token_tracker.set_current_section("")
         if conclusion_md.strip():
             section_parts.append(conclusion_md)
+            applied_steps.append({"section": conclusion_section, "tools": conclusion_tool_calls})
         print(f"[parallel] 전체 완료 ({(datetime.now() - _t0).seconds}s)")
 
         md_body = "\n\n".join(section_parts)
@@ -882,4 +904,5 @@ class ReportAgent:
             "md_text": md_text,
             "md_filename": md_filename,
             "report_type": report_type,
+            "applied_steps": applied_steps,
         }

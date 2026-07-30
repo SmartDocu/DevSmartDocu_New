@@ -57,8 +57,11 @@ export default function D2InsightPage() {
   const [history, setHistory] = useState({})
   const [sharesSent, setSharesSent] = useState([])
   const [sharesReceived, setSharesReceived] = useState([])
-  const [openSections, setOpenSections] = useState({ sent: false, received: false, favorites: false, history: true })
+  const [openSections, setOpenSections] = useState({ favorites: false, history: true, schedules: true, sent: false, received: false })
   const [openDates, setOpenDates] = useState({})
+  const [openSchedules, setOpenSchedules] = useState({}) // sessionId → 펼침여부
+  const [scheduleTurns, setScheduleTurns] = useState({}) // sessionId → 턴배열 | 'loading'
+  const [viewingScheduleQauid, setViewingScheduleQauid] = useState(null)
   const [menuOpenId, setMenuOpenId] = useState(null)
   const [menuSection, setMenuSection] = useState(null)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -132,6 +135,7 @@ export default function D2InsightPage() {
     setMessages([getInitialMessage()])
     setViewingSessionId(null)
     setViewingFavoriteQauid(null)
+    setViewingScheduleQauid(null)
     setViewMode('chat')
     setInputValue('')
   }
@@ -144,6 +148,7 @@ export default function D2InsightPage() {
       setHistoryLabel(t('msg.d2insight.view_past_report'))
       setViewingSessionId(sid)
       setViewingFavoriteQauid(null)
+      setViewingScheduleQauid(null)
       setViewMode('history')
     } catch {
       // ignore
@@ -158,6 +163,7 @@ export default function D2InsightPage() {
     setHistoryLabel(t('msg.d2insight.favorite_report'))
     setViewingSessionId(null)
     setViewingFavoriteQauid(fav.qauid)
+    setViewingScheduleQauid(null)
     setViewMode('history')
   }
 
@@ -173,10 +179,39 @@ export default function D2InsightPage() {
       setHistoryLabel(label || t('ttl.d2insight.shares_received'))
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
+      setViewingScheduleQauid(null)
       setViewMode('history')
     } catch {
       // ignore
     }
+  }
+
+  // 정기 보고서 회차(턴) 지연 조회 — 제목을 처음 펼칠 때만 조회한다.
+  const loadScheduleTurns = async (sid) => {
+    setScheduleTurns((prev) => ({ ...prev, [sid]: 'loading' }))
+    try {
+      const { data } = await apiClient.get(`/d2insight/schedule/${sid}/turns`)
+      setScheduleTurns((prev) => ({ ...prev, [sid]: Array.isArray(data) ? data : [] }))
+    } catch {
+      setScheduleTurns((prev) => ({ ...prev, [sid]: [] }))
+    }
+  }
+
+  const toggleSchedule = (sid) => {
+    setOpenSchedules((prev) => ({ ...prev, [sid]: !prev[sid] }))
+    if (scheduleTurns[sid] === undefined) loadScheduleTurns(sid)
+  }
+
+  const handleSelectScheduleTurn = (turn, session) => {
+    setHistoryMessages([
+      { role: 'user', content: turn.question, qauid: turn.qauid },
+      { role: 'assistant', content: turn.answer, reportPath: turn.filenm, fileurl: turn.fileurl, qauid: turn.qauid, appliedSteps: turn.appliedSteps },
+    ])
+    setHistoryLabel(turn.target_period ? `${session.title} · ${turn.target_period}` : session.title)
+    setViewingSessionId(null)
+    setViewingFavoriteQauid(null)
+    setViewingScheduleQauid(turn.qauid)
+    setViewMode('history')
   }
 
   const handleToggleFavorite = async (qauid) => {
@@ -210,6 +245,7 @@ export default function D2InsightPage() {
       ])
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
+      setViewingScheduleQauid(null)
       setViewMode('chat')
     } catch (e) {
       message.error(e.response?.data?.detail || t('msg.d2insight.continue_error'))
@@ -255,6 +291,7 @@ export default function D2InsightPage() {
           fileurl: data.fileurl || null,
           reportPath: data.report_path || null,
           qauid: data.qauid || null,
+          appliedSteps: data.applied_steps || null,
         },
       ])
     } catch (error) {
@@ -337,8 +374,16 @@ export default function D2InsightPage() {
   )
 
   const filteredHistory = Object.entries(history)
-    .map(([d, sessions]) => [d, sessions.filter((s) => s.session_id !== sessionId)])
+    .map(([d, sessions]) => [d, sessions.filter((s) => s.session_id !== sessionId && !s.is_schedule)])
     .filter(([, sessions]) => sessions.length > 0)
+
+  const scheduleSessions = Object.values(history).flat().filter((s) => s.is_schedule)
+
+  // 우측 옵션 패널에 보여줄 대상 — 화면에 보이는(채팅 or 히스토리) 메시지 중
+  // 가장 최근에 생성된 보고서의 적용 내역(모듈/툴/파라미터).
+  const activeMessages = viewMode === 'history' ? historyMessages : messages
+  const activeAppliedSteps = [...activeMessages].reverse()
+    .find((m) => m.role === 'assistant' && m.appliedSteps)?.appliedSteps || null
 
   return (
     <div style={{ height: 'calc(100vh - 164px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -366,50 +411,6 @@ export default function D2InsightPage() {
 
           <nav className="sidebar-nav">
 
-            {/* 공유한 내역 */}
-            <div className="sidebar-section">
-              <SectionHeader sectionKey="sent" icon="↑" label={t('ttl.d2insight.shares_sent')} count={sharesSent.length} />
-              {openSections.sent && (
-                <ul className="session-list">
-                  {sharesSent.length === 0
-                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_sent')}</li>
-                    : sharesSent.map((s) => (
-                      <li
-                        key={s.share_qauid}
-                        className="session-item"
-                        onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
-                      >
-                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
-                        <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
-                        <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'sent')}>···</button>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
-
-            {/* 공유받은 내역 */}
-            <div className="sidebar-section">
-              <SectionHeader sectionKey="received" icon="↓" label={t('ttl.d2insight.shares_received')} count={sharesReceived.length} />
-              {openSections.received && (
-                <ul className="session-list">
-                  {sharesReceived.length === 0
-                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_received')}</li>
-                    : sharesReceived.map((s) => (
-                      <li
-                        key={s.share_qauid}
-                        className="session-item"
-                        onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
-                      >
-                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
-                        <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
-                        <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'received')}>···</button>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
-
             {/* 즐겨찾기 */}
             <div className="sidebar-section fav-section">
               <SectionHeader sectionKey="favorites" icon="★" label={t('ttl.d2insight.favorites')} count={favorites.length} iconActive={favorites.length > 0} />
@@ -433,41 +434,152 @@ export default function D2InsightPage() {
               )}
             </div>
 
-            {/* 보고서 목록 (날짜별) */}
+            {/* 대화 목록 (날짜별, 정기 보고서 세션 제외) */}
             <div className="sidebar-section">
               <SectionHeader
                 sectionKey="history" icon="💬" label={t('ttl.d2insight.history')}
-                count={Object.values(history).flat().filter((s) => s.session_id !== sessionId).length}
+                count={Object.values(history).flat().filter((s) => s.session_id !== sessionId && !s.is_schedule).length}
               />
               {openSections.history && (
                 filteredHistory.length === 0 ? (
                   <p className="sidebar-empty">{t('msg.d2insight.no_history')}</p>
-                ) : filteredHistory.map(([d, sessions]) => (
-                  <div key={d} className="date-group">
-                    <button type="button" className={`date-toggle ${openDates[d] ? 'open' : ''}`} onClick={() => toggleDate(d)}>
-                      <span>{d} <span className="section-count date-count">{sessions.length}</span></span>
-                      <span className="arrow">{openDates[d] ? '▾' : '▸'}</span>
-                    </button>
-                    {openDates[d] && (
-                      <ul className="session-list">
-                        {sessions.map((s) => (
-                          <li
-                            key={s.session_id}
-                            className={`session-item ${s.session_id === viewingSessionId ? 'viewing' : ''}`}
-                            onClick={() => handleSelectSession(s.session_id)}
-                          >
-                            <span
-                              className={`session-fav-indicator ${favoritedSessionIds.has(s.session_id) ? 'fav-on' : ''}`}
-                              title={favoritedSessionIds.has(s.session_id) ? t('msg.d2insight.fav_exists') : ''}
-                            >★</span>
-                            <span className="session-title">{s.title}</span>
-                            <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id)}>···</button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                ) : (
+                  <div className="date-group-list">
+                    {filteredHistory.map(([d, sessions]) => (
+                      <div key={d} className="date-group">
+                        <button type="button" className={`date-toggle ${openDates[d] ? 'open' : ''}`} onClick={() => toggleDate(d)}>
+                          <span>{d} <span className="section-count date-count">{sessions.length}</span></span>
+                          <span className="arrow">{openDates[d] ? '▾' : '▸'}</span>
+                        </button>
+                        {openDates[d] && (
+                          <ul className="session-list">
+                            {sessions.map((s) => (
+                              <li
+                                key={s.session_id}
+                                className={`session-item ${s.session_id === viewingSessionId ? 'viewing' : ''}`}
+                                onClick={() => handleSelectSession(s.session_id)}
+                              >
+                                <span
+                                  className={`session-fav-indicator ${favoritedSessionIds.has(s.session_id) ? 'fav-on' : ''}`}
+                                  title={favoritedSessionIds.has(s.session_id) ? t('msg.d2insight.fav_exists') : ''}
+                                >★</span>
+                                <span className="session-title">{s.title}</span>
+                                <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id)}>···</button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))
+                )
+              )}
+            </div>
+
+            {/* 정기 보고서 (제목 → 회차별 목록) */}
+            <div className="sidebar-section">
+              <SectionHeader sectionKey="schedules" icon="📅" label="정기 보고서" count={scheduleSessions.length} />
+              {openSections.schedules && (
+                scheduleSessions.length === 0 ? (
+                  <p className="sidebar-empty">등록된 정기 보고서가 없습니다.</p>
+                ) : (
+                  <div className="date-group-list">
+                    {scheduleSessions.map((s) => {
+                      const turns = scheduleTurns[s.session_id]
+                      return (
+                        <div key={s.session_id} className="date-group">
+                          <div className="schedule-title-row">
+                            <button
+                              type="button"
+                              className={`date-toggle ${openSchedules[s.session_id] ? 'open' : ''}`}
+                              onClick={() => toggleSchedule(s.session_id)}
+                            >
+                              <span>
+                                <span
+                                  className={`schedule-status-dot ${s.schedule_active ? 'active' : 'inactive'}`}
+                                  title={s.schedule_active ? '진행 중' : '종료됨'}
+                                />
+                                {s.title}
+                              </span>
+                              <span className="arrow">{openSchedules[s.session_id] ? '▾' : '▸'}</span>
+                            </button>
+                            <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id)}>···</button>
+                          </div>
+                          {openSchedules[s.session_id] && (
+                            <ul className="session-list">
+                              {turns === 'loading'
+                                ? <li className="sidebar-empty">불러오는 중...</li>
+                                : (!turns || turns.length === 0)
+                                  ? <li className="sidebar-empty">아직 생성된 보고서가 없습니다.</li>
+                                  : turns.map((turn) => (
+                                    <li
+                                      key={turn.qauid}
+                                      className={`session-item ${turn.qauid === viewingScheduleQauid ? 'viewing' : ''}`}
+                                      onClick={() => handleSelectScheduleTurn(turn, s)}
+                                    >
+                                      <span
+                                        className={`session-fav-indicator ${favoritedQaids.has(turn.qauid) ? 'fav-on' : ''}`}
+                                        title={favoritedQaids.has(turn.qauid) ? '즐겨찾기됨' : ''}
+                                      >★</span>
+                                      <span className="session-title">
+                                        {turn.target_period || turn.question?.slice(0, 20) || '(내용 없음)'}
+                                      </span>
+                                    </li>
+                                  ))
+                              }
+                            </ul>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="sidebar-group-divider" />
+
+            {/* 공유보고서 */}
+            <div className="sidebar-section">
+              <SectionHeader sectionKey="received" icon="📂" label={t('ttl.d2insight.shares_received')} count={sharesReceived.length} />
+              {openSections.received && (
+                <ul className="session-list">
+                  {sharesReceived.length === 0
+                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_received')}</li>
+                    : sharesReceived.map((s) => (
+                      <li
+                        key={s.share_qauid}
+                        className="session-item"
+                        onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
+                      >
+                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
+                        <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
+                        <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'received')}>···</button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            {/* 공유한보고서 */}
+            <div className="sidebar-section">
+              <SectionHeader sectionKey="sent" icon="↑" label={t('ttl.d2insight.shares_sent')} count={sharesSent.length} />
+              {openSections.sent && (
+                <ul className="session-list">
+                  {sharesSent.length === 0
+                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_sent')}</li>
+                    : sharesSent.map((s) => (
+                      <li
+                        key={s.share_qauid}
+                        className="session-item"
+                        onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
+                      >
+                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
+                        <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
+                        <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'sent')}>···</button>
+                      </li>
+                    ))}
+                </ul>
               )}
             </div>
 
@@ -476,7 +588,9 @@ export default function D2InsightPage() {
           {/* ··· 드롭다운 메뉴 */}
           {menuOpenId && (
             <div className="session-dropdown" style={{ top: menuPos.top, left: menuPos.left }}>
-              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>{t('btn.delete')}</button>
+              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>
+                {t('btn.delete')}
+              </button>
             </div>
           )}
         </aside>
@@ -618,6 +732,17 @@ export default function D2InsightPage() {
             )}
           </div>
         </div>
+
+        {/* ── 우측 옵션 패널 (적용된 모듈/툴/파라미터 + 패널 내 정기 보고서 등록) ── */}
+        <ReportOptionsPanel
+          appliedSteps={activeAppliedSteps}
+          sessionId={viewMode === 'history' ? viewingSessionId : sessionId}
+          userId={userId}
+          projectId={user?.myprojectid ?? null}
+          templateNmBase={currentTitle}
+          onRegistered={() => fetchHistory()}
+          message={message}
+        />
       </div>
 
       {/* 공유 모달 */}
@@ -662,6 +787,122 @@ function parseMarkdownWithImages(text) {
     )
   })
   return html
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 우측 옵션 패널 — 보고서가 어떤 모듈/툴/파라미터로 만들어졌는지 표시(읽기 전용)
+// ─────────────────────────────────────────────────────────────────
+function ReportOptionsPanel({ appliedSteps, sessionId, userId, projectId, templateNmBase, onRegistered, message }) {
+  useLangStore((s) => s.translations)
+  const [showJson, setShowJson] = useState(false)
+  const [showScheduleForm, setShowScheduleForm] = useState(false)
+  const [scheduleDay, setScheduleDay] = useState(1)
+  const [scheduleHour, setScheduleHour] = useState(9)
+  const [registering, setRegistering] = useState(false)
+
+  const handleRegisterSchedule = async () => {
+    if (!sessionId) return
+    setRegistering(true)
+    try {
+      const now = new Date()
+      let start = new Date(now.getFullYear(), now.getMonth(), scheduleDay, scheduleHour, 0, 0)
+      if (start <= now) start = new Date(now.getFullYear(), now.getMonth() + 1, scheduleDay, scheduleHour, 0, 0)
+      await apiClient.post('/d2insight/schedule/register', {
+        session_id: sessionId,
+        user_id: userId,
+        project_id: projectId,
+        template_nm: `${templateNmBase || '보고서'} 정기 보고서`,
+        period_json: { grain: 'month', offset: -1 },
+        global_json: {},
+        schedule_cron: `0 ${scheduleHour} ${scheduleDay} * *`,
+        schedule_start_dt: start.toISOString(),
+      })
+      onRegistered?.()
+      setShowScheduleForm(false)
+    } catch (e) {
+      message?.error(e.response?.data?.detail || '정기 보고서 등록에 실패했습니다.')
+    } finally {
+      setRegistering(false)
+    }
+  }
+
+  return (
+    <aside className="options-panel">
+      <div className="options-panel-header">
+        <span className="options-panel-title">적용된 옵션</span>
+      </div>
+      <div className="options-panel-body">
+        {!appliedSteps || appliedSteps.length === 0 ? (
+          <p className="options-panel-empty">적용된 옵션이 없습니다.</p>
+        ) : (
+          <>
+            <div className="opt-steps">
+              {appliedSteps.map((step, idx) => (
+                <div key={idx} className="opt-step">
+                  <div className="opt-step-header">
+                    <span className="opt-step-title">{idx + 1}. {step.section}</span>
+                  </div>
+                  {(step.tools || []).length === 0 ? (
+                    <div className="opt-module"><span className="opt-module-name">사용된 도구 없음</span></div>
+                  ) : (
+                    step.tools.map((tc, i) => (
+                      <div key={i} className="opt-module">
+                        <div className="opt-module-name">{tc.tool}</div>
+                        {tc.params && (
+                          <ul className="opt-module-params">
+                            {Object.entries(tc.params)
+                              .filter(([k]) => k !== 'data' && k !== 'actual_data' && k !== 'compare_data')
+                              .map(([k, v]) => (
+                                <li key={k}>{k}: <strong>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</strong></li>
+                              ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button type="button" className="opt-json-toggle" onClick={() => setShowJson((v) => !v)}>
+              {showJson ? 'JSON 접기' : 'JSON 원문 보기'}
+            </button>
+            {showJson && (
+              <div className="opt-json-box">
+                <textarea value={JSON.stringify(appliedSteps, null, 2)} readOnly rows={10} />
+              </div>
+            )}
+
+            {sessionId && (
+              <div className="opt-schedule">
+                <button type="button" className="opt-schedule-toggle" onClick={() => setShowScheduleForm((v) => !v)}>
+                  📅 {showScheduleForm ? '정기 보고서 등록 취소' : '정기 보고서로 저장'}
+                </button>
+                {showScheduleForm && (
+                  <div className="opt-schedule-form">
+                    <span>매달</span>
+                    <select value={scheduleDay} onChange={(e) => setScheduleDay(Number(e.target.value))}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}일</option>
+                      ))}
+                    </select>
+                    <select value={scheduleHour} onChange={(e) => setScheduleHour(Number(e.target.value))}>
+                      {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                        <option key={h} value={h}>{h}시</option>
+                      ))}
+                    </select>
+                    <button type="button" className="opt-schedule-submit" onClick={handleRegisterSchedule} disabled={registering}>
+                      {registering ? '등록 중...' : '등록 요청'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </aside>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -846,3 +1087,4 @@ function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
     </div>
   )
 }
+

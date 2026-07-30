@@ -276,6 +276,16 @@ def run_tool(
                 answer += brief
             result["answer"] = answer
             result["report_path"] = md_filename
+            result["applied_steps"] = report_result.get("applied_steps")
+
+            try:
+                from d2insight.db.insight_storage import record_analytics
+                result["analytic_uid"] = record_analytics(
+                    _tenant_id, _project_id, report_type,
+                    report_result.get("applied_steps"), creator=user_id,
+                )
+            except Exception as _e:
+                print(f"[analytics] 실행 로그 기록 실패(무시하고 진행): {_e}")
 
             if md_text and md_filename:
                 try:

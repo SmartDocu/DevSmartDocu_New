@@ -105,6 +105,17 @@ class InjectRequest(BaseModel):
     report_path: str | None = None
 
 
+class ScheduleRegisterRequest(BaseModel):
+    session_id: str
+    user_id: str
+    project_id: int | None = None
+    template_nm: str
+    period_json: dict
+    global_json: dict | None = None
+    schedule_cron: str
+    schedule_start_dt: str
+
+
 # ── 응답 모델 ─────────────────────────────────────────────────────
 
 class ChatResponse(BaseModel):
@@ -116,6 +127,7 @@ class ChatResponse(BaseModel):
     report_path: str | None = None
     fileurl: str | None = None
     qauid: str | None = None
+    applied_steps: list | None = None
 
 
 # ── 채팅 ─────────────────────────────────────────────────────────
@@ -218,6 +230,8 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             "answer": result.get("answer", ""),
             "visualization_type": result.get("visualization_type", "none"),
             "table_html": result.get("table_html"),
+            "applied_steps": result.get("applied_steps"),
+            "analytic_uid": result.get("analytic_uid"),
         }
         qauid = _session.append_qa(
             sid, req.message, answer_json,
@@ -391,6 +405,44 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
         print(f"[inject] append_qa 실패: {e}")
 
     return {"ok": True, "session_id": sid}
+
+
+# ── 정기 보고서 (스케줄) ───────────────────────────────────────────
+# 실제 스케줄 트리거·다음 실행일 계산은 본프로젝트 Schedule(UserScheduleMasters 등)이 담당한다.
+# 여기서는 "무엇을 어떤 조건으로 반복 생성할지"를 analytictemplates에 스냅샷으로 기록만 한다.
+
+@router.post("/schedule/register")
+def register_schedule(body: ScheduleRegisterRequest, token: str = Depends(get_token)):
+    """현재 세션에서 가장 최근에 생성된 보고서를 정기 보고서 템플릿으로 등록한다."""
+    _check_owner(token, body.user_id)
+
+    last_report = storage.get_last_report_qa(body.session_id)
+    if not last_report:
+        raise HTTPException(status_code=400, detail="이 세션에는 정기 보고서로 등록할 보고서가 없습니다.")
+
+    tenant_id, db_project_id = storage.get_project_info(body.user_id)
+    resolved_project_id = body.project_id if body.project_id is not None else db_project_id
+
+    templateuid = storage.create_analytic_template(
+        tenant_id=tenant_id,
+        project_id=resolved_project_id,
+        session_uid=body.session_id,
+        template_nm=body.template_nm,
+        period_json=body.period_json,
+        global_json=body.global_json,
+        steps_json=last_report.get("applied_steps"),
+        schedule_cron=body.schedule_cron,
+        schedule_start_dt=body.schedule_start_dt,
+        creator=body.user_id,
+        analytic_uid=last_report.get("analytic_uid"),
+    )
+    return {"ok": True, "template_uid": templateuid}
+
+
+@router.get("/schedule/{session_id}/turns")
+def get_schedule_turns(session_id: str, token: str = Depends(get_token)):
+    """정기 보고서 세션의 실행 턴 목록(회차별, 최근순) 반환 — 사이드바가 펼쳐서 보여준다."""
+    return storage.get_schedule_turns(session_id)
 
 
 # ── 히스토리 ─────────────────────────────────────────────────────

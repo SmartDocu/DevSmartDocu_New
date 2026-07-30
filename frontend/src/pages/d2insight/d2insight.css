@@ -181,6 +181,21 @@
   font-style: italic;
 }
 
+.sidebar-group-divider {
+  border-top: 1px solid #253445;
+  margin: 4px 14px;
+}
+
+.date-group-list {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3d5166 transparent;
+}
+.date-group-list::-webkit-scrollbar { width: 4px; }
+.date-group-list::-webkit-scrollbar-thumb { background: #3d5166; border-radius: 2px; }
+.date-group-list::-webkit-scrollbar-track { background: transparent; }
+
 .date-group { margin-bottom: 2px; }
 
 .date-toggle {
@@ -239,6 +254,139 @@
   overflow: hidden;
   min-width: 0;
 }
+
+/* ── 우측 옵션 패널 (pr_module_insight OptionsPanel과 동일한 클래스 체계) ── */
+.options-panel {
+  width: 300px;
+  flex-shrink: 0;
+  background: #f8f9fa;
+  border-left: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.options-panel-header {
+  padding: 12px 14px;
+  background: #eef4fb;
+  border-bottom: 1px solid #c8ddf5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.options-panel-title { font-size: 13px; font-weight: 700; color: #1b3a5c; }
+
+.options-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+.options-panel-empty { font-size: 13px; color: #666; padding: 8px 0; }
+
+.opt-steps { display: flex; flex-direction: column; gap: 8px; }
+
+.opt-step {
+  background: white;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.opt-step-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.opt-step-title { flex: 1; font-size: 13px; font-weight: 600; color: #1b3a5c; }
+
+.opt-module { margin: 4px 0 4px 4px; }
+.opt-module-name { font-size: 12px; color: #444; font-weight: 600; }
+.opt-module-params { list-style: none; padding: 0; margin: 3px 0 0; font-size: 11px; color: #666; }
+.opt-module-params li { padding: 1px 0; }
+
+.opt-json-toggle {
+  margin-top: 10px;
+  background: none;
+  border: 1px dashed #bbb;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  width: 100%;
+}
+.opt-json-toggle:hover { background: #eef2f5; }
+
+.opt-json-box { margin-top: 8px; }
+.opt-json-box textarea {
+  width: 100%;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 11px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.opt-schedule { margin-top: 10px; }
+.opt-schedule-toggle {
+  width: 100%;
+  background: #fff6e5;
+  border: 1px solid #e0a83a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #8a5a00;
+  cursor: pointer;
+}
+.opt-schedule-toggle:hover { background: #ffedc2; }
+.opt-schedule-form {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: #fffaf0;
+  border: 1px solid #f0d9a0;
+  border-radius: 6px;
+}
+.opt-schedule-form input, .opt-schedule-form select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.opt-schedule-submit {
+  margin-left: auto;
+  padding: 5px 12px;
+  background: #0e66c4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.opt-schedule-submit:hover { background: #0056b3; }
+
+/* ── 정기 보고서 사이드바 섹션 (pr_module_insight Sidebar와 동일) ── */
+.schedule-title-row { display: flex; align-items: center; }
+.schedule-title-row .date-toggle { flex: 1; }
+.schedule-title-row:hover .session-menu-btn { opacity: 1; }
+
+.schedule-status-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: #3d5166;
+  display: inline-block;
+}
+.schedule-status-dot.active { background: #3fb950; }
+.schedule-status-dot.inactive { background: #6a8099; }
 
 .chat-container {
   flex: 1;
