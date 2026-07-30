@@ -477,6 +477,9 @@ def prepare_datas_from_template(supabase, read_text_template):
             read_datas[0]['genobjectuid'] = template_item['genobjectuid']
 
             datas.append(read_datas)
+        elif template_item.get("useyn") is False:
+            # 사용여부=아니오인 항목은 미설정 상태여도 건너뛴다(에러 없이 플레이스홀더 미처리 상태로 둠)
+            continue
         else:
             raise Exception(f'챕터명: {template_item["chapternm"]} / 항목: {template_item["objectnm"]}에 대한 설정이 되어 있지 않습니다.')
     
@@ -1119,6 +1122,16 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                         if not obj_rows:
                             continue
                         obj = obj_rows[0]
+                        if not obj.get("useyn"):
+                            # 사용여부=아니오인 항목은 재작성 대상에서 제외하고,
+                            # flattexttemplate에 남아있는 placeholder는 빈 문자열로 치환해 원문 노출을 막는다
+                            place_holder = f"{{{obj.get('objectnm')}}}"
+                            place_holder_with_p = f"<p>{place_holder}</p>"
+                            if place_holder_with_p in text_template:
+                                text_template = text_template.replace(place_holder_with_p, "")
+                            elif place_holder in text_template:
+                                text_template = text_template.replace(place_holder, "")
+                            continue
                         typecd = go.get("objecttypecd") or obj.get("objecttypecd")
                         domain_row = {}
                         domain_tbl = _domain_tbl_map.get(typecd)
@@ -1159,6 +1172,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                             "etc2": (domain_row.get("chart_height") if typecd == "CU" else domain_row.get("etc2")) or obj.get("etc2"),
                             "datauid": domain_row.get("datauid"),
                             "genobjectuid": go["genobjectuid"],
+                            "useyn": obj.get("useyn"),
                         })
                 else:
                     read_text_template = supabase.schema(SUPABASE_SCHEMA).rpc("fn_genchapter_detail__r", {'p_genchapteruid': gen_chapter_uid}).execute().data
