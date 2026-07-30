@@ -267,7 +267,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
     if not llm_model:
         try:
             llm_data = process_data_in_supabase(
-                supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm"
+                supabase, "llmmodels", "select", {}, {"useyn": True, "is_doc": True}, "llmmodelnm"
             )
             llm_model = _random.choice(llm_data)["llmmodelnm"]
             key_data = process_data_in_supabase(

@@ -39,8 +39,6 @@ def _process_data_ai_core(supabase, request, sourcedatauid, gensentence, chain_m
     if sourcedatasourcecd == "api":
         df = process_data_api(supabase, sourcedatauid, gendoc_uid)
 
-    print(f"jeff supabase df : {df}")
-
     # AI 재집계
     result_datacols = (
         supabase.schema(SUPABASE_SCHEMA)
