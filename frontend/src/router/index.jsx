@@ -9,9 +9,6 @@ import AppIndex from '@/pages/AppIndex'
 import { useAuthStore } from '@/stores/authStore'
 import PasswordResetPage from '@/pages/auth/PasswordResetPage'
 import RegisterInvitePage from '@/pages/auth/RegisterInvitePage'
-import ServicePage from '@/pages/public/ServicePage'
-import AboutPage from '@/pages/public/AboutPage'
-import UsagePage from '@/pages/public/UsagePage'
 import TermsPage from '@/pages/public/TermsPage'
 import FaqPage from '@/pages/public/FaqPage'
 import QnaPage from '@/pages/public/QnaPage'
@@ -96,9 +93,6 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomeOrLauncher /> },
-      { path: 'service', element: <ServicePage /> },
-      { path: 'about', element: <AboutPage /> },
-      { path: 'usage', element: <UsagePage /> },
       { path: 'terms', element: <TermsPage /> },
       { path: 'faq', element: <FaqPage /> },
       { path: 'follow', element: <FollowPage /> },

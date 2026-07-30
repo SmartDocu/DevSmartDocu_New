@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import QRCode from 'qrcode'
 import apiClient from '@/api/client'
 import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
-import { GlobalOutlined, BellOutlined, UserOutlined, HomeOutlined, InfoCircleOutlined, ReadOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
+import { GlobalOutlined, BellOutlined, UserOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
@@ -416,36 +416,6 @@ export default function AppLayout() {
           >
             <img src="/D2Doc.svg" alt="" style={{ height: 32, width: 'auto' }} />
             <Text strong style={{ color: '#fff', fontSize: 18 }}>D2Doc</Text>
-          </div>
-
-          {/* 공개 메뉴 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {[
-                { path: 'service', label: t('mnu.service'), icon: <HomeOutlined /> },
-                { path: 'about',   label: t('mnu.about'),   icon: <InfoCircleOutlined /> },
-                { path: 'usage',   label: t('mnu.usage'),   icon: <ReadOutlined /> },
-              ].map(({ path, label, icon }) => (
-                <button
-                  key={path}
-                  onClick={() => navigate('/' + path)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#fff',
-                    fontSize: 14,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '6px 14px',
-                    borderRadius: 4,
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-                >
-                  {icon}{label}
-                </button>
-              ))}
           </div>
 
           {/* 사용자 영역 */}

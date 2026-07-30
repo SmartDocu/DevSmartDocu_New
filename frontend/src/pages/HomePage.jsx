@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useLangStore, t } from '@/stores/langStore'
+import { useAuthStore } from '@/stores/authStore'
 import PopupManager from '@/components/Popup/PopupManager'
+import LoginModal from '@/components/LoginModal/LoginModal'
 import { usePopups } from '@/hooks/usePopups'
 
 const slides = [
@@ -25,6 +27,8 @@ const slides = [
 export default function HomePage() {
   const openInTab = useOpenInTab()
   useLangStore((s) => s.translations)
+  const isLoggedIn = useAuthStore((s) => !!s.accessToken)
+  const [loginOpen, setLoginOpen] = useState(false)
   const { data: popups = [] } = usePopups('M')
   const [current, setCurrent] = useState(0)
   const timerRef = useRef(null)
@@ -175,10 +179,18 @@ export default function HomePage() {
             >
               Chat
             </a>
+            <button
+              style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
+              onClick={() => isLoggedIn ? openInTab('qna', '', 'Q&A') : setLoginOpen(true)}
+            >
+              Q&A
+            </button>
           </div>
         </div>
 
       </div>
+
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
 
       {/* 푸터 */}
       <div style={{ backgroundColor: '#000', padding: '20px 0' }}>
@@ -187,9 +199,6 @@ export default function HomePage() {
           <div style={{ flex: 1, padding: '0 20px', fontSize: 14 }}>
             <div style={{ color: '#fff', fontWeight: 600, marginBottom: 8 }}>MENU</div>
             {[
-              { label: '서비스 소개', path: '/service' },
-              { label: '기능 소개', path: '/about' },
-              { label: '서비스 이용', path: '/usage' },
               { label: '체험하기', path: '/experience' },
               { label: '따라하기', path: '/follow' },
               { label: '문의', path: '/contact' },
