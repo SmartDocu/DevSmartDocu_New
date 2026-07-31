@@ -146,11 +146,11 @@ export function useMySubscriptions() {
   })
 }
 
-export function useMyUsage(startDate, endDate) {
+export function useMyUsage(startDate, endDate, servicecd = 'Do') {
   return useQuery({
-    queryKey: ['myinfo-usage', startDate, endDate],
+    queryKey: ['myinfo-usage', startDate, endDate, servicecd],
     queryFn: () => apiClient.get('/settings/myinfo/usage', {
-      params: { start_date: startDate, end_date: endDate },
+      params: { start_date: startDate, end_date: endDate, servicecd },
     }).then((r) => r.data),
   })
 }
