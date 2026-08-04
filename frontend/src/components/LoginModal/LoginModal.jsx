@@ -21,6 +21,7 @@ export default function LoginModal({ open, onClose }) {
   const [showReset, setShowReset] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
   const [resetMsg, setResetMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   // 로그인 진행 단계: 'login' | 'mfa'(TOTP 챌린지) | 'tenant'(테넌트 선택) | 'mfaSetup'(강제 MFA 등록)
   const [step, setStep] = useState('login')
@@ -45,6 +46,7 @@ export default function LoginModal({ open, onClose }) {
     setShowReset(false)
     setResetEmail('')
     setResetMsg('')
+    setErrorMsg('')
     setStep('login')
     setMfaCode('')
     setPending(null)
@@ -128,8 +130,9 @@ export default function LoginModal({ open, onClose }) {
   }
 
   const handleLogin = async () => {
-    if (!email.trim()) { alert(t('msg.email.required')); return }
-    if (!password.trim()) { alert(t('msg.password.required')); return }
+    setErrorMsg('')
+    if (!email.trim()) { setErrorMsg(t('msg.email.required')); return }
+    if (!password.trim()) { setErrorMsg(t('msg.password.required')); return }
 
     setLoading(true)
     try {
@@ -137,13 +140,14 @@ export default function LoginModal({ open, onClose }) {
       _handleLoginStageResult(res.data)
     } catch (err) {
       const detail = err.response?.data?.detail || t('msg.login.failed')
-      alert(detail)
+      setErrorMsg(detail)
     } finally {
       setLoading(false)
     }
   }
 
   const handleSelectTenant = async (tenantid) => {
+    setErrorMsg('')
     setLoading(true)
     try {
       const res = await apiClient.post('/auth/select-tenant', {
@@ -153,14 +157,15 @@ export default function LoginModal({ open, onClose }) {
       })
       _handleLoginStageResult(res.data)
     } catch (err) {
-      alert(err.response?.data?.detail || t('msg.login.failed'))
+      setErrorMsg(err.response?.data?.detail || t('msg.login.failed'))
     } finally {
       setLoading(false)
     }
   }
 
   const handleMfaVerify = async () => {
-    if (mfaCode.length !== 6) { alert(t('val.mfa.code_length')); return }
+    setErrorMsg('')
+    if (mfaCode.length !== 6) { setErrorMsg(t('val.mfa.code_length')); return }
 
     setLoading(true)
     try {
@@ -174,7 +179,7 @@ export default function LoginModal({ open, onClose }) {
       _finalizeLogin(res.data)
     } catch (err) {
       const detail = err.response?.data?.detail || t('msg.mfa.code_invalid')
-      alert(detail)
+      setErrorMsg(detail)
       setMfaCode('')
       mfaInputRef.current?.focus()
     } finally {
@@ -183,7 +188,8 @@ export default function LoginModal({ open, onClose }) {
   }
 
   const handleMfaSetupVerify = () => {
-    if (mfaSetupCode.length !== 6 || !mfaSetupData) { alert(t('val.mfa.code_length')); return }
+    setErrorMsg('')
+    if (mfaSetupCode.length !== 6 || !mfaSetupData) { setErrorMsg(t('val.mfa.code_length')); return }
     mfaSetupVerify.mutate(
       { factor_id: mfaSetupData.factor_id, code: mfaSetupCode },
       {
@@ -202,12 +208,12 @@ export default function LoginModal({ open, onClose }) {
             })
             _handleLoginStageResult(res.data)
           } catch (err) {
-            alert(err.response?.data?.detail || t('msg.login.failed'))
+            setErrorMsg(err.response?.data?.detail || t('msg.login.failed'))
           } finally {
             setLoading(false)
           }
         },
-        onError: () => { setMfaSetupCode('') },
+        onError: (err) => { setMfaSetupCode(''); setErrorMsg(err.response?.data?.detail || t('msg.mfa.code_invalid')) },
       },
     )
   }
@@ -266,7 +272,6 @@ export default function LoginModal({ open, onClose }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 9999,
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) handleClose() }}
     >
       <div style={{
         background: '#fff', padding: '30px 25px', borderRadius: 12,
@@ -285,6 +290,16 @@ export default function LoginModal({ open, onClose }) {
         <h2 style={{ fontWeight: 'bold', marginBottom: 20 }}>
           {modalTitle()}
         </h2>
+
+        {errorMsg && (
+          <div style={{
+            marginBottom: 16, padding: '8px 12px', borderRadius: 6,
+            background: '#fff1f0', border: '1px solid #ffccc7',
+            color: '#cf1322', fontSize: 13, textAlign: 'left',
+          }}>
+            {errorMsg}
+          </div>
+        )}
 
         {/* ── 테넌트 선택 단계 ─────────────────────────────────────── */}
         {step === 'tenant' && (
