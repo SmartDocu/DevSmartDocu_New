@@ -170,8 +170,13 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
             llm_model, enc_api_key = _fetch("projects", {"projectid": project_id})
         if not llm_model and account_uid and service_code:
             llm_model, enc_api_key = _fetch("llmapikeys", {"accountuid": account_uid, "servicecd": service_code})
+        # if not llm_model and tenant_id:
+        #     llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id})
         if not llm_model and tenant_id:
-            llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id})
+            tenant_cond = {"tenantid": tenant_id}
+            if service_code:
+                tenant_cond["servicecd"] = service_code
+            llm_model, enc_api_key = _fetch("llmapikeys", tenant_cond)
     else:
         # 서비스 제공 키: 시스템 테넌트의 llmapikeys 사용
         try:
@@ -184,7 +189,12 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
                     supabase, "accounts", "select", {}, {"tenantid": tenant_id_supplier, "accounttype": "T"}, "accountuid"
                 )
                 account_uid_supplier = au[0]["accountuid"]
-                llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id_supplier, "accountuid": account_uid_supplier})
+                # llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id_supplier, "accountuid": account_uid_supplier})
+                llmapikeys_cond = {
+                    "tenantid": tenant_id_supplier, 
+                    "accountuid": account_uid_supplier, 
+                    "servicecd": service_code}
+                llm_model, enc_api_key = _fetch("llmapikeys", llmapikeys_cond)
         except Exception as _e:
             print(f"[get_llm_info] 서비스 제공 키 조회 실패: {_e}")
 
