@@ -106,8 +106,7 @@ class VerifySmsRequest(BaseModel):
 
 
 class UpdatePasswordRequest(BaseModel):
-    access_token: str
-    refresh_token: Optional[str] = None
+    token_hash: str
     new_password: str
 
 

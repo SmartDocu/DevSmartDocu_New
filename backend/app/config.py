@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = ""
 
     # 앱 설정
-    PROJECT_DEBUG: bool = True
+    DJANGO_DEBUG: bool = True
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://localhost:5174",

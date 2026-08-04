@@ -856,9 +856,14 @@ def send_reset_email(body: SendResetEmailRequest):
     try:
         from utilsPrj.supabase_client import get_supabase_client
         client = get_supabase_client()
+        redirect_to = (
+            "http://localhost:5174/password-reset"
+            if settings.DJANGO_DEBUG
+            else "https://dev-smart-doc.azurewebsites.net/password-reset/"
+        )
         client.auth.reset_password_email(
             body.email,
-            options={"redirect_to": "https://dev-smart-doc.azurewebsites.net/password-reset/"},
+            options={"redirect_to": redirect_to},
         )
     except Exception as e:
         raise HTTPException(
@@ -870,12 +875,23 @@ def send_reset_email(body: SendResetEmailRequest):
 
 @router.post("/update-password", response_model=MessageResponse)
 def update_password(body: UpdatePasswordRequest):
-    """복구 토큰으로 세션을 설정한 후 새 비밀번호로 변경한다."""
+    """비밀번호 재설정 링크의 token_hash를 검증해 세션을 얻은 후 새 비밀번호로 변경한다.
+
+    이메일 보안 스캐너(수신 메일사/백신 등)가 복구 링크를 자동으로 미리 방문해
+    1회용 토큰을 소진시키는 문제를 피하기 위해, token_hash 검증은 페이지 진입 시가 아니라
+    사용자가 "비밀번호 변경" 버튼을 눌러 이 API를 호출하는 시점에만 수행한다.
+    """
     try:
-        from utilsPrj.supabase_client import get_thread_supabase
+        from utilsPrj.supabase_client import get_supabase_client, get_thread_supabase
+        client = get_supabase_client()
+        verify_resp = client.auth.verify_otp({"token_hash": body.token_hash, "type": "recovery"})
+        session = verify_resp.session
+        if not session:
+            raise ValueError("session not found")
+
         sb = get_thread_supabase(
-            access_token=body.access_token,
-            refresh_token=body.refresh_token,
+            access_token=session.access_token,
+            refresh_token=session.refresh_token,
         )
         sb.auth.update_user({"password": body.new_password})
     except Exception as e:

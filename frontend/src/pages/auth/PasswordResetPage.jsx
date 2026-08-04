@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { App, Button, Card, Form, Input, Typography } from 'antd'
 import { LockOutlined } from '@ant-design/icons'
@@ -13,31 +13,36 @@ export default function PasswordResetPage() {
   const { message } = App.useApp()
   const navigate = useNavigate()
   const [form] = Form.useForm()
-  const [tokens, setTokens] = useState({ accessToken: '', refreshToken: '' })
+  const [tokenHash, setTokenHash] = useState('')
   const [tokenError, setTokenError] = useState(false)
+  const processedRef = useRef(false)
 
-  // Supabase 복구 링크: /password-reset#access_token=xxx&refresh_token=yyy&type=recovery
+  // 이메일 링크: /password-reset?token_hash=xxx&type=recovery
+  // token_hash는 여기서 바로 서버에 검증 요청하지 않는다 — 메일 보안 스캐너가
+  // 링크를 미리 방문해 1회용 토큰을 소진시키는 문제를 피하기 위해, 검증은
+  // 사용자가 "비밀번호 변경" 버튼을 눌러 폼을 제출하는 시점까지 미룬다.
   useEffect(() => {
-    const hash = window.location.hash.substring(1) // '#' 제거
-    const params = new URLSearchParams(hash)
-    const accessToken = params.get('access_token')
-    const refreshToken = params.get('refresh_token')
+    // StrictMode(개발 모드)가 effect를 두 번 실행해도 URL 처리(replaceState)는 1회만 되도록 가드
+    if (processedRef.current) return
+    processedRef.current = true
+
+    const params = new URLSearchParams(window.location.search)
+    const hash = params.get('token_hash')
     const type = params.get('type')
 
-    if (!accessToken || type !== 'recovery') {
+    if (!hash || type !== 'recovery') {
       setTokenError(true)
       return
     }
-    setTokens({ accessToken, refreshToken: refreshToken || '' })
-    // 브라우저 URL에서 fragment 제거 (보안)
+    setTokenHash(hash)
+    // 브라우저 URL에서 쿼리스트링 제거 (보안)
     window.history.replaceState(null, '', window.location.pathname)
   }, [])
 
   const updateMutation = useMutation({
     mutationFn: ({ newPassword }) =>
       apiClient.post('/auth/update-password', {
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken || undefined,
+        token_hash: tokenHash,
         new_password: newPassword,
       }).then((r) => r.data),
     onSuccess: () => {
