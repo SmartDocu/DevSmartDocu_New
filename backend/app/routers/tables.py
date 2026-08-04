@@ -5,7 +5,7 @@ from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
@@ -27,7 +27,7 @@ class TablePreviewRequest(BaseModel):
     coljson: Optional[dict] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_doc_read)])
 def get_table(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -51,7 +51,7 @@ def get_table(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     return {"table": row}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_doc_write)])
 def save_table(body: TableSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -98,7 +98,7 @@ def save_table(body: TableSaveRequest, token: str = Depends(get_token)):
     return {"message": "저장되었습니다."}
 
 
-@router.post("/preview")
+@router.post("/preview", dependencies=[Depends(require_doc_write)])
 def preview_table(body: TablePreviewRequest, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -173,7 +173,7 @@ def preview_table(body: TablePreviewRequest, token: str = Depends(get_token)):
     return {"preview_html": html}
 
 
-@router.delete("")
+@router.delete("", dependencies=[Depends(require_doc_write)])
 def delete_table(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)

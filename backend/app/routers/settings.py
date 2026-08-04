@@ -916,7 +916,7 @@ def upgrade_plan(
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """Free → Pro 업그레이드: subscriptions / accountservices / subscription_credits / creditbuckets 처리."""
+    """Free → Pro 업그레이드: subscriptions / accountservices / creditbuckets 처리."""
     from datetime import datetime, timezone, timedelta
     from dateutil.relativedelta import relativedelta
 
@@ -994,21 +994,8 @@ def upgrade_plan(
         "creator": user_id,
     }).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
 
-    # ③ subscription_credits 신규 행 삽입
-    creditchargecd = "Ba"
-    svc.table("subscription_credits").insert({
-        "subscriptionuid": new_subscriptionuid,
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "productcd": product["productcd"],
-        "servicecd": product["servicecd"],
-        "quantity": product.get("credit", 0),
-        "creditchargecd": creditchargecd,
-        "creditdesc": "Subscription Credit",
-        "creator": user_id,
-    }).execute()
-
-    # ④ creditbuckets — 기존 Ba 버킷이 있으면 잔여 크레딧 병합 후 creditbucket_historys로 이관, 신규 Ba 버킷 발급
+    # ③ creditbuckets — 기존 Ba 버킷이 있으면 잔여 크레딧 병합 후 creditbucket_historys로 이관, 신규 Ba 버킷 발급
+    # (Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단)
     expiredts = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
     upsert_ba_creditbucket(
         svc,
@@ -1283,19 +1270,7 @@ def change_tenant_subscription(
             "is_postpaid": False,
         }).execute()
 
-    creditchargecd = "Ba"
-    svc.table("subscription_credits").insert({
-        "subscriptionuid": new_subscriptionuid,
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "productcd": product["productcd"],
-        "servicecd": product["servicecd"],
-        "quantity": product.get("credit", 0),
-        "creditchargecd": creditchargecd,
-        "creditdesc": "Subscription Credit",
-        "creator": user_id,
-    }).execute()
-
+    # Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단
     expiredts = (today + relativedelta(months=1) - td(days=1)).isoformat()
     upsert_ba_creditbucket(
         svc,

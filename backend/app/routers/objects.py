@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from backend.app.schemas.objects import (
     ObjectItem, ObjectsListResponse, ObjectSaveRequest,
 )
@@ -52,7 +52,7 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
         return str(raw)
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_doc_read)])
 def list_objects(chapteruid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -73,7 +73,7 @@ def list_objects(chapteruid: str, token: str = Depends(get_token), tenantid: Opt
     return {"objects": rows}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_doc_write)])
 def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -104,7 +104,7 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
     return {"message": "저장되었습니다."}
 
 
-@router.delete("/{objectuid}")
+@router.delete("/{objectuid}", dependencies=[Depends(require_doc_write)])
 def delete_object(objectuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)

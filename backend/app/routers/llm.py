@@ -1,4 +1,5 @@
 """LLM AI 설정/미리보기 라우터 (CA/SA/TA 항목)"""
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -365,6 +366,38 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
             enddts=end_dts,
         )
 
+    def _write_object_definition(is_success, errormessage, errorcd=None):
+        """AI 정의(미리보기) 시도 1건을 objectdefinitions에 기록하고, 성공한 경우
+        genobjectcounts(시간당+인원별 사용량 집계)를 함께 올린다 — 단일 항목 재작성과
+        동일 집계 버킷을 공유한다(과금 구분 없음).
+
+        errorcd는 실제 파이썬 예외가 발생한 경우에만(type(e).__name__) 채워진다 —
+        ai_chain.py의 status='error' 분기는 자체 한글 검증 메시지라 예외 객체가 없어
+        errorcd 없이 errormessage만 남는다."""
+        sb_svc = get_service_client()
+        try:
+            sb_svc.schema(SUPABASE_SCHEMA).table("objectdefinitions").insert({
+                "objectdefinitionuid": str(uuid.uuid4()),
+                "tenantid": tenantid,
+                "projectid": projectid,
+                "chapteruid": body.chapteruid,
+                "objecttypecd": body.objecttypecd,
+                "objectuid": objectuid,
+                "is_success": is_success,
+                "errorcd": errorcd,
+                "errormessage": errormessage,
+                "creator": user_id,
+            }).execute()
+        except Exception:
+            pass
+
+        if is_success:
+            from utilsPrj.credit_helper import increment_genobjectcount
+            try:
+                increment_genobjectcount(sb_svc, account_uid, tenantid, user_id)
+            except Exception:
+                pass
+
     # ⑩ 체인 실행 — Django full_chain.invoke 와 동일
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, body.objecttypecd)
     _llm_start_dts = datetime.now(timezone.utc)
@@ -374,6 +407,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         tb = traceback.format_exc()
         print(f"[llm/preview] ❌ LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
         _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now(timezone.utc))
+        _write_object_definition(False, str(e), errorcd=type(e).__name__)
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
     _llm_end_dts = datetime.now(timezone.utc)
 
@@ -386,14 +420,16 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
 
     _tokens = response.get("tokens", {})
     _is_success = status in ("chart_drawn", "analysis_comment", "data_table")
+    _error_message = None if _is_success else str(response.get("error") or status)
     _write_doc_log(
         _is_success,
-        None if _is_success else str(response.get("error") or status),
+        _error_message,
         _tokens.get("input_tokens", 0),
         _tokens.get("output_tokens", 0),
         _llm_start_dts,
         _llm_end_dts,
     )
+    _write_object_definition(_is_success, _error_message)
 
     if status == "chart_drawn":
         return {

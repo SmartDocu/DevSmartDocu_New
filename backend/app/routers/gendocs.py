@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.config import settings
-from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
@@ -221,7 +221,7 @@ class FakeRequest:
 
 # ── Gendoc List ─────────────────────────────────────────────────────────────────
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_doc_read)])
 def list_gendocs(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -273,7 +273,7 @@ def list_gendocs(
 
 # ── Gendoc Detail ───────────────────────────────────────────────────────────────
 
-@router.get("/dataparams")
+@router.get("/dataparams", dependencies=[Depends(require_doc_read)])
 def get_dataparams(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -320,7 +320,7 @@ def get_dataparams(token: str = Depends(get_token), tenantid: Optional[str] = De
     return {"dataparams": docparams, "params_value": params_value}
 
 
-@router.get("/{gendocuid}/status")
+@router.get("/{gendocuid}/status", dependencies=[Depends(require_doc_read)])
 def get_gendoc_status(gendocuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -337,7 +337,7 @@ def get_gendoc_status(gendocuid: str, token: str = Depends(get_token), tenantid:
     return {"status": status_rows, "gendocnm": gendocnm, "createfiledts": createfiledts}
 
 
-@router.get("/{gendocuid}/chapters")
+@router.get("/{gendocuid}/chapters", dependencies=[Depends(require_doc_read)])
 def get_genchapters(gendocuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -383,7 +383,7 @@ class GendocCreateRequest(BaseModel):
     accountuid: Optional[str] = None
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_doc_write)])
 def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -444,7 +444,7 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
 
 # ── Gendoc Delete ───────────────────────────────────────────────────────────────
 
-@router.delete("/{gendocuid}")
+@router.delete("/{gendocuid}", dependencies=[Depends(require_doc_write)])
 def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -467,7 +467,7 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
 
 # ── Gendoc Close / Open ─────────────────────────────────────────────────────────
 
-@router.post("/{gendocuid}/close")
+@router.post("/{gendocuid}/close", dependencies=[Depends(require_doc_write)])
 def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -496,7 +496,7 @@ def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
     return {"message": "마감 처리되었습니다."}
 
 
-@router.post("/{gendocuid}/open")
+@router.post("/{gendocuid}/open", dependencies=[Depends(require_doc_write)])
 def open_gendoc(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -518,7 +518,7 @@ class GendocUpdateRequest(BaseModel):
     params: list[dict]
 
 
-@router.post("/params/update")
+@router.post("/params/update", dependencies=[Depends(require_doc_write)])
 def update_gendoc_params(body: GendocUpdateRequest, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -535,7 +535,7 @@ class ParamsCheckRequest(BaseModel):
     params: list[dict]
 
 
-@router.post("/params/check")
+@router.post("/params/check", dependencies=[Depends(require_doc_write)])
 def check_params(body: ParamsCheckRequest, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -565,7 +565,7 @@ def check_params(body: ParamsCheckRequest, token: str = Depends(get_token)):
 
 # ── Check Objects ────────────────────────────────────────────────────────────────
 
-@router.post("/check-objects")
+@router.post("/check-objects", dependencies=[Depends(require_doc_write)])
 def check_objects(body: dict, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -582,7 +582,7 @@ def check_objects(body: dict, token: str = Depends(get_token)):
 
 # ── Chapter Objects Read ──────────────────────────────────────────────────────────
 
-@router.get("/genchapters/{genchapteruid}/objects")
+@router.get("/genchapters/{genchapteruid}/objects", dependencies=[Depends(require_doc_read)])
 def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -666,7 +666,7 @@ class ObjectRewriteRequest(BaseModel):
     objectuid: str
 
 
-@router.post("/genchapters/{genchapteruid}/objects/{objectuid}/rewrite")
+@router.post("/genchapters/{genchapteruid}/objects/{objectuid}/rewrite", dependencies=[Depends(require_doc_write)])
 def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -711,39 +711,16 @@ def _increment_genobjectcount(sb, genchapteruid: str, objectuid: str):
             .eq("genchapteruid", genchapteruid).eq("objectuid", objectuid).execute().data
         if not row or not row[0].get("accountuid") or row[0].get("tenantid") is None:
             return
-        accountuid = row[0]["accountuid"]
-        tenantid = row[0]["tenantid"]
-        creator = row[0].get("creator")
 
-        now = datetime.now(timezone.utc)
-        usedts = now.replace(minute=0, second=0, microsecond=0).isoformat()
-        now_iso = now.isoformat()
-
-        sb_svc = get_service_client()
-        existing = sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").select("countuid,count") \
-            .eq("accountuid", accountuid).eq("tenantid", tenantid).eq("usedts", usedts).eq("creator", creator).execute().data
-        if existing:
-            sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").update({
-                "count": existing[0]["count"] + 1,
-                "updatedts": now_iso,
-            }).eq("countuid", existing[0]["countuid"]).execute()
-        else:
-            sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").insert({
-                "countuid": str(uuid.uuid4()),
-                "usedts": usedts,
-                "accountuid": accountuid,
-                "tenantid": tenantid,
-                "creator": creator,
-                "count": 1,
-                "updatedts": now_iso,
-            }).execute()
+        from utilsPrj.credit_helper import increment_genobjectcount
+        increment_genobjectcount(get_service_client(), row[0]["accountuid"], row[0]["tenantid"], row[0].get("creator"))
     except Exception:
         pass
 
 
 # ── Apply Objects to Chapter ─────────────────────────────────────────────────────
 
-@router.post("/genchapters/{genchapteruid}/apply")
+@router.post("/genchapters/{genchapteruid}/apply", dependencies=[Depends(require_doc_write)])
 def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -802,7 +779,7 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
 
 # ── Full-Document Content Read (req_chapter_read 해당) ──────────────────────────
 
-@router.get("/{gendocuid}/doc-content")
+@router.get("/{gendocuid}/doc-content", dependencies=[Depends(require_doc_read)])
 def get_doc_content(
     gendocuid: str,
     type: str = "auto",
@@ -866,7 +843,7 @@ def get_doc_content(
 
 # ── Chapter Content Read ─────────────────────────────────────────────────────────
 
-@router.get("/genchapters/{genchapteruid}/content")
+@router.get("/genchapters/{genchapteruid}/content", dependencies=[Depends(require_doc_read)])
 def get_chapter_content(
     genchapteruid: str,
     type: str = "auto",
@@ -921,7 +898,7 @@ class RewriteChapterRequest(BaseModel):
     accountuid: Optional[str] = None
 
 
-@router.post("/genchapters/{genchapteruid}/rewrite")
+@router.post("/genchapters/{genchapteruid}/rewrite", dependencies=[Depends(require_doc_write)])
 def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteChapterRequest(), token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -1026,7 +1003,7 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
     return {"genchapteruid": genchapteruid}
 
 
-@router.get("/genchapters/{genchapteruid}/rewrite/status")
+@router.get("/genchapters/{genchapteruid}/rewrite/status", dependencies=[Depends(require_doc_read)])
 def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -1083,7 +1060,7 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
 
 # ── Chapter File Upload ───────────────────────────────────────────────────────────
 
-@router.post("/genchapters/{genchapteruid}/upload")
+@router.post("/genchapters/{genchapteruid}/upload", dependencies=[Depends(require_doc_write)])
 async def upload_chapter_file(
     genchapteruid: str,
     file: UploadFile = File(...),
@@ -1127,7 +1104,7 @@ async def upload_chapter_file(
 
 # ── File Upload ──────────────────────────────────────────────────────────────────
 
-@router.post("/{gendocuid}/upload")
+@router.post("/{gendocuid}/upload", dependencies=[Depends(require_doc_write)])
 async def upload_file(
     gendocuid: str,
     file: UploadFile = File(...),
@@ -1173,7 +1150,7 @@ class GenerateRequest(BaseModel):
     accountuid: Optional[str] = None
 
 
-@router.post("/{gendocuid}/generate")
+@router.post("/{gendocuid}/generate", dependencies=[Depends(require_doc_write)])
 def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -1277,7 +1254,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     return {"gendocuid": gendocuid}
 
 
-@router.get("/{gendocuid}/generate/status")
+@router.get("/{gendocuid}/generate/status", dependencies=[Depends(require_doc_read)])
 def generate_status(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -1345,7 +1322,7 @@ class CombineRequest(BaseModel):
     accountuid: Optional[str] = None
 
 
-@router.post("/{gendocuid}/combine")
+@router.post("/{gendocuid}/combine", dependencies=[Depends(require_doc_write)])
 def combine_doc(gendocuid: str, body: CombineRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)

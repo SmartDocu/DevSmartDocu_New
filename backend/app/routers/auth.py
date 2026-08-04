@@ -520,11 +520,16 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     except Exception:
         pass
 
-    # 9. editbuttonyn (accountmanager 세팅 이후 판단)
-    if ctx.projectmanager == "Y" or ctx.tenantmanager == "Y" or ctx.accountmanager == "Y":
-        ctx.editbuttonyn = "Y"
-    else:
-        ctx.editbuttonyn = "N"
+    # 9. editbuttonyn (accountmanager 세팅 이후 판단) — servicestatus(Do 서비스) write 권한도 함께 확인
+    is_manager = ctx.projectmanager == "Y" or ctx.tenantmanager == "Y" or ctx.accountmanager == "Y"
+    can_write_service = True
+    if is_manager and ctx.tenantid:
+        try:
+            from utilsPrj.service_status import get_service_permission
+            can_write_service = get_service_permission(supabase, ctx.tenantid, user_id, "Do")["can_write"]
+        except Exception:
+            can_write_service = True  # 조회 실패 시 매니저 권한 판단만으로 폴백(백엔드 write 엔드포인트에서 별도로 최종 차단됨)
+    ctx.editbuttonyn = "Y" if (is_manager and can_write_service) else "N"
 
     # 10. languagecd: TenantUsers.languagecd → Tenants.languagecd
     try:
@@ -1138,19 +1143,6 @@ def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
                 }).execute()
 
                 now_utc = datetime.now(timezone.utc)
-
-                service.schema(SCHEMA).table("subscription_credits").insert({
-                    "subscriptionuid": subscriptionuid,
-                    "tenantid": smartdoc_tenantid,
-                    "accountuid": accountuid,
-                    "productcd": product["productcd"],
-                    "servicecd": product["servicecd"],
-                    "quantity": product.get("credit", 0),
-                    "creditchargecd": "Ba",
-                    "creditdesc": "Subscription Credit",
-                    "creator": user_id,
-                }).execute()
-
                 upsert_ba_creditbucket(
                     service.schema(SCHEMA),
                     subscriptionuid=subscriptionuid,

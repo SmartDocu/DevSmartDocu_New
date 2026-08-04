@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
@@ -35,7 +35,7 @@ class ChartPreviewRequest(BaseModel):
     chart_height: Optional[int] = 250
 
 
-@router.get("/types")
+@router.get("/types", dependencies=[Depends(require_doc_read)])
 def list_chart_types(token: str = Depends(get_token)):
     _get_user(token)
     from utilsPrj.chart_definitions import get_chart_types_detail
@@ -43,7 +43,7 @@ def list_chart_types(token: str = Depends(get_token)):
     return {"chart_types": [{"code": c["code"], "name": c["name"]} for c in types_detail]}
 
 
-@router.get("/types/detail")
+@router.get("/types/detail", dependencies=[Depends(require_doc_read)])
 def list_chart_types_detail(token: str = Depends(get_token)):
     """차트 타입별 설정 필드 목록 (select options 제외)"""
     _get_user(token)
@@ -51,7 +51,7 @@ def list_chart_types_detail(token: str = Depends(get_token)):
     return {"chart_types": get_chart_types_detail()}
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_doc_read)])
 def get_chart(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -71,7 +71,7 @@ def get_chart(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     return {"chart": row}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_doc_write)])
 def save_chart(body: ChartSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -111,7 +111,7 @@ def save_chart(body: ChartSaveRequest, token: str = Depends(get_token)):
     return {"message": "저장되었습니다."}
 
 
-@router.delete("")
+@router.delete("", dependencies=[Depends(require_doc_write)])
 def delete_chart(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -120,7 +120,7 @@ def delete_chart(chapteruid: str, objectnm: str, token: str = Depends(get_token)
     return {"message": "삭제되었습니다."}
 
 
-@router.post("/preview")
+@router.post("/preview", dependencies=[Depends(require_doc_write)])
 def preview_chart(body: ChartPreviewRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)

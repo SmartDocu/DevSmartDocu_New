@@ -60,6 +60,34 @@ def get_tenantid(x_tenant_id: Optional[str] = Header(None)) -> Optional[str]:
     return x_tenant_id
 
 
+def require_doc_read(
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+) -> None:
+    """accountservices.servicestatus('Do' 서비스) 기준 문서 읽기 권한 확인 — 불허 시 403."""
+    from utilsPrj.service_status import get_service_permission
+
+    sb = get_sb(token)
+    user = get_user(token)
+    perm = get_service_permission(sb, tenantid, str(user.id), "Do")
+    if not perm["can_read"]:
+        raise HTTPException(status_code=403, detail="msg.service.read.forbidden")
+
+
+def require_doc_write(
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+) -> None:
+    """accountservices.servicestatus('Do' 서비스) 기준 문서 쓰기 권한 확인 — 불허 시 403."""
+    from utilsPrj.service_status import get_service_permission
+
+    sb = get_sb(token)
+    user = get_user(token)
+    perm = get_service_permission(sb, tenantid, str(user.id), "Do")
+    if not perm["can_write"]:
+        raise HTTPException(status_code=403, detail="msg.service.write.forbidden")
+
+
 def get_supabase(token: str = Depends(get_token)):
     """
     요청별 Supabase 클라이언트를 반환한다.

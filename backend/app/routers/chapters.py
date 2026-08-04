@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from backend.app.schemas.auth import MessageResponse
 from backend.app.schemas.docs import ChapterItem, ChapterSaveResponse, ChaptersListResponse
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
@@ -22,7 +22,7 @@ def _get_user_id(token: str) -> str:
 
 # ─── 챕터 목록 ───────────────────────────────────────────────────────────────
 
-@router.get("", response_model=ChaptersListResponse)
+@router.get("", response_model=ChaptersListResponse, dependencies=[Depends(require_doc_read)])
 def list_chapters(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
     rows = (
@@ -52,7 +52,7 @@ def list_chapters(docid: int, token: str = Depends(get_token)):
 
 # ─── 챕터 저장 (신규/수정) ────────────────────────────────────────────────────
 
-@router.post("", response_model=ChapterSaveResponse)
+@router.post("", response_model=ChapterSaveResponse, dependencies=[Depends(require_doc_write)])
 async def save_chapter(
     docid: int = Form(...),
     chapternm: str = Form(...),
@@ -102,7 +102,7 @@ async def save_chapter(
 
 # ─── 챕터 삭제 ───────────────────────────────────────────────────────────────
 
-@router.delete("/{chapteruid}", response_model=MessageResponse)
+@router.delete("/{chapteruid}", response_model=MessageResponse, dependencies=[Depends(require_doc_write)])
 def delete_chapter(chapteruid: str, token: str = Depends(get_token)):
     sb = _sb(token)
 
@@ -130,7 +130,7 @@ class TemplateSaveRequest(BaseModel):
     formats: List[Dict[str, Any]]  # [{objectUID, objectNm, orderno, filters: {docvariableuid, params}}]
 
 
-@router.get("/{chapteruid}/template")
+@router.get("/{chapteruid}/template", dependencies=[Depends(require_doc_read)])
 def get_chapter_template(chapteruid: str, token: str = Depends(get_token)):
     import json as _json
     sb = _sb(token)
@@ -215,7 +215,7 @@ def get_chapter_template(chapteruid: str, token: str = Depends(get_token)):
     }
 
 
-@router.post("/{chapteruid}/template")
+@router.post("/{chapteruid}/template", dependencies=[Depends(require_doc_write)])
 def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str = Depends(get_token)):
     sb_user = _sb(token)
     user_id = _get_user_id(token)
@@ -354,7 +354,7 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
 
 # ─── 항목 필터 조회 ──────────────────────────────────────────────────────────
 
-@router.get("/objectfilter/{objectuid}")
+@router.get("/objectfilter/{objectuid}", dependencies=[Depends(require_doc_read)])
 def get_object_filter_info(objectuid: str, token: str = Depends(get_token)):
     sb = _sb(token)
     filters = sb.schema(SUPABASE_SCHEMA).table("objectfilters").select("*").eq("objectuid", objectuid).execute().data or []
@@ -380,7 +380,7 @@ class ObjectFilterMapSaveRequest(BaseModel):
     mappings: List[FilterColMapping]
 
 
-@router.post("/objectfiltermap")
+@router.post("/objectfiltermap", dependencies=[Depends(require_doc_write)])
 def save_objectfiltermap(body: ObjectFilterMapSaveRequest, token: str = Depends(get_token)):
     from utilsPrj.supabase_client import get_service_client
     sb_svc = get_service_client()

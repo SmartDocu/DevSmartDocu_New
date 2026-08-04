@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
@@ -26,7 +26,7 @@ class SentencePreviewRequest(BaseModel):
     template_text: str
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_doc_read)])
 def get_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -41,7 +41,7 @@ def get_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)
     return {"sentence": rows[0]}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_doc_write)])
 def save_sentence(body: SentenceSaveRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -81,7 +81,7 @@ def save_sentence(body: SentenceSaveRequest, token: str = Depends(get_token)):
     return {"message": "저장되었습니다."}
 
 
-@router.delete("")
+@router.delete("", dependencies=[Depends(require_doc_write)])
 def delete_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -90,7 +90,7 @@ def delete_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_tok
     return {"message": "삭제되었습니다."}
 
 
-@router.post("/preview")
+@router.post("/preview", dependencies=[Depends(require_doc_write)])
 def preview_sentence(body: SentencePreviewRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)

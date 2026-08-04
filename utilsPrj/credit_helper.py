@@ -145,6 +145,39 @@ def _deduct_credit(sb_svc, accountuid: str, tenantid, amount: int, *, refuid: st
         _write_creditbucketuse(sb_svc, ba_rows[0], remaining, tenantid, accountuid, refuid, usetypecd)
 
 
+def increment_genobjectcount(sb_svc, accountuid: str, tenantid, creator: str) -> None:
+    """genobjectcounts에 시간당(1시간 버킷)+계정+creator별 사용량 1건 집계.
+
+    단일 항목 재작성(gendocs.py _increment_genobjectcount)과 AI 정의/미리보기(llm.py)가
+    공통으로 사용한다 — 두 액션 타입을 구분하지 않고 같은 count로 합산한다(동일 과금 정책).
+    이 count는 sdoc.fn_apply_genobjectcount_credit() 배치가 그대로 소진 처리한다.
+    """
+    if not accountuid or tenantid is None:
+        return
+
+    now = datetime.now(timezone.utc)
+    usedts = now.replace(minute=0, second=0, microsecond=0).isoformat()
+    now_iso = now.isoformat()
+
+    existing = sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").select("countuid,count") \
+        .eq("accountuid", accountuid).eq("tenantid", tenantid).eq("usedts", usedts).eq("creator", creator).execute().data
+    if existing:
+        sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").update({
+            "count": existing[0]["count"] + 1,
+            "updatedts": now_iso,
+        }).eq("countuid", existing[0]["countuid"]).execute()
+    else:
+        sb_svc.schema(SUPABASE_SCHEMA).table("genobjectcounts").insert({
+            "countuid": str(uuid.uuid4()),
+            "usedts": usedts,
+            "accountuid": accountuid,
+            "tenantid": tenantid,
+            "creator": creator,
+            "count": 1,
+            "updatedts": now_iso,
+        }).execute()
+
+
 def _true_success_count(sb_svc, job_col: str, jobuid: str) -> int:
     """genobjectlogs에서 is_success=true인 genobjectuid의 distinct 개수를 직접 센다.
     job_col은 genobjectlogs에도 동일한 이름의 컬럼(genchapterjobuid/gendocjobuid)으로 존재한다."""
