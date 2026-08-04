@@ -130,6 +130,22 @@ def get_history_by_date(creator: str, offsetminutes: int | None = None) -> dict:
         except Exception:
             pass
 
+        # 정기 보고서 세션의 현재 활성 공유 여부 — 사이드바가 메뉴를 열 때마다 별도 조회하지
+        # 않도록 목록 응답에 share_uid를 함께 내려준다(pr_module_insight와 동일한 방식).
+        shares_by_session: dict[str, str] = {}
+        try:
+            sres = (
+                _sc.table("insightscheduleshares")
+                .select("sessionuid, shareuid")
+                .eq("creator", creator)
+                .is_("enddts", "null")
+                .execute()
+            )
+            for s in (sres.data or []):
+                shares_by_session[s["sessionuid"]] = s["shareuid"]
+        except Exception:
+            pass
+
         grouped: dict = {}
         for row in (res.data or []):
             formatted = _fmt_dt(row.get("createdts", ""), offsetminutes)
@@ -145,6 +161,7 @@ def get_history_by_date(creator: str, offsetminutes: int | None = None) -> dict:
             if template:
                 item["is_schedule"] = True
                 item["schedule_active"] = bool(template.get("scheduleactive"))
+                item["share_uid"] = shares_by_session.get(row["sessionuid"])
             grouped[date_key].append(item)
         return grouped
     except Exception:
@@ -162,15 +179,20 @@ def _parse_target_period(filenm: str | None) -> str | None:
     return m.group(1) if m else None
 
 
-def get_schedule_turns(session_uid: str) -> list[dict]:
-    """정기 보고서 세션의 실행 턴 목록(최근 대상기간순) — 사이드바가 펼쳐 보여줄 때 쓴다."""
-    res = (
+def get_schedule_turns(session_uid: str, until: str | None = None) -> list[dict]:
+    """정기 보고서 세션의 실행 턴 목록(최근 대상기간순) — 사이드바가 펼쳐 보여줄 때 쓴다.
+
+    until이 있으면 그 시각 이후 생성된 턴은 제외한다 — 공유 종료 이후 회차를
+    공유받은 사람에게 숨길 때 쓴다.
+    """
+    q = (
         _sc.table("insight_qas")
         .select("qauid, question, answer, filenm, fileurl, createdts")
         .eq("sessionuid", session_uid)
-        .order("createdts", desc=True)
-        .execute()
     )
+    if until:
+        q = q.lte("createdts", until)
+    res = q.order("createdts", desc=True).execute()
     turns: list[dict] = []
     for row in (res.data or []):
         try:
@@ -197,6 +219,47 @@ def get_schedule_turns(session_uid: str) -> list[dict]:
     turns.sort(key=lambda t: (t["target_period"] is not None, t["target_period"] or "", t["created_at"] or ""),
                reverse=True)
     return turns
+
+
+def delete_qa(qauid: str, creator: str) -> bool:
+    """정기 보고서 회차(QA) 하드 삭제 — 되돌릴 수 없다. creator 소유 확인 포함."""
+    _sc.table("insight_qas").delete().eq("qauid", qauid).eq("creator", creator).execute()
+    return True
+
+
+SCHEDULE_ORIGIN_MARKER = "[정기 보고서 등록]"   # 정기 보고서 등록 시 원본 보고서를 시드로 남길 때
+# 붙이는 질문 접두사(schedule_register 참조) — 같은 문자열을 여기서도 "이 보고서가 이미 정기
+# 등록의 원본으로 쓰였는지" 판정하는 데 쓴다(is_report_already_scheduled).
+
+
+def _already_scheduled_filenms(filenms: list[str]) -> set[str]:
+    if not filenms:
+        return set()
+    res = (
+        _sc.table("insight_qas")
+        .select("filenm")
+        .in_("filenm", filenms)
+        .like("question", f"{SCHEDULE_ORIGIN_MARKER}%")
+        .execute()
+    )
+    return {r["filenm"] for r in res.data if r.get("filenm")}
+
+
+def is_report_already_scheduled(report_path: str | None) -> bool:
+    """이 보고서(파일명)가 이미 정기 보고서 등록의 원본으로 쓰였는지 — 같은 보고서를 두 번
+    정기 등록하는 걸 막는 데 쓴다."""
+    if not report_path:
+        return False
+    return bool(_already_scheduled_filenms([report_path]))
+
+
+def get_analytic_scenario_nm(analytic_uid: str | None) -> str | None:
+    """analytics.scenarionm 조회 — 정기 보고서 등록 시 템플릿 이름(f"{scenario_nm} 정기 보고서")의
+    근거가 된다(record_analytics가 저장한 report_type이 여기 scenarionm으로 들어있다)."""
+    if not analytic_uid:
+        return None
+    res = _sc.table("analytics").select("scenarionm").eq("analyticuid", analytic_uid).execute()
+    return res.data[0].get("scenarionm") if res.data else None
 
 
 # ── Q&A ──────────────────────────────────────────────────────────
@@ -260,6 +323,9 @@ def get_session_messages(session_uid: str) -> list[dict]:
         .order("createdts", desc=False)
         .execute()
     )
+    filenms = [row["filenm"] for row in res.data if row.get("filenm")]
+    scheduled_filenms = _already_scheduled_filenms(filenms)
+
     messages: list[dict] = []
     for row in res.data:
         messages.append({"role": "user", "content": row["question"], "qauid": row["qauid"]})
@@ -272,13 +338,15 @@ def get_session_messages(session_uid: str) -> list[dict]:
                 answer_text, applied_steps = str(obj), None
         except (json.JSONDecodeError, TypeError):
             answer_text, applied_steps = row["answer"] or "", None
+        filenm = row.get("filenm")
         messages.append({
             "role": "assistant",
             "content": answer_text,
-            "reportPath": row.get("filenm"),
+            "reportPath": filenm,
             "fileurl": row.get("fileurl"),
             "qauid": row["qauid"],
             "appliedSteps": applied_steps,
+            "isTemplate": bool(filenm) and filenm in scheduled_filenms,
         })
     return messages
 
@@ -420,6 +488,44 @@ def create_analytic_template(
     }
     res = _sc.table("analytictemplates").insert(row).execute()
     return res.data[0]["templateuid"]
+
+
+def get_active_template_by_session(session_uid: str) -> dict | None:
+    """세션에 연결된 활성 정기 보고서 템플릿 1건(최신)을 반환한다 — 없으면 None.
+
+    등록 중복 방지("이 세션엔 이미 활성 템플릿이 있다")와 수정 화면의 현재 설정 조회에 쓴다.
+    """
+    res = (
+        _sc.table("analytictemplates")
+        .select("*")
+        .eq("sessionuid", session_uid)
+        .eq("scheduleactive", True)
+        .order("createdts", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def get_analytic_template(template_uid: str) -> dict | None:
+    """templateuid로 정기 보고서 템플릿 1건을 조회한다 — 무인 실행기가 사용."""
+    res = (
+        _sc.table("analytictemplates")
+        .select("*")
+        .eq("templateuid", template_uid)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def update_analytic_template_schedule(template_uid: str, schedule_cron: str, schedule_start_dt: str) -> None:
+    """정기 보고서 일정(cron/시작일)을 변경한다."""
+    (
+        _sc.table("analytictemplates")
+        .update({"schedulecron": schedule_cron, "schedulestartdt": schedule_start_dt})
+        .eq("templateuid", template_uid)
+        .execute()
+    )
 
 
 def get_qa_count(session_uid: str) -> int:
@@ -744,5 +850,91 @@ def _format_share_rows(rows: list[dict], offsetminutes: int | None = None) -> li
             "folder_uid": row.get("folderuid"),
             "creator": row.get("creator"),
             "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
+        })
+    return result
+
+
+# ── 정기 보고서 공유 ────────────────────────────────────────────
+
+def share_schedule_session(session_uid: str, tenant_id: int | None, project_id: int | None,
+                            creator: str) -> str | None:
+    """정기 보고서 세션 전체를 공유한다(회차 단위가 아니라 세션 단위) — insightscheduleshares에
+    1건 기록하고 shareuid를 반환한다."""
+    res = (
+        _sc.table("insightscheduleshares")
+        .insert({
+            "tenantid": tenant_id,
+            "projectid": project_id,
+            "sessionuid": session_uid,
+            "creator": creator,
+        })
+        .execute()
+    )
+    return res.data[0]["shareuid"] if res.data else None
+
+
+def get_schedule_share(share_uid: str) -> dict | None:
+    """공유된 정기 보고서 세션 1건 조회."""
+    res = _sc.table("insightscheduleshares").select("*").eq("shareuid", share_uid).execute()
+    return res.data[0] if res.data else None
+
+
+def end_schedule_share(share_uid: str, end_dt: str) -> bool:
+    """정기 보고서 공유를 종료한다(소프트 종료 — enddts만 채움, row는 유지).
+
+    공유자·수신자 모두 "공유 취소"를 누를 수 있다(세션 전체 공유라 수신자별 row가 따로
+    없으므로 pr_module_insight처럼 소유자만 종료 가능하게 제한하지 않는다)."""
+    _sc.table("insightscheduleshares").update({"enddts": end_dt}).eq("shareuid", share_uid).execute()
+    return True
+
+
+def get_schedule_shares_sent(creator: str, offsetminutes: int | None = None) -> list[dict]:
+    """내가 공유한 정기 보고서 목록(활성만)을 반환한다."""
+    res = (
+        _sc.table("insightscheduleshares")
+        .select("shareuid, sessionuid, createdts, enddts")
+        .eq("creator", creator)
+        .is_("enddts", "null")
+        .order("createdts", desc=True)
+        .execute()
+    )
+    result = []
+    for row in (res.data or []):
+        session = get_session(row["sessionuid"]) or {}
+        result.append({
+            "share_uid": row["shareuid"],
+            "session_id": row["sessionuid"],
+            "title": session.get("sessiontitles") or "(제목 없음)",
+            "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
+            "ended_at": _fmt_dt(row.get("enddts"), offsetminutes) if row.get("enddts") else None,
+        })
+    return result
+
+
+def get_schedule_shares_received(project_id: int | None, my_creator: str,
+                                  offsetminutes: int | None = None) -> list[dict]:
+    """내가 creator가 아닌, 같은 project의 정기 보고서 공유 목록(활성만)을 반환한다."""
+    q = (
+        _sc.table("insightscheduleshares")
+        .select("shareuid, sessionuid, creator, createdts, enddts")
+        .neq("creator", my_creator)
+        .is_("enddts", "null")
+        .order("createdts", desc=True)
+    )
+    if project_id is not None:
+        q = q.or_(f"projectid.eq.{project_id},projectid.is.null")
+    else:
+        q = q.is_("projectid", "null")
+    res = q.execute()
+    result = []
+    for row in (res.data or []):
+        session = get_session(row["sessionuid"]) or {}
+        result.append({
+            "share_uid": row["shareuid"],
+            "session_id": row["sessionuid"],
+            "title": session.get("sessiontitles") or "(제목 없음)",
+            "shared_by": row.get("creator"),
+            "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
+            "ended_at": _fmt_dt(row.get("enddts"), offsetminutes) if row.get("enddts") else None,
         })
     return result

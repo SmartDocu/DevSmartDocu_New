@@ -16,7 +16,9 @@ const CHAT_TIMEOUT = { timeout: 3600000 } // 보고서 생성 최대 6분
 function getInitialMessage() {
   return {
     role: 'assistant',
-    content: t('msg.d2insight.welcome'),
+    // 다국어 테이블에 저장된 텍스트가 실제 개행 문자 대신 리터럴 "\n"으로 들어있는 경우가
+    // 있어(수동 입력 시 이스케이프가 해석되지 않음), 렌더링 전에 실제 개행으로 치환한다.
+    content: t('msg.d2insight.welcome').replace(/\\n/g, '\n'),
     fileurl: null,
     reportPath: null,
   }
@@ -31,7 +33,7 @@ const EXAMPLE_QUESTION_DEFS = [
 
 export default function D2InsightPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const user = useAuthStore((s) => s.user)
   const userId = user?.id
   const EXAMPLE_QUESTIONS = EXAMPLE_QUESTION_DEFS.map((d) => ({ label: t(d.labelKey), question: t(d.questionKey) }))
@@ -57,11 +59,26 @@ export default function D2InsightPage() {
   const [history, setHistory] = useState({})
   const [sharesSent, setSharesSent] = useState([])
   const [sharesReceived, setSharesReceived] = useState([])
-  const [openSections, setOpenSections] = useState({ favorites: false, history: true, schedules: true, sent: false, received: false })
+  const [openSections, setOpenSections] = useState({
+    favorites: false, history: false, schedules: false, sent: false, received: false,
+    sentSchedule: false, receivedSchedule: false,
+  })
   const [openDates, setOpenDates] = useState({})
   const [openSchedules, setOpenSchedules] = useState({}) // sessionId → 펼침여부
   const [scheduleTurns, setScheduleTurns] = useState({}) // sessionId → 턴배열 | 'loading'
   const [viewingScheduleQauid, setViewingScheduleQauid] = useState(null)
+  const [viewingScheduleSessionId, setViewingScheduleSessionId] = useState(null)
+  const [scheduleSettings, setScheduleSettings] = useState(null) // 현재 보이는 정기 보고서의 요일/시간 설정(수정용)
+  const [activeReportIndex, setActiveReportIndex] = useState(null) // 클릭해 선택한 말풍선(보고서) 인덱스 — null이면 최신 보고서 기본 표시
+
+  // 정기 보고서 공유(공유한/공유받은)
+  const [sharesSentSchedule, setSharesSentSchedule] = useState([])
+  const [sharesReceivedSchedule, setSharesReceivedSchedule] = useState([])
+  const [openSentSchedules, setOpenSentSchedules] = useState({}) // share_uid → 펼침여부
+  const [sentScheduleTurns, setSentScheduleTurns] = useState({})
+  const [openSharedSchedules, setOpenSharedSchedules] = useState({})
+  const [sharedScheduleTurns, setSharedScheduleTurns] = useState({})
+
   const [menuOpenId, setMenuOpenId] = useState(null)
   const [menuSection, setMenuSection] = useState(null)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -87,8 +104,6 @@ export default function D2InsightPage() {
     try {
       const { data } = await apiClient.get(`/d2insight/history/${userId}`)
       setHistory(data || {})
-      const today = new Date().toISOString().slice(0, 10)
-      if (data?.[today]) setOpenDates((prev) => ({ ...prev, [today]: true }))
     } catch {
       // ignore
     }
@@ -108,8 +123,35 @@ export default function D2InsightPage() {
     }
   }, [userId])
 
+  const fetchScheduleShares = useCallback(async () => {
+    if (!userId) return
+    try {
+      const [sentRes, receivedRes] = await Promise.all([
+        apiClient.get(`/d2insight/schedule/shares/sent/${userId}`),
+        apiClient.get(`/d2insight/schedule/shares/received/${userId}`),
+      ])
+      setSharesSentSchedule(sentRes.data || [])
+      setSharesReceivedSchedule(receivedRes.data || [])
+    } catch {
+      // ignore
+    }
+  }, [userId])
+
+  const loadScheduleSettings = useCallback(async (sid) => {
+    if (!sid) { setScheduleSettings(null); return }
+    try {
+      const { data } = await apiClient.get(`/d2insight/schedule/${sid}/settings`)
+      setScheduleSettings({ ...data, session_id: sid })
+    } catch {
+      setScheduleSettings(null)
+    }
+  }, [])
+
   useEffect(() => { fetchFavorites() }, [fetchFavorites])
-  useEffect(() => { fetchHistory(); fetchShares() }, [sessionId, fetchHistory, fetchShares])
+  useEffect(() => { fetchHistory(); fetchShares(); fetchScheduleShares() }, [sessionId, fetchHistory, fetchShares, fetchScheduleShares])
+  useEffect(() => {
+    if (viewMode === 'chat') loadScheduleSettings(sessionId)
+  }, [sessionId, viewMode, loadScheduleSettings])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -136,6 +178,9 @@ export default function D2InsightPage() {
     setViewingSessionId(null)
     setViewingFavoriteQauid(null)
     setViewingScheduleQauid(null)
+    setViewingScheduleSessionId(null)
+    setScheduleSettings(null)
+    setActiveReportIndex(null)
     setViewMode('chat')
     setInputValue('')
   }
@@ -149,6 +194,9 @@ export default function D2InsightPage() {
       setViewingSessionId(sid)
       setViewingFavoriteQauid(null)
       setViewingScheduleQauid(null)
+      setViewingScheduleSessionId(null)
+      setScheduleSettings(null)
+      setActiveReportIndex(null)
       setViewMode('history')
     } catch {
       // ignore
@@ -164,6 +212,9 @@ export default function D2InsightPage() {
     setViewingSessionId(null)
     setViewingFavoriteQauid(fav.qauid)
     setViewingScheduleQauid(null)
+    setViewingScheduleSessionId(null)
+    setScheduleSettings(null)
+    setActiveReportIndex(null)
     setViewMode('history')
   }
 
@@ -171,15 +222,25 @@ export default function D2InsightPage() {
     try {
       const { data } = await apiClient.get(`/d2insight/shares/${shareQauid}`)
       let answerText = ''
-      try { answerText = JSON.parse(data.answer || '{}').answer || '' } catch { answerText = data.answer || '' }
+      let appliedSteps = null
+      try {
+        const parsed = JSON.parse(data.answer || '{}')
+        answerText = parsed.answer || ''
+        // 내가 공유한 것일 때만 우측 패널(모듈/툴/파라미터)을 복원한다 — 남이 공유한 것을
+        // 받아 볼 때는 그 세부 구성까지 노출할 필요가 없다.
+        if (data.creator === userId) appliedSteps = parsed.applied_steps || null
+      } catch { answerText = data.answer || '' }
       setHistoryMessages([
         { role: 'user', content: data.question || '' },
-        { role: 'assistant', content: answerText, fileurl: data.fileurl, reportPath: data.filenm },
+        { role: 'assistant', content: answerText, fileurl: data.fileurl, reportPath: data.filenm, appliedSteps },
       ])
       setHistoryLabel(label || t('ttl.d2insight.shares_received'))
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
       setViewingScheduleQauid(null)
+      setViewingScheduleSessionId(null)
+      setScheduleSettings(null)
+      setActiveReportIndex(null)
       setViewMode('history')
     } catch {
       // ignore
@@ -202,6 +263,37 @@ export default function D2InsightPage() {
     if (scheduleTurns[sid] === undefined) loadScheduleTurns(sid)
   }
 
+  // 공유한/공유받은 정기 보고서 회차 지연 조회 — 둘 다 같은 엔드포인트(share_uid 기준)를 쓴다.
+  const loadSentScheduleTurns = async (shareUid) => {
+    setSentScheduleTurns((prev) => ({ ...prev, [shareUid]: 'loading' }))
+    try {
+      const { data } = await apiClient.get(`/d2insight/schedule/shares/${shareUid}/turns`)
+      setSentScheduleTurns((prev) => ({ ...prev, [shareUid]: Array.isArray(data) ? data : [] }))
+    } catch {
+      setSentScheduleTurns((prev) => ({ ...prev, [shareUid]: [] }))
+    }
+  }
+
+  const toggleSentSchedule = (shareUid) => {
+    setOpenSentSchedules((prev) => ({ ...prev, [shareUid]: !prev[shareUid] }))
+    if (sentScheduleTurns[shareUid] === undefined) loadSentScheduleTurns(shareUid)
+  }
+
+  const loadSharedScheduleTurns = async (shareUid) => {
+    setSharedScheduleTurns((prev) => ({ ...prev, [shareUid]: 'loading' }))
+    try {
+      const { data } = await apiClient.get(`/d2insight/schedule/shares/${shareUid}/turns`)
+      setSharedScheduleTurns((prev) => ({ ...prev, [shareUid]: Array.isArray(data) ? data : [] }))
+    } catch {
+      setSharedScheduleTurns((prev) => ({ ...prev, [shareUid]: [] }))
+    }
+  }
+
+  const toggleSharedSchedule = (shareUid) => {
+    setOpenSharedSchedules((prev) => ({ ...prev, [shareUid]: !prev[shareUid] }))
+    if (sharedScheduleTurns[shareUid] === undefined) loadSharedScheduleTurns(shareUid)
+  }
+
   const handleSelectScheduleTurn = (turn, session) => {
     setHistoryMessages([
       { role: 'user', content: turn.question, qauid: turn.qauid },
@@ -211,6 +303,25 @@ export default function D2InsightPage() {
     setViewingSessionId(null)
     setViewingFavoriteQauid(null)
     setViewingScheduleQauid(turn.qauid)
+    setViewingScheduleSessionId(session.session_id)
+    setActiveReportIndex(null)
+    loadScheduleSettings(session.session_id)
+    setViewMode('history')
+  }
+
+  // 공유받은 정기 보고서 회차 선택 — 남의 것이라 수정 UI를 띄우지 않는다(scheduleSettings 그대로 null).
+  const handleSelectSharedScheduleTurn = (turn, shareMeta) => {
+    setHistoryMessages([
+      { role: 'user', content: turn.question, qauid: turn.qauid },
+      { role: 'assistant', content: turn.answer, reportPath: turn.filenm, fileurl: turn.fileurl, qauid: turn.qauid, appliedSteps: turn.appliedSteps },
+    ])
+    setHistoryLabel(turn.target_period ? `${shareMeta.title} · ${turn.target_period}` : shareMeta.title)
+    setViewingSessionId(null)
+    setViewingFavoriteQauid(null)
+    setViewingScheduleQauid(turn.qauid)
+    setViewingScheduleSessionId(null)
+    setScheduleSettings(null)
+    setActiveReportIndex(null)
     setViewMode('history')
   }
 
@@ -246,6 +357,8 @@ export default function D2InsightPage() {
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
       setViewingScheduleQauid(null)
+      setViewingScheduleSessionId(null)
+      setActiveReportIndex(null)
       setViewMode('chat')
     } catch (e) {
       message.error(e.response?.data?.detail || t('msg.d2insight.continue_error'))
@@ -294,6 +407,7 @@ export default function D2InsightPage() {
           appliedSteps: data.applied_steps || null,
         },
       ])
+      setActiveReportIndex(null) // 새 답변이 왔으니 다시 "최신 보고서" 기본 표시로
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -334,6 +448,11 @@ export default function D2InsightPage() {
     setMenuSection(section)
   }
 
+  // 정기 보고서 세션의 현재 공유 여부 — history 목록 응답에 이미 share_uid가 포함돼 있어
+  // 메뉴를 열 때마다 별도로 조회하지 않는다.
+  const getScheduleShareUid = (sessionId2) =>
+    Object.values(history).flat().find((s) => s.session_id === sessionId2)?.share_uid || null
+
   const handleSidebarDelete = async (e, id) => {
     e.stopPropagation()
     setMenuOpenId(null)
@@ -354,6 +473,128 @@ export default function D2InsightPage() {
       }
     } catch (e2) {
       message.error(e2.response?.data?.detail || t('msg.d2insight.delete_error'))
+    }
+  }
+
+  // ── 정기 보고서 공유 핸들러 ────────────────────────────────────
+  const handleShareSchedule = async (sid) => {
+    setMenuOpenId(null)
+    try {
+      await apiClient.post(`/d2insight/schedule/${sid}/share`, { user_id: userId })
+      fetchScheduleShares()
+    } catch (e) {
+      message.error(e.response?.data?.detail || '공유에 실패했습니다.')
+    }
+  }
+
+  const handleUnshareSchedule = async (shareUid) => {
+    setMenuOpenId(null)
+    try {
+      await apiClient.delete(`/d2insight/schedule/share/${shareUid}/${userId}`)
+      fetchScheduleShares()
+    } catch (e) {
+      message.error(e.response?.data?.detail || '공유 취소에 실패했습니다.')
+    }
+  }
+
+  // 회차(턴) 하드 삭제 — 되돌릴 수 없어 확인 팝업을 거친다.
+  const handleDeleteScheduleTurn = (qauid, label, refresh) => {
+    modal.confirm({
+      title: '이 보고서를 삭제할까요?',
+      content: `'${label || '이 회차'}' 보고서를 삭제합니다. 되돌릴 수 없습니다.`,
+      okText: '삭제',
+      okType: 'danger',
+      cancelText: '취소',
+      onOk: async () => {
+        try {
+          await apiClient.delete(`/d2insight/schedule/turn/${qauid}/${userId}`)
+          refresh?.()
+        } catch (e) {
+          message.error(e.response?.data?.detail || '삭제에 실패했습니다.')
+        }
+      },
+    })
+  }
+
+  const handleDeleteReceivedScheduleShare = async (shareUid) => {
+    setMenuOpenId(null)
+    try {
+      await apiClient.delete(`/d2insight/schedule/shares/received/${shareUid}/${userId}`)
+      fetchScheduleShares()
+    } catch (e) {
+      message.error(e.response?.data?.detail || '삭제에 실패했습니다.')
+    }
+  }
+
+  // ── 정기 보고서 등록/수정 핸들러(패널에서 호출) ───────────────
+  const handlePreviewRegisterSchedule = async (settings) => {
+    try {
+      const { data } = await apiClient.post('/d2insight/schedule/register-preview', {
+        qauid: settings.qauid,
+        user_id: userId,
+        project_id: user?.myprojectid ?? null,
+        day_of_month: settings.day_of_month,
+        hour: settings.hour,
+        minute: settings.minute,
+      })
+      return data
+    } catch (e) {
+      message.error(e.response?.data?.detail || '정기 보고서 등록 확인에 실패했습니다.')
+      return null
+    }
+  }
+
+  // 등록은 특정 보고서(qauid) 기준이다 — 서버가 그 보고서 전용의 새 세션을 만들어 결과를
+  // 쌓으므로, 원래 대화 세션은 건드리지 않는다. 등록 직후 그 qauid의 "이미 등록됨" 표시가
+  // 곧바로 반영되도록 현재 보이는 메시지 목록도 같이 갱신한다.
+  const handleRegisterSchedule = async (settings) => {
+    try {
+      await apiClient.post('/d2insight/schedule/register', {
+        qauid: settings.qauid,
+        user_id: userId,
+        project_id: user?.myprojectid ?? null,
+        day_of_month: settings.day_of_month,
+        hour: settings.hour,
+        minute: settings.minute,
+      })
+      const markTemplate = (list) => list.map((m) => (
+        m.role === 'assistant' && m.qauid === settings.qauid ? { ...m, isTemplate: true } : m
+      ))
+      setMessages((prev) => markTemplate(prev))
+      setHistoryMessages((prev) => markTemplate(prev))
+      fetchHistory()
+    } catch (e) {
+      message.error(e.response?.data?.detail || '정기 보고서 등록에 실패했습니다.')
+    }
+  }
+
+  const handlePreviewScheduleUpdate = async (settings) => {
+    try {
+      const { data } = await apiClient.post(`/d2insight/schedule/${settings.session_id}/update-preview`, {
+        user_id: userId,
+        day_of_month: settings.day_of_month,
+        hour: settings.hour,
+        minute: settings.minute,
+      })
+      return data
+    } catch (e) {
+      message.error(e.response?.data?.detail || '일정 변경 확인에 실패했습니다.')
+      return null
+    }
+  }
+
+  const handleApplyScheduleUpdate = async (settings) => {
+    try {
+      await apiClient.post(`/d2insight/schedule/${settings.session_id}/update`, {
+        user_id: userId,
+        day_of_month: settings.day_of_month,
+        hour: settings.hour,
+        minute: settings.minute,
+      })
+      loadScheduleSettings(settings.session_id)
+      fetchHistory()
+    } catch (e) {
+      message.error(e.response?.data?.detail || '일정 변경에 실패했습니다.')
     }
   }
 
@@ -379,11 +620,23 @@ export default function D2InsightPage() {
 
   const scheduleSessions = Object.values(history).flat().filter((s) => s.is_schedule)
 
-  // 우측 옵션 패널에 보여줄 대상 — 화면에 보이는(채팅 or 히스토리) 메시지 중
-  // 가장 최근에 생성된 보고서의 적용 내역(모듈/툴/파라미터).
+  // 우측 옵션 패널에 보여줄 대상 — 말풍선을 클릭하면 그 보고서로 전환되고(activeReportIndex),
+  // 아무것도 클릭하지 않았으면(null) 가장 최근에 생성된 보고서를 기본으로 보여준다.
   const activeMessages = viewMode === 'history' ? historyMessages : messages
-  const activeAppliedSteps = [...activeMessages].reverse()
-    .find((m) => m.role === 'assistant' && m.appliedSteps)?.appliedSteps || null
+  const activeReportMessage = (
+    activeReportIndex != null && activeMessages[activeReportIndex]
+      ? (activeMessages[activeReportIndex].role === 'assistant' ? activeMessages[activeReportIndex] : null)
+      : [...activeMessages].reverse().find((m) => m.role === 'assistant' && m.appliedSteps)
+  ) || null
+  const activeAppliedSteps = activeReportMessage?.appliedSteps || null
+
+  // 말풍선 클릭 → 그 보고서(assistant 메시지)의 옵션을 패널에 표시한다.
+  const selectReportForIndex = (idx, list) => {
+    const m = list[idx]
+    if (!m) return
+    const assistantIdx = m.role === 'assistant' ? idx : (list[idx + 1]?.role === 'assistant' ? idx + 1 : idx)
+    setActiveReportIndex(assistantIdx)
+  }
 
   return (
     <div style={{ height: 'calc(100vh - 164px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -503,7 +756,7 @@ export default function D2InsightPage() {
                               </span>
                               <span className="arrow">{openSchedules[s.session_id] ? '▾' : '▸'}</span>
                             </button>
-                            <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id)}>···</button>
+                            <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.session_id, 'schedule')}>···</button>
                           </div>
                           {openSchedules[s.session_id] && (
                             <ul className="session-list">
@@ -524,6 +777,14 @@ export default function D2InsightPage() {
                                       <span className="session-title">
                                         {turn.target_period || turn.question?.slice(0, 20) || '(내용 없음)'}
                                       </span>
+                                      <button
+                                        type="button"
+                                        className="session-menu-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteScheduleTurn(turn.qauid, turn.target_period || s.title, () => loadScheduleTurns(s.session_id))
+                                        }}
+                                      >···</button>
                                     </li>
                                   ))
                               }
@@ -539,31 +800,9 @@ export default function D2InsightPage() {
 
             <div className="sidebar-group-divider" />
 
-            {/* 공유보고서 */}
+            {/* 공유한 보고서 */}
             <div className="sidebar-section">
-              <SectionHeader sectionKey="received" icon="📂" label={t('ttl.d2insight.shares_received')} count={sharesReceived.length} />
-              {openSections.received && (
-                <ul className="session-list">
-                  {sharesReceived.length === 0
-                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_received')}</li>
-                    : sharesReceived.map((s) => (
-                      <li
-                        key={s.share_qauid}
-                        className="session-item"
-                        onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
-                      >
-                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
-                        <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
-                        <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'received')}>···</button>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
-
-            {/* 공유한보고서 */}
-            <div className="sidebar-section">
-              <SectionHeader sectionKey="sent" icon="↑" label={t('ttl.d2insight.shares_sent')} count={sharesSent.length} />
+              <SectionHeader sectionKey="sent" icon="↑" label="공유한 보고서" count={sharesSent.length} />
               {openSections.sent && (
                 <ul className="session-list">
                   {sharesSent.length === 0
@@ -583,14 +822,171 @@ export default function D2InsightPage() {
               )}
             </div>
 
+            {/* 공유받은 보고서 */}
+            <div className="sidebar-section">
+              <SectionHeader sectionKey="received" icon="📂" label="공유받은 보고서" count={sharesReceived.length} />
+              {openSections.received && (
+                <ul className="session-list">
+                  {sharesReceived.length === 0
+                    ? <li className="sidebar-empty">{t('msg.d2insight.no_shares_received')}</li>
+                    : sharesReceived.map((s) => (
+                      <li
+                        key={s.share_qauid}
+                        className="session-item"
+                        onClick={() => handleSelectShare(s.share_qauid, s.question?.slice(0, 20))}
+                      >
+                        <span className="session-title">{s.question?.slice(0, 30) || t('msg.d2insight.no_title')}</span>
+                        <span className="session-date-badge">{s.created_at?.slice(5, 10)}</span>
+                        <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_qauid, 'received')}>···</button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="sidebar-group-divider" />
+
+            {/* 공유한 정기 보고서 */}
+            <div className="sidebar-section">
+              <SectionHeader sectionKey="sentSchedule" icon="📤" label="공유한 정기 보고서" count={sharesSentSchedule.length} />
+              {openSections.sentSchedule && (
+                sharesSentSchedule.length === 0 ? (
+                  <p className="sidebar-empty">공유한 정기 보고서가 없습니다.</p>
+                ) : (
+                  <div className="date-group-list">
+                    {sharesSentSchedule.map((s) => {
+                      const turns = sentScheduleTurns[s.share_uid]
+                      return (
+                        <div key={s.share_uid} className="date-group">
+                          <div className="schedule-title-row">
+                            <button
+                              type="button"
+                              className={`date-toggle ${openSentSchedules[s.share_uid] ? 'open' : ''}`}
+                              onClick={() => toggleSentSchedule(s.share_uid)}
+                            >
+                              <span>{s.title}</span>
+                              <span className="arrow">{openSentSchedules[s.share_uid] ? '▾' : '▸'}</span>
+                            </button>
+                            <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_uid, 'sentSchedule')}>···</button>
+                          </div>
+                          {openSentSchedules[s.share_uid] && (
+                            <ul className="session-list">
+                              {turns === 'loading'
+                                ? <li className="sidebar-empty">불러오는 중...</li>
+                                : (!turns || turns.length === 0)
+                                  ? <li className="sidebar-empty">아직 생성된 보고서가 없습니다.</li>
+                                  : turns.map((turn) => (
+                                    <li
+                                      key={turn.qauid}
+                                      className={`session-item ${turn.qauid === viewingScheduleQauid ? 'viewing' : ''}`}
+                                      onClick={() => handleSelectScheduleTurn(turn, s)}
+                                    >
+                                      <span className="session-title">
+                                        {turn.target_period || turn.question?.slice(0, 20) || '(내용 없음)'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="session-menu-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteScheduleTurn(turn.qauid, turn.target_period || s.title, () => loadSentScheduleTurns(s.share_uid))
+                                        }}
+                                      >···</button>
+                                    </li>
+                                  ))
+                              }
+                            </ul>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              )}
+            </div>
+
+            {/* 공유받은 정기 보고서 */}
+            <div className="sidebar-section">
+              <SectionHeader sectionKey="receivedSchedule" icon="📁" label="공유받은 정기 보고서" count={sharesReceivedSchedule.length} />
+              {openSections.receivedSchedule && (
+                sharesReceivedSchedule.length === 0 ? (
+                  <p className="sidebar-empty">공유받은 정기 보고서가 없습니다.</p>
+                ) : (
+                  <div className="date-group-list">
+                    {sharesReceivedSchedule.map((s) => {
+                      const turns = sharedScheduleTurns[s.share_uid]
+                      return (
+                        <div key={s.share_uid} className="date-group">
+                          <div className="schedule-title-row">
+                            <button
+                              type="button"
+                              className={`date-toggle ${openSharedSchedules[s.share_uid] ? 'open' : ''}`}
+                              onClick={() => toggleSharedSchedule(s.share_uid)}
+                            >
+                              <span>{s.title}</span>
+                              <span className="arrow">{openSharedSchedules[s.share_uid] ? '▾' : '▸'}</span>
+                            </button>
+                            <button type="button" className="session-menu-btn" onClick={(e) => handleMenuClick(e, s.share_uid, 'receivedSchedule')}>···</button>
+                          </div>
+                          {openSharedSchedules[s.share_uid] && (
+                            <ul className="session-list">
+                              {turns === 'loading'
+                                ? <li className="sidebar-empty">불러오는 중...</li>
+                                : (!turns || turns.length === 0)
+                                  ? <li className="sidebar-empty">아직 생성된 보고서가 없습니다.</li>
+                                  : turns.map((turn) => (
+                                    <li
+                                      key={turn.qauid}
+                                      className={`session-item ${turn.qauid === viewingScheduleQauid ? 'viewing' : ''}`}
+                                      onClick={() => handleSelectSharedScheduleTurn(turn, s)}
+                                    >
+                                      <span className="session-title">
+                                        {turn.target_period || turn.question?.slice(0, 20) || '(내용 없음)'}
+                                      </span>
+                                    </li>
+                                  ))
+                              }
+                            </ul>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              )}
+            </div>
+
           </nav>
 
           {/* ··· 드롭다운 메뉴 */}
           {menuOpenId && (
             <div className="session-dropdown" style={{ top: menuPos.top, left: menuPos.left }}>
-              <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>
-                {t('btn.delete')}
-              </button>
+              {menuSection === 'schedule' && !getScheduleShareUid(menuOpenId) && (
+                <button
+                  type="button"
+                  className="session-dropdown-item"
+                  onClick={(e) => { e.stopPropagation(); handleShareSchedule(menuOpenId) }}
+                >공유</button>
+              )}
+              {menuSection === 'sentSchedule' && (
+                <button
+                  type="button"
+                  className="session-dropdown-del"
+                  onClick={(e) => { e.stopPropagation(); handleUnshareSchedule(menuOpenId) }}
+                >{t('btn.delete')}</button>
+              )}
+              {menuSection === 'receivedSchedule' && (
+                <button
+                  type="button"
+                  className="session-dropdown-del"
+                  onClick={(e) => { e.stopPropagation(); handleDeleteReceivedScheduleShare(menuOpenId) }}
+                >{t('btn.delete')}</button>
+              )}
+              {menuSection !== 'sentSchedule' && menuSection !== 'receivedSchedule' && (
+                <button type="button" className="session-dropdown-del" onClick={(e) => handleSidebarDelete(e, menuOpenId)}>
+                  {t('btn.delete')}
+                </button>
+              )}
             </div>
           )}
         </aside>
@@ -676,7 +1072,15 @@ export default function D2InsightPage() {
                   <button
                     type="button"
                     className="history-back-btn"
-                    onClick={() => { setViewingSessionId(null); setViewMode('chat') }}
+                    onClick={() => {
+                      setViewingSessionId(null)
+                      setViewingFavoriteQauid(null)
+                      setViewingScheduleQauid(null)
+                      setViewingScheduleSessionId(null)
+                      setScheduleSettings(null)
+                      setActiveReportIndex(null)
+                      setViewMode('chat')
+                    }}
                   >← {t('btn.d2insight.back_to_current')}</button>
                 </div>
                 <div className="messages history-messages">
@@ -694,7 +1098,11 @@ export default function D2InsightPage() {
                     ) : null
 
                     return (
-                      <div key={index} className="history-msg-wrapper msg-row">
+                      <div
+                        key={index}
+                        className={`history-msg-wrapper msg-row${viewingSessionId ? ' turn-clickable' : ''}`}
+                        onClick={viewingSessionId ? () => selectReportForIndex(index, historyMessages) : undefined}
+                      >
                         <div className="history-msg-inner">
                           <MessageBubble
                             role={msg.role}
@@ -733,15 +1141,16 @@ export default function D2InsightPage() {
           </div>
         </div>
 
-        {/* ── 우측 옵션 패널 (적용된 모듈/툴/파라미터 + 패널 내 정기 보고서 등록) ── */}
+        {/* ── 우측 옵션 패널 (적용된 모듈/툴/파라미터 + 패널 내 정기 보고서 등록/수정) ── */}
         <ReportOptionsPanel
           appliedSteps={activeAppliedSteps}
-          sessionId={viewMode === 'history' ? viewingSessionId : sessionId}
-          userId={userId}
-          projectId={user?.myprojectid ?? null}
-          templateNmBase={currentTitle}
-          onRegistered={() => fetchHistory()}
-          message={message}
+          reportQauid={activeReportMessage?.qauid || null}
+          isTemplate={!!activeReportMessage?.isTemplate}
+          scheduleSettings={scheduleSettings}
+          onPreviewRegisterSchedule={handlePreviewRegisterSchedule}
+          onRegisterSchedule={handleRegisterSchedule}
+          onPreviewScheduleUpdate={handlePreviewScheduleUpdate}
+          onApplyScheduleUpdate={handleApplyScheduleUpdate}
         />
       </div>
 
@@ -779,7 +1188,13 @@ function parseMarkdownWithImages(text) {
       return `![${alt}](CHART_IMG_${id}_PLACEHOLDER)`
     }
   )
-  let html = marked.parse(placeholder)
+  // marked는 GFM 취소선을 ~~두 개~~뿐 아니라 ~한 개~도 델리미터로 인정한다. 보고서 본문이
+  // "2만~6만 달러"처럼 숫자 범위에 물결표 하나를 "부터"라는 뜻으로 쓰면, 문장 뒤쪽 다른
+  // 범위 표기("3만~4만")의 물결표와 짝지어져 그 사이 전체가 취소선으로 렌더링되는 문제가
+  // 있었다. 진짜 취소선(~~쌍~~)은 그대로 두고, 홀로 쓰인 ~만 이스케이프해 취소선으로
+  // 해석되지 않게 한다.
+  const tildesEscaped = placeholder.replace(/~~|~/g, (m) => (m === '~~' ? '~~' : '\\~'))
+  let html = marked.parse(tildesEscaped)
   images.forEach(({ alt, src }, id) => {
     html = html.replace(
       `<img src="CHART_IMG_${id}_PLACEHOLDER" alt="${alt}">`,
@@ -792,37 +1207,81 @@ function parseMarkdownWithImages(text) {
 // ─────────────────────────────────────────────────────────────────
 // 우측 옵션 패널 — 보고서가 어떤 모듈/툴/파라미터로 만들어졌는지 표시(읽기 전용)
 // ─────────────────────────────────────────────────────────────────
-function ReportOptionsPanel({ appliedSteps, sessionId, userId, projectId, templateNmBase, onRegistered, message }) {
+function ReportOptionsPanel({
+  appliedSteps, reportQauid, isTemplate,
+  scheduleSettings,
+  onPreviewRegisterSchedule, onRegisterSchedule,
+  onPreviewScheduleUpdate, onApplyScheduleUpdate,
+}) {
   useLangStore((s) => s.translations)
+  const { modal } = App.useApp()
   const [showJson, setShowJson] = useState(false)
+
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [scheduleDay, setScheduleDay] = useState(1)
   const [scheduleHour, setScheduleHour] = useState(9)
   const [registering, setRegistering] = useState(false)
 
-  const handleRegisterSchedule = async () => {
-    if (!sessionId) return
+  const [showEditSchedule, setShowEditSchedule] = useState(false)
+  const [editDay, setEditDay] = useState(1)
+  const [editHour, setEditHour] = useState(9)
+  const [updating, setUpdating] = useState(false)
+
+  useEffect(() => {
+    if (scheduleSettings) {
+      setEditDay(scheduleSettings.day_of_month || 1)
+      setEditHour(scheduleSettings.hour ?? 9)
+    }
+    setShowScheduleForm(false)
+    setShowEditSchedule(false)
+  }, [scheduleSettings, reportQauid])
+
+  const handleRequestSaveSchedule = async () => {
+    if (!reportQauid) return
     setRegistering(true)
     try {
-      const now = new Date()
-      let start = new Date(now.getFullYear(), now.getMonth(), scheduleDay, scheduleHour, 0, 0)
-      if (start <= now) start = new Date(now.getFullYear(), now.getMonth() + 1, scheduleDay, scheduleHour, 0, 0)
-      await apiClient.post('/d2insight/schedule/register', {
-        session_id: sessionId,
-        user_id: userId,
-        project_id: projectId,
-        template_nm: `${templateNmBase || '보고서'} 정기 보고서`,
-        period_json: { grain: 'month', offset: -1 },
-        global_json: {},
-        schedule_cron: `0 ${scheduleHour} ${scheduleDay} * *`,
-        schedule_start_dt: start.toISOString(),
+      const settings = {
+        qauid: reportQauid,
+        day_of_month: scheduleDay,
+        hour: scheduleHour,
+        minute: 0,
+      }
+      const res = await onPreviewRegisterSchedule?.(settings)
+      if (!res) return
+      modal.confirm({
+        title: '정기 보고서 등록',
+        content: res.message,
+        okText: '등록',
+        cancelText: '취소',
+        onOk: async () => {
+          await onRegisterSchedule?.(settings)
+          setShowScheduleForm(false)
+        },
       })
-      onRegistered?.()
-      setShowScheduleForm(false)
-    } catch (e) {
-      message?.error(e.response?.data?.detail || '정기 보고서 등록에 실패했습니다.')
     } finally {
       setRegistering(false)
+    }
+  }
+
+  const handleRequestScheduleUpdate = async () => {
+    if (!scheduleSettings?.session_id) return
+    setUpdating(true)
+    try {
+      const settings = { session_id: scheduleSettings.session_id, day_of_month: editDay, hour: editHour, minute: 0 }
+      const res = await onPreviewScheduleUpdate?.(settings)
+      if (!res) return
+      modal.confirm({
+        title: '정기 보고서 일정 변경',
+        content: res.message,
+        okText: '변경',
+        cancelText: '취소',
+        onOk: async () => {
+          await onApplyScheduleUpdate?.(settings)
+          setShowEditSchedule(false)
+        },
+      })
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -833,9 +1292,79 @@ function ReportOptionsPanel({ appliedSteps, sessionId, userId, projectId, templa
       </div>
       <div className="options-panel-body">
         {!appliedSteps || appliedSteps.length === 0 ? (
-          <p className="options-panel-empty">적용된 옵션이 없습니다.</p>
+          <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
         ) : (
           <>
+            {reportQauid && !scheduleSettings && isTemplate && (
+              <div className="opt-schedule opt-schedule-done">
+                📅 이미 정기 보고서로 등록된 보고서입니다.
+              </div>
+            )}
+
+            {reportQauid && !scheduleSettings && !isTemplate && (
+              <div className="opt-schedule">
+                <button type="button" className="opt-schedule-toggle" onClick={() => setShowScheduleForm((v) => !v)}>
+                  📅 {showScheduleForm ? '정기 보고서 등록 취소' : '정기 보고서로 저장'}
+                </button>
+                {showScheduleForm && (
+                  <div className="opt-schedule-form">
+                    <span>매달</span>
+                    <select value={scheduleDay} onChange={(e) => setScheduleDay(Number(e.target.value))}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}일</option>
+                      ))}
+                    </select>
+                    <select value={scheduleHour} onChange={(e) => setScheduleHour(Number(e.target.value))}>
+                      {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                        <option key={h} value={h}>{h}시</option>
+                      ))}
+                    </select>
+                    <button type="button" className="opt-schedule-submit" onClick={handleRequestSaveSchedule} disabled={registering}>
+                      {registering ? '확인 중...' : '등록 요청'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {scheduleSettings && (
+              <div className="opt-schedule">
+                <div className="opt-schedule-current">
+                  정기 보고서 작성 일시: 매달 {scheduleSettings.day_of_month}일 {scheduleSettings.hour}시
+                </div>
+                <button type="button" className="opt-schedule-toggle" onClick={() => setShowEditSchedule((v) => !v)}>
+                  {showEditSchedule ? '수정 취소' : '수정'}
+                </button>
+                {showEditSchedule && (
+                  <div className="opt-schedule-form">
+                    <span>매달</span>
+                    <select value={editDay} onChange={(e) => setEditDay(Number(e.target.value))}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}일</option>
+                      ))}
+                    </select>
+                    <select value={editHour} onChange={(e) => setEditHour(Number(e.target.value))}>
+                      {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                        <option key={h} value={h}>{h}시</option>
+                      ))}
+                    </select>
+                    <button type="button" className="opt-schedule-submit" onClick={handleRequestScheduleUpdate} disabled={updating}>
+                      {updating ? '확인 중...' : '변경'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button type="button" className="opt-json-toggle" onClick={() => setShowJson((v) => !v)}>
+              {showJson ? 'JSON 접기' : 'JSON 원문 보기'}
+            </button>
+            {showJson && (
+              <div className="opt-json-box">
+                <textarea value={JSON.stringify(appliedSteps, null, 2)} readOnly rows={10} />
+              </div>
+            )}
+
             <div className="opt-steps">
               {appliedSteps.map((step, idx) => (
                 <div key={idx} className="opt-step">
@@ -863,41 +1392,6 @@ function ReportOptionsPanel({ appliedSteps, sessionId, userId, projectId, templa
                 </div>
               ))}
             </div>
-
-            <button type="button" className="opt-json-toggle" onClick={() => setShowJson((v) => !v)}>
-              {showJson ? 'JSON 접기' : 'JSON 원문 보기'}
-            </button>
-            {showJson && (
-              <div className="opt-json-box">
-                <textarea value={JSON.stringify(appliedSteps, null, 2)} readOnly rows={10} />
-              </div>
-            )}
-
-            {sessionId && (
-              <div className="opt-schedule">
-                <button type="button" className="opt-schedule-toggle" onClick={() => setShowScheduleForm((v) => !v)}>
-                  📅 {showScheduleForm ? '정기 보고서 등록 취소' : '정기 보고서로 저장'}
-                </button>
-                {showScheduleForm && (
-                  <div className="opt-schedule-form">
-                    <span>매달</span>
-                    <select value={scheduleDay} onChange={(e) => setScheduleDay(Number(e.target.value))}>
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>{d}일</option>
-                      ))}
-                    </select>
-                    <select value={scheduleHour} onChange={(e) => setScheduleHour(Number(e.target.value))}>
-                      {Array.from({ length: 24 }, (_, i) => i).map((h) => (
-                        <option key={h} value={h}>{h}시</option>
-                      ))}
-                    </select>
-                    <button type="button" className="opt-schedule-submit" onClick={handleRegisterSchedule} disabled={registering}>
-                      {registering ? '등록 중...' : '등록 요청'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </>
         )}
       </div>

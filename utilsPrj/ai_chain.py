@@ -56,104 +56,21 @@ def process_data_in_supabase(supabase, table_name: str, process_type: str, proce
     return data.data
 
 
-# get_llm_model(request)는 get_llm_info() + build_langchain_llm() 조합으로 대체되어 제거됨.
-# 아래는 참고용으로 남겨둔 이전 구현 원본(주석).
-# def get_llm_model(request):
-#     access_token = request.session.get("access_token")
-#     refresh_token = request.session.get("refresh_token")
-#     supabase = get_supabase_client(access_token, refresh_token)
-
-#     if hasattr(request, "projectid"):
-#         project_id = request.projectid
-#         rows = process_data_in_supabase(supabase, "projects", "select", {}, {"projectid": project_id}, "tenantid")
-#         tenant_id = rows[0]["tenantid"]
-#     else:
-#         user = request.session.get("user")
-#         if user:
-#             project_id = user.get("projectid")
-#             tenant_id = user.get("tenantid")
-#         else:
-#             rows_t = process_data_in_supabase(supabase, "tenants", "select", {}, {"issystemtenant": True}, "tenantid")
-#             tenant_id = rows_t[0]["tenantid"]
-
-#             rows_p = process_data_in_supabase(supabase, "projects", "select", {}, {"tenantid": tenant_id, "projectnm": "public"}, "projectid")
-#             project_id = rows_p[0]["projectid"]
-
-#     def fetch_llm_config(table_name, conditions):
-#         """테이블에서 LLM 설정 조회"""
-#         data = process_data_in_supabase(supabase, table_name, "select", {}, conditions, "llmmodelnm, encapikey, tenantid")
-#         return data[0]["llmmodelnm"], data[0]["encapikey"]
-    
-#     # print("jeff001 user: ", request.session.get("user"))
-#     # user_uid = process_data_in_supabase(supabase, "users", "select", {}, )
-
-#     llm_model, enc_api_key = fetch_llm_config("projects", {"projectid": project_id})
-#     if not llm_model:
-#         # llm_model, enc_api_key = fetch_llm_config("tenants", {"tenantid": tenant_id})
-#         llm_model, enc_api_key = fetch_llm_config("llmapikeys", {"tenantid": tenant_id})
-
-#         if not llm_model:
-#             llm_data = process_data_in_supabase(supabase, "llmmodels", "select", {}, {"useyn": True}, "llmmodelnm, creator")
-#             choice_model = random.choice(llm_data)
-#             llm_model = choice_model["llmmodelnm"]
-
-#             key_data = process_data_in_supabase(supabase, "llmapis", "select", {}, {"usetypecd": "R", "llmmodelnm": llm_model}, "encapikey")
-#             choice_key = random.choice(key_data)
-#             enc_api_key = choice_key["encapikey"]
-
-#     dec_api_key = decrypt_value(enc_api_key)
-
-#     llm_vendor_name = process_data_in_supabase(
-#         supabase, "llmmodels", "select", {},
-#         {'llmmodelnm': llm_model}, "llmvendornm"
-#     )[0]["llmvendornm"]
-
-#     if llm_vendor_name == "Anthropic":
-#         from anthropic import Anthropic
-#         from langchain_anthropic import ChatAnthropic
-
-#         llm = ChatAnthropic(
-#             anthropic_api_key=dec_api_key,
-#             model=llm_model,
-#             temperature=0,
-#             max_tokens=8192
-#         )
-
-#     if llm_vendor_name == "OpenAI":
-#         from langchain_openai import ChatOpenAI
-
-#         llm = ChatOpenAI(
-#             model=llm_model,
-#             api_key=dec_api_key,
-#             temperature=0,
-#             max_tokens=8192
-#         )
-    
-#     elif llm_vendor_name == "Google":
-#         from langchain_google_genai import ChatGoogleGenerativeAI
-#         llm = ChatGoogleGenerativeAI(
-#             model=llm_model,
-#             temperature=0,
-#             google_api_key=dec_api_key,
-#             max_output_tokens=8192
-#         )
-
-#     # # llm model test
-#     # from langchain_openai import ChatOpenAI
-
-#     # llm_model = "gpt-4o-mini"
-#     # dec_api_key = "sk-proj-xxx"
-#     # llm = ChatOpenAI(
-#     #     model=llm_model,
-#     #     api_key=dec_api_key,
-#     #     temperature=0,
-#     #     max_tokens=8192
-#     # )
-#     # #####
-
-#     # print("jeff llm model: ", llm)
-
-#     return llm
+def _omits_temperature(vendor_name: str, model: str) -> bool:
+    """온도(temperature) 파라미터 자체를 거부하는 추론 전용 모델인지 판정합니다.
+    추론 모델은 내부적으로 온도가 고정되어 있어 클라이언트가 값을 얼마로 주든 (0 포함)
+    API가 400(invalid_request_error)으로 거부합니다. 
+    - "낮은 값으로"가 아니라 "아예 안 보냄"으로 대응해야 합니다.
+    """
+    m = model.lower()
+    if vendor_name == "Anthropic":
+        return "opus" in m or "fable" in m
+    if vendor_name == "OpenAI":
+        # o-series (o1, o3, o3-mini, o4-mini) 
+        return m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
+    if vendor_name == "Google":
+        return "thinking" in m
+    return False
 
 
 def build_langchain_llm(vendor_name: str, api_key: str, model: str):
@@ -161,24 +78,26 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
     get_llm_model 내부의 LLM 생성 로직(Anthropic/OpenAI/Google)을 독립 함수로 추출.
     d2shared.mcp_server, d2chat.mcp_agent 등에서 임포트해 공통 사용.
     """
+
+    skip_temperature = _omits_temperature(vendor_name, model)
+
     if vendor_name == "Anthropic":
-        return ChatAnthropic(
-            anthropic_api_key=api_key,
-            model=model,
-            temperature=0,
-            max_tokens=8192,
-        )
+        kwargs = dict(anthropic_api_key=api_key, model=model, max_tokens=8192)
+        if not skip_temperature:
+            kwargs["temperature"] = 0
+        return ChatAnthropic(**kwargs)
     if vendor_name == "OpenAI":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=model, api_key=api_key, temperature=0, max_tokens=8192)
+        kwargs = dict(model=model, api_key=api_key, max_tokens=8192)
+        if not skip_temperature:
+            kwargs["temperature"] = 0
+        return ChatOpenAI(**kwargs)
     elif vendor_name == "Google":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=model,
-            temperature=0,
-            google_api_key=api_key,
-            max_output_tokens=8192,
-        )
+        kwargs = dict(model=model, google_api_key=api_key, max_output_tokens=8192)
+        if not skip_temperature:
+            kwargs["temperature"] = 0
+        return ChatGoogleGenerativeAI(**kwargs)
     raise ValueError(f"지원하지 않는 LLM 벤더: {vendor_name}")
 
 

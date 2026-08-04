@@ -72,7 +72,10 @@
   padding: 6px 0;
 }
 
-.sidebar-section { border-bottom: 1px solid #243545; }
+/* .sidebar-section 클래스명이 d2chat.css와 겹쳐(둘 다 같은 이름을 씀, 번들 시 전역 충돌)
+   d2chat.css의 border-bottom이 여기까지 새어 들어온다 — 페이지 스코프(.d2insight-sidebar)로
+   덮어써서 확실히 없앤다. */
+.d2insight-sidebar .sidebar-section { margin-bottom: 2px; border-bottom: none; }
 
 .section-toggle {
   width: 100%;
@@ -331,6 +334,23 @@
 }
 
 .opt-schedule { margin-top: 10px; }
+.opt-schedule-done {
+  background: #f0f2f4;
+  border: 1px solid #d5d9de;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #666;
+}
+.opt-schedule-current {
+  font-size: 12px;
+  color: #444;
+  background: #f4f6f8;
+  border: 1px solid #dfe4e8;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
 .opt-schedule-toggle {
   width: 100%;
   background: #fff6e5;
@@ -507,6 +527,8 @@
 
 .history-msg-wrapper { position: relative; }
 .history-msg-inner { position: relative; }
+.history-msg-wrapper.turn-clickable { cursor: pointer; border-radius: 8px; }
+.history-msg-wrapper.turn-clickable:hover { background: #f2f5f8; }
 
 .continue-btn {
   display: inline-block;

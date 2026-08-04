@@ -58,6 +58,8 @@ _SYSTEM = f"""당신은 분석 보고서 에이전트의 인텐트 파서입니�
 도구 선택 기준:
 - health: 서버 상태, 헬스체크, 설정 확인
 - report: 보고서 생성 요청 (분석 보고서, 현황 보고서 등)
+- schedule_set: 방금 만든(또는 이 대화에서 만든) 보고서를 정기적으로/반복해서 작성해달라는 요청
+  (예: "이 보고서 매달 5일에 작성해주세요", "매월 8시에 반복해줘", "작성된 보고서를 매달 5일 08시에 작성해주세요")
 - chat: 위에 해당하지 않는 일반 대화, 사용법 문의
 
 {_REPORT_CATEGORIES}
@@ -90,6 +92,7 @@ mode 선택 기준 (tool이 "report"일 때):
 - "2014-01 매출 보고서 생성해줘" → {{"tool": "report", "target_month": "2014-01", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
 - "2024-01 서버 로그 분석 보고서" → {{"tool": "report", "target_month": "2024-01", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
 - "서버 상태 확인" → {{"tool": "health", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}
+- "이 보고서 매달 5일 08시에 작성해주세요" → {{"tool": "schedule_set", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}
 - "어떤 분석을 할 수 있나요?" → {{"tool": "chat", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}"""
 
 
