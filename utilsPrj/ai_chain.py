@@ -133,10 +133,15 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
     if account_uid or user_uid:
         try:
             if not account_uid:
-                # account_uid 미전달 시 serviceusers에서 조회 (service_code로 필터)
+                # account_uid 미전달 시 serviceusers에서 조회 (service_code + tenant_id로 필터)
+                # tenant_id 없이 useruid+servicecd만으로 조회하면, 같은 유저가 여러 테넌트에
+                # servicecd='Do' 등으로 소속된 경우(system tenant 개인 계정 + 다른 기업 테넌트 소속 등)
+                # 행이 여러 개 나와 임의의(엉뚱한) accountuid가 선택될 수 있다.
                 su_cond = {"useruid": user_uid}
                 if service_code:
                     su_cond["servicecd"] = service_code
+                if tenant_id:
+                    su_cond["tenantid"] = tenant_id
                 su = process_data_in_supabase(
                     supabase, "serviceusers", "select", {}, su_cond, "accountuid"
                 )
