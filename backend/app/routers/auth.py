@@ -1138,6 +1138,19 @@ def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
                 }).execute()
 
                 now_utc = datetime.now(timezone.utc)
+
+                service.schema(SCHEMA).table("subscription_credits").insert({
+                    "subscriptionuid": subscriptionuid,
+                    "tenantid": smartdoc_tenantid,
+                    "accountuid": accountuid,
+                    "productcd": product["productcd"],
+                    "servicecd": product["servicecd"],
+                    "quantity": product.get("credit", 0),
+                    "creditchargecd": "Ba",
+                    "creditdesc": "Subscription Credit",
+                    "creator": user_id,
+                }).execute()
+
                 upsert_ba_creditbucket(
                     service.schema(SCHEMA),
                     subscriptionuid=subscriptionuid,
