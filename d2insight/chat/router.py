@@ -57,12 +57,12 @@ def _dataset_preview(key: str, df: pd.DataFrame, filename: str, metadata: dict) 
 
 def _get_llm(project_id=None, tenant_id=None, user_uid=None, account_uid=None):
     from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
-    from d2insight.config import LLM_MODELS
-    _, api_key, vendor, _, _ = get_llm_info(
+    # service_code="In"이면 models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
+    models, api_key, vendor, _, _ = get_llm_info(
         project_id=project_id, tenant_id=tenant_id,
         user_uid=user_uid, account_uid=account_uid, service_code="In",
     )
-    return build_langchain_llm(vendor, api_key, LLM_MODELS[vendor]["fast"])
+    return build_langchain_llm(vendor, api_key, models["fast"])
 
 
 # ── 요청 모델 ─────────────────────────────────────────────────────

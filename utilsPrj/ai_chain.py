@@ -101,6 +101,13 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
     raise ValueError(f"지원하지 않는 LLM 벤더: {vendor_name}")
 
 
+_GRADE_MODEL_COLUMNS = {
+    "fast": "llmmodelnm",
+    "balanced": "llmmodelnm_smart",
+    "quality": "llmmodelnm_expert",
+}
+
+
 def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, service_code=None, account_uid=None):
     """Supabase에서 LLM 설정을 조회해 (model, dec_api_key, vendor_name, is_customeraikey, account_uid) 반환.
 
@@ -113,13 +120,32 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
       - is_customeraikey=False → 서비스 제공 키: 시스템 테넌트의 llmapikeys 사용
     user_uid/account_uid 미전달 시 기본 fallback(llmmodels/llmapis) 사용.
     반환되는 is_customeraikey/account_uid는 llmdoclogs/llmchatlogs/llminsightlogs 기록에 사용된다.
+
+    service_code="In"(d2insight)일 때는 반환 튜플의 첫 값(model)이 문자열이 아니라 등급별 dict
+    {"fast": ..., "balanced": ..., "quality": ...}다 — projects/llmapikeys에 등급별 컬럼
+    (llmmodelnm/llmmodelnm_smart/llmmodelnm_expert)이 있어 한 번의 조회로 세 등급을 모두
+    가져온다(agent.py처럼 세션 하나에서 등급을 바꿔가며 여러 번 쓰는 곳이 등급마다 구독/키
+    조회를 반복하지 않도록). 반환 튜플 자리 수는 그대로 5개다 — "Do"/"Ch"/그 밖의 기존
+    호출부는 손댈 필요 없이 지금처럼 model을 문자열로 받는다.
     """
     import random as _random
 
     if supabase is None:
         supabase = get_service_client()
 
+    multi_grade = service_code == "In"
+
     def _fetch(table, conditions):
+        if multi_grade:
+            cols = ", ".join(_GRADE_MODEL_COLUMNS.values())
+            data = process_data_in_supabase(
+                supabase, table, "select", {}, conditions, f"{cols}, encapikey"
+            )
+            if data:
+                row = data[0]
+                models = {grade: row.get(col) for grade, col in _GRADE_MODEL_COLUMNS.items()}
+                return models, row["encapikey"]
+            return None, None
         data = process_data_in_supabase(
             supabase, table, "select", {}, conditions, "llmmodelnm, encapikey"
         )
@@ -170,8 +196,6 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
             llm_model, enc_api_key = _fetch("projects", {"projectid": project_id})
         if not llm_model and account_uid and service_code:
             llm_model, enc_api_key = _fetch("llmapikeys", {"accountuid": account_uid, "servicecd": service_code})
-        # if not llm_model and tenant_id:
-        #     llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id})
         if not llm_model and tenant_id:
             tenant_cond = {"tenantid": tenant_id}
             if service_code:
@@ -189,11 +213,12 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
                     supabase, "accounts", "select", {}, {"tenantid": tenant_id_supplier, "accounttype": "T"}, "accountuid"
                 )
                 account_uid_supplier = au[0]["accountuid"]
-                # llm_model, enc_api_key = _fetch("llmapikeys", {"tenantid": tenant_id_supplier, "accountuid": account_uid_supplier})
                 llmapikeys_cond = {
-                    "tenantid": tenant_id_supplier, 
-                    "accountuid": account_uid_supplier, 
-                    "servicecd": service_code}
+                    "tenantid": tenant_id_supplier,
+                    "accountuid": account_uid_supplier,
+                }
+                if service_code:
+                    llmapikeys_cond["servicecd"] = service_code
                 llm_model, enc_api_key = _fetch("llmapikeys", llmapikeys_cond)
         except Exception as _e:
             print(f"[get_llm_info] 서비스 제공 키 조회 실패: {_e}")
@@ -203,11 +228,15 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
             llm_data = process_data_in_supabase(
                 supabase, "llmmodels", "select", {}, {"useyn": True, "is_doc": True}, "llmmodelnm"
             )
-            llm_model = _random.choice(llm_data)["llmmodelnm"]
+            fallback_model = _random.choice(llm_data)["llmmodelnm"]
             key_data = process_data_in_supabase(
-                supabase, "llmapikeys", "select", {}, {"llmmodelnm": llm_model, "useyn": True}, "encapikey"
+                supabase, "llmapikeys", "select", {}, {"llmmodelnm": fallback_model, "useyn": True}, "encapikey"
             )
             enc_api_key = _random.choice(key_data)["encapikey"]
+            # multi_grade면 세 등급 모두 이 폴백 모델로 채운다 — 그래야 호출부의 models[grade]
+            # 접근이 등급과 무관하게 항상 값을 받는다(문자열로 되돌리면 "In" 호출부가
+            # 딕셔너리 접근 중 TypeError를 낸다).
+            llm_model = {grade: fallback_model for grade in _GRADE_MODEL_COLUMNS} if multi_grade else fallback_model
         except Exception:
             raise ValueError(
                 "LLM 설정을 찾을 수 없습니다. "
@@ -215,8 +244,19 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
             )
 
     dec_api_key = decrypt_value(enc_api_key)
+    # vendor 조회는 항상 모델명 문자열 하나가 필요하다 — multi_grade면 dict에서 하나 뽑아온다.
+    # 세 등급은 같은 벤더(예: 전부 Anthropic)라는 전제이므로 어느 등급 값이든 상관없다.
+    if multi_grade:
+        vendor_lookup_model = llm_model.get("fast") or next((v for v in llm_model.values() if v), None)
+        if not vendor_lookup_model:
+            raise ValueError(
+                "등급별 LLM 모델이 모두 비어 있습니다. "
+                "projects 또는 llmapikeys 테이블에 llmmodelnm/llmmodelnm_smart/llmmodelnm_expert를 설정하세요."
+            )
+    else:
+        vendor_lookup_model = llm_model
     vendor_name = process_data_in_supabase(
-        supabase, "llmmodels", "select", {}, {"llmmodelnm": llm_model}, "llmvendornm"
+        supabase, "llmmodels", "select", {}, {"llmmodelnm": vendor_lookup_model}, "llmvendornm"
     )[0]["llmvendornm"]
 
     return llm_model, dec_api_key, vendor_name, is_customeraikey, account_uid

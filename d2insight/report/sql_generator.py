@@ -12,19 +12,22 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Dict, Optional
 
-from d2insight.config import LLM_MODELS
 from d2insight.data_source.generic_sql import _build_azure_url
 from d2shared.mcp_server import MCPServer
 
 _vendor_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_vendor', default=None)
 _apikey_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_apikey', default=None)
+_models_ctx: ContextVar[dict | None] = ContextVar('d2insight_llm_models', default=None)
 _useruid_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_useruid', default=None)
 _accountuid_ctx: ContextVar[str | None] = ContextVar('d2insight_llm_accountuid', default=None)
 
 
-def set_llm_context(vendor: str, api_key: str, user_uid: str | None = None, account_uid: str | None = None) -> None:
+def set_llm_context(vendor: str, api_key: str, models: dict | None = None,
+                    user_uid: str | None = None, account_uid: str | None = None) -> None:
     _vendor_ctx.set(vendor)
     _apikey_ctx.set(api_key)
+    if models is not None:
+        _models_ctx.set(models)
     if user_uid is not None:
         _useruid_ctx.set(user_uid)
     if account_uid is not None:
@@ -50,9 +53,12 @@ class SqlGenerator:
         if _v:
             self._vendor = _v
             self._api_key = _k
+            self._models = _models_ctx.get()
         else:
             from utilsPrj.ai_chain import get_llm_info
-            _, self._api_key, self._vendor, _, _ = get_llm_info(
+            # service_code="In"이라 self._models는 문자열이 아니라
+            # {"fast":.., "balanced":.., "quality":..} dict다.
+            self._models, self._api_key, self._vendor, _, _ = get_llm_info(
                 user_uid=_useruid_ctx.get(), account_uid=_accountuid_ctx.get(), service_code="In",
             )
 
@@ -66,7 +72,7 @@ class SqlGenerator:
         raw = self._server.execute_natural_language_query(
             question=question,
             table_name=table_name,
-            model=LLM_MODELS[self._vendor]["fast"],
+            model=self._models["fast"],
             table_metadata=table_metadata,
             extra_rules=_AGG_RULES,
             api_key=self._api_key,

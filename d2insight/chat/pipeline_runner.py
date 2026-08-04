@@ -6,7 +6,6 @@ import traceback
 
 from backend.app.config import settings
 from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
-from d2insight.config import LLM_MODELS
 from d2insight import token_tracker
 
 _llm_cache: dict = {}
@@ -15,11 +14,12 @@ _llm_cache: dict = {}
 def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
     key = (grade, project_id, tenant_id, user_uid, account_uid)
     if key not in _llm_cache:
-        _, _api_key, _vendor, _, _ = get_llm_info(
+        # service_code="In"이면 _models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
+        _models, _api_key, _vendor, _, _ = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
-        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, LLM_MODELS[_vendor][grade])
+        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, _models[grade])
     return _llm_cache[key]
 
 

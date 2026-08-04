@@ -19,7 +19,7 @@ from langgraph.prebuilt import ToolNode
 
 from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
 from d2insight import token_tracker
-from d2insight.config import LLM_MODELS, REPORT_MAX_WORKERS
+from d2insight.config import REPORT_MAX_WORKERS
 from d2insight.data_source.generic_sql import GenericSqlSource
 from d2insight.data_source import meta_loader
 from d2insight.report.registry import get_config
@@ -451,7 +451,10 @@ class ReportAgent:
         from d2insight.report.excel_registry import get_excel_server
         self._excel_server = get_excel_server()
         self.has_upload = bool(session_id and self._excel_server.has_datasets(session_id))
-        _, self._api_key, self._vendor, _is_customeraikey, _account_uid = get_llm_info(
+        # service_code="In"이라 self._models는 문자열이 아니라
+        # {"fast":.., "balanced":.., "quality":..} dict다 — 세션 안에서 등급을 바꿔가며
+        # 쓸 때마다(_quick_chat) 구독/키 조회를 반복하지 않도록 한 번에 다 받아둔다.
+        self._models, self._api_key, self._vendor, _is_customeraikey, _account_uid = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
@@ -461,7 +464,7 @@ class ReportAgent:
             _ctx["is_customeraikey"] = _is_customeraikey
             if not _ctx.get("account_uid"):
                 _ctx["account_uid"] = _account_uid
-        self._model_id = LLM_MODELS[self._vendor]["balanced"]
+        self._model_id = self._models["balanced"]
         self._llm = build_langchain_llm(self._vendor, self._api_key, self._model_id)
 
         self._tools = list(ALL_TOOLS)
@@ -485,7 +488,7 @@ class ReportAgent:
         call_type: str = "",
     ) -> str:
         """단발성 LLM 호출 — bind_tools 없는 일반 텍스트 응답."""
-        model_id = LLM_MODELS[self._vendor][grade]
+        model_id = self._models[grade]
         llm = build_langchain_llm(self._vendor, self._api_key, model_id)
         messages = []
         if system:
@@ -673,7 +676,8 @@ class ReportAgent:
         token_tracker.reset()
         token_tracker.set_current_section(section_name)
         from d2insight.report.sql_generator import set_llm_context
-        set_llm_context(self._vendor, self._api_key, user_uid=self._user_uid, account_uid=self._account_uid)
+        set_llm_context(self._vendor, self._api_key, models=self._models,
+                        user_uid=self._user_uid, account_uid=self._account_uid)
 
         start, end = date_range
         section_msg = (

@@ -305,16 +305,16 @@ def create_set_spec(qauid: str, origin_period: str | None = None) -> dict:
 
 def _extract(message: str, project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> dict:
     from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
-    from d2insight.config import LLM_MODELS
     from langchain_core.messages import SystemMessage, HumanMessage
 
     defaults = {"day_of_month": None, "hour": None, "minute": None, "confirmed": False, "cancel": False}
     try:
-        _, api_key, vendor, _, _ = get_llm_info(
+        # service_code="In"이면 models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
+        models, api_key, vendor, _, _ = get_llm_info(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
-        llm = build_langchain_llm(vendor, api_key, LLM_MODELS[vendor]["fast"])
+        llm = build_langchain_llm(vendor, api_key, models["fast"])
         resp = llm.invoke([SystemMessage(content=_EXTRACT_SYSTEM), HumanMessage(content=message)])
         raw = resp.content if isinstance(resp.content, str) else resp.content[0].text
         m = re.search(r"\{.*?\}", raw, re.DOTALL)
