@@ -8,7 +8,9 @@ export function useGendocs(startDate, endDate, docid, searchBy, docgroupid) {
     queryKey: ['gendocs', startDate, endDate, docid, searchBy, docgroupid],
     queryFn: () =>
       apiClient.get('/gendocs', { params: { start_date: startDate, end_date: endDate, docid, search_by: searchBy, docgroupid: docgroupid || undefined } }).then((r) => r.data),
-    enabled: !!docid,
+    // DocGroup 검색 모드인데 아직 그룹을 선택하지 않았으면(docgroupid 없음) 조회하지 않는다 —
+    // docgroupid 없이 search_by=DocGroup으로 조회하면 백엔드가 응답을 못 주고 스피너가 멈추지 않는 문제가 있었음.
+    enabled: !!docid && (searchBy !== 'DocGroup' || !!docgroupid),
   })
 }
 

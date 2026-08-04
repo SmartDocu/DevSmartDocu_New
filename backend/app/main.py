@@ -87,11 +87,14 @@ if _DIST.exists():
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
-    @app.get("/favicon.svg", include_in_schema=False)
-    async def favicon():
-        return FileResponse(_DIST / "favicon.svg")
+    _DIST_RESOLVED = _DIST.resolve()
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
-        index = _DIST / "index.html"
-        return FileResponse(index)
+        # index.html 안 <img src="/doc-select.svg"> 등 frontend/public/ 루트 정적 파일들
+        # (Vite가 dist/ 루트로 그대로 복사) — 실제로 dist/ 안에 존재하는 파일이면 그 파일을
+        # 그대로 반환하고, 그 외(React Router 클라이언트 라우트 등)에만 index.html로 폴백한다.
+        candidate = (_DIST / full_path).resolve()
+        if full_path and candidate.is_file() and candidate.is_relative_to(_DIST_RESOLVED):
+            return FileResponse(candidate)
+        return FileResponse(_DIST / "index.html")

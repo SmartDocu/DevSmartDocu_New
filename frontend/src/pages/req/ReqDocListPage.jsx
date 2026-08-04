@@ -439,7 +439,7 @@ export default function ReqDocListPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('lbl.doc')} - {docnm_base}</div>
+          <div>{t('lbl.doc')} - {docnm_base || t('msg.doc.not_selected')}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
         </div>
@@ -482,7 +482,15 @@ export default function ReqDocListPage() {
               ))}
             </select>
           )}
-          <button type="button" className="icon-btn" onClick={() => { setAppliedDates(dates); setTimeout(refetch, 0) }} title={t('btn.lookup')}>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => {
+              if (searchBy === 'DocGroup' && !docgroupid) { message.warning(t('msg.select')); return }
+              setAppliedDates(dates)
+            }}
+            title={t('btn.lookup')}
+          >
             <img src="/icons/search.svg" className="icon-img config-icon" alt={t('btn.lookup')} />
           </button>
         </div>
