@@ -87,7 +87,7 @@ export default function RegisterInvitePage() {
         maxHeight: '90vh', overflowY: 'auto',
       }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontWeight: 'bold', fontSize: 22 }}>Smart Document</h2>
+          <h2 style={{ margin: 0, fontWeight: 'bold', fontSize: 22 }}>D2Doc</h2>
           <p style={{ color: '#888', marginTop: 6, marginBottom: 0 }}>{t('ttl.register.invite')}</p>
         </div>
 

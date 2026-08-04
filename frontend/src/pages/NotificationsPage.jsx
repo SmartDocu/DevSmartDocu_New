@@ -103,7 +103,7 @@ export default function NotificationsPage() {
             placeholder={t('msg.ph.search')}
             allowClear
             onSearch={(v) => { setSearch(v); setPage(1) }}
-            style={{ width: 220 }}
+            style={{ width: 360 }}
           />
         </div>
         <button className="btn btn-primary" type="button" onClick={handleMarkAllRead}>

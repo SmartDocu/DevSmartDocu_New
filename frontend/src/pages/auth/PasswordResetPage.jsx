@@ -70,7 +70,7 @@ export default function PasswordResetPage() {
     >
       <Card style={{ width: 400, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={3} style={{ margin: 0 }}>Smart Document</Title>
+          <Title level={3} style={{ margin: 0 }}>D2Doc</Title>
           <Text type="secondary">{t('ttl.password.reset')}</Text>
         </div>
 

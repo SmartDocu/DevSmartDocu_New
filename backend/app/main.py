@@ -10,7 +10,7 @@ from backend.app.config import settings
 from backend.app.routers import router
 
 app = FastAPI(
-    title="Smart Document API",
+    title="D2Doc API",
     version="1.0.0",
     docs_url="/api/swagger",
     redoc_url="/api/redoc",
