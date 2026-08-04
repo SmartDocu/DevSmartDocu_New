@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/Layout/AppLayout'
 import RequireAuth from '@/components/Auth/RequireAuth'
@@ -9,71 +10,73 @@ import AppIndex from '@/pages/AppIndex'
 import { useAuthStore } from '@/stores/authStore'
 import PasswordResetPage from '@/pages/auth/PasswordResetPage'
 import RegisterInvitePage from '@/pages/auth/RegisterInvitePage'
-import TermsPage from '@/pages/public/TermsPage'
-import FaqPage from '@/pages/public/FaqPage'
-import QnaPage from '@/pages/public/QnaPage'
-import FollowPage from '@/pages/public/FollowPage'
-import ContactPage from '@/pages/public/ContactPage'
-import MasterDocsPage from '@/pages/master/MasterDocsPage'
-import MasterChaptersPage from '@/pages/master/MasterChaptersPage'
-import MasterObjectPage from '@/pages/master/MasterObjectPage'
-import MasterDatasDbPage from '@/pages/master/MasterDatasDbPage'
-import MasterDatasExPage from '@/pages/master/MasterDatasExPage'
-import MasterDatasAiPage from '@/pages/master/MasterDatasAiPage'
-import MasterDatasApiPage from '@/pages/master/MasterDatasApiPage'
-import MasterTablesPage from '@/pages/master/MasterTablesPage'
-import MasterChartsPage from '@/pages/master/MasterChartsPage'
-import MasterSentencesPage from '@/pages/master/MasterSentencesPage'
-import ReqDocListPage from '@/pages/req/ReqDocListPage'
-import ReqDocStatusPage from '@/pages/req/ReqDocStatusPage'
-import ReqChaptersReadPage from '@/pages/req/ReqChaptersReadPage'
-import ReqChapterObjectsPage from '@/pages/req/ReqChapterObjectsPage'
-import ReqDocWritePage from '@/pages/req/ReqDocWritePage'
-import ReqDocReadPage from '@/pages/req/ReqDocReadPage'
-import SettingsServersPage from '@/pages/settings/SettingsServersPage'
-import SettingsTenantsPage from '@/pages/settings/SettingsTenantsPage'
-import SettingsConnectorsPage from '@/pages/settings/SettingsConnectorsPage'
-import SettingsDatasetsPage from '@/pages/settings/SettingsDatasetsPage'
-import SettingsLlmKeysPage from '@/pages/settings/SettingsLlmKeysPage'
-import UpgradePlanPage from '@/pages/upgrade/UpgradePlanPage'
-import CreditPurchasePage from '@/pages/upgrade/CreditPurchasePage'
-import TenantSubscriptionPage from '@/pages/tenant/TenantSubscriptionPage'
-import MyInfoPage from '@/pages/MyInfoPage'
-import MyUsagePage from '@/pages/MyUsagePage'
-import NotificationsPage from '@/pages/NotificationsPage'
-import MfaSetupPage from '@/pages/settings/MfaSetupPage'
-import OrgTenantUsersPage from '@/pages/org/OrgTenantUsersPage'
-import OrgTenantLlmsPage from '@/pages/org/OrgTenantLlmsPage'
-import OrgProjectsPage from '@/pages/org/OrgProjectsPage'
-import OrgProjectUsersPage from '@/pages/org/OrgProjectUsersPage'
-import OrgInviteMembersPage from '@/pages/org/OrgInviteMembersPage'
-import OrgTenantManagePage from '@/pages/org/OrgTenantManagePage'
-import OrgTenantBasicInfoPage from '@/pages/org/OrgTenantBasicInfoPage'
-import OrgSubscriptionManagePage from '@/pages/org/OrgSubscriptionManagePage'
-import OrgOtherSubscriptionManagePage from '@/pages/org/OrgOtherSubscriptionManagePage'
-import OrgCreditManagePage from '@/pages/org/OrgCreditManagePage'
-import OrgWhitelistManagePage from '@/pages/org/OrgWhitelistManagePage'
-import AdminUserRolePage from '@/pages/admin/AdminUserRolePage'
-import AdminSamplePromptPage from '@/pages/admin/AdminSamplePromptPage'
-import AdminHelpsPage from '@/pages/admin/AdminHelpsPage'
-import AdminMenusPage from '@/pages/admin/AdminMenusPage'
-import AdminMessagesPage from '@/pages/admin/AdminMessagesPage'
-import AdminTermsPage from '@/pages/admin/AdminTermsPage'
-import AdminUiTermsPage from '@/pages/admin/AdminUiTermsPage'
-import AdminDatasetsPage from '@/pages/admin/AdminDatasetsPage'
-import AdminCodesPage from '@/pages/admin/AdminCodesPage'
-import MasterAiChartsPage from '@/pages/master/MasterAiChartsPage'
-import MasterAiSentencesPage from '@/pages/master/MasterAiSentencesPage'
-import MasterAiTablesPage from '@/pages/master/MasterAiTablesPage'
-import MasterChapterTemplatePage from '@/pages/master/MasterChapterTemplatePage'
-import MasterConditionsPage from '@/pages/master/MasterConditionsPage'
-import MasterDatasetPage from '@/pages/master/MasterDatasetPage'
-import MasterChatTablesPage from '@/pages/master/MasterChatTablesPage'
-import MasterChatColumnsPage from '@/pages/master/MasterChatColumnsPage'
-import ExperiencePage from '@/pages/public/ExperiencePage'
-import SampleEventPopup from '@/pages/popup/SampleEventPopup'
-import D2ChatPage from '@/pages/d2chat/D2ChatPage'
-import D2InsightPage from '@/pages/d2insight/D2InsightPage'
+
+// ── 코드 스플리팅: 로그인 직후 곧바로 필요한 소수(위)만 정적 import, 나머지 페이지는 lazy ──
+const TermsPage = lazy(() => import('@/pages/public/TermsPage'))
+const FaqPage = lazy(() => import('@/pages/public/FaqPage'))
+const QnaPage = lazy(() => import('@/pages/public/QnaPage'))
+const FollowPage = lazy(() => import('@/pages/public/FollowPage'))
+const ContactPage = lazy(() => import('@/pages/public/ContactPage'))
+const MasterDocsPage = lazy(() => import('@/pages/master/MasterDocsPage'))
+const MasterChaptersPage = lazy(() => import('@/pages/master/MasterChaptersPage'))
+const MasterObjectPage = lazy(() => import('@/pages/master/MasterObjectPage'))
+const MasterDatasDbPage = lazy(() => import('@/pages/master/MasterDatasDbPage'))
+const MasterDatasExPage = lazy(() => import('@/pages/master/MasterDatasExPage'))
+const MasterDatasAiPage = lazy(() => import('@/pages/master/MasterDatasAiPage'))
+const MasterDatasApiPage = lazy(() => import('@/pages/master/MasterDatasApiPage'))
+const MasterTablesPage = lazy(() => import('@/pages/master/MasterTablesPage'))
+const MasterChartsPage = lazy(() => import('@/pages/master/MasterChartsPage'))
+const MasterSentencesPage = lazy(() => import('@/pages/master/MasterSentencesPage'))
+const ReqDocListPage = lazy(() => import('@/pages/req/ReqDocListPage'))
+const ReqDocStatusPage = lazy(() => import('@/pages/req/ReqDocStatusPage'))
+const ReqChaptersReadPage = lazy(() => import('@/pages/req/ReqChaptersReadPage'))
+const ReqChapterObjectsPage = lazy(() => import('@/pages/req/ReqChapterObjectsPage'))
+const ReqDocWritePage = lazy(() => import('@/pages/req/ReqDocWritePage'))
+const ReqDocReadPage = lazy(() => import('@/pages/req/ReqDocReadPage'))
+const SettingsServersPage = lazy(() => import('@/pages/settings/SettingsServersPage'))
+const SettingsTenantsPage = lazy(() => import('@/pages/settings/SettingsTenantsPage'))
+const SettingsConnectorsPage = lazy(() => import('@/pages/settings/SettingsConnectorsPage'))
+const SettingsDatasetsPage = lazy(() => import('@/pages/settings/SettingsDatasetsPage'))
+const SettingsLlmKeysPage = lazy(() => import('@/pages/settings/SettingsLlmKeysPage'))
+const UpgradePlanPage = lazy(() => import('@/pages/upgrade/UpgradePlanPage'))
+const CreditPurchasePage = lazy(() => import('@/pages/upgrade/CreditPurchasePage'))
+const TenantSubscriptionPage = lazy(() => import('@/pages/tenant/TenantSubscriptionPage'))
+const MyInfoPage = lazy(() => import('@/pages/MyInfoPage'))
+const MyUsagePage = lazy(() => import('@/pages/MyUsagePage'))
+const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'))
+const MfaSetupPage = lazy(() => import('@/pages/settings/MfaSetupPage'))
+const OrgTenantUsersPage = lazy(() => import('@/pages/org/OrgTenantUsersPage'))
+const OrgTenantLlmsPage = lazy(() => import('@/pages/org/OrgTenantLlmsPage'))
+const OrgProjectsPage = lazy(() => import('@/pages/org/OrgProjectsPage'))
+const OrgProjectUsersPage = lazy(() => import('@/pages/org/OrgProjectUsersPage'))
+const OrgInviteMembersPage = lazy(() => import('@/pages/org/OrgInviteMembersPage'))
+const OrgTenantManagePage = lazy(() => import('@/pages/org/OrgTenantManagePage'))
+const OrgTenantBasicInfoPage = lazy(() => import('@/pages/org/OrgTenantBasicInfoPage'))
+const OrgSubscriptionManagePage = lazy(() => import('@/pages/org/OrgSubscriptionManagePage'))
+const OrgOtherSubscriptionManagePage = lazy(() => import('@/pages/org/OrgOtherSubscriptionManagePage'))
+const OrgCreditManagePage = lazy(() => import('@/pages/org/OrgCreditManagePage'))
+const OrgWhitelistManagePage = lazy(() => import('@/pages/org/OrgWhitelistManagePage'))
+const AdminUserRolePage = lazy(() => import('@/pages/admin/AdminUserRolePage'))
+const AdminSamplePromptPage = lazy(() => import('@/pages/admin/AdminSamplePromptPage'))
+const AdminHelpsPage = lazy(() => import('@/pages/admin/AdminHelpsPage'))
+const AdminMenusPage = lazy(() => import('@/pages/admin/AdminMenusPage'))
+const AdminMessagesPage = lazy(() => import('@/pages/admin/AdminMessagesPage'))
+const AdminTermsPage = lazy(() => import('@/pages/admin/AdminTermsPage'))
+const AdminUiTermsPage = lazy(() => import('@/pages/admin/AdminUiTermsPage'))
+const AdminDatasetsPage = lazy(() => import('@/pages/admin/AdminDatasetsPage'))
+const AdminCodesPage = lazy(() => import('@/pages/admin/AdminCodesPage'))
+const MasterAiChartsPage = lazy(() => import('@/pages/master/MasterAiChartsPage'))
+const MasterAiSentencesPage = lazy(() => import('@/pages/master/MasterAiSentencesPage'))
+const MasterAiTablesPage = lazy(() => import('@/pages/master/MasterAiTablesPage'))
+const MasterChapterTemplatePage = lazy(() => import('@/pages/master/MasterChapterTemplatePage'))
+const MasterConditionsPage = lazy(() => import('@/pages/master/MasterConditionsPage'))
+const MasterDatasetPage = lazy(() => import('@/pages/master/MasterDatasetPage'))
+const MasterChatTablesPage = lazy(() => import('@/pages/master/MasterChatTablesPage'))
+const MasterChatColumnsPage = lazy(() => import('@/pages/master/MasterChatColumnsPage'))
+const ExperiencePage = lazy(() => import('@/pages/public/ExperiencePage'))
+const SampleEventPopup = lazy(() => import('@/pages/popup/SampleEventPopup'))
+const D2ChatPage = lazy(() => import('@/pages/d2chat/D2ChatPage'))
+const D2InsightPage = lazy(() => import('@/pages/d2insight/D2InsightPage'))
 
 function HomeOrLauncher() {
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -83,7 +86,7 @@ function HomeOrLauncher() {
 
 export const router = createBrowserRouter([
   // ── 팝업 콘텐츠 페이지 (iframe 로드용, 레이아웃 없음) ───────────────────
-  { path: '/popup/sample-event', element: <SampleEventPopup /> },
+  { path: '/popup/sample-event', element: <Suspense fallback={null}><SampleEventPopup /></Suspense> },
 
   // ── 인증 불필요 ───────────────────────────────────────────────────────────
   { path: '/password-reset', element: <PasswordResetPage /> },

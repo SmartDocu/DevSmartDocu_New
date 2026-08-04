@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from postgrest.exceptions import APIError
@@ -24,6 +25,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(router, prefix="/api")
 
@@ -75,6 +77,15 @@ _DIST = Path("frontend/dist")
 
 if _DIST.exists():
     app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    # Vite 빌드 산출물은 파일명에 콘텐츠 해시가 붙어 내용이 바뀌면 파일명도 바뀐다
+    # → 브라우저가 매 요청마다 재검증(304)할 필요 없이 영구 캐시해도 안전하다.
+    @app.middleware("http")
+    async def _cache_hashed_assets(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
     @app.get("/favicon.svg", include_in_schema=False)
     async def favicon():

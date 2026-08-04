@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Outlet, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover, Input, Spin } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
@@ -814,7 +815,13 @@ export default function AppLayout() {
                 />
               </div>
             )}
-            <Outlet />
+            <Suspense fallback={
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+                <Spin size="large" />
+              </div>
+            }>
+              <Outlet />
+            </Suspense>
           </div>
         </Content>
       </Layout>

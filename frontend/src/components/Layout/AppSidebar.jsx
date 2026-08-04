@@ -1,8 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Input, Menu, Spin, Divider, Typography, App } from 'antd'
 import { StarOutlined, StarFilled, SearchOutlined } from '@ant-design/icons'
-import * as Icons from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useFavorites, useToggleFavorite } from '@/hooks/useMenus'
@@ -42,9 +41,30 @@ function hiddenOnSystemTenant(menucd, isSystemTenant) {
   return isSystemTenant && SYSTEM_TENANT_HIDDEN_MENUS.has(menucd)
 }
 
-/* ── Ant Design 아이콘 동적 렌더링 ── */
+/* ── Ant Design 아이콘 동적 렌더링 ──
+   menus.iconnm은 자유 텍스트(DB 저장값)라 어떤 아이콘 이름이 올지 미리 알 수 없다.
+   전체 아이콘(800개+)을 정적으로 import(* as Icons)하면 메인 번들에 다 실리므로,
+   패키지 전체를 하나의 지연 청크로 동적 import해서 메인 번들에서만 빼고 이름으로 골라 쓴다.
+   (node_modules 경로에 대한 아이콘별 변수 동적 import는 Vite가 프로덕션 빌드에서
+   청크로 쪼개주지 않아 런타임에 깨지므로 사용하지 않는다.) */
+let _iconsPromise = null
+function loadIconLibrary() {
+  if (!_iconsPromise) _iconsPromise = import('@ant-design/icons')
+  return _iconsPromise
+}
+
 function DynIcon({ name }) {
-  const Icon = name && Icons[name]
+  const [Icon, setIcon] = useState(null)
+
+  useEffect(() => {
+    if (!name) { setIcon(null); return }
+    let cancelled = false
+    loadIconLibrary().then((mod) => {
+      if (!cancelled) setIcon(() => mod[name] || null)
+    })
+    return () => { cancelled = true }
+  }, [name])
+
   if (!Icon) return null
   return <Icon />
 }
