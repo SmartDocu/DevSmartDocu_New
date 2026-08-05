@@ -5,14 +5,17 @@ import hashlib
 import base64
 import requests
 import json
-from django.conf import settings
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class NaverSMSSender:
     def __init__(self):
-        self.access_key = settings.NAVER_CLOUD_SMS['ACCESS_KEY_ID']
-        self.secret_key = settings.NAVER_CLOUD_SMS['SECRET_KEY']
-        self.service_id = settings.NAVER_CLOUD_SMS['SERVICE_ID']
-        self.from_number = settings.NAVER_CLOUD_SMS['FROM_NUMBER']
+        self.access_key = os.environ.get('NAVER_ACCESS_KEY_ID')
+        self.secret_key = os.environ.get('NAVER_SECRET_KEY')
+        self.service_id = os.environ.get('NAVER_SMS_SERVICE_ID')
+        self.from_number = os.environ.get('NAVER_SMS_FROM_NUMBER')
         self.base_url = f"https://sens.apigw.ntruss.com/sms/v2/services/{self.service_id}"
         
         # 디버깅: 설정값 확인

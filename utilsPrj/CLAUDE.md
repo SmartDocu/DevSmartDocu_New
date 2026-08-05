@@ -13,7 +13,6 @@
 | 파일 | 역할 |
 |------|------|
 | `supabase_client.py` | Supabase 클라이언트 생성/관리 (핵심) |
-| `supabase_session_refresh.py` | Django 미들웨어 — Supabase 토큰 자동 갱신 |
 
 ### 데이터 처리
 
@@ -103,17 +102,6 @@ supabase.table('docs').update({'name': '...'}).eq('id', doc_id).execute()
 # 삭제
 supabase.table('docs').delete().eq('id', doc_id).execute()
 ```
-
----
-
-## supabase_session_refresh.py — 상세
-
-Django 미들웨어로 `config/settings.py`의 `MIDDLEWARE`에 등록되어 있다.
-
-동작:
-1. 모든 요청에서 세션의 `access_token` 유효성 확인
-2. 401 응답 감지 시 `refresh_token`으로 새 토큰 발급
-3. 세션에 갱신된 토큰 저장
 
 ---
 

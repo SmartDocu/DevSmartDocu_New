@@ -1355,7 +1355,7 @@ def send_sms(body: SendSmsRequest):
         from utilsPrj.sms_sender import NaverSMSSender
         sender = NaverSMSSender()
         sender.send_sms(
-            to=phone,
+            to_number=phone,
             content=f"[D2Doc] 인증번호: {code} (5분 이내 입력)",
         )
     except Exception as e:

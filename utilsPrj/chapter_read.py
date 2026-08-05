@@ -1,6 +1,3 @@
-from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
-
 # 워드 만들기
 from utilsPrj.html_to_docx import html_to_docx
 from docx import Document
