@@ -8,12 +8,7 @@ load_dotenv()
 
 
 def _get_fernet() -> Fernet:
-    """Django 컨텍스트에서는 settings.FERNET, FastAPI 컨텍스트에서는 env var 직접 사용."""
-    try:
-        from django.conf import settings
-        return settings.FERNET
-    except Exception:
-        pass
+    """FastAPI 컨텍스트에서는 env var 직접 사용."""
     key = os.environ.get('ENCRYPTION_KEY') or os.getenv('ENCRYPTION_KEY')
     if not key:
         raise ValueError("ENCRYPTION_KEY 환경변수가 설정되지 않았습니다.")
