@@ -759,6 +759,29 @@ def run_scheduled(body: ScheduledRunRequest):
     return run_scheduled_template(body.template_uid, run_date)
 
 
+# ── 초기 로딩 통합 (bootstrap) ────────────────────────────────────
+
+@router.get("/bootstrap/{user_id}")
+def get_bootstrap(user_id: str, token: str = Depends(get_token)):
+    """사이드바 초기 로딩에 필요한 데이터를 한 번에 반환.
+
+    _check_owner·offsetminutes를 1회만 수행해 즐겨찾기/히스토리/공유(2)/정기보고서
+    공유(2) 총 6개를 개별 호출할 때 생기는 중복 조회를 없앤다. 개별 액션 후 부분
+    갱신에는 기존 엔드포인트를 그대로 사용한다.
+    """
+    _check_owner(token, user_id)
+    _, project_id = storage.get_project_info(user_id)
+    offsetminutes = storage.get_offsetminutes(user_id)
+    return {
+        "favorites": storage.get_favorites(user_id, offsetminutes),
+        "history": storage.get_history_by_date(user_id, offsetminutes),
+        "shares_sent": storage.get_shares_sent(user_id, offsetminutes),
+        "shares_received": storage.get_shares_received(project_id, user_id, offsetminutes),
+        "schedule_shares_sent": storage.get_schedule_shares_sent(user_id, offsetminutes),
+        "schedule_shares_received": storage.get_schedule_shares_received(project_id, user_id, offsetminutes),
+    }
+
+
 # ── 히스토리 ─────────────────────────────────────────────────────
 
 @router.get("/history/{user_id}")

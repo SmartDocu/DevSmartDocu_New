@@ -151,7 +151,8 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
         message={t('msg.d2insight.dataset_scope_warning')}
         style={{ marginBottom: 16 }}
       />
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
+      {/* API 연결 탭은 UI에서만 제거 — 코드는 추후 재사용을 위해 그대로 둔다 */}
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={items.filter((i) => i.key !== 'api')} />
     </Modal>
   )
 }

@@ -147,8 +147,24 @@ export default function D2InsightPage() {
     }
   }, [])
 
-  useEffect(() => { fetchFavorites() }, [fetchFavorites])
-  useEffect(() => { fetchHistory(); fetchShares(); fetchScheduleShares() }, [sessionId, fetchHistory, fetchShares, fetchScheduleShares])
+  // 최초 진입/세션 전환 시 사이드바 데이터를 한 번에 불러온다 (offsetminutes 6회 조회 → 1회).
+  // 개별 액션 후 부분 갱신은 위 fetchFavorites/fetchHistory/fetchShares/fetchScheduleShares를 그대로 사용한다.
+  const fetchBootstrap = useCallback(async () => {
+    if (!userId) return
+    try {
+      const { data } = await apiClient.get(`/d2insight/bootstrap/${userId}`)
+      setFavorites(data?.favorites || [])
+      setHistory(data?.history || {})
+      setSharesSent(data?.shares_sent || [])
+      setSharesReceived(data?.shares_received || [])
+      setSharesSentSchedule(data?.schedule_shares_sent || [])
+      setSharesReceivedSchedule(data?.schedule_shares_received || [])
+    } catch {
+      // ignore
+    }
+  }, [userId])
+
+  useEffect(() => { fetchBootstrap() }, [sessionId, fetchBootstrap])
   useEffect(() => {
     if (viewMode === 'chat') loadScheduleSettings(sessionId)
   }, [sessionId, viewMode, loadScheduleSettings])

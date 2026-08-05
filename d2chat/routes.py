@@ -358,6 +358,27 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     return res
 
 
+# ── 초기 로딩 통합 (bootstrap) ────────────────────────────────────
+
+@router.get("/bootstrap")
+def get_bootstrap(token: str = Depends(get_token)):
+    """사이드바 초기 로딩에 필요한 데이터를 한 번에 반환.
+
+    offsetminutes를 1회만 조회해 /favorites, /history, /shares/sent,
+    /shares/received 4개를 개별 호출할 때 생기는 중복 조회를 없앤다.
+    개별 액션 후 부분 갱신에는 기존 4개 엔드포인트를 그대로 사용한다.
+    """
+    user = _get_user(token)
+    sb = _sb(token)
+    offsetminutes = storage.get_offsetminutes(sb, str(user.id))
+    return {
+        "favorites": storage.get_favorites(sb, str(user.id), offsetminutes),
+        "history": storage.get_history_by_date(sb, str(user.id), offsetminutes),
+        "shares_sent": storage.get_shares_sent(sb, str(user.id), offsetminutes),
+        "shares_received": storage.get_shares_received(sb, str(user.id), offsetminutes),
+    }
+
+
 # ── 히스토리 ─────────────────────────────────────────────────────
 
 @router.get("/history")

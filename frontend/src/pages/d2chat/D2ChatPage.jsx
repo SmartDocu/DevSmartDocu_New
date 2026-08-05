@@ -107,8 +107,23 @@ export default function D2ChatPage() {
     }
   }, [])
 
-  useEffect(() => { fetchFavorites() }, [fetchFavorites])
-  useEffect(() => { fetchHistory(); fetchShares() }, [sessionId, fetchHistory, fetchShares])
+  // 최초 진입/세션 전환 시 사이드바 데이터를 한 번에 불러온다 (offsetminutes 4회 조회 → 1회).
+  // 개별 액션 후 부분 갱신은 위 fetchFavorites/fetchHistory/fetchShares를 그대로 사용한다.
+  const fetchBootstrap = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/d2chat/bootstrap')
+      setFavorites(data?.favorites || [])
+      setHistory(data?.history || {})
+      const today = new Date().toISOString().slice(0, 10)
+      if (data?.history?.[today]) setOpenDates((prev) => ({ ...prev, [today]: true }))
+      setSharesSent(data?.shares_sent || [])
+      setSharesReceived(data?.shares_received || [])
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => { fetchBootstrap() }, [sessionId, fetchBootstrap])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
