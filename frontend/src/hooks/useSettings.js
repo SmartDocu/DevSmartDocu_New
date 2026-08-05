@@ -98,7 +98,7 @@ export function useDeleteTenant() {
 export function useMyInfo() {
   return useQuery({
     queryKey: ['myinfo'],
-    queryFn: () => apiClient.get('/settings/myinfo').then((r) => r.data),
+    queryFn: () => apiClient.get('/settings/myinfo-v2').then((r) => r.data),
   })
 }
 
@@ -149,7 +149,7 @@ export function useMySubscriptions() {
 export function useMyUsage(startDate, endDate, servicecd = 'Do') {
   return useQuery({
     queryKey: ['myinfo-usage', startDate, endDate, servicecd],
-    queryFn: () => apiClient.get('/settings/myinfo/usage', {
+    queryFn: () => apiClient.get('/settings/myinfo/usage-v2', {
       params: { start_date: startDate, end_date: endDate, servicecd },
     }).then((r) => r.data),
   })

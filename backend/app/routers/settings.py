@@ -7,6 +7,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from postgrest.utils import sanitize_param
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
@@ -518,7 +519,19 @@ def get_myinfo(token: str = Depends(get_token), tenantid: Optional[str] = Depend
     effective_timezone = tenantuser.get("timezone") or tenant.get("timezone") or None
 
     # tenant.createdts timezone 적용 포맷
-    offsetminutes = _get_offsetminutes(sb, str(user_id), tenantid)
+    # offsetminutes는 _get_offsetminutes()를 다시 부르지 않고 위에서 이미 구한
+    # effective_timezone으로 timezones 테이블만 1회 조회해서 구한다 — _get_offsetminutes가
+    # 내부적으로 tenantusers/tenants를 처음부터 다시 조회하는 중복을 없앤 것.
+    # (아주 드문 edge case: 현재 선택된 tenantid의 tenantuser 행이 useyn=False면
+    # _get_offsetminutes는 그 행도 찾아 timezone을 썼지만, 여기 재사용하는
+    # effective_timezone은 useyn=True인 tu_rows 기준이라 그 행을 건너뛴다 —
+    # 비활성 소속 테넌트를 현재 테넌트로 선택할 수 없는 정상 흐름에서는 발생하지 않음.)
+    offsetminutes = None
+    if effective_timezone:
+        tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes") \
+            .eq("timezone", effective_timezone).maybe_single().execute()
+        offsetminutes = tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
+
     if tenant.get("createdts"):
         tenant["createdts"] = _fmt_dt(tenant["createdts"], offsetminutes)
 
@@ -529,6 +542,43 @@ def get_myinfo(token: str = Depends(get_token), tenantid: Optional[str] = Depend
         "project_users": project_users,
         "timezones": timezones,
         "timezone": effective_timezone,
+    }
+
+
+@router.get("/myinfo-v2")
+def get_myinfo_v2(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """get_myinfo()의 RPC 버전 — sdoc.fn_myinfo() 하나로 계산을 DB에서 끝내고
+    API 왕복을 1회로 줄인다(myinfo_v2_rpc.sql 참고).
+
+    get_myinfo()는 전부 sb(사용자 JWT)로 조회하는데, sb의 HTTP 클라이언트에는
+    프로세스 전역 락이 걸려 있어(utilsPrj/supabase_client.py) 병렬화가 통하지
+    않는다 — 그래서 병렬화 대신 RPC로 왕복 자체를 줄이는 방식을 택했다.
+
+    ⚠ 검증 전용 엔드포인트. 화면은 아직 이걸 쓰지 않는다 — GET /myinfo와 같은
+    조건(X-Tenant-ID)으로 호출해 응답이 동일한지 비교해본 뒤에만 전환할 것.
+    myinfo_v2_rpc.sql을 Supabase에서 먼저 실행해 함수를 생성해야 동작한다.
+    """
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    result = svc.rpc("fn_myinfo", {
+        "p_user_id": user_id,
+        "p_tenantid": int(tenantid) if tenantid else None,
+    }).execute().data or {}
+
+    offsetminutes = result.get("offsetminutes")
+    tenant = result.get("tenant") or {}
+    if tenant.get("createdts"):
+        tenant["createdts"] = _fmt_dt(tenant["createdts"], offsetminutes)
+
+    return {
+        "user_info": result.get("user_info") or {},
+        "tenantuser": result.get("tenantuser") or {},
+        "tenant": tenant,
+        "project_users": result.get("project_users") or [],
+        "timezones": result.get("timezones") or [],
+        "timezone": result.get("timezone"),
     }
 
 
@@ -643,6 +693,7 @@ def get_myinfo_usage(
       배치가 아직 안 돌았으면(is_applied=false로 남아있으면) 여기 안 잡힌다.
     """
     from datetime import datetime
+    from concurrent.futures import ThreadPoolExecutor
 
     if not tenantid:
         return {"daily": [], "totals": {"doc_count": 0, "chapter_count": 0, "object_count": 0, "total": 0},
@@ -668,72 +719,197 @@ def get_myinfo_usage(
     # service client 사용. 조회 범위는 반드시 아래에서 직접 accountuid/creator/jobuid로 좁힌다.
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
-    if servicecd == "Do":
-        rows = sb.schema(SUPABASE_SCHEMA).table("genobjectlogs").select(
+    def _svc():
+        # 병렬 조회(아래 ThreadPoolExecutor)에서는 client를 스레드 간에 공유하지 않도록
+        # 태스크마다 새로 생성한다 — get_service_client()는 매 호출마다 새 client를 만들어
+        # 반환하므로(전역 락 없음) worker 스레드 코드(chapter_making.py 등)와 동일한 방식.
+        return get_service_client().schema(SUPABASE_SCHEMA)
+
+    def _local_date(raw):
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d")
+
+    def _in_range(raw):
+        if not raw:
+            return False
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return sd_utc <= dt < ed_utc
+
+    def _in_list(values):
+        return ",".join(sanitize_param(v) for v in values)
+
+    # ── 1단계: 서로 의존관계 없는 조회 6개를 병렬로 실행(직렬이면 왕복 6회) ──
+    # sb(get_thread_supabase)는 내부적으로 전역 락(_http_lock)으로 요청을 직렬화하지만
+    # (utilsPrj/supabase_client.py 참고) 이 6개 중 sb를 쓰는 건 genobjectlogs 하나뿐이라
+    # 이 엔드포인트 내부의 병렬 처리 효과에는 영향이 없다.
+    def _fetch_genobjectlogs():
+        if servicecd != "Do":
+            return []
+        return sb.schema(SUPABASE_SCHEMA).table("genobjectlogs").select(
             "createdts,gendocjobuid,genchapterjobuid"
         ).eq("creator", user_id).eq("tenantid", int(tenantid)).eq("is_success", True) \
             .gte("createdts", sd_utc.isoformat()).lt("createdts", ed_utc.isoformat()).execute().data or []
 
-        def _local_date(raw):
-            from dateutil import parser as dtparser
-            dt = dtparser.parse(raw) if isinstance(raw, str) else raw
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            if offsetminutes is not None:
-                dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
-            return dt.strftime("%Y-%m-%d")
-
-        doc_jobs = {}      # gendocjobuid -> 가장 이른 로컬 날짜
-        chapter_jobs = {}  # genchapterjobuid -> 가장 이른 로컬 날짜 (gendocjobuid 없는 것만 = 챕터 단독)
-
-        for r in rows:
-            d = _local_date(r.get("createdts"))
-            gdju = r.get("gendocjobuid")
-            gcju = r.get("genchapterjobuid")
-            if gdju:
-                if gdju not in doc_jobs or d < doc_jobs[gdju]:
-                    doc_jobs[gdju] = d
-            elif gcju:
-                if gcju not in chapter_jobs or d < chapter_jobs[gcju]:
-                    chapter_jobs[gcju] = d
-            # gdju/gcju 둘 다 없는 행(단일 항목 재작성)은 여기선 무시 — genobjectcounts(creator 포함,
-            # 2026-08-17 추가)가 이미 시간당+인원별로 정확히 집계해주므로 아래에서 그걸 직접 쓴다.
-            # genobjectlogs로 직접 세면 액션 1건당 로그가 여러 줄 남는 문제가 있어 부정확했음.
-
-        # 단일 항목 재작성 — genobjectcounts에서 creator+tenantid로 직접 집계(시간 버킷 → 로컬 날짜 합산)
-        oc_rows = svc.table("genobjectcounts").select("usedts,count") \
+    def _fetch_genobjectcounts():
+        if servicecd != "Do":
+            return []
+        return _svc().table("genobjectcounts").select("usedts,count") \
             .eq("tenantid", int(tenantid)).eq("creator", user_id) \
             .gte("usedts", sd_utc.isoformat()).lt("usedts", ed_utc.isoformat()).execute().data or []
-        object_by_date = {}
-        for r in oc_rows:
-            d = _local_date(r.get("usedts"))
-            object_by_date[d] = object_by_date.get(d, 0) + (r.get("count") or 0)
-        object_total = sum(object_by_date.values())
 
-        # doc/chapter는 genobjectlogs.createdts(=objects 최초 upsert 시점, 사실상 의미 없음) 대신
-        # gendoclogs/genchapterlogs.logdts(실제 생성 완료 시점)로 날짜를 재확정한다.
+    def _fetch_chap_rows():
+        if servicecd != "Do":
+            return []
+        return _svc().table("genchapters").select("genchapteruid,chapteruid") \
+            .eq("creator", user_id).eq("tenantid", int(tenantid)).execute().data or []
+
+    def _fetch_doc_rows():
+        if servicecd != "Do":
+            return []
+        return _svc().table("gendocs").select("gendocuid,gendocnm") \
+            .eq("creator", user_id).eq("tenantid", int(tenantid)).execute().data or []
+
+    def _fetch_oc_hist_rows():
+        if servicecd != "Do":
+            return []
+        return _svc().table("genobjectcount_historys").select("countuid,logdts") \
+            .eq("creator", user_id).eq("tenantid", int(tenantid)) \
+            .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
+
+    def _fetch_account():
+        return _get_tenant_and_account(_svc(), user_id, tenantid)
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        fut_rows = ex.submit(_fetch_genobjectlogs)
+        fut_oc_rows = ex.submit(_fetch_genobjectcounts)
+        fut_chap_rows = ex.submit(_fetch_chap_rows)
+        fut_doc_rows = ex.submit(_fetch_doc_rows)
+        fut_oc_hist_rows = ex.submit(_fetch_oc_hist_rows)
+        fut_account = ex.submit(_fetch_account)
+
+        rows = fut_rows.result()
+        oc_rows = fut_oc_rows.result()
+        chap_rows = fut_chap_rows.result()
+        doc_rows = fut_doc_rows.result()
+        oc_hist_rows = fut_oc_hist_rows.result()
+        _, accountuid = fut_account.result()
+
+    # 본인이 생성한 챕터/문서 목록 — 아래 날짜 재확정과, 뒤쪽 credit_history 계산 양쪽에서 재사용
+    # (예전엔 credit_history 쪽에서 동일 조회를 한 번 더 했었음 — 중복 제거).
+    chapteruids = [c["genchapteruid"] for c in chap_rows]
+    docuids = [d["gendocuid"] for d in doc_rows]
+    chap_by_uid = {c["genchapteruid"]: c for c in chap_rows}
+    doc_by_uid = {d["gendocuid"]: d for d in doc_rows}
+    chapter_ids = list({c["chapteruid"] for c in chap_rows if c.get("chapteruid")})
+
+    doc_jobs = {}      # gendocjobuid -> 가장 이른 로컬 날짜
+    chapter_jobs = {}  # genchapterjobuid -> 가장 이른 로컬 날짜 (gendocjobuid 없는 것만 = 챕터 단독)
+    for r in rows:
+        d = _local_date(r.get("createdts"))
+        gdju = r.get("gendocjobuid")
+        gcju = r.get("genchapterjobuid")
+        if gdju:
+            if gdju not in doc_jobs or d < doc_jobs[gdju]:
+                doc_jobs[gdju] = d
+        elif gcju:
+            if gcju not in chapter_jobs or d < chapter_jobs[gcju]:
+                chapter_jobs[gcju] = d
+        # gdju/gcju 둘 다 없는 행(단일 항목 재작성)은 여기선 무시 — genobjectcounts(creator 포함,
+        # 2026-08-17 추가)가 이미 시간당+인원별로 정확히 집계해주므로 아래에서 그걸 직접 쓴다.
+        # genobjectlogs로 직접 세면 액션 1건당 로그가 여러 줄 남는 문제가 있어 부정확했음.
+
+    # 단일 항목 재작성 — genobjectcounts에서 creator+tenantid로 직접 집계(시간 버킷 → 로컬 날짜 합산)
+    object_by_date = {}
+    for r in oc_rows:
+        d = _local_date(r.get("usedts"))
+        object_by_date[d] = object_by_date.get(d, 0) + (r.get("count") or 0)
+    object_total = sum(object_by_date.values())
+
+    # ── 2단계: 1단계 결과에 의존하는 조회 4개를 다시 병렬로 실행 ──
+    # gendoclogs/genchapterlogs는 "날짜 재확정"(job id 기준)과 뒤쪽 credit_history(문서/챕터
+    # 소유 + is_credituse + 기간 기준) 양쪽에 필요해서, OR로 묶어 테이블당 한 번만 조회한다.
+    # servicecd != "Do"면 doc_jobs/chapter_jobs/docuids/chapteruids/chapter_ids가 모두 비어있어
+    # gdl/gcl/chapternm 조회는 실제 네트워크 호출 없이 빈 리스트를 반환한다.
+    def _fetch_gdl_rows():
+        or_parts = []
         if doc_jobs:
-            gdl_date_rows = svc.table("gendoclogs").select("gendocjobuid,logdts") \
-                .in_("gendocjobuid", list(doc_jobs.keys())).execute().data or []
-            latest = {}
-            for r in gdl_date_rows:
-                jid, ld = r.get("gendocjobuid"), r.get("logdts")
-                if jid and ld and (jid not in latest or ld > latest[jid]):
-                    latest[jid] = ld
-            for jid, ld in latest.items():
-                doc_jobs[jid] = _local_date(ld)
+            or_parts.append(f"gendocjobuid.in.({_in_list(doc_jobs.keys())})")
+        if docuids:
+            or_parts.append(
+                f"and(gendocuid.in.({_in_list(docuids)}),is_credituse.eq.true,"
+                f"logdts.gte.{sd_utc.isoformat()},logdts.lt.{ed_utc.isoformat()})"
+            )
+        if not or_parts:
+            return []
+        return _svc().table("gendoclogs").select("loguid,gendocjobuid,gendocuid,logdts,is_credituse") \
+            .or_(",".join(or_parts)).execute().data or []
 
+    def _fetch_gcl_rows():
+        or_parts = []
         if chapter_jobs:
-            gcl_date_rows = svc.table("genchapterlogs").select("genchapterjobuid,logdts") \
-                .in_("genchapterjobuid", list(chapter_jobs.keys())).execute().data or []
-            latest = {}
-            for r in gcl_date_rows:
-                jid, ld = r.get("genchapterjobuid"), r.get("logdts")
-                if jid and ld and (jid not in latest or ld > latest[jid]):
-                    latest[jid] = ld
-            for jid, ld in latest.items():
-                chapter_jobs[jid] = _local_date(ld)
+            or_parts.append(f"genchapterjobuid.in.({_in_list(chapter_jobs.keys())})")
+        if chapteruids:
+            or_parts.append(
+                f"and(genchapteruid.in.({_in_list(chapteruids)}),is_credituse.eq.true,"
+                f"logdts.gte.{sd_utc.isoformat()},logdts.lt.{ed_utc.isoformat()})"
+            )
+        if not or_parts:
+            return []
+        return _svc().table("genchapterlogs").select("loguid,genchapterjobuid,genchapteruid,logdts,is_credituse") \
+            .or_(",".join(or_parts)).execute().data or []
 
+    def _fetch_bucket_rows():
+        if not accountuid:
+            return []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return _svc().table("creditbuckets").select(
+            "creditchargecd,chargecredit,usecredit,remaincredit,granteddts,expiredts,startdt"
+        ).eq("accountuid", accountuid).eq("servicecd", servicecd).gt("expiredts", now_iso) \
+            .order("priorityno").execute().data or []
+
+    def _fetch_chapternm_rows():
+        if not chapter_ids:
+            return []
+        return _svc().table("chapters").select("chapteruid,chapternm").in_("chapteruid", chapter_ids).execute().data or []
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        fut_gdl = ex.submit(_fetch_gdl_rows)
+        fut_gcl = ex.submit(_fetch_gcl_rows)
+        fut_bucket = ex.submit(_fetch_bucket_rows)
+        fut_chapternm = ex.submit(_fetch_chapternm_rows)
+
+        gdl_rows = fut_gdl.result()
+        gcl_rows = fut_gcl.result()
+        bucket_rows = fut_bucket.result()
+        nm_rows = fut_chapternm.result()
+
+    if doc_jobs:
+        latest = {}
+        for r in gdl_rows:
+            jid, ld = r.get("gendocjobuid"), r.get("logdts")
+            if jid and jid in doc_jobs and ld and (jid not in latest or ld > latest[jid]):
+                latest[jid] = ld
+        for jid, ld in latest.items():
+            doc_jobs[jid] = _local_date(ld)
+
+    if chapter_jobs:
+        latest = {}
+        for r in gcl_rows:
+            jid, ld = r.get("genchapterjobuid"), r.get("logdts")
+            if jid and jid in chapter_jobs and ld and (jid not in latest or ld > latest[jid]):
+                latest[jid] = ld
+        for jid, ld in latest.items():
+            chapter_jobs[jid] = _local_date(ld)
+
+    if servicecd == "Do":
         daily_map = {}
 
         def _bump(date_str, key, amount=1):
@@ -763,18 +939,10 @@ def get_myinfo_usage(
         totals = {"doc_count": 0, "chapter_count": 0, "object_count": 0, "total": 0}
 
     # ── 크레딧 현황(계정 공용) + 본인 소모 내역 ──────────────────────────────
-    _, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
-
     credit = None
     credit_history = []
 
     if accountuid:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        bucket_rows = svc.table("creditbuckets").select(
-            "creditchargecd,chargecredit,usecredit,remaincredit,granteddts,expiredts,startdt"
-        ).eq("accountuid", accountuid).eq("servicecd", servicecd).gt("expiredts", now_iso) \
-            .order("priorityno").execute().data or []
-
         for b in bucket_rows:
             b["expiredts"] = _fmt_dt(b.get("expiredts"), offsetminutes)
             b["granteddts"] = _fmt_dt(b.get("granteddts"), offsetminutes)
@@ -794,40 +962,31 @@ def get_myinfo_usage(
             # genchapterlogs/gendoclogs.logdts를 쓴다 — credit_helper._apply_credit_deduction에서
             # creditbucketuses.refuid로 쓰이는 로그가 바로 이 logdts 기준 최종 로그이므로
             # "실제 크레딧이 차감된 시점"에 가장 가깝다. 기간(sd_utc~ed_utc) 필터도 이 값으로 건다.
-            chap_rows = svc.table("genchapters").select("genchapteruid,chapteruid") \
-                .eq("creator", user_id).eq("tenantid", int(tenantid)).execute().data or []
-            doc_rows = svc.table("gendocs").select("gendocuid,gendocnm") \
-                .eq("creator", user_id).eq("tenantid", int(tenantid)).execute().data or []
-
+            # chap_rows/doc_rows/gcl_rows/gdl_rows/nm_rows는 위 1·2단계에서 이미 조회해둔 것을
+            # 그대로 재사용한다(중복 조회 제거) — 아래에서 is_credituse/기간 조건만 다시 건다.
             loguid_map = {}  # loguid -> {"kind": doc/chapter, "name": ..., "date": raw logdts}
+            chapternm_map = {r["chapteruid"]: r.get("chapternm") for r in nm_rows}
 
-            chapteruids = [c["genchapteruid"] for c in chap_rows]
             if chapteruids:
-                chapter_ids = list({c["chapteruid"] for c in chap_rows if c.get("chapteruid")})
-                chapternm_map = {}
-                if chapter_ids:
-                    nm_rows = svc.table("chapters").select("chapteruid,chapternm").in_("chapteruid", chapter_ids).execute().data or []
-                    chapternm_map = {r["chapteruid"]: r.get("chapternm") for r in nm_rows}
-                chap_by_uid = {c["genchapteruid"]: c for c in chap_rows}
-                gcl_rows = svc.table("genchapterlogs").select("loguid,genchapteruid,logdts") \
-                    .in_("genchapteruid", chapteruids).eq("is_credituse", True) \
-                    .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
                 for r in gcl_rows:
-                    chap = chap_by_uid.get(r["genchapteruid"], {})
+                    if r.get("is_credituse") is not True or not _in_range(r.get("logdts")):
+                        continue
+                    chap = chap_by_uid.get(r.get("genchapteruid"))
+                    if not chap:
+                        continue
                     loguid_map[r["loguid"]] = {
                         "kind": "chapter",
                         "name": chapternm_map.get(chap.get("chapteruid")) or "",
                         "date": r.get("logdts"),
                     }
 
-            docuids = [d["gendocuid"] for d in doc_rows]
             if docuids:
-                doc_by_uid = {d["gendocuid"]: d for d in doc_rows}
-                gdl_rows = svc.table("gendoclogs").select("loguid,gendocuid,logdts") \
-                    .in_("gendocuid", docuids).eq("is_credituse", True) \
-                    .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
                 for r in gdl_rows:
-                    doc = doc_by_uid.get(r["gendocuid"], {})
+                    if r.get("is_credituse") is not True or not _in_range(r.get("logdts")):
+                        continue
+                    doc = doc_by_uid.get(r.get("gendocuid"))
+                    if not doc:
+                        continue
                     loguid_map[r["loguid"]] = {
                         "kind": "doc",
                         "name": doc.get("gendocnm") or "",
@@ -837,9 +996,6 @@ def get_myinfo_usage(
             # 단일 항목 재작성 배치 크레딧 차감 내역 — genobjectcounts가 처리되면
             # genobjectcount_historys로 이관되며(sdoc.fn_apply_genobjectcount_credit),
             # creditbucketuses.refuid에는 그 countuid가 usetypecd='do'로 기록된다.
-            oc_hist_rows = svc.table("genobjectcount_historys").select("countuid,logdts") \
-                .eq("creator", user_id).eq("tenantid", int(tenantid)) \
-                .gte("logdts", sd_utc.isoformat()).lt("logdts", ed_utc.isoformat()).execute().data or []
             for r in oc_hist_rows:
                 loguid_map[r["countuid"]] = {
                     "kind": "object",
@@ -869,6 +1025,73 @@ def get_myinfo_usage(
                     del h["date_raw"]
 
     return {"daily": daily, "totals": totals, "start_date": sd, "end_date": ed,
+            "credit": credit, "credit_history": credit_history}
+
+
+@router.get("/myinfo/usage-v2")
+def get_myinfo_usage_v2(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    servicecd: str = "Do",
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """get_myinfo_usage()의 RPC 버전 — sdoc.fn_myinfo_usage() 하나로 계산을 DB에서
+    끝내고 API 왕복을 1회로 줄인다(myusage_v2_rpc.sql 참고).
+
+    ⚠ 검증 전용 엔드포인트. 화면은 아직 이걸 쓰지 않는다 — GET /myinfo/usage와
+    같은 파라미터로 호출해 응답이 동일한지 비교해본 뒤에만 전환할 것.
+    myusage_v2_rpc.sql을 Supabase에서 먼저 실행해 함수를 생성해야 동작한다.
+    """
+    if not tenantid:
+        return {"daily": [], "totals": {"doc_count": 0, "chapter_count": 0, "object_count": 0, "total": 0},
+                "start_date": start_date, "end_date": end_date, "credit": None, "credit_history": []}
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    result = svc.rpc("fn_myinfo_usage", {
+        "p_user_id": user_id,
+        "p_tenantid": int(tenantid),
+        "p_servicecd": servicecd,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+    }).execute().data or {}
+
+    offsetminutes = result.get("offsetminutes")
+    accountuid = result.get("accountuid")
+    daily = result.get("daily") or []
+    totals = result.get("totals") or {"doc_count": 0, "chapter_count": 0, "object_count": 0, "total": 0}
+
+    credit = None
+    credit_history = []
+
+    if accountuid:
+        buckets = result.get("credit_buckets") or []
+        for b in buckets:
+            b["expiredts"] = _fmt_dt(b.get("expiredts"), offsetminutes)
+            b["granteddts"] = _fmt_dt(b.get("granteddts"), offsetminutes)
+
+        credit = {
+            "buckets": buckets,
+            "total_charge": sum(b.get("chargecredit") or 0 for b in buckets),
+            "total_use": sum(b.get("usecredit") or 0 for b in buckets),
+            "total_remain": sum(b.get("remaincredit") or 0 for b in buckets),
+        }
+
+        # RPC에서 이미 logdts DESC로 정렬해서 내려준다.
+        for h in result.get("credit_history") or []:
+            credit_history.append({
+                "date": _fmt_dt(h.get("date"), offsetminutes),
+                "kind": h.get("kind"),
+                "name": h.get("name") or "",
+                "beforecredit": h.get("beforecredit"),
+                "usecredit": h.get("usecredit"),
+                "aftercredit": h.get("aftercredit"),
+            })
+
+    return {"daily": daily, "totals": totals, "start_date": result.get("sd"), "end_date": result.get("ed"),
             "credit": credit, "credit_history": credit_history}
 
 
