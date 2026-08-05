@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { App, Modal, Spin } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
@@ -11,6 +12,7 @@ export default function DocSelectModal({ open, onClose }) {
   const { message, modal } = App.useApp()
   const { updateUser, user } = useAuthStore()
   const { clearTabs } = useTabStore()
+  const queryClient = useQueryClient()
   useLangStore((s) => s.translations)
 
   const [docs, setDocs] = useState([])
@@ -69,6 +71,10 @@ export default function DocSelectModal({ open, onClose }) {
         projectmanager: data.projectmanager,
         editbuttonyn: data.editbuttonyn,
       })
+
+      // /auth/me는 staleTime: Infinity라 무효화하지 않으면 AppLayout이 재마운트될 때
+      // (탭 전체 닫기 후 홈 이동 등) 예전 캐시로 방금 선택한 문서를 덮어써버린다.
+      queryClient.invalidateQueries({ queryKey: ['auth-me'] })
 
       onClose()
 
