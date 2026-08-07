@@ -5,7 +5,13 @@ sdoc.codes(codegroupcd='servicestatus') 값과 반드시 일치해야 한다
 
     Pending    가입 진행 중(결제 대기)              read X  write X
     Active     정상 구독                            read O  write O
-    PastDue    결제 실패(Grace Period)               read O  write X
+    PastDue    결제 실패(Grace Period) — 2026-08-07부터 Do 서비스는 크레딧
+               Ba(기본) 버킷이 마이너스로 떨어질 때도 자동 전환됨(사용량이
+               예측치를 초과한 경우). Ba가 0 이상으로 회복(추가구매 상쇄 또는
+               월간 갱신)되면 자동으로 Active 복귀 — utilsPrj/credit_helper.py의
+               _set_servicestatus_if()/offset_negative_ba_bucket() 및
+               genobjectcounts_credit_deduction.sql/creditbuckets_daily_batch.sql
+               참고.                                  read O  write X
     Suspended  관리자가 중지                         read X  write X
     Cancelled  해지 완료                             read X  write X
     Archived   종료 후 보관 — configs.userdatadelday일 이내만 read O, write는 항상 X

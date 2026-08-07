@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
-from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket
+from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket, offset_negative_ba_bucket
 from utilsPrj.user_lookup import get_usernm_email
 
 router = APIRouter()
@@ -2003,6 +2003,16 @@ def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: 
         "expiredts": expiresdts,
         "startdt": startdt,
     }).execute()
+
+    # 기존 Ba(기본) 버킷이 마이너스 상태면, 이번에 새로 산 버킷에서 그 마이너스분만큼 차감해 상쇄한다
+    # (Ba는 0으로 정리 — utilsPrj/credit_helper.offset_negative_ba_bucket 참고)
+    offset_negative_ba_bucket(
+        svc,
+        tenantid=int(tenantid),
+        accountuid=accountuid,
+        servicecd=product.get("servicecd"),
+        new_bucket_subscriptionuid=new_subscriptionuid,
+    )
 
 
 class CreditSubscriptionPurchaseRequest(BaseModel):

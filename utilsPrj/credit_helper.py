@@ -74,6 +74,92 @@ def upsert_ba_creditbucket(
     return new_row
 
 
+def offset_negative_ba_bucket(svc, *, tenantid: int, accountuid: str, servicecd: str,
+                               new_bucket_subscriptionuid: str) -> None:
+    """새로 구매한 크레딧 버킷(new_bucket_subscriptionuid)으로 기존 Ba(기본) 버킷의 마이너스를 상쇄한다.
+
+    _deduct_credit()이 Do 서비스 버킷을 다 쓰고도 부족하면 Ba 버킷에 마이너스로 반영하는데(정상
+    동작), 그 상태가 다음 Ba 충전(플랜 갱신/업그레이드) 전까지 계속 남아있는 문제가 있었다
+    (2026-08-07 사용자 요청으로 추가) — 추가 크레딧을 구매하면 그 시점에 기존 마이너스를
+    상쇄해주는 게 자연스럽다는 판단.
+
+    Ba 버킷은 0으로 정리하고, 그 마이너스였던 만큼을 **새로 산 버킷에서 그대로 차감**한다
+    (2026-08-07 수정 — 처음엔 새 버킷을 안 건드리는 방식이었으나, 빚을 실제로 갚는 것처럼
+    새 버킷 잔액에서 빠지도록 변경). 새 버킷 잔액보다 빚이 크면 새 버킷도 마이너스가 될 수
+    있다 — Ba 마이너스 반영 때와 동일하게 하한을 두지 않는다(빚이 남아있으면 그 사실이
+    그대로 드러나야 함).
+
+    servicecd='Do'인 경우에 한해(2026-08-07 추가), 상쇄 후 새 버킷이 0 이상이 됐을 때만
+    accountservices를 PastDue→Active로 되돌린다 — 빚이 새 버킷으로 옮겨갔을 뿐 여전히
+    마이너스면 PastDue를 유지한다. 다른 서비스(Ch/In 등)는 아직 이 상태 전환 정책이 적용
+    전이라 손대지 않는다.
+    """
+    ba_rows = (
+        svc.table("creditbuckets").select("*")
+        .eq("tenantid", int(tenantid)).eq("accountuid", accountuid)
+        .eq("servicecd", servicecd).eq("creditchargecd", "Ba")
+        .order("startdt", desc=True).limit(1)
+        .execute().data or []
+    )
+    if not ba_rows:
+        return
+    ba_bucket = ba_rows[0]
+    ba_before = ba_bucket.get("remaincredit") or 0
+    if ba_before >= 0:
+        return
+
+    offset_amount = -ba_before  # 양수로 변환한 상쇄액
+
+    new_bucket_rows = (
+        svc.table("creditbuckets").select("*")
+        .eq("subscriptionuid", new_bucket_subscriptionuid)
+        .limit(1).execute().data or []
+    )
+    if not new_bucket_rows:
+        return
+    new_bucket = new_bucket_rows[0]
+    new_before = new_bucket.get("remaincredit") or 0
+    new_after = new_before - offset_amount
+
+    # Ba 쪽 — 마이너스 반영분을 0으로 되돌림(reversal), 새 버킷의 subscriptionuid를 refuid로 남겨 추적
+    svc.table("creditbucketuses").insert({
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "subscriptionuid": ba_bucket["subscriptionuid"],
+        "startdt": ba_bucket.get("startdt"),
+        "usetypecd": "os",
+        "refuid": new_bucket_subscriptionuid,
+        "beforecredit": ba_before,
+        "usecredit": ba_before,  # 음수 — 차감이 아니라 되돌림(상쇄)임을 구분
+        "aftercredit": 0,
+    }).execute()
+    svc.table("creditbuckets").update({
+        "remaincredit": 0,
+    }).eq("subscriptionuid", ba_bucket["subscriptionuid"]).execute()
+
+    # 새 버킷 쪽 — 그 마이너스였던 만큼을 실제로 차감, refuid는 상쇄 대상이었던 Ba 버킷을 가리킴
+    svc.table("creditbucketuses").insert({
+        "tenantid": int(tenantid),
+        "accountuid": accountuid,
+        "subscriptionuid": new_bucket["subscriptionuid"],
+        "startdt": new_bucket.get("startdt"),
+        "usetypecd": "os",
+        "refuid": ba_bucket["subscriptionuid"],
+        "beforecredit": new_before,
+        "usecredit": offset_amount,
+        "aftercredit": new_after,
+    }).execute()
+    svc.table("creditbuckets").update({
+        "usecredit": (new_bucket.get("usecredit") or 0) + offset_amount,
+        "remaincredit": new_after,
+    }).eq("subscriptionuid", new_bucket["subscriptionuid"]).execute()
+
+    if servicecd == "Do" and new_after >= 0:
+        svc.table("accountservices").update({
+            "servicestatus": "Active",
+        }).eq("accountuid", accountuid).eq("servicecd", servicecd).eq("servicestatus", "PastDue").execute()
+
+
 def _close_logs(sb_svc, log_table: str, loguids: list, true_count: int) -> None:
     """대상 로그들을 닫는다 — applieddts 기록 + count를 실제(true) 값으로 정정.
     log_table.count는 트리거가 계산한 부정확한 값일 수 있어(_true_success_count 참고),
@@ -89,8 +175,9 @@ def _close_logs(sb_svc, log_table: str, loguids: list, true_count: int) -> None:
 
 
 def _write_creditbucketuse(sb_svc, bucket: dict, use_amount: int, tenantid, accountuid: str,
-                            refuid: str, usetypecd: str) -> None:
-    """buckt 1개에서 use_amount만큼 차감 — creditbucketuses에 기록 후 creditbuckets 갱신."""
+                            refuid: str, usetypecd: str) -> int:
+    """buckt 1개에서 use_amount만큼 차감 — creditbucketuses에 기록 후 creditbuckets 갱신.
+    차감 후 remaincredit(after)을 반환한다 — 호출부에서 마이너스 전환 여부 판단에 사용."""
     before = bucket.get("remaincredit") or 0
     after = before - use_amount
     sb_svc.schema(SUPABASE_SCHEMA).table("creditbucketuses").insert({
@@ -108,13 +195,27 @@ def _write_creditbucketuse(sb_svc, bucket: dict, use_amount: int, tenantid, acco
         "usecredit": (bucket.get("usecredit") or 0) + use_amount,
         "remaincredit": after,
     }).eq("subscriptionuid", bucket["subscriptionuid"]).execute()
+    return after
+
+
+def _set_servicestatus_if(sb_svc, accountuid: str, servicecd: str, from_status: str, to_status: str) -> None:
+    """accountservices.servicestatus를 from_status일 때만 to_status로 전환한다.
+
+    WHERE절에 from_status 조건을 걸어 원자적으로 처리 — 관리자가 Suspended/Cancelled 등
+    다른 사유로 이미 바꿔둔 상태는 건드리지 않는다(Active↔PastDue 왕복에만 관여)."""
+    sb_svc.schema(SUPABASE_SCHEMA).table("accountservices").update({
+        "servicestatus": to_status,
+    }).eq("accountuid", accountuid).eq("servicecd", servicecd).eq("servicestatus", from_status).execute()
 
 
 def _deduct_credit(sb_svc, accountuid: str, tenantid, amount: int, *, refuid: str, usetypecd: str) -> None:
     """servicecd='Do' 크레딧버킷에서 amount만큼 차감.
     우선순위: priorityno ASC, 동순위면 expiredts ASC(가장 빨리 만료되는 것부터 소진).
     유효 버킷을 다 써도 부족하면 남은 만큼 기준 서비스 구독(creditchargecd='Ba')에 마이너스로 반영한다
-    (실제 사용량은 objects 예측치를 넘어설 수 있어 마이너스가 정상적으로 발생할 수 있음)."""
+    (실제 사용량은 objects 예측치를 넘어설 수 있어 마이너스가 정상적으로 발생할 수 있음).
+    이 마이너스 반영으로 Ba 버킷이 실제로 음수가 되면, accountservices.servicestatus를
+    Active→PastDue로 전환한다(Do 서비스 한정, 2026-08-07 추가) — 이미 Active가 아니면(관리자가
+    Suspended 등으로 바꿔둔 경우) 건드리지 않는다."""
     if amount <= 0:
         return
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -142,7 +243,9 @@ def _deduct_credit(sb_svc, accountuid: str, tenantid, amount: int, *, refuid: st
             .order("startdt", desc=True).limit(1).execute().data or []
         if not ba_rows:
             raise Exception(f"크레딧 마이너스 반영 대상 Ba 버킷을 찾을 수 없습니다 (accountuid={accountuid})")
-        _write_creditbucketuse(sb_svc, ba_rows[0], remaining, tenantid, accountuid, refuid, usetypecd)
+        after = _write_creditbucketuse(sb_svc, ba_rows[0], remaining, tenantid, accountuid, refuid, usetypecd)
+        if after < 0:
+            _set_servicestatus_if(sb_svc, accountuid, "Do", "Active", "PastDue")
 
 
 def increment_genobjectcount(sb_svc, accountuid: str, tenantid, creator: str) -> None:
