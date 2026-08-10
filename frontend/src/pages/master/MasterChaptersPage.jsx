@@ -11,7 +11,7 @@ export default function MasterChaptersPage() {
   useLangStore((s) => s.translations)
   const { message, modal } = App.useApp()
 
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
@@ -53,11 +53,19 @@ export default function MasterChaptersPage() {
     setForm({ chapternm: '', chapterno: '', useyn: true })
     setTemplateName('')
     setTemplateFile(null)
+    if (searchParams.get('chapteruid')) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('chapteruid')
+        return next
+      }, { replace: true })
+    }
   }
 
   const handleSave = () => {
-    if (!form.chapterno) { message.warning(t('msg.chapter.required')); return }
     if (!selectedDocid) { message.warning(t('msg.doc.select')); return }
+    if (!form.chapternm) { message.warning(t('msg.chapternm.required')); return }
+    if (!form.chapterno) { message.warning(t('msg.chapter.required')); return }
     setSaving(true)
     const fd = new FormData()
     fd.append('docid', selectedDocid)
@@ -90,6 +98,10 @@ export default function MasterChaptersPage() {
 
   const isEditYn = user?.editbuttonyn === 'Y'
 
+  if (!selectedDocid) {
+    return <div style={{ padding: 24, color: '#888' }}>{t('msg.doc.select')}</div>
+  }
+
   return (
     <div>
       <div className="page-title">
@@ -109,7 +121,9 @@ export default function MasterChaptersPage() {
             </button>
           </div>
           <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
-            {chapters.map((ch) => (
+            {chapters.length === 0 ? (
+              <div style={{ padding: 24, color: '#888', textAlign: 'center' }}>{t('msg.no.chapter')}</div>
+            ) : chapters.map((ch) => (
               <div
                 key={ch.chapteruid}
                 className={`chapter-card${selectedChap?.chapteruid === ch.chapteruid ? ' selected' : ''}`}
@@ -173,7 +187,7 @@ export default function MasterChaptersPage() {
             />
           </div>
           <div className="form-group">
-            <label>{t('lbl.chapterno')}:</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.chapterno')}:</label>
             <input
               type="number"
               value={form.chapterno}

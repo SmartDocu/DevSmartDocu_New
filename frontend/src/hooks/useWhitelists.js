@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
 
@@ -12,6 +12,7 @@ export function useWhitelists() {
 
 export function useSaveWhitelist() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/whitelists', payload).then((r) => r.data),
     onSuccess: () => {
@@ -27,6 +28,7 @@ export function useSaveWhitelist() {
 
 export function useDeleteWhitelist() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (whitelistuid) => apiClient.delete(`/whitelists/${whitelistuid}`).then((r) => r.data),
     onSuccess: () => {
@@ -49,6 +51,7 @@ export function useWhitelistConfig() {
 
 export function useSaveWhitelistConfig() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (payload) => apiClient.post('/whitelists/config', payload).then((r) => r.data),
     onSuccess: () => {

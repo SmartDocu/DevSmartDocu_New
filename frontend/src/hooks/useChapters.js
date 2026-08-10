@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
@@ -13,6 +13,7 @@ export function useChapters(docid) {
 
 export function useSaveChapter() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (formData) => apiClient.post('/chapters', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -30,6 +31,7 @@ export function useSaveChapter() {
 
 export function useDeleteChapter() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ chapteruid, docid }) =>
       apiClient.delete(`/chapters/${chapteruid}`).then((r) => r.data),

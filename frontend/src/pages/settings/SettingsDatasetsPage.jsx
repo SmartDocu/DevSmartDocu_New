@@ -23,6 +23,12 @@ export default function SettingsDatasetsPage() {
   }
   const projectLabel = (p) => p.servicecd ? `${p.projectnm} - ${serviceLabel(p.servicecd)}` : p.projectnm
 
+  const { data: dataSourceCodes = [] } = useMenuCodes('datasourcecd')
+  const dataSourceLabel = (code) => {
+    const c = dataSourceCodes.find((dc) => dc.codevalue === code)
+    return c ? (t(c.term_key) || c.default_name) : code
+  }
+
   const { data: datasets = [] } = useDatasets()
   const saveAll = useSaveDatasetAll()
   const deleteDataset = useDeleteDataset()
@@ -215,7 +221,7 @@ export default function SettingsDatasetsPage() {
                             />
                           </td>
                           <td>{d.datanm}</td>
-                          <td style={{ textAlign: 'center' }}>{d.datasourcecd}</td>
+                          <td style={{ textAlign: 'center' }}>{dataSourceLabel(d.datasourcecd)}</td>
                         </tr>
                       ))}
                     </tbody>

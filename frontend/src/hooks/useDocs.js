@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
 
@@ -19,6 +19,7 @@ export function useProjects() {
 
 export function useSaveDoc() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (formData) => apiClient.post('/docs', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -36,6 +37,7 @@ export function useSaveDoc() {
 
 export function useDeleteDoc() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (docid) => apiClient.delete(`/docs/${docid}`).then((r) => r.data),
     onSuccess: () => {

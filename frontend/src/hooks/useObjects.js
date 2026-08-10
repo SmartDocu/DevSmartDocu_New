@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
@@ -13,6 +13,7 @@ export function useObjects(chapteruid) {
 
 export function useSaveObject() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/objects', body).then((r) => r.data),
     onSuccess: (_data, body) => {
@@ -27,6 +28,7 @@ export function useSaveObject() {
 
 export function useDeleteObject() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ objectuid, chapteruid }) =>
       apiClient.delete(`/objects/${objectuid}`).then((r) => r.data),

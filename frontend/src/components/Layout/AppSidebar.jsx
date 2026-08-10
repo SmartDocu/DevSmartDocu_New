@@ -23,7 +23,10 @@ function hasFeatureAccess(menucd, ownedProductcds) {
 }
 
 /* ── 시스템(개인) 테넌트에서는 '조직' 개념이 없어 의미 없는 기업 관리 메뉴 ──
-   org.project_users(proj_mgr와 공유)·org.llm/org.project_llm(AM, 개인 LLM 키 등록용)은 제외 */
+   org.llm/org.project_llm(AM, 개인 LLM 키 등록용)은 제외.
+   proj_mgr.project_users는 시스템 테넌트에서 개인이 자기 프로젝트의 projectmanager='Y'로
+   자동 지정되어 노출되는 것을 막기 위해 포함 — 기업 테넌트의 실제 PM에게는 계속 보인다
+   (tenant_mgr.org.project_users가 같은 화면을 TM 전용으로 별도 제공, 2026-08-10) */
 const SYSTEM_TENANT_HIDDEN_MENUS = new Set([
   'tenant_mgr.manage',
   'tenant_mgr.manage.overview',
@@ -35,6 +38,7 @@ const SYSTEM_TENANT_HIDDEN_MENUS = new Set([
   'tenant_mgr.db.connectors',
   'tenant_mgr.db.data_groups',
   'tenant_mgr.db.servers',
+  'proj_mgr.project_users',
 ])
 
 function hiddenOnSystemTenant(menucd, isSystemTenant) {

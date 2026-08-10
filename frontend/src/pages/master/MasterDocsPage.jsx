@@ -42,7 +42,8 @@ export default function MasterDocsPage() {
   }
 
   const handleDocSave = () => {
-    if (!docForm.projectid || !docForm.docnm) { message.warning(t('msg.doc.required')); return }
+    if (!docForm.projectid) { message.warning(t('msg.select.project')); return }
+    if (!docForm.docnm) { message.warning(t('msg.docnm.required')); return }
     setDocSaving(true)
     const fd = new FormData()
     fd.append('projectid', docForm.projectid)

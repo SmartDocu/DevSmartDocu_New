@@ -1423,12 +1423,18 @@ export default function MasterChapterTemplatePage() {
                     {/* 우측: 설정아이콘 | Filter 뱃지 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                       
-                      {/* 항목 관리 이동 버튼 */}
+                      {/* 항목 관리 이동 버튼: 저장 전(objectUID 없음)에는 비활성화 */}
                       <button
                         type="button"
                         className="btn btn-primary"
                         onClick={() => handleObjectManage(fmt)}
-                        style={{ fontSize: 11, padding: '2px 8px' }}
+                        disabled={!fmt.objectUID}
+                        title={!fmt.objectUID ? t('inf.save.before.navigate') : undefined}
+                        style={{
+                          fontSize: 11, padding: '2px 8px',
+                          cursor: fmt.objectUID ? 'pointer' : 'not-allowed',
+                          opacity: fmt.objectUID ? 1 : 0.5,
+                        }}
                       >
                         {t('btn.object.manage')}
                       </button>

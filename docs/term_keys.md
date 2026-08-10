@@ -292,6 +292,15 @@ ui_terms 테이블 기준 (DB 조회 결과로 업데이트)
 | msg.project.not.found |
 | msg.required.docid |
 | msg.confirm.gendoc.change |
+| msg.gendoc.closed.readonly |
+| msg.gendoc.params.changed |
+| msg.gendoc.file.readonly |
+| msg.gendoc.close.needs.file |
+| msg.chapternm.required |
+| msg.docnm.required |
+| msg.forbidden |
+| msg.service.read.forbidden |
+| msg.service.write.forbidden |
 
 ---
 

@@ -32,7 +32,7 @@ export default function MasterObjectPage() {
   const location = useLocation()
   const openInTab = useOpenInTab()
 
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
   const { data: objectTypes = [] } = useMenuCodes('objecttypecd')
 
@@ -99,6 +99,13 @@ export default function MasterObjectPage() {
   const resetForm = () => {
     setSelectedObj(null)
     setForm({ objectuid: '', objectnm: '', objectdesc: '', objecttypecd: '', objecttypecd_orig: '', useyn: false, orderno: '', creatornm: '', createdts: '' })
+    if (searchParams.get('objectuid')) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('objectuid')
+        return next
+      }, { replace: true })
+    }
   }
 
   const handleNew = () => {

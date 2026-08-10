@@ -256,7 +256,15 @@ def list_gendocs(
     docnm_resp = sb.schema(SUPABASE_SCHEMA).table("docs").select("docnm").eq("docid", docid).execute().data
     docnm = docnm_resp[0]["docnm"] if docnm_resp else None
 
+    # fn_gendocs__r_docid RPC가 paramchangedyn을 내려주지 않아 별도 조회 후 병합
+    gendocuids = [r["gendocuid"] for r in rows if r.get("gendocuid")]
+    paramchanged_map = {}
+    if gendocuids:
+        pc_rows = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid,paramchangedyn").in_("gendocuid", gendocuids).execute().data or []
+        paramchanged_map = {r["gendocuid"]: r.get("paramchangedyn", False) for r in pc_rows}
+
     for item in rows:
+        item["paramchangedyn"] = paramchanged_map.get(item.get("gendocuid"), False)
         item["createfiledts"] = _fmt(item.get("createfiledts"), offsetminutes)
         item["updatefiledts"] = _fmt(item.get("updatefiledts"), offsetminutes)
         item["closedts"] = _fmt(item.get("closedts"), offsetminutes)
@@ -449,7 +457,9 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     # Remove storage file
-    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl,closeyn").eq("gendocuid", gendocuid).execute().data
+    if row and row[0].get("closeyn"):
+        raise HTTPException(status_code=400, detail="msg.gendoc.closed.readonly")
     if row and row[0].get("createfileurl"):
         url = row[0]["createfileurl"]
         parsed = urlparse(url)
@@ -474,9 +484,11 @@ def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
     user_id = str(user.id)
     now = datetime.now(timezone.utc).isoformat()
 
-    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,createfiledts").eq("gendocuid", gendocuid).execute().data
     if not row:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    if not row[0].get("createfiledts"):
+        raise HTTPException(status_code=400, detail="msg.gendoc.close.needs.file")
     docid = row[0]["docid"]
 
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
@@ -522,9 +534,27 @@ class GendocUpdateRequest(BaseModel):
 def update_gendoc_params(body: GendocUpdateRequest, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
+
+    gendoc_rows = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("closeyn,createfiledts").eq("gendocuid", body.gendocuid).execute().data
+    if gendoc_rows and gendoc_rows[0].get("closeyn"):
+        raise HTTPException(status_code=400, detail="msg.gendoc.closed.readonly")
+    if gendoc_rows and gendoc_rows[0].get("createfiledts"):
+        raise HTTPException(status_code=400, detail="msg.gendoc.file.readonly")
+
+    # 저장 전 값과 비교해 실제로 매개변수가 바뀌었는지 판단 — 하위 챕터 재작업 필요 여부 표시에 사용
+    existing_params = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("paramuid,paramvalue").eq("gendocuid", body.gendocuid).execute().data or []
+    existing_map = {p["paramuid"]: p.get("paramvalue") for p in existing_params}
+    params_changed = any(existing_map.get(p.get("paramuid")) != p.get("paramvalue") for p in body.params)
+
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({"gendocnm": body.gendocnm}).eq("gendocuid", body.gendocuid).execute()
     for p in body.params:
         sb.schema(SUPABASE_SCHEMA).table("gendoc_params").update({"paramvalue": p.get("paramvalue")}).eq("gendocuid", body.gendocuid).eq("paramuid", p.get("paramuid")).execute()
+
+    if params_changed:
+        genchap_exists = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("genchapteruid").eq("gendocuid", body.gendocuid).limit(1).execute().data
+        if genchap_exists:
+            sb.schema(SUPABASE_SCHEMA).table("gendocs").update({"paramchangedyn": True}).eq("gendocuid", body.gendocuid).execute()
+
     return {"message": "파라미터가 변경되었습니다."}
 
 
@@ -1216,6 +1246,9 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
     # gendocnm 조회
     gendocnm_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
     gendocnm = gendocnm_row[0]["gendocnm"] if gendocnm_row else ""
+
+    # 전체 문서 작성을 요청하는 시점에 "매개변수 변경으로 인한 재작업 필요" 표시를 해제한다
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").update({"paramchangedyn": False}).eq("gendocuid", gendocuid).execute()
 
     # gendocs_realtimes insert (처리 시작 상태) → gendocjobuid 획득
     res = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs_realtimes").insert({

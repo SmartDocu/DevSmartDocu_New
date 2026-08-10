@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
+import { t } from '@/stores/langStore'
+import { getMessageApi } from '@/utils/messageBridge'
 
 const apiClient = axios.create({
   baseURL: '/api',
@@ -87,6 +89,13 @@ apiClient.interceptors.response.use(
       } finally {
         _isRefreshing = false
       }
+    }
+
+    // 403: 조회(GET) 요청에 한해 전역 토스트 표시.
+    // 저장/삭제 등 mutation은 각 훅의 onError가 이미 처리하므로 중복 표시를 피한다.
+    if (error.response?.status === 403 && (originalRequest?.method || '').toLowerCase() === 'get') {
+      const detail = error.response?.data?.detail
+      getMessageApi()?.error({ content: detail ? t(detail) : t('msg.forbidden'), key: 'http-403' })
     }
 
     return Promise.reject(error)

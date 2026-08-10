@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { App } from 'antd'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useMenus } from '@/hooks/useMenus'
+import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import { useDocDatasets, useSaveDocDatasets } from '@/hooks/useDocDatasets'
 
 export default function MasterDatasetPage() {
@@ -14,6 +14,12 @@ export default function MasterDatasetPage() {
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
+
+  const { data: dataSourceCodes = [] } = useMenuCodes('datasourcecd')
+  const dataSourceLabel = (code) => {
+    const c = dataSourceCodes.find((dc) => dc.codevalue === code)
+    return c ? (t(c.term_key) || c.default_name) : code
+  }
 
   const docid = useAuthStore((s) => s.user?.docid)
   const docnm = useAuthStore((s) => s.user?.docnm)
@@ -141,7 +147,7 @@ export default function MasterDatasetPage() {
                       />
                     </td>
                     <td>{d.datanm}</td>
-                    <td style={{ textAlign: 'center' }}>{d.datasourcecd}</td>
+                    <td style={{ textAlign: 'center' }}>{dataSourceLabel(d.datasourcecd)}</td>
                   </tr>
                 ))}
               </tbody>

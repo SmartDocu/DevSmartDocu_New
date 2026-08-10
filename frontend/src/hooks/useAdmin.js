@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
@@ -32,6 +32,7 @@ export function useAdminSamplePrompts(objectType, displaytype) {
 
 export function useSaveSamplePrompt() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/sample-prompts', body).then((r) => r.data),
     onSuccess: (data, vars) => {
@@ -46,6 +47,7 @@ export function useSaveSamplePrompt() {
 
 export function useDeleteSamplePrompt() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (promptuid) =>
       apiClient.delete(`/admin/sample-prompts/${promptuid}`).then((r) => r.data),
@@ -68,6 +70,7 @@ export function useAdminUserRoles() {
 
 export function useSaveUserRole() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/user-role', body).then((r) => r.data),
     onSuccess: () => {
@@ -105,6 +108,7 @@ export function usePromptTranslations(promptkey) {
 
 export function useSavePrompt() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/admin/prompts', body).then((r) => r.data),
     onSuccess: () => {
@@ -117,6 +121,7 @@ export function useSavePrompt() {
 
 export function useDeletePrompt() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (promptkey) =>
       apiClient.delete(`/admin/prompts/${encodeURIComponent(promptkey)}`).then((r) => r.data),
@@ -130,6 +135,7 @@ export function useDeletePrompt() {
 
 export function useSavePromptTranslation() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ promptkey, ...body }) =>
       apiClient
@@ -144,6 +150,7 @@ export function useSavePromptTranslation() {
 
 export function useDeletePromptTranslation() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ promptkey, languagecd }) =>
       apiClient

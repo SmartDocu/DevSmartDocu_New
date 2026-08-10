@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -104,6 +104,7 @@ export function useMyInfo() {
 
 export function useUpdateUsername() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/myinfo/username', body).then((r) => r.data),
     onSuccess: () => {
@@ -116,6 +117,7 @@ export function useUpdateUsername() {
 
 export function useUpdateTimezone() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/myinfo/timezone', body).then((r) => r.data),
     onSuccess: (data) => {
@@ -129,6 +131,7 @@ export function useUpdateTimezone() {
 
 export function useUpdateMarketing() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/myinfo/marketing', body).then((r) => r.data),
     onSuccess: () => {

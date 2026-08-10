@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 
@@ -14,6 +14,7 @@ export function useOrgTenantLlms(accountuid) {
 
 export function useSaveTenantLlm() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/tenant-llms', body).then((r) => r.data),
     onSuccess: () => {
@@ -26,6 +27,7 @@ export function useSaveTenantLlm() {
 
 export function useDeleteTenantLlm() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) =>
       apiClient.delete('/org/tenant-llms', { data: body }).then((r) => r.data),
@@ -67,6 +69,7 @@ export function useSaveOrgProject() {
 
 export function useDeleteOrgProject() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ projectid }) =>
       apiClient.delete(`/org/projects/${projectid}`).then((r) => r.data),
@@ -122,6 +125,7 @@ export function useOrgInvitations() {
 
 export function useSendInvitation() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/invite-members', body).then((r) => r.data),
     onSuccess: () => {
@@ -147,6 +151,7 @@ export function useOrgTenantUsers(tenantid, accountuid) {
 
 export function useSaveTenantUser() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/org/tenant-users', body).then((r) => r.data),
     onSuccess: (_, vars) => {
@@ -160,6 +165,7 @@ export function useSaveTenantUser() {
 
 export function useDeleteTenantUser() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) =>
       apiClient.delete('/org/tenant-users', { data: body }).then((r) => r.data),

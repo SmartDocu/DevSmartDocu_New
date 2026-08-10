@@ -52,7 +52,10 @@ export function useCreateGendoc() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
+    },
   })
 }
 
@@ -65,7 +68,10 @@ export function useDeleteGendoc() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.delete.error'))
+    },
   })
 }
 
@@ -78,7 +84,10 @@ export function useUpdateGendocParams() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
+    },
   })
 }
 
@@ -91,7 +100,10 @@ export function useCloseGendoc() {
       message.success(t('msg.gendoc.closed'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
+    },
   })
 }
 
@@ -104,6 +116,9 @@ export function useOpenGendoc() {
       message.success(t('msg.gendoc.opened'))
       qc.invalidateQueries({ queryKey: ['gendocs'] })
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
+    },
   })
 }

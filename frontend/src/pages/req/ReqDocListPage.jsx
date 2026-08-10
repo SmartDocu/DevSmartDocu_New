@@ -212,6 +212,14 @@ export default function ReqDocListPage() {
   // closeyn이 그대로 남아있음. 목록(gendocs, react-query 캐시)에서 최신 행을 찾아 사용한다.
   const selectedGendocRow = gendocs.find((r) => r.gendocuid === selectedGendocuid) || selectedRow
 
+  // 마감 상태이거나(해제 전까지), 문서가 한 번이라도 생성됐으면(createfiledts 존재) 수정 불가
+  const editBlockedReason = selectedGendocRow?.closeyn
+    ? 'msg.gendoc.closed.readonly'
+    : selectedGendocRow?.createfiledts
+      ? 'msg.gendoc.file.readonly'
+      : null
+  const canEditGendoc = editbuttonyn && !editBlockedReason
+
   // 값 찾기 모달 상태
   const [searchModal, setSearchModal] = useState(null)  // null | { dp, rows, columns }
 
@@ -270,6 +278,7 @@ export default function ReqDocListPage() {
     setSelectedRow(null)
     setDocnmInput(docnm_base ? `${docnm_base}_` : '')
     setParamValues({})
+    sessionStorage.removeItem(SS_GENDOCUID)
   }
 
   // 저장
@@ -567,11 +576,21 @@ export default function ReqDocListPage() {
               id="docnm"
               value={docnmInput}
               onChange={(e) => setDocnmInput(e.target.value)}
-              disabled={!editbuttonyn}
+              disabled={!canEditGendoc}
+              title={editbuttonyn && editBlockedReason ? t(editBlockedReason) : undefined}
               placeholder={t('msg.ph.gendocnm')}
               style={{ height: 25 }}
             />
           </div>
+
+          {selectedGendocRow?.paramchangedyn && (
+            <div style={{
+              margin: '0 0 12px', padding: '6px 10px', borderRadius: 6,
+              backgroundColor: '#fff7e6', color: '#ad6800', fontSize: 12,
+            }}>
+              {t('msg.gendoc.params.changed')}
+            </div>
+          )}
 
           {/* 매개변수 입력 소제목 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
@@ -579,11 +598,23 @@ export default function ReqDocListPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {editbuttonyn && (
                 <>
-                  <button className="btn btn-primary" type="button" onClick={handleSave}>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={handleSave}
+                    disabled={!!editBlockedReason}
+                    title={editBlockedReason ? t(editBlockedReason) : undefined}
+                  >
                     {t('btn.save')}
                   </button>
                   {selectedGendocuid && (
-                    <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteGendoc.isPending}>
+                    <button
+                      className="btn btn-danger"
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={deleteGendoc.isPending || selectedGendocRow?.closeyn}
+                      title={selectedGendocRow?.closeyn ? t('msg.gendoc.closed.readonly') : undefined}
+                    >
                       {t('btn.delete')}
                     </button>
                   )}
@@ -597,7 +628,13 @@ export default function ReqDocListPage() {
                       {t('btn.doc.open')}
                     </button>
                   ) : (
-                    <button className="btn btn-secondary" type="button" onClick={handleClose} disabled={closeGendoc.isPending}>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={handleClose}
+                      disabled={closeGendoc.isPending || !selectedGendocRow?.createfiledts}
+                      title={!selectedGendocRow?.createfiledts ? t('msg.gendoc.close.needs.file') : undefined}
+                    >
                       {t('btn.doc.close')}
                     </button>
                   )}
@@ -631,10 +668,10 @@ export default function ReqDocListPage() {
                             ...prev,
                             [dp.paramuid]: { value: e.target.value, finalnm: e.target.value },
                           }))}
-                          disabled={!editbuttonyn}
+                          disabled={!canEditGendoc}
                           style={{ flex: 1, height: 24, padding: '2px 6px', fontSize: 13 }}
                         />
-                        {editbuttonyn && (
+                        {canEditGendoc && (
                           <button
                             type="button"
                             className="icon-btn search-btn"
@@ -655,7 +692,7 @@ export default function ReqDocListPage() {
                           ...prev,
                           [dp.paramuid]: { value: e.target.value, finalnm: e.target.value },
                         }))}
-                        disabled={!editbuttonyn}
+                        disabled={!canEditGendoc}
                         style={{ width: '100%', height: 24, padding: '2px 6px', fontSize: 13 }}
                       />
                     )}

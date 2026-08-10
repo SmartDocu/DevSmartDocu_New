@@ -1,9 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import { useLangStore, t } from '@/stores/langStore'
-import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
-import { useDocs } from '@/hooks/useDocs'
-import { useOrgProjects } from '@/hooks/useOrg'
+import { useDocs, useProjects } from '@/hooks/useDocs'
 import { useDatasByProject, useDataDetail } from '@/hooks/useDatas'
 import { useState } from 'react'
 
@@ -22,9 +20,7 @@ export default function AdminDatasetsPage() {
   }
   const projectLabel = (p) => p.servicecd ? `${p.projectnm} - ${serviceLabel(p.servicecd)}` : p.projectnm
 
-  const tenantid = useAuthStore((s) => s.user?.tenantid)
-  const { data: orgProjectsData } = useOrgProjects(tenantid)
-  const projects = orgProjectsData?.projects || []
+  const { data: projects = [] } = useProjects()
   const { data: allDocs = [] } = useDocs()
   const [projectId, setProjectId] = useState('')
   const [docId, setDocId] = useState('')

@@ -12,7 +12,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import { t } from '@/stores/langStore'
 
 // ── API 함수 (기존 프로젝트 api 클라이언트 방식에 맞게 교체하세요) ───────────
@@ -55,6 +55,7 @@ export function useMfaFactors() {
 
 /** MFA 등록 시작 → QR URI / secret 반환 */
 export function useMfaEnroll() {
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: postMfaEnroll,
     onError: () => {
@@ -66,6 +67,7 @@ export function useMfaEnroll() {
 /** MFA 등록 확인 → verified 상태 전환 */
 export function useMfaEnrollVerify() {
   const queryClient = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: postMfaEnrollVerify,
     onSuccess: () => {
@@ -81,6 +83,7 @@ export function useMfaEnrollVerify() {
 /** MFA 해제 */
 export function useMfaUnenroll() {
   const queryClient = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: deleteMfaUnenroll,
     onSuccess: () => {

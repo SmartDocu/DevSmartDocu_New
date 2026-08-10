@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { message } from 'antd'
+import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
 
@@ -13,6 +13,7 @@ export function useDatasets() {
 
 export function useSaveDataset() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datasets', body).then((r) => r.data),
     onSuccess: () => {
@@ -27,6 +28,7 @@ export function useSaveDataset() {
 
 export function useDeleteDataset() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (datasetuid) => apiClient.delete(`/datasets/${datasetuid}`).then((r) => r.data),
     onSuccess: () => {
@@ -49,6 +51,7 @@ export function useDatasetMembers(datasetuid) {
 
 export function useSaveDatasetMembers(datasetuid) {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post(`/datasets/${datasetuid}/members`, body).then((r) => r.data),
     onSuccess: () => {
@@ -71,6 +74,7 @@ export function useDatasetProjects(datasetuid) {
 
 export function useSaveDatasetProjects(datasetuid) {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post(`/datasets/${datasetuid}/projects`, body).then((r) => r.data),
     onSuccess: () => {
@@ -118,6 +122,7 @@ export function useDatasetMembersState(datasetuid) {
 
 export function useSaveDatasetAll() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/datasets/save-all', body).then((r) => r.data),
     onSuccess: (data) => {
