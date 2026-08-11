@@ -150,7 +150,7 @@ def _parse_user_agent(ua: str) -> dict:
     return {"browser": browser, "browser_version": browser_version, "os_nm": os_nm}
 
 
-# def _device_fingerprint(ip: str, ua: str) -> str:
+def _device_fingerprint(ip: str, ua: str) -> str:
     return hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:64]
 
 
@@ -573,7 +573,7 @@ def login(body: LoginRequest, request: Request, background_tasks: BackgroundTask
     ip = _get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     ua_info = _parse_user_agent(ua)
-    # fingerprint = _device_fingerprint(ip, ua)
+    fingerprint = _device_fingerprint(ip, ua)
 
     def _log(**kwargs):
         background_tasks.add_task(_insert_login_log, **kwargs)
