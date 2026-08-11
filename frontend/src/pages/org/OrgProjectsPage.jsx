@@ -89,7 +89,7 @@ export default function OrgProjectsPage() {
   }
 
   const pageTitle = tenantnm
-    ? `${t('mnu.project.projects')}: ${tenantnm}` : t('mnu.project.projects')
+    ? `${t('ttl.project.projects')}: ${tenantnm}` : t('ttl.project.projects')
 
   return (
     <div>

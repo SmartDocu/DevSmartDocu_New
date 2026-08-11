@@ -194,7 +194,7 @@ export default function AdminSamplePromptPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.system.translation.sample_prompt')}</div>
+          <div>{t('ttl.system.translation.sample_prompt')}</div>
         </div>
       </div>
 

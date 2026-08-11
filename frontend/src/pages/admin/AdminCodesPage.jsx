@@ -115,7 +115,7 @@ export default function AdminCodesPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.system.translation.codes')}</div>
+          <div>{t('ttl.system.translation.codes')}</div>
         </div>
       </div>
 

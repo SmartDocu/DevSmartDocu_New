@@ -129,7 +129,7 @@ export default function OrgTenantUsersPage() {
   }
 
   const pageTitle = roleid === 7 && tenantnm
-    ? `${t('mnu.tenant.users')}: ${tenantnm}` : t('mnu.tenant.users')
+    ? `${t('ttl.tenant.users')}: ${tenantnm}` : t('ttl.tenant.users')
 
   return (
     <div>

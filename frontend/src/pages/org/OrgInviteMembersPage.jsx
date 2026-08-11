@@ -103,7 +103,7 @@ export default function OrgInviteMembersPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.org.invite.members')}</div>
+          <div>{t('ttl.org.invite.members')}</div>
         </div>
       </div>
 

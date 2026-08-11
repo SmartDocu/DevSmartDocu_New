@@ -110,7 +110,7 @@ export default function AdminTermsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.system.translation.terms')}</div>
+          <div>{t('ttl.system.translation.terms')}</div>
         </div>
       </div>
 

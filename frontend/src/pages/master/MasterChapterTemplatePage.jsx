@@ -1250,7 +1250,7 @@ export default function MasterChapterTemplatePage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.master_data.chapters.chapter-template')}</div>
+          <div>{t('ttl.master_data.chapters.chapter-template')}</div>
         </div>
         <div />
       </div>

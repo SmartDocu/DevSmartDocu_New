@@ -107,7 +107,7 @@ setSelectedMessage(msg)
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.system.translation.messages')}</div>
+          <div>{t('ttl.system.translation.messages')}</div>
         </div>
       </div>
 

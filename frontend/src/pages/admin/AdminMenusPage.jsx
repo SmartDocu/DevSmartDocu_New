@@ -121,7 +121,7 @@ export default function AdminMenusPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.system.translation.menus')}</div>
+          <div>{t('ttl.system.translation.menus')}</div>
         </div>
       </div>
 

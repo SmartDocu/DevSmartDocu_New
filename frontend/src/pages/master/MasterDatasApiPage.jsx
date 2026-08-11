@@ -31,7 +31,7 @@ export default function MasterDatasApiPage() {
 
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
-  const menuNm = currentMenu ? (currentMenu.default_text || '') : t('mnu.master_data.data.api')
+  const menuNm = currentMenu ? (currentMenu.default_text || '') : t('ttl.master_data.data.api')
 
   const { data: paramLocations = [] } = useMenuCodes('param_locationcd')
   const { data: datas = [], isLoading } = useDatasApi()

@@ -72,7 +72,7 @@ export default function MasterDocsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.master_data.docs.base')}</div>
+          <div>{t('ttl.master_data.docs.base')}</div>
         </div>
       </div>
 

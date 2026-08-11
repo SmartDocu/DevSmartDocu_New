@@ -94,7 +94,7 @@ export default function SettingsDatasetsPage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.db.datas')}</div>
+          <div>{t('ttl.db.datas')}</div>
         </div>
       </div>
 

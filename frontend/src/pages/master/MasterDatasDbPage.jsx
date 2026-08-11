@@ -29,7 +29,7 @@ export default function MasterDatasDbPage() {
 
   const { data: allMenus = [] } = useMenus()
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
-  const menuNm = currentMenu ? (currentMenu.default_text || '') : t('mnu.master_data.data.db')
+  const menuNm = currentMenu ? (currentMenu.default_text || '') : t('ttl.master_data.data.db')
 
   const { data: datas = [], isLoading } = useDatasDb()
   const { data: connectors = [] } = useDbConnectors()

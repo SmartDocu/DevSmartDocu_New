@@ -94,7 +94,7 @@ export default function OrgWhitelistManagePage() {
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
-          <div>{t('mnu.tenant_mgr.whitelist')}</div>
+          <div>{t('ttl.tenant_mgr.whitelist')}</div>
         </div>
       </div>
 
