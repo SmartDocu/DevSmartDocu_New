@@ -73,7 +73,8 @@ def delete_from_storage(storage_path: str) -> None:
     try:
         get_client().storage.from_(_BUCKET).remove([storage_path])
     except Exception as e:
-        print(f"[supabase_client] 스토리지 삭제 실패 ({storage_path}): {e}")
+        # print(f"[supabase_client] 스토리지 삭제 실패 ({storage_path}): {e}")
+        pass
 
 
 def copy_to_shares(

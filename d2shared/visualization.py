@@ -107,7 +107,8 @@ def detect_visualization_type_with_llm(question: str, llm, log_ctx: dict = None)
         return parse_llm_json_response(raw_result)
 
     except Exception as e:
-        print(f"[WARN] 시각화 타입 감지 오류: {e}")
+        # print(f"[WARN] 시각화 타입 감지 오류: {e}")
+        pass
         return {"visualization_type": "none", "chart_type": None, "confidence": 0.0,
                 "reasoning": f"error: {str(e)}"}
 
@@ -173,7 +174,8 @@ def _prepare_dataframe_for_visualization(df: pd.DataFrame, chart_type: str = Non
                 ).reset_index()
                 df.columns.name = None
             except Exception as e:
-                print(f"[WARN] 피봇 실패: {e}")
+                # print(f"[WARN] 피봇 실패: {e}")
+                pass
 
     return df
 
@@ -499,7 +501,8 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
         return image_base64, data_json
 
     except Exception as e:
-        print(f"[WARN] 차트 생성 오류: {e}")
+        # print(f"[WARN] 차트 생성 오류: {e}")
+        pass
         traceback.print_exc()
         plt.close('all')
         return None, None

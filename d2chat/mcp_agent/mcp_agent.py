@@ -64,7 +64,8 @@ class MCPAgent:
             self._vendor = _vendor
             self.llm = build_langchain_llm(self._vendor, self._api_key, self.llm_model)
         except Exception as _e:
-            print(f"[MCPAgent] LLM 초기화 실패 (ask() 호출 시 재시도): {_e}")
+            # print(f"[MCPAgent] LLM 초기화 실패 (ask() 호출 시 재시도): {_e}")
+            pass
             self.llm_model = None
             self._api_key = None
             self._vendor = None
@@ -397,13 +398,13 @@ class MCPAgent:
                     history_messages.append(AIMessage(content=h["answer"]))
                 input_messages = history_messages + [HumanMessage(content=question)]
 
-                print(f"\n{'='*60}")
-                print(f"[LLM 입력] 총 메시지 수: {len(input_messages)}")
+                # print(f"\n{'='*60}")
+                # print(f"[LLM 입력] 총 메시지 수: {len(input_messages)}")
                 for i, msg in enumerate(input_messages):
                     role = type(msg).__name__
                     content = msg.content + "..." if len(msg.content) > 200 else msg.content
-                    print(f"  [{i+1}] {role}: {content}")
-                print(f"{'='*60}\n")
+                    # print(f"  [{i+1}] {role}: {content}")
+                # print(f"{'='*60}\n")
                 result = executor.invoke({"messages": input_messages}, config=config)
                 answer_text = strip_markdown(result["messages"][-1].content)
                 answer_text = re.sub(r'<q_data>.*?</q_data>', '', answer_text, flags=re.DOTALL).strip()
@@ -419,7 +420,8 @@ class MCPAgent:
                                 current_query = query
                                 current_queries.append({"question": question, "query": query})
                         except Exception as e:
-                            print(f"[WARN] tool result 파싱 오류: {e}")
+                            # print(f"[WARN] tool result 파싱 오류: {e}")
+                            pass
 
                 viz_result = detect_visualization_type_with_llm(question, self.llm, log_ctx=log_ctx)
                 current_visualization_type = viz_result['visualization_type']
@@ -474,7 +476,8 @@ class MCPAgent:
                             # is_answerable=False(현재 데이터와 무관한 질문일 가능성, 예: 인사말)인 경우
                             # direct_result를 None으로 두어 원래 답변을 그대로 유지한다 (오탐으로 인한 UX 저하 방지).
                     except Exception as e:
-                        print(f"[FORCE QUERY] 직접 실행 실패: {e}")
+                        # print(f"[FORCE QUERY] 직접 실행 실패: {e}")
+                        pass
                         direct_result = None
 
                     if direct_result is not None:
@@ -488,8 +491,9 @@ class MCPAgent:
                             try:
                                 answer_text = self._answer_from_data(question, current_data, log_ctx)
                             except Exception as e:
-                                print(f"[FORCE QUERY] 데이터 기반 답변 재생성 실패: {e}")
-                            print(f"[FORCE QUERY] 직접 실행 성공: {len(current_data)}건")
+                                # print(f"[FORCE QUERY] 데이터 기반 답변 재생성 실패: {e}")
+                                pass
+                            # print(f"[FORCE QUERY] 직접 실행 성공: {len(current_data)}건")
                         elif status in ('no_data', 'error', 'no_dataset'):
                             # 데이터 질문인 건 확인됐는데 데이터가 없거나 조회에 실패한 경우 —
                             # 지어낸 답변 대신 모른다고 명확히 답변
@@ -497,7 +501,7 @@ class MCPAgent:
                                 direct_result.get('message')
                                 or "죄송합니다, 현재 등록된 데이터로는 답변할 수 없습니다."
                             )
-                            print(f"[FORCE QUERY] 데이터 없음/실패({status}) — 답변을 안내 문구로 대체")
+                            # print(f"[FORCE QUERY] 데이터 없음/실패({status}) — 답변을 안내 문구로 대체")
                         # status == 'not_answerable' (분류기가 데이터 질문이 아니라고 판단, 예: 메타 질문/피드백)이면
                         # direct_result를 만들었더라도 answer_text를 덮어쓰지 않고 원래 LLM 답변을 그대로 유지한다.
 
@@ -533,7 +537,8 @@ class MCPAgent:
                                     response["chart_data"] = json.loads(data_json)
                                     history_answer = f"{answer_text}\n<q_data>{data_json}</q_data>"
                     except Exception as e:
-                        print(f"시각화 생성 오류: {e}")
+                        # print(f"시각화 생성 오류: {e}")
+                        pass
                         traceback.print_exc()
 
                 self.add_to_history(session_id, question, history_answer, current_query)
@@ -543,7 +548,7 @@ class MCPAgent:
 
             except Exception as e:
                 last_error = e
-                print(f"[attempt {attempt}/{max_retries}] ask 오류: {e}")
+                # print(f"[attempt {attempt}/{max_retries}] ask 오류: {e}")
                 traceback.print_exc()
                 if attempt < max_retries:
                     import time

@@ -181,22 +181,25 @@ if __name__ == "__main__":
 
     extracted = extract_from_processed_html(processed_html)
 
-    print("=== 문서 순서대로 추출 ===")
+    # print("=== 문서 순서대로 추출 ===")
     for i, item in enumerate(extracted, 1):
-        print(f"  {i:2}. {item['objectNm']:15} | {item['params']}")
+        # print(f"  {i:2}. {item['objectNm']:15} | {item['params']}")
+        pass
 
-    print()
+    # print()
 
     grouped = group_by_object(extracted)
-    print("=== 그룹화 (첫 등장 순서 유지) ===")
+    # print("=== 그룹화 (첫 등장 순서 유지) ===")
     for item in grouped:
-        print(f"  {item['objectNm']:15} | {item['json']}")
+        # print(f"  {item['objectNm']:15} | {item['json']}")
+        pass
 
-    print()
+    # print()
 
     db_rows = to_db_rows(grouped)
-    print("=== DB 저장 형태 ===")
+    # print("=== DB 저장 형태 ===")
     for row in db_rows:
-        print(f"  objectNm : {row['objectNm']}")
-        print(f"  json     : {row['json']}")
-        print()
+        # print(f"  objectNm : {row['objectNm']}")
+        pass
+        # print(f"  json     : {row['json']}")
+        # print()

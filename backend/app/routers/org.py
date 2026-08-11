@@ -286,7 +286,7 @@ def list_tenant_llms(
     try:
      return _list_tenant_llms_impl(token, accountuid)
     except Exception:
-     print("[tenant-llms 500]\n" + _tb.format_exc())
+     # print("[tenant-llms 500]\n" + _tb.format_exc())
      raise
 
 def _list_tenant_llms_impl(token: str, accountuid: Optional[str]):

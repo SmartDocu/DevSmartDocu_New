@@ -339,8 +339,10 @@ export default function SettingsConnectorsPage() {
 
           <div className="form-group">
             <label>{t('lbl.useyn_lbl')}:</label>
-            <input type="checkbox" checked={form.useyn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
+            </div>
           </div>
 
           <hr style={{ margin: '16px 0', borderColor: '#f0f0f0' }} />
@@ -499,8 +501,10 @@ export default function SettingsConnectorsPage() {
 
               <div className="form-group">
                 <label>{t('lbl.is_active_lbl')}:</label>
-                <input type="checkbox" checked={form.is_active}
-                  onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} />
+                <div style={{ paddingLeft: 60 }}>
+                  <input type="checkbox" checked={form.is_active}
+                    onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} />
+                </div>
               </div>
             </>
           )}

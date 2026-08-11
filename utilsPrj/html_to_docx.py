@@ -139,7 +139,8 @@ def add_image_to_doc(doc, img_element, styles):
                                           height=Inches(height_in) if height_in else None)
             apply_paragraph_formatting(paragraph, styles)
     except Exception as e:
-        print(f"⚠️ 이미지 삽입 실패 ({src}): {e}")
+        # print(f"⚠️ 이미지 삽입 실패 ({src}): {e}")
+        pass
 
 # ===== 테이블 헤더 고정 =====
 def set_table_header_repeat(table_row):
@@ -173,6 +174,7 @@ def set_cell_margins(cell, top=None,left=None,bottom=None,right=None):
         tcPr.append(tcMar)
     def set_one(side,val): 
         # print(f'Sied:{side} / val:{val}')
+        pass
         if val is None: return
         el = tcMar.find(qn(f'w:{side}'))
         if el is None:
@@ -248,7 +250,8 @@ def add_table_to_doc(doc, table_element):
         # print(f"📋 th 태그 기반 헤더 감지: {header_count}행")
         
     if not all_rows: 
-        print("⚠️ 테이블에 행이 없습니다.")
+        # print("⚠️ 테이블에 행이 없습니다.")
+        pass
         return
     
     max_cols = max(len(row.find_all(['td','th'])) for row in all_rows)
@@ -538,6 +541,7 @@ def process_element(doc, element, parent_styles=None):
 def html_to_docx(supabase, genchapteruid, html_content):
     try:
         # print(f'HTML_Content: {html_content}')
+        pass
         # 페이지 나누기 코드 변환 처리
         sep_pagebreak = '<div class="page-break" style="page-break-after:always;"><span style="display:none;">&nbsp;</span></div>'
         html_content = html_content.replace(sep_pagebreak, '---페이지 나누기---')
@@ -583,7 +587,8 @@ def html_to_docx(supabase, genchapteruid, html_content):
         # print('HTML_To_Docx 변환 작업 완료')
         return doc
     except Exception as e:
-        print(f"❌ 변환 중 오류 발생: {e}")
+        # print(f"❌ 변환 중 오류 발생: {e}")
+        pass
         return doc
 
 # 머리글 바닥글 설정
@@ -685,7 +690,8 @@ def html_to_docx_merge(supabase, doc, genchapteruid, html_content, index, previo
         return previous_yn, current_yn
 
     except Exception as e:
-        print(f"❌ 챕터 {index} 병합 중 오류 발생: {e}")
+        # print(f"❌ 챕터 {index} 병합 중 오류 발생: {e}")
+        pass
         return False, False
 
 # 머리글 바닥글 설정 (병합용) - 수정된 버전
@@ -719,18 +725,21 @@ def set_headerfooter_merge(supabase, genchapteruid, result_doc, index, previous_
         result_section = result_doc.sections[0]
     elif current_yn:
         # print('현재 챕터가 ChapterTempl')
+        pass
         result_section = result_doc.add_section(WD_SECTION.NEW_PAGE)
         # 🔹 이전 섹션과 머리글/바닥글 연결 끊기
         result_section.header.is_linked_to_previous = False
         result_section.footer.is_linked_to_previous = False
     elif not(current_yn) and previous_yn:
         # print(f"현재 챕터는 BaseTempl 이지만 이전이 ChapterTempl")
+        pass
         result_section = result_doc.add_section(WD_SECTION.NEW_PAGE)
         # 🔹 이전 섹션과 머리글/바닥글 연결 끊기
         result_section.header.is_linked_to_previous = False
         result_section.footer.is_linked_to_previous = False
     else:
         # print('현재 챕터 BaseTempl')
+        pass
         result_section = result_doc.sections[0]
         # 🔹 이전 섹션과 머리글/바닥글 연결 끊기
         result_section.header.is_linked_to_previous = False
@@ -802,7 +811,8 @@ def copy_header_footer_from_template(template_section, target_section):
         # print(f"머리글: '{header_text}', 바닥글: '{footer_text}' 설정 완료")
         
     except Exception as e:
-        print(f"⚠️ 머리글/바닥글 복사 중 오류: {e}")
+        # print(f"⚠️ 머리글/바닥글 복사 중 오류: {e}")
+        pass
 
 
 # 대안: 더 간단하고 안전한 방법
@@ -864,7 +874,8 @@ def set_headerfooter_merge_safe(supabase, genchapteruid, result_doc, index):
         # print(f"섹션 {index} 머리글/바닥글 설정 완료")
         
     except Exception as e:
-        print(f"⚠️ 섹션 {index} 머리글/바닥글 설정 실패: {e}")
+        # print(f"⚠️ 섹션 {index} 머리글/바닥글 설정 실패: {e}")
+        pass
     
     return result_doc
 
@@ -893,7 +904,8 @@ def disconnect_section_headers_footers(section):
         return section
         
     except Exception as e:
-        print(f"⚠️ 섹션 분리 중 오류 (안전모드로 진행): {e}")
+        # print(f"⚠️ 섹션 분리 중 오류 (안전모드로 진행): {e}")
+        pass
         return section
 
 

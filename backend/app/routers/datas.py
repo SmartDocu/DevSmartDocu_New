@@ -523,7 +523,8 @@ def list_datas(
                     single_pid = docs[0]["projectid"]
                     pmap = {single_pid: docs[0].get("docnm", "")}
         except Exception as e:
-            print(f"[list_datas] chapteruid 조회 오류: {e}", file=sys.stderr)
+            # print(f"[list_datas] chapteruid 조회 오류: {e}", file=sys.stderr)
+            pass
 
     if single_pid is None:
         project_ids, pmap, _ = _active_projects(sb, str(user.id), tenantid=tenantid)
@@ -552,7 +553,8 @@ def list_datas(
             )
             rows += dbapi_rows
     except Exception as e:
-        print(f"[list_datas] datas 조회 오류: {e}", file=sys.stderr)
+        # print(f"[list_datas] datas 조회 오류: {e}", file=sys.stderr)
+        pass
         return {"datas": []}
 
     # doc_datas 필터: chapteruid 경로에서 doc_datas에 등록된 datauid만 노출 (db/ex/df 모두)
@@ -1290,7 +1292,7 @@ def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional
         return {"data": dict_rows}
     except Exception as e:
         import traceback, sys
-        print(traceback.format_exc(), file=sys.stderr)
+        # print(traceback.format_exc(), file=sys.stderr)
         raise HTTPException(status_code=500, detail=f"데이터 조회 오류: {e}")
 
 

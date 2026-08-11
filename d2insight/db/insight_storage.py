@@ -577,7 +577,8 @@ def insert_llm_api_logs(
     try:
         _sc.table("llminsightlogs").insert(rows).execute()
     except Exception as e:
-        print(f"[insight_storage] insert_llm_api_logs 오류: {e}")
+        # print(f"[insight_storage] insert_llm_api_logs 오류: {e}")
+        pass
 
 
 # ── 즐겨찾기 ─────────────────────────────────────────────────────
@@ -665,7 +666,8 @@ def get_folders(tenant_id: int | None) -> list[dict]:
         res = q.execute()
         return res.data or []
     except Exception as e:
-        print(f"[insight_storage] get_folders 오류: {e}")
+        # print(f"[insight_storage] get_folders 오류: {e}")
+        pass
         return []
 
 
@@ -693,9 +695,10 @@ def seed_sample_folders(tenant_id: int | None, creator: str | None) -> None:
              "parent_folderuid": sales_uid}
         ).execute()
 
-        print(f"[insight_storage] 샘플 폴더 생성 완료 (tenant_id={tenant_id})")
+        # print(f"[insight_storage] 샘플 폴더 생성 완료 (tenant_id={tenant_id})")
     except Exception as e:
-        print(f"[insight_storage] seed_sample_folders 오류: {e}")
+        # print(f"[insight_storage] seed_sample_folders 오류: {e}")
+        pass
 
 
 # ── 공유 ─────────────────────────────────────────────────────────
@@ -730,7 +733,8 @@ def share_qa(qauid: str, creator: str, folder_uid: str | None = None) -> bool:
         _sc.table("insight_qa_shares").insert(row).execute()
         return True
     except Exception as e:
-        print(f"[insight_storage] share_qa 오류: {e}")
+        # print(f"[insight_storage] share_qa 오류: {e}")
+        pass
         return False
 
 
@@ -767,12 +771,14 @@ def delete_share_sent(share_qauid: str, creator: str) -> bool:
                 storage_path = build_shares_path(tenant_id, project_id, pdf_filename)
                 delete_from_storage(storage_path)
             except Exception as se:
-                print(f"[insight_storage] 공유 스토리지 파일 삭제 실패: {se}")
+                # print(f"[insight_storage] 공유 스토리지 파일 삭제 실패: {se}")
+                pass
 
         _sc.table("insight_qa_shares").delete().eq("qauid", share_qauid).execute()
         return True
     except Exception as e:
-        print(f"[insight_storage] delete_share_sent 오류: {e}")
+        # print(f"[insight_storage] delete_share_sent 오류: {e}")
+        pass
         return False
 
 

@@ -39,7 +39,7 @@ def _get_user(token: str):
         err_msg = str(e).lower()
         if "expired" in err_msg or "invalid jwt" in err_msg or "invalid claims" in err_msg:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="토큰이 만료되었습니다.")
-        print(f"[admin._get_user] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+        # print(f"[admin._get_user] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"인증 오류: {str(e)}")
 
 
@@ -56,7 +56,7 @@ def _require_admin(token: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[admin._require_admin] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+        # print(f"[admin._require_admin] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"관리자 확인 오류: {str(e)}")
 
 
@@ -154,7 +154,7 @@ def list_sample_prompts(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[admin.list_sample_prompts] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+        # print(f"[admin.list_sample_prompts] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"샘플 프롬프트 조회 오류: {str(e)}")
 
 
@@ -276,7 +276,7 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
         result_df = process_data(req, body.datauid, None, all=True)
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[sample-prompt/preview] process_data 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[sample-prompt/preview] process_data 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=400, detail=f"데이터 조회 오류: {str(e)}")
 
     try:
@@ -503,7 +503,7 @@ def save_prompt(body: PromptSaveRequest, token: str = Depends(get_token)):
             sb.schema(SUPABASE_SCHEMA).table("prompts").update(payload).eq("promptkey", body.promptkey).execute()
         return {"ok": True, "promptkey": body.promptkey}
     except Exception as e:
-        print(f"[save_prompt] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+        # print(f"[save_prompt] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 

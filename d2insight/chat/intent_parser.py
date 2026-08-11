@@ -120,5 +120,6 @@ def parse_intent(message: str, project_id=None, tenant_id=None, user_uid=None, a
             parsed.setdefault("mode", None)
             return parsed
     except Exception as e:
-        print(f"[intent_parser] error: {e}")
+        # print(f"[intent_parser] error: {e}")
+        pass
     return {"tool": "chat", "target_month": None, "months_back": 3, "report_type": None, "mode": None}

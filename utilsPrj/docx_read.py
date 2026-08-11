@@ -179,10 +179,12 @@ def _extract_images_from_docx(doc):
                         'content_type': content_type
                     }
                 except Exception as e:
-                    print(f"이미지 처리 중 오류 발생: {e}")
+                    # print(f"이미지 처리 중 오류 발생: {e}")
+                    pass
                     continue
     except Exception as e:
-        print(f"이미지 추출 중 오류 발생: {e}")
+        # print(f"이미지 추출 중 오류 발생: {e}")
+        pass
     
     return image_dict
 
@@ -422,7 +424,8 @@ def _apply_text_styles(run, text, printyn):
             style_attrs.append(f"color:{hex_color}")
 
     except Exception as e:
-        print(f"스타일 속성 처리 중 오류: {e}")
+        # print(f"스타일 속성 처리 중 오류: {e}")
+        pass
 
     style_attr = f' style="{";".join(style_attrs)}"' if style_attrs else ''
 
@@ -552,7 +555,8 @@ def _process_table(table, image_dict, ckeditor_mode=False, printyn=False):
             table_html.append('</tbody>')
             
     except Exception as e:
-        print(f"표 처리 중 오류 발생: {e}")
+        # print(f"표 처리 중 오류 발생: {e}")
+        pass
     
     table_html.append('</table>')
     return ''.join(table_html)
@@ -620,7 +624,8 @@ def _process_cell_text_with_images(cell, image_dict, printyn):
                 result_parts.append(para_content)
                 
     except Exception as e:
-        print(f"셀 처리 중 오류 발생: {e}")
+        # print(f"셀 처리 중 오류 발생: {e}")
+        pass
         # 기본 처리 방식으로 폴백
         try:
             for paragraph in cell.paragraphs:
@@ -743,7 +748,8 @@ def _get_cell_style(cell, use_ckeditor_format=False):
             pass
     
     except Exception as e:
-        print(f"셀 스타일 처리 중 오류: {e}")
+        # print(f"셀 스타일 처리 중 오류: {e}")
+        pass
     
     # 결과 조합
     result_attrs = []

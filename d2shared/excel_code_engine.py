@@ -39,7 +39,8 @@ def fix_groupby_agg_pattern(code: str) -> str:
     replacement = r"groupby(\1).agg("
     fixed_code = re.sub(pattern, replacement, code)
     if fixed_code != code:
-        print("[AUTO FIX] groupby().agg() 패턴 자동 수정됨")
+        # print("[AUTO FIX] groupby().agg() 패턴 자동 수정됨")
+        pass
     return fixed_code
 
 
@@ -54,7 +55,8 @@ def fix_numeric_only_pattern(code: str) -> str:
         replacement = rf'.{func}(numeric_only=True)'
         new_code = re.sub(pattern, replacement, code)
         if new_code != code:
-            print(f"[AUTO FIX] .{func}() → .{func}(numeric_only=True) 수정됨")
+            # print(f"[AUTO FIX] .{func}() → .{func}(numeric_only=True) 수정됨")
+            pass
             code = new_code
     return code
 

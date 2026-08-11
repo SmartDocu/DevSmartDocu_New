@@ -176,11 +176,13 @@ export default function SettingsDatasetsPage() {
           </div>
           <div className="form-group">
             <label>{t('lbl.useyn_lbl')}:</label>
-            <input
-              type="checkbox"
-              checked={form.useyn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-            />
+            <div style={{ paddingLeft: 60 }}>
+              <input
+                type="checkbox"
+                checked={form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+              />
+            </div>
           </div>
 
           {/* 데이터 멤버 + 프로젝트 매핑 (좌우 나란히) */}

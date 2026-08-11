@@ -912,5 +912,5 @@ def draw_chart(request, supabase, charttypecd, dict_rows, properties, datauid):
         # --------------------------
         #  오류 로그 저장
         # --------------------------
-        print(f"[chart_utils] CHART 생성 중 오류: {e}")
+        # print(f"[chart_utils] CHART 생성 중 오류: {e}")
         raise e

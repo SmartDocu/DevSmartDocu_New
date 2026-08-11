@@ -193,6 +193,7 @@ export default function AppLayout() {
     clearTabs()
     resetLang()
     clearAuth()
+    queryClient.clear()
     navigate('/')
   }
 

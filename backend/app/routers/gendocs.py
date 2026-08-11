@@ -1481,7 +1481,7 @@ def _build_context(sb, variables: list, req, docid) -> dict:
             context[f"@{v}"] = enriched
         else:
             import sys
-            print(f"[_build_context] @{v} 데이터 비어있음 (sourcedatauid={sourcedatauid})", file=sys.stderr)
+            # print(f"[_build_context] @{v} 데이터 비어있음 (sourcedatauid={sourcedatauid})", file=sys.stderr)
     return context
 
 

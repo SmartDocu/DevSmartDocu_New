@@ -220,12 +220,14 @@ export default function AdminTermsPage() {
           </div>
           <div className="form-group">
             <label htmlFor="term-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
-            <input
-              id="term-useyn"
-              type="checkbox"
-              checked={!!form.useyn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-            />
+            <div style={{ paddingLeft: 60 }}>
+              <input
+                id="term-useyn"
+                type="checkbox"
+                checked={!!form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+              />
+            </div>
           </div>
         </div>
 

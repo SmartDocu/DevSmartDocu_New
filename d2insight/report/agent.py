@@ -608,7 +608,7 @@ class ReportAgent:
             if not ds.byitem_df.empty:
                 sections += ["§14. 이상징후 분석", "§15. Drill Down / Cross Analysis"]
             sections.append("최종. 경영 인사이트")
-            print(f"[plan_sections] 방침 고정 섹션: {sections}")
+            # print(f"[plan_sections] 방침 고정 섹션: {sections}")
             return sections
 
         # 그 외 보고서 유형: Haiku로 섹션 결정
@@ -825,7 +825,7 @@ class ReportAgent:
         section_results: dict[int, str] = {}
         section_tool_calls: dict[int, list[dict]] = {}
         _t0 = datetime.now()
-        print(f"[parallel] 병렬 섹션 {len(parallel_sections)}개 시작 (max_workers={REPORT_MAX_WORKERS})")
+        # print(f"[parallel] 병렬 섹션 {len(parallel_sections)}개 시작 (max_workers={REPORT_MAX_WORKERS})")
 
         with ThreadPoolExecutor(max_workers=REPORT_MAX_WORKERS) as executor:
             future_to_idx = {
@@ -840,9 +840,9 @@ class ReportAgent:
                     section_results[idx] = md
                     section_tool_calls[idx] = tool_calls
                     token_tracker.merge_calls(token_data["calls"])
-                    print(f"[parallel] 완료: {name} ({(datetime.now() - _t0).seconds}s)")
+                    # print(f"[parallel] 완료: {name} ({(datetime.now() - _t0).seconds}s)")
                 except Exception as e:
-                    print(f"[parallel] 실패: {name} — {e}")
+                    # print(f"[parallel] 실패: {name} — {e}")
                     section_results[idx] = ""
                     section_tool_calls[idx] = []
 
@@ -859,7 +859,7 @@ class ReportAgent:
         ]
 
         # 결론 항목: 전체 본문 완성 후 순차 실행
-        print(f"[parallel] 결론 섹션 시작: {conclusion_section}")
+        # print(f"[parallel] 결론 섹션 시작: {conclusion_section}")
         conclusion_md, conclusion_token_data, conclusion_tool_calls = self._run_section(
             section_system, conclusion_section, date_range
         )
@@ -868,7 +868,7 @@ class ReportAgent:
         if conclusion_md.strip():
             section_parts.append(conclusion_md)
             applied_steps.append({"section": conclusion_section, "tools": conclusion_tool_calls})
-        print(f"[parallel] 전체 완료 ({(datetime.now() - _t0).seconds}s)")
+        # print(f"[parallel] 전체 완료 ({(datetime.now() - _t0).seconds}s)")
 
         md_body = "\n\n".join(section_parts)
 

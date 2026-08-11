@@ -74,7 +74,7 @@ def create_excel_query_tool(agent) -> StructuredTool:
             return json.dumps(result, ensure_ascii=False)
 
         except Exception as e:
-            print(f"Tool 실행 오류: {str(e)}")
+            # print(f"Tool 실행 오류: {str(e)}")
             traceback.print_exc()
             return json.dumps({
                 "status": "error",

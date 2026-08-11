@@ -164,7 +164,7 @@ def flush_logs_to_db(supabase, log_source="AI"):
     try:
         if genobject_inserts:
             supabase.schema(SUPABASE_SCHEMA).table('genobjects').insert(genobject_inserts).execute()
-            print(f"[Batch-{log_source}] genobject inserted: {len(genobject_inserts)}개 (1회 호출)")
+            # print(f"[Batch-{log_source}] genobject inserted: {len(genobject_inserts)}개 (1회 호출)")
         
         if genobject_updates:
             updates_by_rate = defaultdict(list)
@@ -175,22 +175,22 @@ def flush_logs_to_db(supabase, log_source="AI"):
                 supabase.schema(SUPABASE_SCHEMA).table('genobjects').update(
                     {'progressrate': rate}
                 ).in_('genobjectuid', uids).execute()
-                print(f"[Batch-{log_source}] genobject updated: progressrate={rate}, {len(uids)}개 (1회 호출)")
+                # print(f"[Batch-{log_source}] genobject updated: progressrate={rate}, {len(uids)}개 (1회 호출)")
         
 
 
 
         if genobjectrunlog_inserts:
             supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(genobjectrunlog_inserts).execute()
-            print(f"[Batch-{log_source}] genobjectrunlog inserted: {len(genobjectrunlog_inserts)}개 (1회 호출)")
+            # print(f"[Batch-{log_source}] genobjectrunlog inserted: {len(genobjectrunlog_inserts)}개 (1회 호출)")
 
         if genobject_results:
             result_list = list(genobject_results.values())
             supabase.schema(SUPABASE_SCHEMA).table('genobjects').upsert(result_list).execute()
-            print(f"[Batch-{log_source}] genobject results upserted: {len(result_list)}개 (1회 호출)")
+            # print(f"[Batch-{log_source}] genobject results upserted: {len(result_list)}개 (1회 호출)")
             
     except Exception as e:
-        print(f"[Batch Error] {e}")
+        # print(f"[Batch Error] {e}")
         traceback.print_exc()
 
 
@@ -397,8 +397,8 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 data_json = json.loads(table_data_json)
 
                 if isinstance(data_json, list):
-                    print(f"WARNING: data_json is list, converting to dict")
-                    print(f"Original value: {data_json}")
+                    # print(f"WARNING: data_json is list, converting to dict")
+                    # print(f"Original value: {data_json}")
                     data_json = {}  # 또는 적절한 변환 로직
 
                 final_result = render_preview_table(header_json, data_json, data)
@@ -406,7 +406,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 final_result = final_result.replace('</table></div>', '</table>')
 
             else:
-                print(f"!!! Unknown status: {response.get('status')}")
+                # print(f"!!! Unknown status: {response.get('status')}")
                 return {
                     'success': False,
                     'error': f'알 수 없는 응답 상태: {response.get("status")}'
@@ -691,7 +691,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             )
 
         except Exception as e:
-            print(f"UI 객체 처리 실패: {data_item.get('objectnm', '')} - {str(e)}")
+            # print(f"UI 객체 처리 실패: {data_item.get('objectnm', '')} - {str(e)}")
             traceback.print_exc()
 
             _fail_uid = genobjectuid or data_item.get('genobjectuid')
@@ -721,7 +721,7 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
     # UI 객체 로그 일괄 저장
     if ui_objects:
         flush_logs_to_db(supabase, log_source="UI")
-        print(f"[Log] UI 객체 로그 일괄 저장 완료 ({len(ui_objects)}개)")
+        # print(f"[Log] UI 객체 로그 일괄 저장 완료 ({len(ui_objects)}개)")
         cleanup_thread_client()
     
     yield {'type': 'ui_complete', 'text_template': text_template}
@@ -770,7 +770,7 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
 
         for attempt in range(1, max_retries + 1):
             try:
-                print(f"[순차 재시도 {attempt}/{max_retries}] {data_item.get('objectnm', '')}")
+                # print(f"[순차 재시도 {attempt}/{max_retries}] {data_item.get('objectnm', '')}")
 
                 result_data = process_ai_object_with_tracking(
                     data_item,
@@ -792,7 +792,7 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
                     result_data['attempt'] = attempt
                     result_data['retried'] = True  # 재시도를 통해 성공했음을 표시
                     retry_results[original_idx] = result_data
-                    print(f"✓ {data_item.get('objectnm', '')} - {attempt}번째 재시도 성공")
+                    # print(f"✓ {data_item.get('objectnm', '')} - {attempt}번째 재시도 성공")
                     break
                 
                 last_error = result_data.get('error', '알 수 없는 오류')
@@ -812,7 +812,7 @@ def retry_failed_items_sequentially(failed_items, request, docid, gendoc_uid, ch
                 'retried': True,
                 'final_failure': True
             }
-            print(f"✗ {data_item.get('objectnm', '')} - 최종 실패")
+            # print(f"✗ {data_item.get('objectnm', '')} - 최종 실패")
     
     return retry_results
 
@@ -833,7 +833,7 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
     max_workers = min(len(ai_objects), 4)
     
     # ========== 1단계: 병렬 처리 ==========
-    print(f"[1단계] 병렬 처리 시작 (4개 동시)")
+    # print(f"[1단계] 병렬 처리 시작 (4개 동시)")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         try: 
             future_to_index = {}
@@ -868,7 +868,7 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                         result_data['attempt'] = 1  # 첫 시도에서 성공
                         ai_results[original_idx] = result_data
                         
-                        print(f"{data_item.get('objectnm', '')} - 첫 시도에서 성공")
+                        # print(f"{data_item.get('objectnm', '')} - 첫 시도에서 성공")
                         
                         with progress_lock:
                             completed_count[0] += 1
@@ -883,14 +883,14 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
                     else:
                         # 오류난 항목은 리스트에 저장
                         failed_items.append((original_idx, data_item))
-                        print(f"{data_item.get('objectnm', '')} - 오류 발생, 나중에 재시도 예정")
+                        # print(f"{data_item.get('objectnm', '')} - 오류 발생, 나중에 재시도 예정")
                         
                         with progress_lock:
                             completed_count[0] += 1
 
                 except Exception as e:
                     failed_items.append((original_idx, data_item))
-                    print(f"{data_item.get('objectnm', '')} - 예외 발생: {str(e)}")
+                    # print(f"{data_item.get('objectnm', '')} - 예외 발생: {str(e)}")
                     
                     with progress_lock:
                         completed_count[0] += 1
@@ -900,13 +900,13 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
             refresh_token = request.session.get("refresh_token")
             supabase = get_thread_supabase(access_token, refresh_token)
             flush_logs_to_db(supabase)
-            print(f"[Log] 1단계 로그 저장 완료")
+            # print(f"[Log] 1단계 로그 저장 완료")
             
             cleanup_thread_client()
     
     # ========== 2단계: 순차 재시도 ==========
     if failed_items:
-        print(f"\n[2단계] 순차 재시도 시작 ({len(failed_items)}개 항목)")
+        # print(f"\n[2단계] 순차 재시도 시작 ({len(failed_items)}개 항목)")
         retry_results = retry_failed_items_sequentially(
             failed_items,
             request,
@@ -954,7 +954,7 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
         refresh_token = request.session.get("refresh_token")
         supabase = get_thread_supabase(access_token, refresh_token)
         flush_logs_to_db(supabase)
-        print(f"[Log] 2단계 로그 저장 완료")
+        # print(f"[Log] 2단계 로그 저장 완료")
     
     # ========== 최종 결과 반환 ==========
     summary = {
@@ -962,7 +962,7 @@ def process_ai_objects_parallel(request, ai_objects, datas, docid, gendoc_uid,
         'success': len(ai_results),
         'failed': len(ai_objects) - len(ai_results)
     }
-    print(f"\n[완료] 성공: {summary['success']}/{summary['total']}, 실패: {summary['failed']}")
+    # print(f"\n[완료] 성공: {summary['success']}/{summary['total']}, 실패: {summary['failed']}")
     # cleanup_thread_client()
     
     yield {'type': 'ai_complete', 'ai_results': ai_results, 'summary': summary}
@@ -1332,7 +1332,7 @@ def call_params_chat(request, supabase, docid, gendoc_uid, params, query, data_u
 
         return df
     except Exception as e:
-        print(f'ErrorMessage: {e}')
+        # print(f'ErrorMessage: {e}')
         return {'success': False, 'message': str(e)}
     
 
@@ -1356,7 +1356,7 @@ def update_genchapters(supabase, genchapters, gen_chapter_uid):
     try:
         supabase.schema(SUPABASE_SCHEMA).table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
     except Exception as e:
-        print(f'ErrorMessage(update_genchapters): {e}')
+        # print(f'ErrorMessage(update_genchapters): {e}')
         return {'success': False, 'message': str(e)}
 
 
@@ -1364,14 +1364,14 @@ def save_gendoc_genchapters(supabase, gendoc_genchapters):
     try:
         supabase.schema(SUPABASE_SCHEMA).table('gendoc_genchapters').insert(gendoc_genchapters).execute().data
     except Exception as e:
-        print(f'ErrorMessage: {e}')
+        # print(f'ErrorMessage: {e}')
         return {'success': False, 'message': str(e)}
     
 def update_genobjects(supabase, genobjects):
     try:
         genobjects_respon = supabase.schema(SUPABASE_SCHEMA).table('genobjects').upsert(genobjects).execute().data
     except Exception as e:
-        print(f'ErrorMessage: {e}')
+        # print(f'ErrorMessage: {e}')
         return {'success': False, 'message': str(e)}
 
 

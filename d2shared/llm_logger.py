@@ -39,7 +39,8 @@ def log_llm_call(
         return
     table = _SERVICE_TABLE.get(log_ctx.get("servicecd"))
     if not table:
-        print(f"[llm_logger] 알 수 없는 servicecd={log_ctx.get('servicecd')!r} — 로그 생략")
+        # print(f"[llm_logger] 알 수 없는 servicecd={log_ctx.get('servicecd')!r} — 로그 생략")
+        pass
         return
     try:
         _q(table).insert({
@@ -63,7 +64,8 @@ def log_llm_call(
             "enddts":            enddts.isoformat() if enddts else None,
         }).execute()
     except Exception as e:
-        print(f"[llm_logger] 로그 저장 실패: {e}")
+        # print(f"[llm_logger] 로그 저장 실패: {e}")
+        pass
 
 
 def log_doc_llm_call(
@@ -113,4 +115,5 @@ def log_doc_llm_call(
             "enddts":            enddts.isoformat() if enddts else None,
         }).execute()
     except Exception as e:
-        print(f"[llm_logger] 로그 저장 실패(doc): {e}")
+        # print(f"[llm_logger] 로그 저장 실패(doc): {e}")
+        pass

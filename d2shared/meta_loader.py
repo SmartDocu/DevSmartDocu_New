@@ -23,7 +23,8 @@ def load() -> dict[str, dict]:
     from utilsPrj.supabase_client import get_service_client
 
     if not settings.SUPABASE_URL or not (settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY):
-        print("[meta_loader] SUPABASE_URL / SUPABASE_KEY 미설정 — 메타 로드 건너뜀")
+        # print("[meta_loader] SUPABASE_URL / SUPABASE_KEY 미설정 — 메타 로드 건너뜀")
+        pass
         _loaded = True
         return _tables_metadata
 
@@ -47,17 +48,20 @@ def load() -> dict[str, dict]:
                 if key:
                     _tables_metadata[key] = meta
 
-        print(f"[meta_loader] 메타 로드 완료: {list(_tables_metadata.keys())}")
+        # print(f"[meta_loader] 메타 로드 완료: {list(_tables_metadata.keys())}")
 
         if datauid_list:
             _db_connection_url = _resolve_connection_url(client, datauid_list, settings.SUPABASE_SCHEMA)
             if _db_connection_url:
-                print("[meta_loader] DB 연결 URL 로드 완료")
+                # print("[meta_loader] DB 연결 URL 로드 완료")
+                pass
             else:
-                print("[meta_loader] DB 연결 URL 로드 실패 — connuid 또는 connector 정보 없음")
+                # print("[meta_loader] DB 연결 URL 로드 실패 — connuid 또는 connector 정보 없음")
+                pass
 
     except Exception as exc:
-        print(f"[meta_loader] 메타 로드 실패: {exc}")
+        # print(f"[meta_loader] 메타 로드 실패: {exc}")
+        pass
 
     _loaded = True
     return _tables_metadata
@@ -76,12 +80,14 @@ def _resolve_connection_url(client, datauid_list: list, schema: str) -> str | No
             .execute().data or []
         )
     except Exception as exc:
-        print(f"[meta_loader] datas 조회 실패: {exc}")
+        # print(f"[meta_loader] datas 조회 실패: {exc}")
+        pass
         return None
 
     connuids = list({r["connuid"] for r in datas if r.get("connuid")})
     if not connuids:
-        print("[meta_loader] datas에서 connuid를 찾을 수 없습니다.")
+        # print("[meta_loader] datas에서 connuid를 찾을 수 없습니다.")
+        pass
         return None
 
     connuid = connuids[0]
@@ -93,11 +99,13 @@ def _resolve_connection_url(client, datauid_list: list, schema: str) -> str | No
             .select("*").eq("connuid", connuid).execute()
         )
     except Exception as exc:
-        print(f"[meta_loader] connectors 조회 실패: {exc}")
+        # print(f"[meta_loader] connectors 조회 실패: {exc}")
+        pass
         return None
 
     if not conn_resp.data:
-        print(f"[meta_loader] connuid={connuid} 에 해당하는 커넥터가 없습니다.")
+        # print(f"[meta_loader] connuid={connuid} 에 해당하는 커넥터가 없습니다.")
+        pass
         return None
 
     connector = conn_resp.data[0]
@@ -111,7 +119,8 @@ def _resolve_connection_url(client, datauid_list: list, schema: str) -> str | No
             from utilsPrj.secrets_cache import get_connector_secret
             secret = get_connector_secret(connector.get("tenantid"), connuid)
         except Exception as exc:
-            print(f"[meta_loader] AWS Secrets Manager 조회 실패: {exc}")
+            # print(f"[meta_loader] AWS Secrets Manager 조회 실패: {exc}")
+            pass
     elif secret_path:
         try:
             secret = json.loads(secret_path)
@@ -142,7 +151,7 @@ def _resolve_connection_url(client, datauid_list: list, schema: str) -> str | No
     if dbtype == "mysql":
         return f"mysql+pymysql://{quote_plus(username)}:{quote_plus(password)}@{server}/{db}"
 
-    print(f"[meta_loader] 지원하지 않는 dbtype: {dbtype}")
+    # print(f"[meta_loader] 지원하지 않는 dbtype: {dbtype}")
     return None
 
 

@@ -321,7 +321,8 @@ def _extract(message: str, project_id=None, tenant_id=None, user_uid=None, accou
         if m:
             defaults.update(json.loads(m.group()))
     except Exception as e:
-        print(f"[schedule_spec] _extract error: {e}")
+        # print(f"[schedule_spec] _extract error: {e}")
+        pass
     return defaults
 
 

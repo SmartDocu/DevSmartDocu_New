@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,7 +21,7 @@ def list_popups(
     """활성 팝업 목록. 로그인 사용자는 비활성화된 팝업 자동 제외."""
     sb = _svc()
     now = datetime.now(timezone.utc).isoformat()
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
 
     q = (
         sb.schema(SUPABASE_SCHEMA).table("popups")
@@ -77,7 +77,7 @@ def deactivate_popup(
     if not popup:
         raise HTTPException(status_code=404, detail="팝업을 찾을 수 없습니다.")
 
-    enddt = (date.today() + timedelta(days=popup.get("deactivateday") or 7)).isoformat()
+    enddt = (datetime.now(timezone.utc).date() + timedelta(days=popup.get("deactivateday") or 7)).isoformat()
 
     existing = (
         sb_user.schema(SUPABASE_SCHEMA).table("popupdeactivates")

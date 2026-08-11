@@ -161,7 +161,8 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
     try:
         sid, hist = _session.get_or_create(req.session_id, user_id=req.user_id, project_id=req.project_id)
     except Exception as e:
-        print(f"[session] get_or_create 실패 (fallback): {e}")
+        # print(f"[session] get_or_create 실패 (fallback): {e}")
+        pass
         sid = req.session_id or str(_uuid.uuid4())
         hist = []
 
@@ -360,7 +361,8 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             servicecd="In",
         )
     except Exception as e:
-        print(f"[session] append_qa 실패 (저장 건너뜀): {e}")
+        # print(f"[session] append_qa 실패 (저장 건너뜀): {e}")
+        pass
 
     if qauid and (tokens["input"] or tokens["output"]):
         token_tracker.record_turn(sid, qauid, tokens)
@@ -518,7 +520,8 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
         }
         _session.append_qa(sid, body.question, answer_json, user_id=body.user_id, project_id=body.project_id, filenm=body.report_path)
     except Exception as e:
-        print(f"[inject] append_qa 실패: {e}")
+        # print(f"[inject] append_qa 실패: {e}")
+        pass
 
     return {"ok": True, "session_id": sid}
 
@@ -610,7 +613,8 @@ def _register_schedule_for_qa(
             servicecd="In",
         )
     except Exception as e:
-        print(f"[schedule] 원본 보고서 기록 실패: {e}")
+        # print(f"[schedule] 원본 보고서 기록 실패: {e}")
+        pass
 
     return {"ok": True, "template_uid": templateuid, "session_id": dedicated_sid, "template_nm": template_nm}
 

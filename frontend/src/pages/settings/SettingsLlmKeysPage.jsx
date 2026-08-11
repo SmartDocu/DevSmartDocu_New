@@ -315,7 +315,7 @@ export default function SettingsLlmKeysPage() {
           {/* 사용 여부 */}
           <div className="form-group">
             <label>{t('lbl.useyn_lbl')}:</label>
-            <div style={{ paddingLeft: 4 }}>
+            <div style={{ paddingLeft: 60 }}>
               <input
                 type="checkbox"
                 checked={form.useyn}

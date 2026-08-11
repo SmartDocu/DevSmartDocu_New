@@ -95,7 +95,7 @@ def _generate_dataset_metadata(llm, df: pd.DataFrame, dataset_key: str, log_ctx:
         json_str = match.group(1) if match else text
         metadata = json.loads(json_str)
     except Exception as e:
-        print(f"[WARN] 데이터셋 메타데이터 생성 실패: {e}")
+        # print(f"[WARN] 데이터셋 메타데이터 생성 실패: {e}")
         metadata = {}
 
     if not isinstance(metadata, dict):
@@ -182,7 +182,7 @@ def _infer_join_relationships(
         ]
         return relations
     except Exception as e:
-        print(f"[WARN] 데이터셋 조인 관계 추론 실패: {e}")
+        # print(f"[WARN] 데이터셋 조인 관계 추론 실패: {e}")
         return []
 
 

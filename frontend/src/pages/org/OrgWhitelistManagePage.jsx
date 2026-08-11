@@ -241,13 +241,15 @@ export default function OrgWhitelistManagePage() {
 
           <div className="form-group">
             <label htmlFor="wl-useyn"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
-            <input
-              id="wl-useyn"
-              type="checkbox"
-              checked={!!form.useyn}
-              disabled={!isEditYn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-            />
+            <div style={{ paddingLeft: 60 }}>
+              <input
+                id="wl-useyn"
+                type="checkbox"
+                checked={!!form.useyn}
+                disabled={!isEditYn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+              />
+            </div>
           </div>
         </div>
       </div>

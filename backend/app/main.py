@@ -37,18 +37,20 @@ async def startup_event():
         # from d2chat.service import mcp_service
         from d2chat.mcp_core.service import mcp_service
         mcp_service.initialize()
-        print("[d2chat] MCP 서비스 초기화 완료")
+        # print("[d2chat] MCP 서비스 초기화 완료")
     except Exception as e:
-        print(f"[d2chat] MCP 서비스 초기화 실패 (서비스 미사용 시 무시): {e}")
+        # print(f"[d2chat] MCP 서비스 초기화 실패 (서비스 미사용 시 무시): {e}")
+        pass
 
     try:
         # from d2insight.report import meta_loader
         # meta_loader.refresh()
         from d2insight.data_source import meta_loader
         meta_loader.load()
-        print("[d2insight] 메타데이터 캐시 초기화 완료")
+        # print("[d2insight] 메타데이터 캐시 초기화 완료")
     except Exception as e:
-        print(f"[d2insight] 메타데이터 초기화 실패 (무시): {e}")
+        # print(f"[d2insight] 메타데이터 초기화 실패 (무시): {e}")
+        pass
 
 
 # ─── Supabase JWT 만료 → 401 변환 ───────────────────────────────────────────
@@ -63,7 +65,7 @@ async def postgrest_api_error_handler(request: Request, exc: APIError):
             status_code=401,
             content={"detail": "토큰이 만료되었습니다."},
         )
-    print(f"[postgrest_api_error_handler] {request.method} {request.url.path} code={code} message={message}")
+    # print(f"[postgrest_api_error_handler] {request.method} {request.url.path} code={code} message={message}")
     return JSONResponse(status_code=500, content={"detail": message})
 
 

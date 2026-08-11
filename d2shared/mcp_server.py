@@ -278,7 +278,7 @@ DB 정보:
             )
 
         except Exception as e:
-            print(f"SQL 실행 오류: {str(e)}")
+            # print(f"SQL 실행 오류: {str(e)}")
             import traceback
             traceback.print_exc()
             return self._create_standard_response(

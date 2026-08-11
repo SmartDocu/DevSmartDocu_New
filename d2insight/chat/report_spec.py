@@ -171,7 +171,8 @@ def _extract_params(message: str, spec: dict, history: list[dict] | None = None,
         if m:
             defaults.update(json.loads(m.group()))
     except Exception as e:
-        print(f"[report_spec] _extract_params error: {e}")
+        # print(f"[report_spec] _extract_params error: {e}")
+        pass
     return defaults
 
 

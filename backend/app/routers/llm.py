@@ -166,7 +166,7 @@ def llm_init(
         raise
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[llm/init] ❌ 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[llm/init] ❌ 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"llm/init 오류: {str(e)}")
 
     display_types = [
@@ -303,14 +303,15 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
                 if source_uid:
                     col_datauid = source_uid
     except Exception as e:
-        print(f"[llm/preview] datas 조회 경고: {e}", file=sys.stderr, flush=True)
+        # print(f"[llm/preview] datas 조회 경고: {e}", file=sys.stderr, flush=True)
+        pass
 
     # ⑥ DataFrame 로드 — Django process_data() 와 동일 경로
     try:
         result_df = process_data(req, body.datauid, docid)
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[llm/preview] ❌ process_data 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[llm/preview] ❌ process_data 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=400, detail=f"데이터 조회 오류: {str(e)}")
 
     # ⑥-1 데이터 타입 검증 — 결과에 영향을 줄 수 있는 값(예: 존재하지 않는 날짜) 탐지
@@ -341,7 +342,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         llm, is_customeraikey, account_uid = _get_llm_model(projectid, tenantid, user_id)
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[llm/preview] ❌ LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[llm/preview] ❌ LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"LLM 모델 로드 오류: {str(e)}")
 
     from d2shared.llm_logger import log_doc_llm_call
@@ -405,7 +406,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
         response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[llm/preview] ❌ LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[llm/preview] ❌ LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
         _write_doc_log(False, str(e), 0, 0, _llm_start_dts, datetime.now(timezone.utc))
         _write_object_definition(False, str(e), errorcd=type(e).__name__)
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
@@ -581,7 +582,7 @@ def experience_prompts():
         }
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[llm/experience/prompts] 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[llm/experience/prompts] 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -640,7 +641,7 @@ def experience_preview(body: ExperiencePreviewRequest):
         result_df = process_data(req, body.datauid, None)
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[experience/preview] process_data 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[experience/preview] process_data 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=400, detail=f"데이터 조회 오류: {str(e)}")
 
     try:
@@ -665,7 +666,7 @@ def experience_preview(body: ExperiencePreviewRequest):
         llm, _, _ = _get_llm_model(projectid, tenantid)
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[experience/preview] LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[experience/preview] LLM 모델 로드 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"LLM 모델 로드 오류: {str(e)}")
 
     full_chain = get_full_chain(llm, result_df, prompt, body.prompt, column_dict, ot)
@@ -673,7 +674,7 @@ def experience_preview(body: ExperiencePreviewRequest):
         response = full_chain.invoke({"question": body.prompt, "column_dict": column_dict})
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[experience/preview] LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
+        # print(f"[experience/preview] LLM 실행 오류:\n{tb}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail=f"LLM 실행 오류: {str(e)}")
 
     if not isinstance(response, dict):

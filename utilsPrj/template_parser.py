@@ -618,4 +618,4 @@ if __name__ == "__main__":
     registry.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
 
     result = process_template(template, context, registry)
-    print(result)
+    # print(result)

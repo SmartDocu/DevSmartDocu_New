@@ -120,5 +120,5 @@ def draw_table(request, columns, dict_rows, tablejson, coljson):
         # --------------------------------------------
         # 오류 로그 저장
         # --------------------------------------------
-        print(f"[table_utils] TABLE 생성 중 오류: {e}")
+        # print(f"[table_utils] TABLE 생성 중 오류: {e}")
         raise e

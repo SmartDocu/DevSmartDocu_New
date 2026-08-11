@@ -4,7 +4,7 @@ from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 def draw_sentences(request, supabase, dict_rows, template_text, datauid):
     # jeff 20251209 1045 추가
     if not isinstance(dict_rows, list) or not all(isinstance(r, dict) for r in dict_rows):
-        print("dict_rows is invalid:", dict_rows)
+        # print("dict_rows is invalid:", dict_rows)
         return []
     #####
     
@@ -55,5 +55,5 @@ def draw_sentences(request, supabase, dict_rows, template_text, datauid):
         return "\n".join(result)
 
     except Exception as e:
-        print(f"[sentences_utils] 문장 생성 중 오류: {e}")
+        # print(f"[sentences_utils] 문장 생성 중 오류: {e}")
         raise e

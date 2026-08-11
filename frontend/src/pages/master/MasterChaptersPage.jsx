@@ -196,11 +196,13 @@ export default function MasterChaptersPage() {
           </div>
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.useyn_lbl')}:</label>
-            <input
-              type="checkbox"
-              checked={!!form.useyn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-            />
+            <div style={{ paddingLeft: 60 }}>
+              <input
+                type="checkbox"
+                checked={!!form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+              />
+            </div>
           </div>
           <div className="form-group">
             <label>{t('lbl.template.upload')}:</label>

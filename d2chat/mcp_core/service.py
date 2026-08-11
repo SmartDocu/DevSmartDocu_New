@@ -42,7 +42,7 @@ class MCPChatService:
             self._initialized = True
 
         except Exception as e:
-            print(f"MCP 서비스 초기화 실패: {str(e)}")
+            # print(f"MCP 서비스 초기화 실패: {str(e)}")
             raise
 
     def ask(self, question: str, session_id: str = "default", log_ctx: dict = None) -> Dict:

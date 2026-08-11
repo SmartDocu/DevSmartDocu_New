@@ -327,12 +327,14 @@ export default function MasterObjectPage() {
 
           <div className="form-group">
             <label htmlFor="obj-useyn">{t('lbl.useyn_lbl')}:</label>
-            <input
-              id="obj-useyn"
-              type="checkbox"
-              checked={!!form.useyn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-            />
+            <div style={{ paddingLeft: 60 }}>
+              <input
+                id="obj-useyn"
+                type="checkbox"
+                checked={!!form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+              />
+            </div>
           </div>
 
           <div className="form-group">

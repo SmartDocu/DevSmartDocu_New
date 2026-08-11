@@ -186,7 +186,8 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
                     if prod:
                         is_customeraikey = bool(prod[0]["is_customeraikey"])
         except Exception as _e:
-            print(f"[get_llm_info] 구독 플랜 조회 실패, 기본값(is_customeraikey=True) 사용: {_e}")
+            # print(f"[get_llm_info] 구독 플랜 조회 실패, 기본값(is_customeraikey=True) 사용: {_e}")
+            pass
 
     llm_model, enc_api_key = None, None
 
@@ -221,7 +222,8 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
                     llmapikeys_cond["servicecd"] = service_code
                 llm_model, enc_api_key = _fetch("llmapikeys", llmapikeys_cond)
         except Exception as _e:
-            print(f"[get_llm_info] 서비스 제공 키 조회 실패: {_e}")
+            # print(f"[get_llm_info] 서비스 제공 키 조회 실패: {_e}")
+            pass
 
     if not llm_model:
         try:
@@ -999,8 +1001,9 @@ def clean_json_response(content):
     try:
         json.loads(content)  # 파싱 테스트
     except json.JSONDecodeError as e:
-        print(f"JSON 파싱 오류: {e}")
-        print(f"문제가 된 내용: {content[:200]}...")
+        # print(f"JSON 파싱 오류: {e}")
+        pass
+        # print(f"문제가 된 내용: {content[:200]}...")
     
     return content
 
@@ -1151,11 +1154,13 @@ def log_mapping(mapping, item_index=None):
     # print("\n[Value Mapping]")
     for col, val_map in mapping["value_mapping"].items():
         # print(f"\n  Column: {col}")
+        pass
         for original, anonymized in list(val_map.items())[:10]:  # 최대 10개만 출력
             # print(f"    {original:20s} -> {anonymized}")
             pass
         if len(val_map) > 10:
             # print(f"    ... and {len(val_map) - 10} more values")
+            pass
             pass
     
     # print("="*60 + "\n")
@@ -1178,7 +1183,8 @@ def fix_groupby_agg_pattern(code):
     fixed_code = re.sub(pattern, replacement, code)
 
     if fixed_code != code:
-        print("[AUTO FIX] groupby().agg() 패턴 자동 수정됨")
+        # print("[AUTO FIX] groupby().agg() 패턴 자동 수정됨")
+        pass
 
     return fixed_code
 
@@ -1196,7 +1202,8 @@ def fix_numeric_only_pattern(code):
         replacement = rf'.{func}(numeric_only=True)'
         new_code = re.sub(pattern, replacement, code)
         if new_code != code:
-            print(f"[AUTO FIX] .{func}() → .{func}(numeric_only=True) 수정됨")
+            # print(f"[AUTO FIX] .{func}() → .{func}(numeric_only=True) 수정됨")
+            pass
             code = new_code
             changed = True
     return code
@@ -1229,7 +1236,7 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 "code": code,
             }
 
-    print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
+    # print("python_code: \n", code)    # 디버깅용 : 배포시 삭제/주석 처리
     # # if output_type == "TA":
     # #     print("python_code: \n", code)
 
@@ -1277,20 +1284,23 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
         err_msg = str(e)
         # object dtype 컬럼 집계 오류 시 numeric_only 강제 적용 후 재시도
         if 'agg function failed' in err_msg and 'dtype->object' in err_msg:
-            print("[AUTO FIX] agg/dtype->object 오류 감지, numeric_only 강제 적용 후 재시도")
+            # print("[AUTO FIX] agg/dtype->object 오류 감지, numeric_only 강제 적용 후 재시도")
+            pass
             retry_code = re.sub(r'\.(mean|sum|median|std|var)\((?!numeric_only)', r'.\1(numeric_only=True, ', code)
             try:
                 exec(retry_code, local_namespace)
                 code = retry_code
             except Exception as e2:
-                print("Error ", e2)
+                # print("Error ", e2)
+                pass
                 return {
                     "status": "error",
                     "error": f"코드 실행 오류: {str(e2)}",
                     "code": retry_code,
                 }
         else:
-            print("Error ", e)
+            # print("Error ", e)
+            pass
             return {
                 "status": "error",
                 "error": f"코드 실행 오류: {err_msg}",

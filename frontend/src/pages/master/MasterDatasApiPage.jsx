@@ -251,9 +251,11 @@ export default function MasterDatasApiPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.useyn_lbl')}</label>
-            <input type="checkbox" checked={form.useyn}
-              onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
+            <label>{t('lbl.useyn_lbl')}:</label>
+            <div style={{ paddingLeft: 60 }}>
+              <input type="checkbox" checked={form.useyn}
+                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))} />
+            </div>
           </div>
 
           <hr style={{ margin: '16px 0', borderColor: '#f0f0f0' }} />

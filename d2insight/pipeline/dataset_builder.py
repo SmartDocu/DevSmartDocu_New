@@ -163,8 +163,8 @@ def build_actual_compare_datasets(
             params={"start_date": c_start, "end_date": c_end},
         )
 
-    print(f"[dataset_builder] Actual({target_month}): {len(actual_df):,}행  "
-          f"Compare({compare_type}): {len(compare_df):,}행")
+    # print(f"[dataset_builder] Actual({target_month}): {len(actual_df):,}행  "
+          # f"Compare({compare_type}): {len(compare_df):,}행")
     return actual_df, compare_df
 
 

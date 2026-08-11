@@ -130,7 +130,8 @@ def add(
                 enddts=enddts,
             )
         except Exception as _e:
-            print(f"[token_tracker] LLM 로그 즉시 기록 실패 (건너뜀): {_e}")
+            # print(f"[token_tracker] LLM 로그 즉시 기록 실패 (건너뜀): {_e}")
+            pass
 
 
 def get() -> dict:

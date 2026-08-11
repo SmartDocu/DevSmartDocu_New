@@ -150,7 +150,7 @@ def _parse_user_agent(ua: str) -> dict:
     return {"browser": browser, "browser_version": browser_version, "os_nm": os_nm}
 
 
-def _device_fingerprint(ip: str, ua: str) -> str:
+# def _device_fingerprint(ip: str, ua: str) -> str:
     return hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:64]
 
 
@@ -222,7 +222,8 @@ def _insert_login_log(
             "device_fingerprint": device_fingerprint,
         }).execute()
     except Exception as e:
-        print(f"[login_log] INSERT 실패: {e}")
+        # print(f"[login_log] INSERT 실패: {e}")
+        pass
 
 
 # SMS 인증번호 임시 저장소 (프로세스 내 메모리)
@@ -572,7 +573,7 @@ def login(body: LoginRequest, request: Request, background_tasks: BackgroundTask
     ip = _get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     ua_info = _parse_user_agent(ua)
-    fingerprint = _device_fingerprint(ip, ua)
+    # fingerprint = _device_fingerprint(ip, ua)
 
     def _log(**kwargs):
         background_tasks.add_task(_insert_login_log, **kwargs)
@@ -698,6 +699,7 @@ def mfa_verify(body: MfaVerifyRequest):
         # print(f"[MFA-VERIFY] challenge 발급 성공: challenge_id={challenge_id}")
     except Exception as e:
         # print(f"[MFA-VERIFY] challenge 실패: {type(e).__name__}: {e}")
+        pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"MFA challenge 실패: {str(e)}",
@@ -713,6 +715,7 @@ def mfa_verify(body: MfaVerifyRequest):
         # print(f"[MFA-VERIFY] verify 성공")
     except Exception as e:
         # print(f"[MFA-VERIFY] verify 실패: {type(e).__name__}: {e}")
+        pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="인증 코드가 올바르지 않습니다.",
@@ -1250,7 +1253,7 @@ def mfa_enroll(body: MfaEnrollRequest, token: str = Depends(get_token)):
         list_url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}/factors"
         res = httpx.get(list_url, headers=headers)
         factors = res.json()
-        print(f"[MFA] admin factors: {factors}")
+        # print(f"[MFA] admin factors: {factors}")
 
         # 2) unverified factor 삭제
         for f in (factors or []):
@@ -1258,10 +1261,11 @@ def mfa_enroll(body: MfaEnrollRequest, token: str = Depends(get_token)):
                 factor_id = f.get("id")
                 del_url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}/factors/{factor_id}"
                 del_res = httpx.delete(del_url, headers=headers)
-                print(f"[MFA] 삭제 결과: {factor_id} → {del_res.status_code}")
+                # print(f"[MFA] 삭제 결과: {factor_id} → {del_res.status_code}")
 
     except Exception as e:
-        print(f"[MFA] factor 정리 실패: {e}")
+        # print(f"[MFA] factor 정리 실패: {e}")
+        pass
 
     try:
         resp = user_client.auth.mfa.enroll({
@@ -1269,7 +1273,8 @@ def mfa_enroll(body: MfaEnrollRequest, token: str = Depends(get_token)):
             "issuer": "D2Doc",
         })
     except Exception as e:
-        print(f"[MFA] enroll 실패: {e}")
+        # print(f"[MFA] enroll 실패: {e}")
+        pass
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"MFA 등록 실패: {str(e)}",
@@ -1294,14 +1299,15 @@ def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_tok
         challenge_resp = user_client.auth.mfa.challenge(
             {"factor_id": body.factor_id}
         )
-        print(f"[MFA] challenge_id: {challenge_resp.id}")  # ← 추가
+        # print(f"[MFA] challenge_id: {challenge_resp.id}")  # ← 추가
         verify_resp = user_client.auth.mfa.verify({
             "factor_id": body.factor_id,
             "challenge_id": challenge_resp.id,
             "code": body.code,
         })
     except Exception as e:
-        print(f"[MFA] enroll_verify 실패: {e}")  # ← 추가
+        # print(f"[MFA] enroll_verify 실패: {e}")  # ← 추가
+        pass
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="인증 코드가 올바르지 않습니다. QR 코드를 다시 스캔해주세요.",

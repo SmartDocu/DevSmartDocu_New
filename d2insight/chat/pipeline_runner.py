@@ -195,7 +195,8 @@ def run_tool(
                 project_id=project_id, tenant_id=tenant_id, user_uid=user_uid, account_uid=account_uid,
             )
         except Exception as e:
-            print(f"[chat] 데이터 질문 응답 시도 실패 (지식 기반으로 폴백): {e}")
+            # print(f"[chat] 데이터 질문 응답 시도 실패 (지식 기반으로 폴백): {e}")
+            pass
             data_answer = None
 
         if data_answer:
@@ -285,7 +286,8 @@ def run_tool(
                     report_result.get("applied_steps"), creator=user_id,
                 )
             except Exception as _e:
-                print(f"[analytics] 실행 로그 기록 실패(무시하고 진행): {_e}")
+                # print(f"[analytics] 실행 로그 기록 실패(무시하고 진행): {_e}")
+                pass
 
             if md_text and md_filename:
                 try:
@@ -297,15 +299,16 @@ def run_tool(
 
                     md_path = build_qas_path(user_id, tenant_id, project_id, md_filename)
                     upload_report_bytes(md_path, md_text.encode("utf-8"), "text/markdown; charset=utf-8")
-                    print(f"[Storage] MD 저장 성공: {md_path}")
+                    # print(f"[Storage] MD 저장 성공: {md_path}")
 
                     pdf_filename = md_filename.replace(".md", ".pdf")
                     pdf_path = build_qas_path(user_id, tenant_id, project_id, pdf_filename)
                     pdf_bytes = md_to_pdf_bytes(md_text)
                     result["fileurl"] = upload_report_bytes(pdf_path, pdf_bytes, "application/pdf")
-                    print(f"[Storage] PDF 저장 성공: {result['fileurl']}")
+                    # print(f"[Storage] PDF 저장 성공: {result['fileurl']}")
                 except Exception as _e:
-                    print(f"[Storage] {report_type} 저장 실패: {_e}")
+                    # print(f"[Storage] {report_type} 저장 실패: {_e}")
+                    pass
                     traceback.print_exc()
 
         else:
