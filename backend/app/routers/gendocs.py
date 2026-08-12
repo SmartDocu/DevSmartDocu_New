@@ -973,9 +973,10 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
         if upd:
             sb.schema(SUPABASE_SCHEMA).table("genlocks").update(upd).eq("gendocuid", gendocuid).eq("genchapteruid", lock["genchapteruid"]).execute()
 
-    # 잠금 중복 확인
-    remaining = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).execute().data or []
-    if any(r.get("doclocked") or r.get("chapterlocked") for r in remaining):
+    # 잠금 중복 확인 — 문서 전체 잠금(genchapteruid="") 또는 이 챕터 자신의 잠금만 확인 (다른 챕터의 잠금은 무관)
+    remaining_c = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", genchapteruid).execute().data or []
+    remaining_d = sb.schema(SUPABASE_SCHEMA).table("genlocks").select("doclocked,chapterlocked").eq("gendocuid", gendocuid).eq("genchapteruid", "").execute().data or []
+    if any(r.get("doclocked") or r.get("chapterlocked") for r in remaining_c + remaining_d):
         return {"locked": True, "message": "이 문서 혹은 해당 챕터가 이미 작성 중입니다."}
 
     # 챕터 잠금 선점

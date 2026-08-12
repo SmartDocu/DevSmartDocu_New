@@ -24,7 +24,8 @@ export default function AppLauncher() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const tenantid = useAuthStore((s) => s.user?.tenantid)
-  const { data = {}, isLoading } = useApps({ tenantid })
+  const languageCd = useLangStore((s) => s.languageCd)
+  const { data = {}, isLoading } = useApps({ tenantid, languagecd: languageCd })
   const { apps = [], subscribed_servicecds = [] } = data
   const { data: accountStatusCodes = [] } = useMenuCodes('accountstatus')
 

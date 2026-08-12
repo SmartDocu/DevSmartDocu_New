@@ -69,9 +69,11 @@ export default function AppLayout() {
   const { data: translationsData } = useTranslations(languageCd)
   const setLanguageMutation = useSetLanguage()
   const { data: allMenus = [] } = useMenus(appcd)
-  const { data: helpData } = useHelpSearch(location.pathname, languageCd || 'en')
+  // helps.url은 관리자가 /app/{appcd} 접두사 없이 등록하므로(예: /master/docs) 검색 시에도 접두사를 떼어낸다
+  const helpUrl = appcd ? (location.pathname.replace(`/app/${appcd}`, '') || '/') : location.pathname
+  const { data: helpData } = useHelpSearch(helpUrl, languageCd || 'en')
   const helpItem = helpData?.help ?? null
-  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid })
+  const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid, languagecd: languageCd })
   const currentServicecd = apps.find((a) => a.appcd === appcd)?.servicecd
   const { data: projectsData } = useDatasProjects({ enabled: !!user, servicecd: currentServicecd })
   const projectList = projectsData?.projects || []

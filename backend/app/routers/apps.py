@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb
+from backend.app.dependencies import get_token, get_user as _get_user, get_sb as _sb
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 router = APIRouter()
@@ -25,8 +25,23 @@ class AppsListResponse(BaseModel):
     subscribed_servicecds: list[str] = []
 
 
+class AppTranslationItem(BaseModel):
+    appcd: str
+    languagecd: str
+    translated_text: Optional[str] = None
+
+
+class AppTranslationsListResponse(BaseModel):
+    translations: list[AppTranslationItem]
+
+
+class AppTranslationSaveRequest(BaseModel):
+    languagecd: str
+    translated_text: Optional[str] = None
+
+
 @router.get("", response_model=AppsListResponse)
-def list_apps(token: str = Depends(get_token), tenantid: Optional[str] = None):
+def list_apps(token: str = Depends(get_token), tenantid: Optional[str] = None, languagecd: Optional[str] = None):
     try:
         sb = _sb(token)
         rows = (
@@ -38,6 +53,21 @@ def list_apps(token: str = Depends(get_token), tenantid: Optional[str] = None):
             .execute()
             .data or []
         )
+
+        # languagecd가 주어지면 app_translations에서 번역명으로 appnm을 대체 (없으면 원본 appnm 유지)
+        if languagecd:
+            trans_rows = (
+                sb.schema(SUPABASE_SCHEMA)
+                .table("app_translations")
+                .select("appcd, translated_text")
+                .eq("languagecd", languagecd)
+                .execute()
+                .data or []
+            )
+            trans_map = {r["appcd"]: r["translated_text"] for r in trans_rows if r.get("translated_text")}
+            for r in rows:
+                if r["appcd"] in trans_map:
+                    r["appnm"] = trans_map[r["appcd"]]
 
         subscribed_servicecds = []
         if tenantid:
@@ -62,3 +92,69 @@ def list_apps(token: str = Depends(get_token), tenantid: Optional[str] = None):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── 앱 이름 번역 (system.i18n.apps 관리 화면) ────────────────────────────────
+
+@router.get("/{appcd}/translations", response_model=AppTranslationsListResponse)
+def list_app_translations(appcd: str, token: str = Depends(get_token)):
+    sb = _sb(token)
+    rows = (
+        sb.schema(SUPABASE_SCHEMA)
+        .table("app_translations")
+        .select("appcd, languagecd, translated_text")
+        .eq("appcd", appcd)
+        .order("languagecd")
+        .execute()
+        .data or []
+    )
+    return AppTranslationsListResponse(translations=[AppTranslationItem(**r) for r in rows])
+
+
+@router.post("/{appcd}/translations")
+def save_app_translation(appcd: str, body: AppTranslationSaveRequest, token: str = Depends(get_token)):
+    user = _get_user(token)
+    sb = _sb(token)
+    user_id = str(user.id)
+
+    if not body.languagecd:
+        raise HTTPException(status_code=400, detail="languagecd가 필요합니다.")
+
+    lang_check = (
+        sb.schema(SUPABASE_SCHEMA).table("languages")
+        .select("languagecd").eq("languagecd", body.languagecd).execute().data
+    )
+    if not lang_check:
+        raise HTTPException(status_code=400, detail=f"유효하지 않은 언어 코드입니다: {body.languagecd}")
+
+    existing = (
+        sb.schema(SUPABASE_SCHEMA).table("app_translations")
+        .select("appcd")
+        .eq("appcd", appcd)
+        .eq("languagecd", body.languagecd)
+        .execute()
+        .data
+    )
+
+    try:
+        if existing:
+            sb.schema(SUPABASE_SCHEMA).table("app_translations").update({
+                "translated_text": body.translated_text,
+            }).eq("appcd", appcd).eq("languagecd", body.languagecd).execute()
+        else:
+            sb.schema(SUPABASE_SCHEMA).table("app_translations").insert({
+                "appcd": appcd,
+                "languagecd": body.languagecd,
+                "translated_text": body.translated_text,
+                "creator": user_id,
+            }).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB 저장 실패: {str(e)}")
+
+
+@router.delete("/{appcd}/translations/{languagecd}")
+def delete_app_translation(appcd: str, languagecd: str, token: str = Depends(get_token)):
+    sb = _sb(token)
+    sb.schema(SUPABASE_SCHEMA).table("app_translations").delete().eq("appcd", appcd).eq("languagecd", languagecd).execute()
+    return {"ok": True}

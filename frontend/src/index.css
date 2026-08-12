@@ -728,6 +728,10 @@ input, select, textarea {
 }
 
 /* ── 탭 바 스타일 ──────────────────────────────────── */
+/* antd 기본값(:where 셀렉터, margin: 0 0 16px 0) 제거 — 탭 콘텐츠는 라우터가 별도 영역에 렌더링하므로 불필요한 여백 */
+.ant-tabs-card > .ant-tabs-nav {
+  margin: 0;
+}
 /* 비활성 탭 */
 .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
   background: #d0dce8 !important;

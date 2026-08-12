@@ -225,8 +225,8 @@ export default function ReqDocWritePage() {
         )}
       </div>
 
-      {/* 로딩 오버레이 */}
-      {(requestLoading || generating) && (
+      {/* 로딩 오버레이 (접수 완료까지만 표시 — 조합 작성 진행 중에는 다른 탭 이동 가능해야 함) */}
+      {requestLoading && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
           background: 'rgba(0,0,0,0.5)',

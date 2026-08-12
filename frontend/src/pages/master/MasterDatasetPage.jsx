@@ -112,14 +112,14 @@ export default function MasterDatasetPage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 30, paddingRight: 10, height: 'calc(100vh - 224px)' }}>
         {/* 좌측: 데이터 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div style={{ flex: 3, paddingRight: 20, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 36, marginBottom: 8, flexShrink: 0 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <div />
           </div>
-          <div className="table-container">
+          <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -156,8 +156,8 @@ export default function MasterDatasetPage() {
         </div>
 
         {/* 우측: 파라미터 매핑 그리드 */}
-        <div style={{ flex: 7, overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div style={{ flex: 7, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 36, marginBottom: 8, flexShrink: 0 }}>
             <h3 style={{ margin: 0 }}>{t('ttl.dataset.mapping')}</h3>
             {canEdit && (
               <button
@@ -170,7 +170,7 @@ export default function MasterDatasetPage() {
               </button>
             )}
           </div>
-          <div className="table-container">
+          <div className="table-container" style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>

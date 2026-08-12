@@ -60,6 +60,7 @@ const AdminUserRolePage = lazy(() => import('@/pages/admin/AdminUserRolePage'))
 const AdminSamplePromptPage = lazy(() => import('@/pages/admin/AdminSamplePromptPage'))
 const AdminHelpsPage = lazy(() => import('@/pages/admin/AdminHelpsPage'))
 const AdminMenusPage = lazy(() => import('@/pages/admin/AdminMenusPage'))
+const AdminAppsPage = lazy(() => import('@/pages/admin/AdminAppsPage'))
 const AdminMessagesPage = lazy(() => import('@/pages/admin/AdminMessagesPage'))
 const AdminTermsPage = lazy(() => import('@/pages/admin/AdminTermsPage'))
 const AdminUiTermsPage = lazy(() => import('@/pages/admin/AdminUiTermsPage'))
@@ -193,6 +194,7 @@ export const router = createBrowserRouter([
       { path: 'admin/sample-prompts', element: <AdminSamplePromptPage /> },
       { path: 'admin/helps', element: <AdminHelpsPage /> },
       { path: 'admin/menus', element: <AdminMenusPage /> },
+      { path: 'admin/apps', element: <AdminAppsPage /> },
       { path: 'admin/messages', element: <AdminMessagesPage /> },
       { path: 'admin/terms', element: <AdminTermsPage /> },
       { path: 'admin/ui-terms', element: <AdminUiTermsPage /> },

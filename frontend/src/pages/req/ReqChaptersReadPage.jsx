@@ -93,8 +93,8 @@ export default function ReqChaptersReadPage() {
   useEffect(() => {
     if (!selectedChap) { setRewriting(false); return }
     apiClient.get(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite/status`)
-      .then((res) => { if (res.data.JobStatusCD === 'S') setRewriting(true) })
-      .catch(() => {})
+      .then((res) => { setRewriting(res.data.JobStatusCD === 'S') })
+      .catch(() => { setRewriting(false) })
   }, [selectedChap?.genchapteruid]) // eslint-disable-line
 
   // 챕터 재작성 완료 감지 (Realtime)
