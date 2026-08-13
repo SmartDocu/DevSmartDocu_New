@@ -137,8 +137,12 @@ def _get_remain_credit(sb_svc, accountuid: str) -> int:
 
 def _check_credit_gate(sb, sb_svc, accountuid: Optional[str], chapteruids: list) -> Optional[dict]:
     """예정크레딧(대상 objects 건수)이 잔여크레딧을 초과하면 안내 dict 반환, 충분하면 None.
-    accountuid가 없으면(문서 조합 작성 화면 등 아직 미전달) 체크를 생략한다."""
+    accountuid가 없으면(문서 조합 작성 화면 등 아직 미전달) 체크를 생략한다.
+    BYOK(고객 자체 AI 키) 계정은 크레딧을 쓰지 않으므로 항상 통과시킨다(2026-08-13 추가)."""
     if not accountuid:
+        return None
+    from utilsPrj.credit_helper import is_byok_account
+    if is_byok_account(sb_svc, accountuid, "Do"):
         return None
     planned_credit = _count_active_objects(sb, chapteruids)
     remain_credit = _get_remain_credit(sb_svc, accountuid)

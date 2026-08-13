@@ -198,6 +198,16 @@ def _write_creditbucketuse(sb_svc, bucket: dict, use_amount: int, tenantid, acco
     return after
 
 
+def is_byok_account(sb_svc, accountuid: str, servicecd: str = "Do") -> bool:
+    """accountservices.is_customerAIKey 여부 — true면 고객이 자기 AI 키를 쓰는 BYOK 플랜이라
+    플랫폼이 LLM 비용을 부담하지 않으므로 크레딧을 차감/차단하지 않는다(2026-08-13 추가)."""
+    if not accountuid:
+        return False
+    row = sb_svc.schema(SUPABASE_SCHEMA).table("accountservices").select("is_customerAIKey") \
+        .eq("accountuid", accountuid).eq("servicecd", servicecd).maybe_single().execute()
+    return bool(row.data and row.data.get("is_customerAIKey"))
+
+
 def _set_servicestatus_if(sb_svc, accountuid: str, servicecd: str, from_status: str, to_status: str) -> None:
     """accountservices.servicestatus를 from_status일 때만 to_status로 전환한다.
 
@@ -215,8 +225,13 @@ def _deduct_credit(sb_svc, accountuid: str, tenantid, amount: int, *, refuid: st
     (실제 사용량은 objects 예측치를 넘어설 수 있어 마이너스가 정상적으로 발생할 수 있음).
     이 마이너스 반영으로 Ba 버킷이 실제로 음수가 되면, accountservices.servicestatus를
     Active→PastDue로 전환한다(Do 서비스 한정, 2026-08-07 추가) — 이미 Active가 아니면(관리자가
-    Suspended 등으로 바꿔둔 경우) 건드리지 않는다."""
+    Suspended 등으로 바꿔둔 경우) 건드리지 않는다.
+
+    BYOK(고객 자체 AI 키) 계정은 플랫폼이 LLM 비용을 부담하지 않으므로 차감하지 않는다
+    (2026-08-13 추가)."""
     if amount <= 0:
+        return
+    if is_byok_account(sb_svc, accountuid, "Do"):
         return
     now_iso = datetime.now(timezone.utc).isoformat()
     remaining = amount

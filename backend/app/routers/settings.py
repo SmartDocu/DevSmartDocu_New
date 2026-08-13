@@ -1883,12 +1883,13 @@ def _get_credit_subscriptions_data(svc, user_id: str, tenantid: str, accountuid:
     """크레딧 구매 내역 + 구매 가능 상품 조회 — 조직(tenant-manage)/개인(myinfo) 화면 공용 로직."""
     subscribed_servicecds = set()
     if accountuid:
-        # plancd='Fr'(Free 플랜)인 서비스는 추가 크레딧 구매 대상에서 제외한다.
+        # plancd='Fr'(Free 플랜) 또는 is_customerAIKey=true(BYOK — 고객 자체 AI 키)인 서비스는
+        # 추가 크레딧 구매 대상에서 제외한다(BYOK는 크레딧을 소진할 일이 없음, 2026-08-13 추가).
         subscribed_servicecds = {
             r["servicecd"] for r in (
-                svc.table("accountservices").select("servicecd,plancd").eq("accountuid", accountuid).execute().data or []
+                svc.table("accountservices").select("servicecd,plancd,is_customerAIKey").eq("accountuid", accountuid).execute().data or []
             )
-            if r.get("plancd") != "Fr"
+            if r.get("plancd") != "Fr" and not r.get("is_customerAIKey")
         }
 
     all_products = (
@@ -1948,13 +1949,15 @@ def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: 
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
 
     if product.get("servicecd"):
-        svcrow = svc.table("accountservices").select("servicecd,plancd").eq(
+        svcrow = svc.table("accountservices").select("servicecd,plancd,is_customerAIKey").eq(
             "accountuid", accountuid
         ).eq("servicecd", product["servicecd"]).maybe_single().execute()
         if not svcrow or not svcrow.data:
             raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
         if svcrow.data.get("plancd") == "Fr":
             raise HTTPException(status_code=400, detail="Free 플랜은 추가 크레딧을 구매할 수 없습니다.")
+        if svcrow.data.get("is_customerAIKey"):
+            raise HTTPException(status_code=400, detail="msg.credit.purchase.byok.blocked")
 
     now_utc = datetime.now(tz.utc)
     # creditchargecd가 Ba가 아닌 크레딧은 구매 시점 + 1년 - 1일을 만료일로 고정

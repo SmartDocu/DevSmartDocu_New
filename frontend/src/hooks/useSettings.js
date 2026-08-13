@@ -284,10 +284,15 @@ export function useTenantManageCreditSubscriptions() {
 
 export function usePurchaseTenantManageCreditSubscription() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/tenant-manage/credit-subscription-purchase', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tenant-manage-credit-subscriptions'] })
+    },
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
     },
   })
 }
@@ -301,10 +306,15 @@ export function useMyInfoCreditPurchase() {
 
 export function usePurchaseMyInfoCredit() {
   const qc = useQueryClient()
+  const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/myinfo/credit-purchase', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['myinfo-credit-purchase'] })
+    },
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error(detail ? t(detail) : t('msg.save.error'))
     },
   })
 }
