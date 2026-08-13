@@ -53,6 +53,7 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:5174",
         "https://dev-smart-doc.azurewebsites.net",
+        "http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com",
     ]
 
     class Config:
