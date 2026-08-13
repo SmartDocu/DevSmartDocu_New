@@ -46,6 +46,8 @@ class InjectRequest(BaseModel):
     visualization_type: str = "none"
     table_html: Optional[str] = None
     chart_image: Optional[str] = None
+    visualizations: Optional[List[dict]] = None
+    visualization_error: Optional[str] = None
 
 class ApiDatasetRequest(BaseModel):
     url: str
@@ -121,13 +123,19 @@ def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
             response["table_html"] = result["table_html"]
         if result.get("chart_image"):
             response["chart_image"] = result["chart_image"]
+        if result.get("visualizations"):
+            response["visualizations"] = result["visualizations"]
+        if result.get("visualization_error"):
+            response["visualization_error"] = result["visualization_error"]
 
         viz = result.get("visualization_type", "none")
         answer_json = json.dumps({
-            "answer":             result.get("answer", ""),
-            "visualization_type": viz,
-            "table_html":         result.get("table_html"),
-            "chart_image":        result.get("chart_image"),
+            "answer":               result.get("answer", ""),
+            "visualization_type":   viz,
+            "table_html":           result.get("table_html"),
+            "chart_image":          result.get("chart_image"),
+            "visualizations":       result.get("visualizations"),
+            "visualization_error":  result.get("visualization_error"),
         }, ensure_ascii=False)
 
         dataset = None
@@ -333,10 +341,12 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     qa_count = storage.get_qa_count(sb, session_id)
 
     answer_json = json.dumps({
-        "answer":             body.answer,
-        "visualization_type": body.visualization_type,
-        "table_html":         body.table_html,
-        "chart_image":        body.chart_image,
+        "answer":               body.answer,
+        "visualization_type":   body.visualization_type,
+        "table_html":           body.table_html,
+        "chart_image":          body.chart_image,
+        "visualizations":       body.visualizations,
+        "visualization_error":  body.visualization_error,
     }, ensure_ascii=False)
 
     storage.append_qa(

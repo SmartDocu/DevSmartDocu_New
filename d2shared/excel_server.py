@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from d2shared.excel_code_engine import run_pandas_code
 from d2shared.llm_logger import log_llm_call
+from d2shared.amount_format import annotate_amounts
 
 MAX_JOIN_DATASETS = 3
 MAX_CATEGORY_VALUES = 20  # 이 개수 이하로 고유값이 적은 컬럼만 "범주형 컬럼"으로 보고 실제값을 전부 기록
@@ -42,34 +43,86 @@ def _extract_category_values(df: pd.DataFrame, nunique: Dict[str, int]) -> Dict[
     return category_values
 
 
-def _generate_dataset_metadata(llm, df: pd.DataFrame, dataset_key: str, log_ctx: Optional[Dict] = None) -> Dict:
-    """컬럼명/dtype/샘플값을 보고 LLM이 데이터셋 설명 메타데이터를 생성한다."""
-    columns = list(df.columns.astype(str))
-    dtypes = {col: str(dtype) for col, dtype in zip(columns, df.dtypes)}
+def extract_dataframe_facts(df: pd.DataFrame) -> Dict:
+    """LLM에게 맡기지 않고 pandas로 직접 뽑아낸 사실(fact) 정보.
+    메타데이터 생성 프롬프트에 근거로 주입해, LLM이 컬럼 값/통계를 지어내지 않고
+    실측 데이터를 그대로 참조하게 하기 위함 (특히 컬럼 값 매핑의 환각 방지)."""
+    facts: Dict = {"row_count": len(df)}
+
+    facts["dtypes"] = {col: str(df[col].dtype) for col in df.columns}
+
+    facts["column_values"] = {}
+    for col in df.columns:
+        try:
+            if df[col].nunique() <= 30:
+                facts["column_values"][col] = df[col].dropna().unique().tolist()
+        except Exception:
+            continue
+
     try:
-        nunique = {col: int(df[col].nunique()) for col in df.columns}
+        facts["null_ratio"] = (df.isnull().sum() / len(df)).round(3).to_dict() if len(df) else {}
     except Exception:
-        nunique = {}
-    category_values = _extract_category_values(df, nunique)
+        facts["null_ratio"] = {}
+
+    try:
+        num_cols = df.select_dtypes(include="number").columns.tolist()
+        facts["numeric_stats"] = df[num_cols].agg(["min", "max", "mean"]).round(2).to_dict() if num_cols else {}
+    except Exception:
+        facts["numeric_stats"] = {}
+
+    return facts
+
+
+def _generate_dataset_metadata(llm, df: pd.DataFrame, dataset_key: str, log_ctx: Optional[Dict] = None) -> Dict:
+    """실측 사실(facts)을 pandas로 먼저 뽑아 프롬프트에 근거로 주입하고, LLM은 그 사실을 바탕으로
+    DB TableMeta와 동일한 수준(grain/primary_key/컬럼 값 매핑 등)의 메타데이터를 추론해 생성한다.
+    DB 메타에 없는 항목(분석 패턴, 파생 지표 계산식 등)은 LLM의 판단 폭을 좁히므로 넣지 않는다."""
+    columns = list(df.columns.astype(str))
+    facts = extract_dataframe_facts(df)
     sample = df.head(5).to_dict(orient="records")
 
-    prompt = f"""다음은 사용자가 업로드한 데이터셋 "{dataset_key}"의 정보입니다.
+    prompt = f"""다음은 사용자가 업로드한 데이터셋 "{dataset_key}"의 실측 정보입니다.
 
-컬럼: {columns}
-컬럼별 데이터 타입: {dtypes}
-컬럼별 고유값 개수: {nunique}
-샘플 데이터(최대 5행): {json.dumps(sample, ensure_ascii=False, default=str)}
+[실측 정보]
+- 총 행 수: {facts['row_count']}
+- 컬럼 목록: {columns}
+- 컬럼별 dtype: {json.dumps(facts['dtypes'], ensure_ascii=False, default=str)}
+- 고유값 목록 (30개 이하 컬럼만): {json.dumps(facts['column_values'], ensure_ascii=False, default=str)}
+- 숫자 컬럼 통계(min/max/mean): {json.dumps(facts['numeric_stats'], ensure_ascii=False, default=str)}
+- 결측치 비율: {json.dumps(facts['null_ratio'], ensure_ascii=False, default=str)}
+- 상위 5행 샘플: {json.dumps(sample, ensure_ascii=False, default=str)}
 
-이 데이터를 보고 아래 JSON 형식으로 메타데이터를 작성하세요. 설명 없이 JSON만 출력하세요.
+위 실측 정보를 분석하여 아래 JSON 형식으로 메타데이터를 생성하세요.
+실측 정보에 없는 내용은 추론하되, 불확실하면 null로 남기세요. 절대 사실과 다른 값을 지어내지 마세요.
+설명 없이 JSON만 출력하세요.
 
 {{
-  "description": "이 데이터셋이 무엇에 대한 데이터인지 한 문장 설명",
-  "purpose": "이 데이터로 어떤 질문에 답할 수 있는지",
+  "description": "이 데이터셋이 무엇인지 한 문장 설명",
+  "grain": "1행이 무엇을 의미하는지. 예: 쇼핑몰×브랜드×년×월당 1행",
+  "primary_key": ["행을 유일하게 식별하는 컬럼 목록 (추정)"],
+  "default_time_column": "시간 기준 컬럼명. 없으면 null",
+  "purpose": ["이 데이터로 답할 수 있는 분석 목적 3~5개"],
+  "query_examples": ["사용자가 실제로 할 법한 질문 5개"],
   "columns": {{
-    "실제컬럼명1": "이 컬럼이 의미하는 것에 대한 간단한 한글 설명",
-    "실제컬럼명2": "..."
-  }}
+    "컬럼명": {{
+      "logical_name": "사람이 읽기 쉬운 이름",
+      "data_type": "identifier | number | currency | string | date | ratio | boolean",
+      "aliases": ["사용자가 다르게 부를 수 있는 이름 목록. 없으면 생략"],
+      "values": {{
+        "실제저장값": {{"logical_name": "사람이 읽기 쉬운 이름", "aliases": ["필요한 경우만"]}}
+      }}
+    }}
+  }},
+  "reference": []
 }}
+
+[values 작성 규칙 - 중요]
+- "고유값 목록"에 있는 컬럼만 values를 채우세요. 그 목록에 없는 값을 추가하지 마세요.
+- 실제 저장값과 사용자가 부를 법한 이름이 다를 때만 항목을 작성하세요. 저장값과 사용자 호칭이 동일하면 그 값은 values에 넣지 마세요.
+  예) 저장값 "2025" -> 사용자도 그대로 "2025년"이라고 부를 것이므로 values에 넣지 않음
+  예) 저장값 "G마켓" -> 사용자가 "지마켓"이라고 부를 수 있으므로 aliases에 추가
+  예) 저장값 "01월" -> 사용자가 "1월"이라고 부를 수 있으므로 aliases에 추가
+- 고유값이 30개를 초과하는 컬럼(예: 브랜드명이 100개인 경우)이나, 모든 값이 저장값=사용자 호칭인 컬럼은 values를 {{}}로 남기세요.
 """
     metadata = None
     try:
@@ -101,9 +154,25 @@ def _generate_dataset_metadata(llm, df: pd.DataFrame, dataset_key: str, log_ctx:
     if not isinstance(metadata, dict):
         metadata = {}
     metadata.setdefault("description", dataset_key)
-    metadata.setdefault("purpose", "업로드된 데이터 조회")
-    metadata.setdefault("columns", {c: c for c in columns})
-    metadata["category_values"] = category_values
+    metadata.setdefault("grain", None)
+    metadata.setdefault("primary_key", [])
+    metadata.setdefault("default_time_column", None)
+    metadata.setdefault("purpose", ["업로드된 데이터 조회"])
+    metadata.setdefault("query_examples", [])
+    metadata.pop("analysis_patterns", None)
+    metadata.setdefault(
+        "columns",
+        {c: {"logical_name": c, "data_type": "string", "aliases": [], "values": {}} for c in columns},
+    )
+
+    # LLM이 놓치거나 지어낼 수 있는 저카디널리티 컬럼의 실제값을, 코드로 직접 계산한 결정론적
+    # 목록으로 별도 저장해둔다 (excel_code_engine._build_prompt의 category_text에 사용 —
+    # 컬럼별 columns[col].values와는 별개의 안전망).
+    try:
+        nunique = {col: int(df[col].nunique()) for col in df.columns}
+    except Exception:
+        nunique = {}
+    metadata["category_values"] = _extract_category_values(df, nunique)
     return metadata
 
 
@@ -242,8 +311,11 @@ class ExcelServer:
     def clear_session(self, session_id: str) -> None:
         self.session_datasets.pop(session_id, None)
 
-    def _response(self, status: str, data, message: str, question: str, dataset_key: Optional[str], code: Optional[str] = None) -> Dict:
-        return {
+    def _response(
+        self, status: str, data, message: str, question: str, dataset_key: Optional[str],
+        code: Optional[str] = None, dataset_context: Optional[Dict] = None,
+    ) -> Dict:
+        response = {
             "status": status,
             "data": data,
             "message": message,
@@ -254,6 +326,9 @@ class ExcelServer:
             },
             "data_type": "excel_query",
         }
+        if dataset_context:
+            response["dataset_context"] = dataset_context
+        return response
 
     def _resolve_related_datasets(self, primary_key: str, datasets: Dict[str, Dict]) -> List[str]:
         """PRIMARY 데이터셋의 reference(조인 힌트)를 따라 연결된 데이터셋들을 함께 선택한다.
@@ -340,14 +415,36 @@ class ExcelServer:
             k: (datasets[k]["metadata"].get("category_values") or {})
             for k in selected_keys
         }
+        # grain/primary_key 등 컬럼 단위를 넘어서는 메타데이터는 별도로 모아
+        # run_pandas_code의 프롬프트에 함께 전달한다 (조인/집계 시 중복 집계 방지).
+        meta_by_dataset = {
+            k: {
+                "grain": datasets[k]["metadata"].get("grain"),
+                "primary_key": datasets[k]["metadata"].get("primary_key"),
+            }
+            for k in selected_keys
+        }
         relations = self._collect_relations(selected_keys, datasets)
 
         result = run_pandas_code(
             llm, dfs, question, columns_by_dataset, current_date_info,
-            relations=relations, category_values_by_dataset=category_values_by_dataset, log_ctx=log_ctx,
+            relations=relations, category_values_by_dataset=category_values_by_dataset,
+            meta_by_dataset=meta_by_dataset, log_ctx=log_ctx,
         )
 
+        # 답변을 쓰는 메인 에이전트도 데이터의 성격(설명/행 단위)을 보고 해석하도록 결과에 같이 실어준다.
+        primary_meta = datasets[primary_key]["metadata"]
+        dataset_context = {
+            "description": primary_meta.get("description"),
+            "grain": primary_meta.get("grain"),
+        }
+
+        # 금액성 숫자에 한글 표기(예: "6,815만원")를 미리 계산해 원본 숫자 옆에 끼워넣는다.
+        # LLM이 긴 숫자를 직접 암산/타이핑하다 자릿수를 틀리는 것을 원천적으로 막기 위함.
+        annotated_data = annotate_amounts(result.get("data"))
+
         return self._response(
-            result["status"], result.get("data"), result.get("message"),
+            result["status"], annotated_data, result.get("message"),
             question, ",".join(selected_keys), code=result.get("code"),
+            dataset_context=dataset_context,
         )

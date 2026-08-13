@@ -11,12 +11,14 @@ import json
 import os
 from typing import Dict, Optional, Any, List
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
 from langchain_community.utilities import SQLDatabase
 
 from d2shared.config import DEFAULT_LLM_MODEL
 from d2shared.llm_logger import log_llm_call
+from d2shared.amount_format import annotate_amounts
 
 
 class MCPServer:
@@ -48,7 +50,7 @@ class MCPServer:
             raise Exception(f"쿼리 실행 실패: {str(e)}")
 
     def _create_standard_response(self, data: Any, conditions: Optional[Dict] = None,
-                                   data_type: str = "query") -> Dict:
+                                   data_type: str = "query", dataset_context: Optional[Dict] = None) -> Dict:
         if isinstance(data, dict) and 'error' in data:
             return {"status": "error", "data": data,
                     "message": data.get('error', '오류'), "conditions": conditions, "data_type": data_type}
@@ -58,8 +60,11 @@ class MCPServer:
         if not has_data:
             return {"status": "no_data", "data": data,
                     "message": "검색 조건에 해당하는 데이터가 없습니다", "conditions": conditions, "data_type": data_type}
-        return {"status": "success", "data": data,
-                "message": "데이터 조회 성공", "conditions": conditions, "data_type": data_type}
+        response = {"status": "success", "data": data,
+                    "message": "데이터 조회 성공", "conditions": conditions, "data_type": data_type}
+        if dataset_context:
+            response["dataset_context"] = dataset_context
+        return response
 
     def _clean_sql(self, sql: str) -> str:
         sql = sql.replace("```sql", "").replace("```", "").strip()
@@ -131,7 +136,17 @@ class MCPServer:
             "명시되어 있지 않다면 값을 임의로 짐작해서 비교하지 마세요. 짐작한 값으로 조건을 걸면 실제로는 "
             "존재하지 않는 값이라 결과가 0건이거나 잘못된 값으로 조용히 나올 수 있습니다.\n"
             "- 확실한 근거 없이 코드값을 짐작해야만 답변 가능한 질문이라면, 정확한 값을 확인할 수 없다는 뜻이므로 "
-            "SELECT 'CANNOT_ANSWER' AS result, '조건에 사용할 정확한 코드값을 확인할 수 없습니다' AS reason 을 반환하세요."
+            "SELECT 'CANNOT_ANSWER' AS result, '조건에 사용할 정확한 코드값을 확인할 수 없습니다' AS reason 을 반환하세요.\n"
+            "- 그룹별 비율/증감률 계산 시(예: 쇼핑몰별/브랜드별 감소율): 반드시 각 그룹 자신의 분자·분모로 계산할 것. "
+            "상관관계 없는 서브쿼리, 전체 집계값, 다른 그룹의 값을 실수로 재사용해 여러 그룹의 결과가 우연히 "
+            "동일한 값으로 나오지 않도록 GROUP BY와 집계 함수의 범위를 정확히 맞출 것.\n"
+            "- 비율(%) 지표로 '상위 N개'를 뽑는 질문은, 분모(매출/거래건수 등 규모)가 아주 작은 그룹이 우연히 "
+            "비율이 극단적으로 높게 나와 왜곡될 수 있으므로, 비율만 SELECT/정렬하지 말고 그 분모가 되는 규모 지표도 "
+            "같이 SELECT할 것. 실제 조치(재협상/예산 재배치 등)를 결정하는 질문이면 정렬 기준을 비율이 아니라 "
+            "그 비율의 절대 금액으로 ORDER BY 할 것.\n"
+            "- '월별' 집계 시 '년'과 '월' 컬럼이 분리돼 있고 월 값이 연도 구분 없이 반복되면(01~12), 단순히 월로만 "
+            "GROUP BY하면 서로 다른 연도의 같은 월이 합산됨. 질문에 특정 연도가 있으면 먼저 그 연도로 WHERE "
+            "필터링 후 월별 집계, 연도가 명시되지 않았으면 년과 월을 함께 GROUP BY(또는 SELECT에 년 포함)할 것."
         )
 
         if extra_rules:
@@ -269,12 +284,29 @@ DB 정보:
                         result_copy[col] = result_copy[col].apply(
                             lambda x: x.isoformat() if hasattr(x, 'isoformat') else x
                         )
+                # NaN/Infinity(0으로 나누기 등으로 발생)는 표준 JSON으로 표현할 수 없어 응답
+                # 직렬화 시 500 에러가 나므로, DB에서 나오는 시점에 None(null)으로 정리한다.
+                # astype(object)로 먼저 바꾸지 않으면 float64 컬럼은 None을 다시 NaN으로 되돌린다.
+                result_copy = result_copy.replace([np.inf, -np.inf], np.nan)
+                result_copy = result_copy.astype(object).where(pd.notna(result_copy), None)
                 data = result_copy.to_dict('records')
+
+            # 금액성 숫자에 한글 표기(예: "6,815만원")를 미리 계산해 원본 숫자 옆에 끼워넣는다.
+            # LLM이 긴 숫자를 직접 암산/타이핑하다 자릿수를 틀리는 것을 원천적으로 막기 위함.
+            data = annotate_amounts(data)
+
+            # 답변을 쓰는 에이전트가 데이터의 성격(설명/행 단위)을 보고 해석하도록 결과에 같이 실어준다.
+            primary_meta = (table_metadata or {}).get(table_name, {}) if table_name else {}
+            dataset_context = {
+                "description": primary_meta.get("description"),
+                "grain": primary_meta.get("grain"),
+            }
 
             return self._create_standard_response(
                 data=data,
                 conditions={"question": question, "table_name": table_name, "generated_sql": sql_query},
                 data_type="dynamic_query",
+                dataset_context=dataset_context,
             )
 
         except Exception as e:

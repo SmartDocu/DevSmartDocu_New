@@ -1,11 +1,12 @@
 """
-d2chat tools 등록 — query_tool은 d2shared에서, excel_query_tool/rag_tool은 d2chat 전용.
+d2chat tools 등록 — query_tool/amount_format_tool은 d2shared에서, excel_query_tool/rag_tool은 d2chat 전용.
 """
 from d2chat.mcp_agent.classifier import classify_question_and_table
 from d2chat.mcp_agent.tools.date_tool import create_date_tool
 from d2chat.mcp_agent.tools.excel_query_tool import create_excel_query_tool
 from d2chat.mcp_agent.tools.rag_tool import create_rag_tool
 from d2shared.tools.query_tool import create_query_tool
+from d2shared.tools.amount_format_tool import create_amount_format_tool
 
 
 def create_all_tools(agent) -> list:
@@ -13,6 +14,7 @@ def create_all_tools(agent) -> list:
         create_date_tool(),
         create_query_tool(agent, classifier_fn=classify_question_and_table),
         create_excel_query_tool(agent),
+        create_amount_format_tool(),
     ]
     rag_tool = create_rag_tool(agent.rag_server)
     if rag_tool:

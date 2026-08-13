@@ -75,21 +75,31 @@ def fmt_dt(raw, offsetminutes: int | None = None) -> str:
 
 
 def parse_answer(answer_raw: str | None) -> dict:
-    """answer 컬럼(JSON 또는 plain text)에서 text와 시각화 데이터 추출."""
+    """answer 컬럼(JSON 또는 plain text)에서 text와 시각화 데이터 추출.
+
+    visualizations(배열)/visualization_error는 2026-08 멀티 시각화 개선(pr_d2chat 이식)으로
+    추가됨 — table_html/chart_image(단수)는 하위 호환을 위해 그대로 유지, 프론트는
+    visualizations가 있으면 그걸 우선 사용하고 없으면 기존 단수 필드로 폴백한다."""
+    empty = {
+        "text": "", "visualization_type": "none", "table_html": None, "chart_image": None,
+        "visualizations": None, "visualization_error": None,
+    }
     if not answer_raw:
-        return {"text": "", "visualization_type": "none", "table_html": None, "chart_image": None}
+        return empty
     try:
         data = json.loads(answer_raw)
         if isinstance(data, dict):
             return {
-                "text":               data.get("answer", ""),
-                "visualization_type": data.get("visualization_type", "none"),
-                "table_html":         data.get("table_html"),
-                "chart_image":        data.get("chart_image"),
+                "text":                 data.get("answer", ""),
+                "visualization_type":   data.get("visualization_type", "none"),
+                "table_html":           data.get("table_html"),
+                "chart_image":          data.get("chart_image"),
+                "visualizations":       data.get("visualizations"),
+                "visualization_error":  data.get("visualization_error"),
             }
     except Exception:
         pass
-    return {"text": answer_raw, "visualization_type": "none", "table_html": None, "chart_image": None}
+    return {**empty, "text": answer_raw}
 
 
 # ── 세션 ──────────────────────────────────────────────────────────
@@ -280,9 +290,11 @@ def get_favorites(
                 "created_at":  fmt_dt(row.get("createdts"), offsetminutes),
             }
             if include_viz:
-                item["visualization_type"] = ans["visualization_type"]
-                item["table_html"]         = ans["table_html"]
-                item["chart_image"]        = ans["chart_image"]
+                item["visualization_type"]  = ans["visualization_type"]
+                item["table_html"]          = ans["table_html"]
+                item["chart_image"]         = ans["chart_image"]
+                item["visualizations"]      = ans["visualizations"]
+                item["visualization_error"] = ans["visualization_error"]
             if extra_fields:
                 for f in extra_fields:
                     item[f] = row.get(f)

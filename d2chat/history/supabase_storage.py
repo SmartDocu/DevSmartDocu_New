@@ -186,13 +186,15 @@ def get_session_messages(sb, session_uid: str, offsetminutes: int | None = None)
         })
         ans = _parse_answer(qa.get("answer"))
         messages.append({
-            "role":               "assistant",
-            "content":            ans["text"],
-            "timestamp":          ts,
-            "query":              None,
-            "visualization_type": ans["visualization_type"],
-            "table_html":         ans["table_html"],
-            "chart_image":        ans["chart_image"],
+            "role":                "assistant",
+            "content":             ans["text"],
+            "timestamp":           ts,
+            "query":               None,
+            "visualization_type":  ans["visualization_type"],
+            "table_html":          ans["table_html"],
+            "chart_image":         ans["chart_image"],
+            "visualizations":      ans["visualizations"],
+            "visualization_error": ans["visualization_error"],
         })
 
     return {"session_id": session_uid, "messages": messages}
@@ -343,13 +345,15 @@ def get_snapshot_messages(sb, share_uid: str, offsetminutes: int | None = None) 
         })
         ans = _parse_answer(snap.get("answer"))
         messages.append({
-            "role":               "assistant",
-            "content":            ans["text"],
-            "timestamp":          ts,
-            "query":              None,
-            "visualization_type": ans["visualization_type"],
-            "table_html":         ans["table_html"],
-            "chart_image":        ans["chart_image"],
+            "role":                "assistant",
+            "content":             ans["text"],
+            "timestamp":           ts,
+            "query":               None,
+            "visualization_type":  ans["visualization_type"],
+            "table_html":          ans["table_html"],
+            "chart_image":         ans["chart_image"],
+            "visualizations":      ans["visualizations"],
+            "visualization_error": ans["visualization_error"],
         })
 
     return {"share_uid": share_uid, "messages": messages}

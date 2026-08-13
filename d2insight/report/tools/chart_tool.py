@@ -60,7 +60,7 @@ def create_chart(data: list, question: str, chart_type: Optional[str] = None) ->
 
     df = pd.DataFrame(data)
     try:
-        image_b64, _ = dataframe_to_chart_image(df, question, chart_type)
+        image_b64, _, chart_err = dataframe_to_chart_image(df, question, chart_type)
     except Exception as exc:
         return {"error": str(exc), "chart_image": None}
 
@@ -71,4 +71,4 @@ def create_chart(data: list, question: str, chart_type: Optional[str] = None) ->
             "markdown_tag": f"![{question}]({key})",
             "note": "차트가 생성되었습니다. markdown_tag 값을 보고서 텍스트에 그대로 삽입하세요.",
         }
-    return {"error": "차트 생성 실패", "chart_image": None}
+    return {"error": chart_err or "차트 생성 실패", "chart_image": None}

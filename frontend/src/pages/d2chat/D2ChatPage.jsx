@@ -16,9 +16,26 @@ function getInitialMessage() {
   return {
     role: 'assistant',
     content: t('msg.d2chat.welcome'),
-    visualization: null,
-    visualizationType: null,
+    visualizations: [],
+    visualizationError: null,
   }
+}
+
+// 백엔드 응답(또는 저장된 과거 메시지)에서 시각화 목록을 뽑아낸다.
+// 신형(visualizations 배열, 한 답변에 표+차트 등 여러 개)과 구형(단일 visualization_type/
+// table_html/chart_image) 응답을 하나의 배열 형태로 통일해 항상 같은 방식으로 렌더링한다.
+function normalizeVisualizations(payload = {}) {
+  const { visualization_type, table_html, chart_image, table_data, chart_data, visualizations } = payload
+  if (Array.isArray(visualizations) && visualizations.length > 0) {
+    return visualizations
+  }
+  if (visualization_type === 'table' && table_html) {
+    return [{ type: 'table', table_html, table_data }]
+  }
+  if (visualization_type === 'chart' && chart_image) {
+    return [{ type: 'chart', chart_image, chart_data }]
+  }
+  return []
 }
 
 const EXAMPLE_QUESTION_DEFS = [
@@ -177,6 +194,8 @@ export default function D2ChatPage() {
         visualization_type: fav.visualization_type,
         table_html: fav.table_html,
         chart_image: fav.chart_image,
+        visualizations: fav.visualizations,
+        visualization_error: fav.visualization_error,
       },
     ])
     setHistoryLabel(t('msg.d2chat.favorite_chat'))
@@ -222,24 +241,21 @@ export default function D2ChatPage() {
     }
   }
 
-  const handleContinue = async ({ question, answer, query, visualization_type, table_html, chart_image }) => {
+  const handleContinue = async ({ question, answer, query, visualization_type, table_html, chart_image, visualizations, visualization_error }) => {
     try {
       const { data } = await apiClient.post('/d2chat/session/inject', {
         session_id: sessionId,
         project_id: user?.myprojectid ?? null,
-        question, answer, query, visualization_type, table_html, chart_image,
+        question, answer, query, visualization_type, table_html, chart_image, visualizations, visualization_error,
       })
       if (data.session_id) updateSessionId(data.session_id)
 
-      const visualization =
-        visualization_type === 'table' ? table_html
-        : visualization_type === 'chart' ? chart_image
-        : null
+      const normalizedViz = normalizeVisualizations({ visualization_type, table_html, chart_image, visualizations })
 
       setMessages((prev) => [
         ...prev,
-        { role: 'user', content: question, visualization: null, visualizationType: null },
-        { role: 'assistant', content: answer, visualization, visualizationType: visualization_type },
+        { role: 'user', content: question, visualizations: [], visualizationError: null },
+        { role: 'assistant', content: answer, visualizations: normalizedViz, visualizationError: visualization_error || null },
       ])
       setViewingSessionId(null)
       setViewingSnapshotId(null)
@@ -251,8 +267,8 @@ export default function D2ChatPage() {
     }
   }
 
-  const addMessage = (role, content, visualization = null, visualizationType = null) => {
-    setMessages((prev) => [...prev, { role, content, visualization, visualizationType }])
+  const addMessage = (role, content, visualizations = [], visualizationError = null) => {
+    setMessages((prev) => [...prev, { role, content, visualizations, visualizationError }])
   }
 
   const addQueryToHistory = (question, queries) => {
@@ -298,12 +314,8 @@ export default function D2ChatPage() {
           addQueryToHistory(question, [{ query: data.query, table: null }])
         }
 
-        const visualization =
-          data.visualization_type === 'table' ? data.table_html
-          : data.visualization_type === 'chart' ? data.chart_image
-          : null
-
-        addMessage('assistant', data.answer, visualization, data.visualization_type)
+        const visualizations = normalizeVisualizations(data)
+        addMessage('assistant', data.answer, visualizations, data.visualization_error || null)
       } else {
         addMessage('assistant', t('msg.d2chat.error_prefix') + (data.error || t('msg.d2chat.unknown_error')))
       }
@@ -580,8 +592,8 @@ export default function D2ChatPage() {
                         <MessageBubble
                           role={msg.role}
                           content={msg.content}
-                          visualization={msg.visualization}
-                          visualizationType={msg.visualizationType}
+                          visualizations={msg.visualizations}
+                          visualizationError={msg.visualizationError}
                           starButton={starButton}
                         />
                       </div>
@@ -671,12 +683,8 @@ export default function D2ChatPage() {
                           <MessageBubble
                             role={msg.role}
                             content={msg.content}
-                            visualization={
-                              msg.visualization_type === 'table' ? msg.table_html
-                              : msg.visualization_type === 'chart' ? msg.chart_image
-                              : null
-                            }
-                            visualizationType={msg.visualization_type}
+                            visualizations={normalizeVisualizations(msg)}
+                            visualizationError={msg.visualization_error}
                             starButton={starButton}
                           />
                           {msg.role === 'user' && (
@@ -693,6 +701,8 @@ export default function D2ChatPage() {
                                     visualization_type: nextMsg?.visualization_type || 'none',
                                     table_html: nextMsg?.table_html || null,
                                     chart_image: nextMsg?.chart_image || null,
+                                    visualizations: nextMsg?.visualizations || null,
+                                    visualization_error: nextMsg?.visualization_error || null,
                                   })
                                 }}
                               >{t('btn.d2chat.continue')}</button>
@@ -768,7 +778,7 @@ export default function D2ChatPage() {
 // ─────────────────────────────────────────────────────────────────
 // 메시지 말풍선
 // ─────────────────────────────────────────────────────────────────
-function MessageBubble({ role, content, visualization, visualizationType, starButton }) {
+function MessageBubble({ role, content, visualizations = [], visualizationError, starButton }) {
   useLangStore((s) => s.translations)
   return (
     <div className={`message ${role}`}>
@@ -782,10 +792,20 @@ function MessageBubble({ role, content, visualization, visualizationType, starBu
 
       <div className="message-content">
         {content}
-        {visualization && (
-          <div className="visualization-container">
-            {visualizationType === 'table' && <div dangerouslySetInnerHTML={{ __html: visualization }} />}
-            {visualizationType === 'chart' && <img src={`data:image/png;base64,${visualization}`} alt={t('lbl.d2chat.chart_alt')} />}
+        {visualizationError && (
+          <div className="visualization-error-note">{t('msg.d2chat.visualization_partial_error')}</div>
+        )}
+        {visualizations.length > 0 && (
+          <div className="visualizations-stack">
+            {visualizations.map((viz, idx) => (
+              <div key={idx} className="visualization-container">
+                {viz.title && visualizations.length > 1 && (
+                  <div className="visualization-title">{viz.title}</div>
+                )}
+                {viz.type === 'table' && <div dangerouslySetInnerHTML={{ __html: viz.table_html }} />}
+                {viz.type === 'chart' && <img src={`data:image/png;base64,${viz.chart_image}`} alt={viz.title || t('lbl.d2chat.chart_alt')} />}
+              </div>
+            ))}
           </div>
         )}
       </div>
