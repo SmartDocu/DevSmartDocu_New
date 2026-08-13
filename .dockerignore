@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!frontend/.env
+node_modules
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+*.txt
+!requirements.txt
+*.sql
+_archive_claude_md
+.claude
+.vscode
