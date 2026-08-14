@@ -5,6 +5,8 @@ import { LockOutlined } from '@ant-design/icons'
 import { useMutation } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
+import { useLanguages, useTranslations } from '@/hooks/useI18n'
+import { useConfigs } from '@/hooks/useConfigs'
 
 const { Title, Text } = Typography
 
@@ -16,6 +18,26 @@ export default function PasswordResetPage() {
   const [tokenHash, setTokenHash] = useState('')
   const [tokenError, setTokenError] = useState(false)
   const processedRef = useRef(false)
+
+  // 이 페이지는 AppLayout 밖(비로그인 전용 라우트)에서 렌더되므로, AppLayout이 하는
+  // 언어 초기화/번역 로드를 직접 해줘야 한다 — 안 하면 langStore.translations가 계속
+  // 빈 값이라 t()가 항상 key 원문을 그대로 반환한다.
+  const { languageCd, setLanguageCd, setTranslations } = useLangStore()
+  const { data: languages = [] } = useLanguages()
+  const { data: configs } = useConfigs()
+  const { data: translationsData } = useTranslations(languageCd)
+
+  useEffect(() => {
+    if (languageCd) return
+    const resolved = configs?.default_lang || (languages.length > 0 ? languages[0].languagecd : '')
+    if (resolved) setLanguageCd(resolved)
+  }, [configs, languages, languageCd, setLanguageCd])
+
+  useEffect(() => {
+    if (translationsData) {
+      setTranslations(translationsData.translations ?? {}, translationsData.defaults ?? {})
+    }
+  }, [translationsData, setTranslations])
 
   // 이메일 링크: /password-reset?token_hash=xxx&type=recovery
   // token_hash는 여기서 바로 서버에 검증 요청하지 않는다 — 메일 보안 스캐너가

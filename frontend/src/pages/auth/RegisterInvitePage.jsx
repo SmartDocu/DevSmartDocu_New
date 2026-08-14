@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLangStore, t } from '@/stores/langStore'
 import { useInviteInfo, useRegisterInvite } from '@/hooks/useAuth'
+import { useLanguages, useTranslations } from '@/hooks/useI18n'
+import { useConfigs } from '@/hooks/useConfigs'
 
 export default function RegisterInvitePage() {
   useLangStore((s) => s.translations)
@@ -10,6 +12,26 @@ export default function RegisterInvitePage() {
   const req = searchParams.get('req')
 
   const { data: invite, isLoading: infoLoading, isError } = useInviteInfo(req)
+
+  // 이 페이지는 AppLayout 밖(비로그인 전용 라우트)에서 렌더되므로, AppLayout이 하는
+  // 언어 초기화/번역 로드를 직접 해줘야 한다 — 안 하면 langStore.translations가 계속
+  // 빈 값이라 t()가 항상 key 원문을 그대로 반환한다.
+  const { languageCd, setLanguageCd, setTranslations } = useLangStore()
+  const { data: languages = [] } = useLanguages()
+  const { data: configs } = useConfigs()
+  const { data: translationsData } = useTranslations(languageCd)
+
+  useEffect(() => {
+    if (languageCd) return
+    const resolved = configs?.default_lang || (languages.length > 0 ? languages[0].languagecd : '')
+    if (resolved) setLanguageCd(resolved)
+  }, [configs, languages, languageCd, setLanguageCd])
+
+  useEffect(() => {
+    if (translationsData) {
+      setTranslations(translationsData.translations ?? {}, translationsData.defaults ?? {})
+    }
+  }, [translationsData, setTranslations])
 
   useEffect(() => {
     if (invite?.already_registered) {
