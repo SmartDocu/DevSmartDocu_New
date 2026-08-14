@@ -10,17 +10,10 @@ export default function AdminUserRolePage() {
 
   useLangStore((s) => s.translations)
 
-  const ROLE_OPTIONS = [
-    { value: 1, label: t('cod.rolecd_U') },
-    { value: 5, label: 'Power User' },
-    { value: 7, label: t('cod.rolecd_M') },
-  ]
-
   const [pendingRoles, setPendingRoles] = useState({})
   const [savingUid, setSavingUid] = useState(null)
 
-  const { users = [], role_options = [] } = data
-  const roleOptions = role_options.length > 0 ? role_options : ROLE_OPTIONS
+  const { users = [], role_options: roleOptions = [] } = data
 
   const handleRoleChange = (useruid, newRoleid) => {
     setPendingRoles((prev) => ({ ...prev, [useruid]: parseInt(newRoleid) }))
@@ -97,7 +90,7 @@ export default function AdminUserRolePage() {
                       onChange={(e) => handleRoleChange(user.useruid, e.target.value)}
                     >
                       {roleOptions.map((r) => (
-                        <option key={r.value} value={r.value}>{r.label}</option>
+                        <option key={r.value} value={r.value}>{t(r.term_key) || r.default_name}</option>
                       ))}
                     </select>
                   </td>

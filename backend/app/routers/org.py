@@ -893,7 +893,7 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), h
                     continue
 
                 regreqsuid = result.data[0].get("userregrequid", "")
-                invite_link = f"https://dev-smart-doc.azurewebsites.net/register-invite?req={regreqsuid}"
+                invite_link = f"{settings.BASE_URL.rstrip('/')}/register-invite?req={regreqsuid}"
 
                 subject = f"[D2Doc] {tenantnm} 서비스 초대"
                 mail_body = (

@@ -35,6 +35,8 @@ http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com
 
 민감하지 않은 값(SUPABASE_URL, SUPABASE_SCHEMA, SQS 큐 URL 등)은 태스크 정의에 평문 `environment`로 직접 넣음. 워커와 달리 이번엔 시크릿을 Secrets Manager로 분리했다(워커 태스크 정의는 여전히 평문 방식 — 개선 여지 있음).
 
+2026-08-14에 `BASE_URL` 평문 env를 추가함(태스크 정의 리비전 2). 비밀번호 재설정/초대 이메일 링크가 이 값을 기준으로 생성된다(`backend/app/config.py`의 `settings.BASE_URL`). 현재값: `http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com`. 도메인 연결 시(후속 작업 #1) 이 값도 함께 갱신할 것.
+
 `smartdocu-app` IAM 사용자에 배포에 필요한 커스텀 정책(`smartdocu-deploy-policy`) + `ElasticLoadBalancingFullAccess`를 추가로 붙여야 했음(원래 권한이 ECR/ECS 정도로 좁았음).
 
 ---
@@ -74,4 +76,5 @@ aws ecs update-service --cluster smartdocu-cluster --service smartdocu-backend-s
 - [ ] **d2insight ↔ Azure SQL(`mcp-rtims.database.windows.net`) 네트워크 연결** — 이번 배포 범위에서 제외. NAT Gateway로 고정 아웃바운드 IP 만들어서 Azure SQL 방화벽에 등록하는 방안이 유력 (월 $32~45 + 데이터 전송비)
 - [ ] **워커 서비스(`smartdocu-worker-service`) `desiredCount=0` 원인 확인** — 현재 SQS 큐를 아무도 소비하지 않고 있음. 의도적인지 확인 필요
 - [ ] 워커 태스크 정의도 메인 앱처럼 Secrets Manager 방식으로 시크릿 분리 (현재 평문)
-- [ ] `.dockerignore`/`config.py`(CORS_ORIGINS) 변경분 git 커밋
+- [ ] `.dockerignore`/`config.py`(CORS_ORIGINS, BASE_URL)/`auth.py`/`org.py`/`.env` 변경분 git 커밋
+- [x] ~~하드코딩된 옛 Azure 주소(dev-smart-doc.azurewebsites.net) 정리~~ — 2026-08-14 완료. `auth.py`(비밀번호 재설정 링크), `org.py`(초대 링크)를 `settings.BASE_URL` 참조로 변경, `config.py` CORS_ORIGINS에서 azurewebsites.net 제거, ECS 태스크 정의(리비전 2)에 `BASE_URL` 추가 후 재배포·스모크테스트 완료. `frontend/src/pages/HomePage.jsx`의 `dev-rag-medicine.azurewebsites.net` 링크는 별개 외부 서비스라 이번 작업에서 제외

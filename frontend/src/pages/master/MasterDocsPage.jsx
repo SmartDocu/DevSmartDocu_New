@@ -4,6 +4,7 @@ import { useDocs, useProjects, useSaveDoc, useDeleteDoc } from '@/hooks/useDocs'
 import { useLangStore, t } from '@/stores/langStore'
 import { useDataParams } from '@/hooks/useDataParams'
 import { useDocDatasets } from '@/hooks/useDocDatasets'
+import { useMenuCodes } from '@/hooks/useMenus'
 import DocGroupSelectModal from './DocGroupSelectModal'
 
 export default function MasterDocsPage() {
@@ -26,6 +27,11 @@ export default function MasterDocsPage() {
 
   const { data: docParams = [] } = useDataParams(docForm.docid ? String(docForm.docid) : null)
   const { data: datasetData } = useDocDatasets(docForm.docid ? String(docForm.docid) : null)
+  const { data: dataSourceCodes = [] } = useMenuCodes('datasourcecd')
+  const dataSourceLabel = (code) => {
+    const c = dataSourceCodes.find((dc) => dc.codevalue === code)
+    return c ? (t(c.term_key) || c.default_name) : code
+  }
 
   const selectDoc = (doc) => {
     setSelectedDoc(doc)
@@ -254,7 +260,7 @@ export default function MasterDocsPage() {
             const selected_datauids = datasetData?.selected_datauids || []
             const allChecked = [...new Set([...selected_datauids, ...Object.keys(dataparam_map)])]
             const checkedDatas = datas.filter((d) => allChecked.includes(d.datauid))
-            const lines = checkedDatas.map((d) => `[${d.datanm}] (${d.datasourcecd})`)
+            const lines = checkedDatas.map((d) => `[${d.datanm}] (${dataSourceLabel(d.datasourcecd)})`)
             return (
               <div style={{ marginTop: 16 }}>
                 <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('ttl.dataset_ttl')}</h4>

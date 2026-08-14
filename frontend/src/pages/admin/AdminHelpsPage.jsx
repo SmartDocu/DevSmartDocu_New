@@ -108,7 +108,7 @@ export default function AdminHelpsPage() {
                     </span>
                   </div>
                   <div className="card-title" style={{ marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {h.help || '제목 없음'}
+                    {h.help || t('msg.no.title')}
                   </div>
                 </div>
               ))}
@@ -140,7 +140,7 @@ export default function AdminHelpsPage() {
                 <input
                   type="text"
                   value={form.url}
-                  placeholder="관련 페이지 경로 (예: /master/docs)"
+                  placeholder={t('inf.help.url_placeholder')}
                   onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
                 />
               </div>
@@ -162,7 +162,7 @@ export default function AdminHelpsPage() {
               <input
                 type="text"
                 value={form.help}
-                placeholder="도움말 제목"
+                placeholder={t('inf.help.title_placeholder')}
                 onChange={(e) => setForm((f) => ({ ...f, help: e.target.value }))}
               />
             </div>
@@ -187,7 +187,7 @@ export default function AdminHelpsPage() {
                 <textarea
                   rows={14}
                   value={form.desc}
-                  placeholder="HTML 내용을 입력하세요"
+                  placeholder={t('inf.help.desc_placeholder')}
                   onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
                   style={{ fontFamily: 'monospace', fontSize: 12 }}
                 />

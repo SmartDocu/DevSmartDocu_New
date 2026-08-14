@@ -14,12 +14,23 @@ from utilsPrj.user_lookup import get_usernm_email
 
 router = APIRouter()
 
-ROLE_MAP = {1: "일반유저", 5: "Power User", 7: "관리자"}
-ROLE_OPTIONS = [
-    {"value": 1, "label": "일반유저"},
-    {"value": 5, "label": "Power User"},
-    {"value": 7, "label": "관리자"},
-]
+VALID_ROLE_IDS = {1, 5, 7}
+
+
+def _role_options(sb):
+    """codes 테이블(codegroupcd='userroleid')에서 역할 목록을 조회한다. 다국어는 프론트에서 term_key로 처리."""
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("codes")
+        .select("codevalue,default_name")
+        .eq("codegroupcd", "userroleid")
+        .eq("useyn", True)
+        .order("orderno")
+        .execute().data or []
+    )
+    return [
+        {"value": int(r["codevalue"]), "term_key": f"cod.userroleid_{r['codevalue']}", "default_name": r.get("default_name")}
+        for r in rows
+    ]
 
 
 def _sb_service():
@@ -69,11 +80,14 @@ def list_user_roles(token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
 
+    role_options = _role_options(sb)
+    role_map = {r["value"]: r["default_name"] for r in role_options}
+
     rows = sb.schema(SUPABASE_SCHEMA).table("users").select("useruid,roleid,email").order("email").execute().data or []
     for u in rows:
-        u["role_name"] = ROLE_MAP.get(u.get("roleid", 1), "일반유저")
+        u["role_name"] = role_map.get(u.get("roleid", 1), "User")
 
-    return {"users": rows, "role_options": ROLE_OPTIONS}
+    return {"users": rows, "role_options": role_options}
 
 
 class UserRoleSaveRequest(BaseModel):
@@ -86,7 +100,7 @@ def save_user_role(body: UserRoleSaveRequest, token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
 
-    if body.roleid not in ROLE_MAP:
+    if body.roleid not in VALID_ROLE_IDS:
         raise HTTPException(status_code=400, detail="유효하지 않은 역할입니다.")
 
     sb.schema(SUPABASE_SCHEMA).table("users").update({"roleid": body.roleid}).eq("useruid", body.useruid).execute()

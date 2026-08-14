@@ -202,6 +202,13 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
             if service_code:
                 tenant_cond["servicecd"] = service_code
             llm_model, enc_api_key = _fetch("llmapikeys", tenant_cond)
+        if not llm_model:
+            # BYOK 계정은 반드시 본인 키로만 동작해야 한다 — 아래 공용 fallback(시스템/무관 계정
+            # llmapikeys 풀에서 무작위로 조회)으로 넘어가면 시스템 키나 심하면 다른 계정의 키가
+            # 대신 사용될 수 있다(2026-08-14 발견). 본인 키 미등록 시에는 즉시 에러로 막는다.
+            raise ValueError(
+                "AI 키가 등록되지 않았습니다. 프로젝트 또는 계정 설정에서 사용할 LLM API 키를 등록해주세요."
+            )
     else:
         # 서비스 제공 키: 시스템 테넌트의 llmapikeys 사용
         try:

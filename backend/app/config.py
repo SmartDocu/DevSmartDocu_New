@@ -49,10 +49,10 @@ class Settings(BaseSettings):
 
     # 앱 설정
     DJANGO_DEBUG: bool = True
+    BASE_URL: str = "http://localhost:5174"
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://localhost:5174",
-        "https://dev-smart-doc.azurewebsites.net",
         "http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com",
     ]
 

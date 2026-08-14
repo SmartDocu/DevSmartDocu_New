@@ -864,11 +864,7 @@ def send_reset_email(body: SendResetEmailRequest):
     try:
         from utilsPrj.supabase_client import get_supabase_client
         client = get_supabase_client()
-        redirect_to = (
-            "http://localhost:5174/password-reset"
-            if settings.DJANGO_DEBUG
-            else "https://dev-smart-doc.azurewebsites.net/password-reset/"
-        )
+        redirect_to = f"{settings.BASE_URL.rstrip('/')}/password-reset"
         client.auth.reset_password_email(
             body.email,
             options={"redirect_to": redirect_to},
