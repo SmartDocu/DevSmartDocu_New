@@ -332,6 +332,22 @@
   padding: 8px;
   resize: vertical;
 }
+.opt-json-error { color: #c0392b; font-size: 11px; margin: 4px 0 0; }
+.opt-json-resend {
+  margin-top: 6px;
+  width: 100%;
+  background: #1b3a5c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.opt-json-resend:hover { background: #142c46; }
+.opt-json-resend:disabled { background: #9aa7b3; cursor: not-allowed; }
+
+.opt-step-locked { font-size: 11px; }
 
 .opt-schedule { margin-top: 10px; }
 .opt-schedule-done {

@@ -86,3 +86,27 @@ ANOMALY_SIGMA: float = 3.0      # 기본 ±3σ (보고서작성방안 기준)
 
 # dataset_builder 비교 기간 기본값 ("MoM" | "YoY" | "QoQ")
 COMPARE_TYPE: str = "MoM"
+
+# --- 이력(history) 구간 — 신규/이탈 생애주기 판정과 추이 분석 (엔진 modules) ---
+HISTORY_MONTHS: int = 7                    # 분석월 + 과거 6개월
+LIFECYCLE_MIN_ACTIVE_MONTHS: int = 2        # 이 개월 이상 활동해야 "진성 이탈"로 판정
+
+# --- 제품 수명주기(PLC) 단계 판정 ---
+PLC_INTRO_MAX_MONTHS: int = 2
+PLC_GROWTH_UP: float = 0.15
+PLC_GROWTH_DOWN: float = -0.15
+
+# --- KPI 경보 (kpi_alert 모듈) ---
+KPI_ALERT_SIGMA: float = 2.0
+KPI_ALERT_RATE: float = 0.20
+KPI_ALERT_MIN_MONTHS: int = 3
+KPI_ALERT_WINDOW: int | None = None
+
+# --- 재고 분석 (inventory_turnover / stock_movement 모듈) ---
+INVENTORY_PERIOD_DAYS: int = 30
+INVENTORY_SLOW_DAYS: float = 90.0
+STOCK_RECONCILE_TOLERANCE: float = 0.01
+
+# --- 안전재고(Safety Stock) 추정 ---
+SAFETY_STOCK_Z: float = 1.65
+SAFETY_STOCK_MIN_MONTHS: int = 3

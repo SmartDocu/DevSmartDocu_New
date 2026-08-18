@@ -245,9 +245,18 @@ def run_tool(
             agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id,
                                 user_uid=user_id or user_uid, account_uid=account_uid,
                                 session_id=session_id)
+            # 옵션 패널 "이대로 작성"에서 확정된 시나리오 스텝 목록 — 있으면 이 title들을
+            # section plan으로 강제(LLM 자유 계획 대신). 없으면 기존대로 LLM이 목차 결정.
+            scenario_options = intent.get("scenario_options") or {}
+            section_plan_override = None
+            if scenario_options.get("applied_steps"):
+                section_plan_override = [
+                    s.get("title") for s in scenario_options["applied_steps"] if s.get("title")
+                ]
             report_result = agent.generate(
                 report_type, target_month, months_back,
                 user_request=user_request,
+                section_plan_override=section_plan_override,
             )
 
             if report_result.get("skipped_reason"):

@@ -71,6 +71,12 @@ export default function D2InsightPage() {
   const [scheduleSettings, setScheduleSettings] = useState(null) // 현재 보이는 정기 보고서의 요일/시간 설정(수정용)
   const [activeReportIndex, setActiveReportIndex] = useState(null) // 클릭해 선택한 말풍선(보고서) 인덱스 — null이면 최신 보고서 기본 표시
 
+  // 보고서 preview (단독앱 pr_module_insight_202608061005 방식) — 채팅 send 시 서버에서
+  // 시나리오 매칭 결과와 스텝-모듈-툴 목록을 받아 오른편 옵션 패널에 표시. "이대로 작성"
+  // 클릭 시 이 데이터를 옵션 JSON으로 실어 /chat에 실제 실행 요청. null이면 preview 없음.
+  const [previewData, setPreviewData] = useState(null)
+  const [previewOriginalMessage, setPreviewOriginalMessage] = useState('')
+
   // 정기 보고서 공유(공유한/공유받은)
   const [sharesSentSchedule, setSharesSentSchedule] = useState([])
   const [sharesReceivedSchedule, setSharesReceivedSchedule] = useState([])
@@ -381,6 +387,67 @@ export default function D2InsightPage() {
     }
   }
 
+  // 실제 /chat 실행 — sendMessage(preview 흐름 성공 시) 또는 handleConfirmPreview에서 호출.
+  const _executeChat = async (text, options = null) => {
+    try {
+      const payload = {
+        message: text,
+        session_id: sessionIdRef.current,
+        user_id: userId,
+        project_id: user?.myprojectid ?? null,
+        account_uid: user?.accountuid ?? null,
+      }
+      if (options) payload.options = options
+      const { data } = await apiClient.post('/d2insight/chat', payload, CHAT_TIMEOUT)
+
+      if (data.session_id) updateSessionId(data.session_id)
+      if (data.qauid) {
+        setMessages((prev) => {
+          const updated = [...prev]
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].role === 'user') { updated[i] = { ...updated[i], qauid: data.qauid }; break }
+          }
+          return updated
+        })
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: data.answer || '',
+          fileurl: data.fileurl || null,
+          reportPath: data.report_path || null,
+          qauid: data.qauid || null,
+          appliedSteps: data.applied_steps || null,
+        },
+      ])
+      setActiveReportIndex(null)
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (error.response?.data?.detail || error.message) },
+      ])
+    }
+  }
+
+  // "이대로 작성" 클릭 — preview 확정 후 /chat 실제 실행. 옵션은 서버가 이해할 형태로 전달.
+  const handleConfirmPreview = async () => {
+    if (!previewData || isLoading) return
+    const text = previewOriginalMessage
+    const options = {
+      scenario: previewData.scenario,
+      applied_steps: previewData.applied_steps,
+    }
+    setPreviewData(null)
+    setPreviewOriginalMessage('')
+    setIsLoading(true)
+    try {
+      await _executeChat(text, options)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const sendMessage = async (overrideText = null) => {
     const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim()
     if (!text || isLoading) return
@@ -389,6 +456,33 @@ export default function D2InsightPage() {
     setInputValue('')
     setIsLoading(true)
 
+    // 1) 먼저 preview로 시나리오 매칭 시도 (단독앱 방식). 매칭되면 옵션 패널에 표시하고
+    //    실제 /chat은 사용자가 "이대로 작성" 눌러야 실행. 매칭 안 되면 그대로 /chat 진행.
+    try {
+      const previewResp = await apiClient.post('/d2insight/report/preview', {
+        message: text,
+        user_id: userId,
+        project_id: user?.myprojectid ?? null,
+        account_uid: user?.accountuid ?? null,
+      })
+      if (previewResp.data?.scenario) {
+        setPreviewData(previewResp.data)
+        setPreviewOriginalMessage(text)
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `'${previewResp.data.scenario}' 시나리오로 매칭됐어요. 오른쪽 옵션 패널을 확인하고 '이대로 작성'을 눌러주세요.`,
+          },
+        ])
+        setIsLoading(false)
+        return
+      }
+    } catch (_) {
+      // preview 실패해도 조용히 /chat 폴백
+    }
+
+    // 2) preview 매칭 없음 → 기존 /chat 흐름 그대로.
     try {
       const { data } = await apiClient.post(
         '/d2insight/chat',
@@ -1167,6 +1261,12 @@ export default function D2InsightPage() {
           onRegisterSchedule={handleRegisterSchedule}
           onPreviewScheduleUpdate={handlePreviewScheduleUpdate}
           onApplyScheduleUpdate={handleApplyScheduleUpdate}
+          preview={previewData}
+          onConfirmPreview={handleConfirmPreview}
+          onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage('') }}
+          onReorderPreviewSteps={(newSteps) =>
+            setPreviewData((prev) => (prev ? { ...prev, applied_steps: newSteps } : prev))
+          }
         />
       </div>
 
@@ -1228,10 +1328,91 @@ function ReportOptionsPanel({
   scheduleSettings,
   onPreviewRegisterSchedule, onRegisterSchedule,
   onPreviewScheduleUpdate, onApplyScheduleUpdate,
+  preview, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
   const [showJson, setShowJson] = useState(false)
+  const [showPreviewJson, setShowPreviewJson] = useState(false)
+  const [dragIndex, setDragIndex] = useState(null)
+
+  // preview 모드의 JSON 편집 buffer — textarea에서 사용자가 편집하는 중간 문자열.
+  // "JSON 저장" 눌러야 부모 previewData.applied_steps에 반영된다 (그 전까지 카드는 안 바뀜).
+  // 편집 결과가 유효하면 아래 카드도 자동 리렌더되고, 그 순서·모듈 그대로 "이대로 작성"이
+  // 실제 /chat 실행 옵션으로 넘어가 보고서에 반영된다.
+  const [jsonText, setJsonText] = useState('')
+  const [jsonError, setJsonError] = useState('')
+  const [jsonSaveOk, setJsonSaveOk] = useState(false)
+
+  // preview가 새로 세팅되거나 부모에서 갱신될 때(드래그 재정렬 포함) buffer도 동기화한다.
+  // JSON.stringify를 매번 새로 만들어 사용자가 편집했던 buffer는 리셋된다 — 이 편이 헷갈리지 않다.
+  useEffect(() => {
+    if (!preview) { setJsonText(''); setJsonError(''); setJsonSaveOk(false); return }
+    setJsonText(JSON.stringify(preview.applied_steps || [], null, 2))
+    setJsonError('')
+    setJsonSaveOk(false)
+  }, [preview])
+
+  const applyJsonEdit = () => {
+    try {
+      const parsed = JSON.parse(jsonText)
+      if (!Array.isArray(parsed)) throw new Error('applied_steps는 배열이어야 해요')
+      onReorderPreviewSteps?.(parsed)
+      setJsonError('')
+      setJsonSaveOk(true)
+      // 저장 성공하면 JSON 창을 접어 아래 스텝 카드에 시선이 가도록 한다.
+      setShowPreviewJson(false)
+      // 성공 문구는 3초 뒤 사라진다 — 짧게만 알리고 자리를 비운다.
+      setTimeout(() => setJsonSaveOk(false), 3000)
+    } catch (e) {
+      setJsonError('JSON 형식 오류: ' + e.message)
+      setJsonSaveOk(false)
+    }
+  }
+
+  // preview 스텝 드래그 순서 재정렬 — 사용자가 스텝을 위/아래로 드래그하면
+  // 그 순서가 부모의 previewData.applied_steps에 반영되고, "이대로 작성" 시
+  // 그대로 백엔드로 전달돼 보고서 섹션 순서가 바뀐다.
+  // 참고: pr_module_insight_202608061005/frontend/src/components/OptionsPanel.jsx의
+  //       handleDragStart/handleDragOver/handleDrop 패턴만 발췌.
+  // 잠금 규칙은 백엔드가 이미 각 step에 locked 플래그로 부착해 내려준다
+  // (d2insight/chat/router.py::preview_report). 프론트는 그걸 읽어 이동·드롭을 막기만 한다.
+  // 잠금 판정을 프론트가 따로 하면 규칙이 두 곳으로 갈라진다 — 단독앱 원칙과 같다.
+  const handleStepDragStart = (idx) => (e) => {
+    const steps = preview?.applied_steps || []
+    if (steps[idx]?.locked) { e.preventDefault(); return }
+    setDragIndex(idx)
+    try { e.dataTransfer.effectAllowed = 'move' } catch { /* jsdom 등 */ }
+  }
+  const handleStepDragOver = (idx) => (e) => {
+    const steps = preview?.applied_steps || []
+    if (steps[idx]?.locked) return
+    e.preventDefault()
+    try { e.dataTransfer.dropEffect = 'move' } catch { /* jsdom 등 */ }
+  }
+  const handleStepDrop = (idx) => (e) => {
+    e.preventDefault()
+    const steps = [...(preview?.applied_steps || [])]
+    if (dragIndex === null || dragIndex === idx || steps[idx]?.locked) { setDragIndex(null); return }
+    const [moved] = steps.splice(dragIndex, 1)
+    steps.splice(idx, 0, moved)
+    onReorderPreviewSteps?.(steps)
+    setDragIndex(null)
+  }
+  const handleStepDragEnd = () => setDragIndex(null)
+
+  // 카탈로그 (시나리오·스텝·모듈·툴) — 옵션 패널이 마운트될 때 1회 로드.
+  // 표시용 데이터일 뿐이므로 실패해도 조용히 넘긴다(카탈로그 없이도 기존 옵션 패널은 동작).
+  const [catalog, setCatalog] = useState(null)
+  const [showCatalog, setShowCatalog] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiClient.get('/d2insight/catalog')
+      .then((r) => { if (!cancelled) setCatalog(r.data) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [scheduleDay, setScheduleDay] = useState(1)
@@ -1304,11 +1485,122 @@ function ReportOptionsPanel({
   return (
     <aside className="options-panel">
       <div className="options-panel-header">
-        <span className="options-panel-title">적용된 옵션</span>
+        <span className="options-panel-title">
+          {preview ? '작성 전 확인 (preview)' : '적용된 옵션'}
+        </span>
       </div>
       <div className="options-panel-body">
+        {/* preview 모드 — 사용자 요청에 대해 시나리오 매칭 결과 표시 + "이대로 작성" 버튼.
+            단독앱 pr_module_insight_202608061005의 OptionsPanel.jsx 방식. */}
+        {preview && (
+          <div className="opt-preview" style={{ marginBottom: 16, padding: 12, background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 6 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>📊 {preview.scenario}</div>
+            {preview.report_title && (
+              <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>{preview.report_title}</div>
+            )}
+
+            {/* JSON 원문 보기 토글 — 스텝 리스트 위에 배치.
+                단독앱 pr_module_insight_202608061005/frontend/src/components/OptionsPanel.jsx의
+                341~357행 배치 순서와 동일. */}
+            <button
+              type="button"
+              className="opt-json-toggle"
+              onClick={() => setShowPreviewJson((v) => !v)}
+              style={{ marginBottom: 6 }}
+            >
+              {showPreviewJson ? 'JSON 접기' : 'JSON 원문 보기'}
+            </button>
+            {showPreviewJson && (
+              <div className="opt-json-box" style={{ marginBottom: 10 }}>
+                <textarea
+                  value={jsonText}
+                  onChange={(e) => setJsonText(e.target.value)}
+                  rows={14}
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                  <button
+                    type="button"
+                    onClick={applyJsonEdit}
+                    style={{ padding: '6px 12px', background: '#1976d2', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    JSON 저장
+                  </button>
+                  {jsonSaveOk && (
+                    <span style={{ color: '#2e7d32', fontSize: 12 }}>✓ 스텝에 반영됐어요.</span>
+                  )}
+                </div>
+                {jsonError && (
+                  <div style={{ marginTop: 6, color: '#c62828', fontSize: 12 }}>{jsonError}</div>
+                )}
+              </div>
+            )}
+
+            <div style={{ color: '#888', fontSize: 11, margin: '6px 0' }}>
+              스텝을 드래그해 순서를 조정할 수 있어요. 🔒 표시는 순서 고정 스텝이에요.
+            </div>
+            <div style={{ margin: '4px 0 12px 0', fontSize: 13 }}>
+              {(preview.applied_steps || []).map((step, i) => {
+                const isLocked = !!step.locked
+                return (
+                  <div
+                    key={i}
+                    draggable={!isLocked}
+                    onDragStart={handleStepDragStart(i)}
+                    onDragOver={handleStepDragOver(i)}
+                    onDrop={handleStepDrop(i)}
+                    onDragEnd={handleStepDragEnd}
+                    style={{
+                      marginBottom: 6,
+                      padding: '6px 8px',
+                      background: isLocked ? '#f5f5f5' : (dragIndex === i ? '#fff3cd' : '#fff'),
+                      border: `1px solid ${isLocked ? '#ddd' : '#e0d38a'}`,
+                      borderRadius: 4,
+                      cursor: isLocked ? 'default' : 'grab',
+                      opacity: dragIndex === i ? 0.6 : 1,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{ color: isLocked ? '#888' : '#bbb', fontSize: 13, width: 16, display: 'inline-block' }}
+                        title={isLocked ? '순서 고정' : '드래그해 순서 변경'}
+                      >
+                        {isLocked ? '🔒' : '⋮⋮'}
+                      </span>
+                      <strong style={{ color: isLocked ? '#555' : 'inherit' }}>{i + 1}. {step.title}</strong>
+                    </div>
+                    {/* 단독앱 방식: module_id는 감추고 purpose만 조용히 보여준다.
+                        도구·파라미터는 JSON 원문에서 확인. */}
+                    {(step.modules || []).length > 0 && (
+                      <div style={{ marginLeft: 22, marginTop: 3, color: '#777', fontSize: 12 }}>
+                        {step.modules.map((m, j) => m.purpose || m.module_id).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={onConfirmPreview}
+                style={{ padding: '8px 14px', background: '#1976d2', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+              >
+                이대로 작성
+              </button>
+              <button
+                type="button"
+                onClick={onCancelPreview}
+                style={{ padding: '8px 14px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer' }}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
         {!appliedSteps || appliedSteps.length === 0 ? (
-          <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
+          !preview && <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
         ) : (
           <>
             {reportQauid && !scheduleSettings && isTemplate && (
@@ -1392,7 +1684,14 @@ function ReportOptionsPanel({
                   ) : (
                     step.tools.map((tc, i) => (
                       <div key={i} className="opt-module">
-                        <div className="opt-module-name">{tc.tool}</div>
+                        <div className="opt-module-name">
+                          {tc.tool}
+                          {catalog?.tools?.[tc.tool]?.purpose && (
+                            <span style={{ marginLeft: 6, color: '#888', fontWeight: 'normal', fontSize: 12 }}>
+                              — {catalog.tools[tc.tool].purpose}
+                            </span>
+                          )}
+                        </div>
                         {tc.params && (
                           <ul className="opt-module-params">
                             {Object.entries(tc.params)
@@ -1409,6 +1708,48 @@ function ReportOptionsPanel({
               ))}
             </div>
           </>
+        )}
+
+        {/* 카탈로그 참조 — appliedSteps 유무와 무관하게 항상 표시 (시연용 참조 브라우저). */}
+        {catalog && (
+          <div className="opt-catalog" style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 12 }}>
+            <button type="button" className="opt-json-toggle" onClick={() => setShowCatalog((v) => !v)}>
+              🗂 {showCatalog
+                ? '카탈로그 접기'
+                : `카탈로그 (시나리오 ${Object.keys(catalog.scenarios).length}·스텝 ${Object.keys(catalog.steps).length}·모듈 ${Object.keys(catalog.modules).length}·툴 ${Object.keys(catalog.tools).length})`}
+            </button>
+            {showCatalog && (
+              <div style={{ marginTop: 8, fontSize: 12, maxHeight: 400, overflowY: 'auto' }}>
+                {Object.entries(catalog.scenarios).map(([scName, scDef]) => (
+                  <details key={scName} style={{ marginBottom: 6 }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
+                      📊 {scName}
+                    </summary>
+                    <ol style={{ margin: '4px 0 8px 20px', padding: 0 }}>
+                      {(scDef.steps || []).map((s, i) => {
+                        const stepDef = catalog.steps[s.step_id]
+                        return (
+                          <li key={i} style={{ marginBottom: 4 }}>
+                            <strong>{stepDef?.title || s.step_id}</strong>
+                            <ul style={{ margin: '2px 0 0 16px', color: '#666', listStyle: 'circle' }}>
+                              {(stepDef?.default_modules || []).map((m, j) => (
+                                <li key={j}>
+                                  <code>{m.module_id}</code>
+                                  {catalog.modules[m.module_id]?.purpose && (
+                                    <span> — {catalog.modules[m.module_id].purpose}</span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </li>
+                        )
+                      })}
+                    </ol>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </aside>

@@ -766,12 +766,16 @@ class ReportAgent:
         user_request: str | None = None,
         factor_context: dict | None = None,
         sales_datasets=None,
+        section_plan_override: list[str] | None = None,
     ) -> dict:
         """보고서를 생성하고 {md_text, md_filename, report_type}을 반환한다.
 
         Phase 0: 섹션 계획 (Haiku 1회 호출)
         Phase 1: 섹션별 독립 실행 (섹션마다 새 LangGraph 컨텍스트)
         Phase 2: 결론 생성 (quality 1회 호출, 전체 본문 전달)
+
+        section_plan_override: 옵션 패널 "이대로 작성"에서 확정된 시나리오 스텝 title 목록.
+        이 값이 주어지면 Phase 0의 LLM 섹션 계획을 건너뛰고 이 title들을 그대로 섹션 계획으로 쓴다.
         """
         config_entry = get_config(report_type)
         if self.has_upload:
@@ -812,11 +816,14 @@ class ReportAgent:
         _chart_store.reset()
         _data_store.reset()
 
-        # Phase 0: 섹션 계획 수립 (Haiku 1회 — 경량, 메타정보 전달로 실제 데이터 기반 계획)
-        section_plan = self._plan_sections(
-            report_type, user_request, factor_context, date_range, meta,
-            sales_datasets=sales_datasets,
-        )
+        # Phase 0: 섹션 계획 수립 — override가 있으면 LLM 계획을 건너뛴다.
+        if section_plan_override:
+            section_plan = list(section_plan_override)
+        else:
+            section_plan = self._plan_sections(
+                report_type, user_request, factor_context, date_range, meta,
+                sales_datasets=sales_datasets,
+            )
 
         # Phase 1: 섹션별 병렬 실행 (마지막 항목 = 결론은 모든 섹션 완료 후 순차 실행)
         parallel_sections = section_plan[:-1]

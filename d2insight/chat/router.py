@@ -73,6 +73,9 @@ class ChatRequest(BaseModel):
     user_id: str | None = None
     project_id: int | None = None
     account_uid: str | None = None  # 프론트 authStore에서 전달 (serviceusers 조회 생략용)
+    # 옵션 패널 "이대로 작성" 클릭 시 preview에서 확정된 시나리오·스텝 목록 (실행 강제).
+    # 없으면 기존 자유 계획(LLM). 202608061005 방식의 inline_options와 동일 개념.
+    options: dict | None = None
 
 
 class ApiDatasetRequest(BaseModel):
@@ -260,6 +263,14 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
         intent = parse_intent(req.message, project_id=_project_id, tenant_id=_tenant_id,
                               user_uid=req.user_id, account_uid=req.account_uid)
         intent["original_message"] = req.message
+        # 옵션 패널 "이대로 작성"에서 온 preview 확정 옵션 — pipeline_runner가 report 실행 시
+        # section plan을 이걸로 강제 (LLM 자유 계획 대신).
+        if req.options:
+            intent["scenario_options"] = req.options
+            # preview에서 시나리오가 확정됐으면 tool=report, report_type을 시나리오 이름으로 세팅.
+            if req.options.get("scenario"):
+                intent["tool"] = "report"
+                intent["report_type"] = req.options["scenario"]
         tool = intent.get("tool", "chat")
         target_month = intent.get("target_month")
         months_back = intent.get("months_back", 3)
@@ -904,6 +915,151 @@ def get_share_detail(share_qauid: str, token: str = Depends(get_token)):
     if not row:
         raise HTTPException(status_code=404, detail="공유 내역을 찾을 수 없습니다.")
     return row
+
+
+# ── 카탈로그 (읽기 전용) ─────────────────────────────────────────────
+# 시나리오·스텝·모듈·툴 정의를 프론트에 노출한다. 옵션 패널이 이 응답 하나로
+# "무엇을 고를 수 있는지"를 채운다. 순수 데이터라 인증 없이 반환한다.
+
+def _module_spec_to_dict(spec) -> dict:
+    """ModuleSpec(dataclass) → JSON 직렬화 가능한 dict.
+
+    `run`(실행 함수, Callable)은 프론트가 쓸 일이 없고 JSON으로 직렬화도 안 되므로 제외한다.
+    """
+    return {
+        "module_id": spec.module_id,
+        "purpose": spec.purpose,
+        "kind": spec.kind,
+        "requires": list(spec.requires),
+        "produces": list(spec.produces),
+        "params": spec.params,
+        "tools": spec.tools,
+        "model_tier": spec.model_tier,
+        "narrative_hint": spec.narrative_hint,
+        "layout": list(spec.layout),
+    }
+
+
+@router.get("/catalog")
+def get_catalog() -> dict:
+    """d2insight 카탈로그(시나리오/스텝/모듈/툴) 조회 — 프론트 옵션 패널용."""
+    from d2insight.engine.catalog.scenarios import SCENARIO_REGISTRY
+    from d2insight.engine.catalog.steps import STEP_REGISTRY
+    from d2insight.engine.catalog.modules import MODULE_REGISTRY
+    from d2insight.engine.catalog.tools import TOOL_REGISTRY
+    return {
+        "scenarios": SCENARIO_REGISTRY,
+        "steps": STEP_REGISTRY,
+        "modules": {mid: _module_spec_to_dict(spec) for mid, spec in MODULE_REGISTRY.items()},
+        "tools": TOOL_REGISTRY,
+    }
+
+
+# ── 보고서 preview (단독앱 202608061005의 preview_report_plan/match_scenario 방식) ──
+
+class ReportPreviewRequest(BaseModel):
+    message: str
+    user_id: str | None = None
+    project_id: int | None = None
+    account_uid: str | None = None
+
+
+@router.post("/report/preview")
+def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -> dict:
+    """보고서 요청 문장 → 시나리오 매칭 + 스텝·모듈·툴 트리 반환(실행 X).
+
+    프론트 옵션 패널이 이 응답으로 preview 표시 → "이대로 작성" 버튼 클릭 시 /chat 실행.
+    """
+    _check_owner(token, req.user_id)
+    from d2insight.engine.catalog.scenarios import SCENARIO_REGISTRY
+    from d2insight.engine.catalog.steps import STEP_REGISTRY
+    from d2insight.engine.catalog.modules import MODULE_REGISTRY
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+
+    tenant_id: int | None = None
+    resolved_project_id = req.project_id
+    if req.user_id:
+        try:
+            tenant_id, pid = storage.get_project_info(req.user_id)
+            if resolved_project_id is None:
+                resolved_project_id = pid
+        except Exception:
+            pass
+
+    # LLM 시나리오 매칭 (단독앱 entry.py::match_scenario 방식).
+    # 매칭 실패 시 None 반환 → 프론트가 이걸 보고 preview flow가 아닌 /chat 직접 호출로 폴백.
+    scenario_names = list(SCENARIO_REGISTRY.keys())
+    matched: str | None = None
+    try:
+        models, api_key, vendor, _, _ = get_llm_info(
+            project_id=resolved_project_id, tenant_id=tenant_id,
+            user_uid=req.user_id, account_uid=req.account_uid, service_code="In",
+        )
+        llm = build_langchain_llm(vendor, api_key, models["fast"])
+        system = (
+            "당신은 보고서 요청 문장을 읽고, 아래 등록된 시나리오 중 어느 것을 요청하는 것인지 "
+            "의미로 판단한다. 표현이 등록된 이름과 글자 그대로 같지 않아도(예: '판매증감분석'은 "
+            "'매출 증감 원인 분석'을 뜻함) 뜻이 같으면 매칭한 것으로 본다.\n\n"
+            "요청이 등록된 시나리오 중 하나에 해당하면 그 이름을 정확히 그대로(다른 글자·설명 추가 없이) "
+            "한 줄로 출력하라. 어느 것에도 해당하지 않으면 '없음'이라고만 출력하라."
+        )
+        prompt = (
+            f"[등록된 시나리오 목록]\n{json.dumps(scenario_names, ensure_ascii=False)}\n\n"
+            f"[요청 문장]\n{req.message}"
+        )
+        resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+        text = resp.content if isinstance(resp.content, str) else str(resp.content)
+        picked = text.strip().strip('"').strip()
+        if picked in scenario_names:
+            matched = picked
+    except Exception:
+        pass
+
+    # 매칭 실패 → 시나리오·스텝 비운 채 반환 (프론트가 이 응답 보고 /chat 직접 호출).
+    if matched is None:
+        return {"scenario": None, "report_title": "", "applied_steps": []}
+
+    # 시나리오 → 스텝 → 모듈 트리 조립.
+    scenario_def = SCENARIO_REGISTRY.get(matched, {})
+    applied_steps = []
+    for step_entry in scenario_def.get("steps", []):
+        sid = step_entry.get("step_id")
+        sdef = STEP_REGISTRY.get(sid, {})
+        modules = []
+        for m in sdef.get("default_modules", []):
+            mid = m["module_id"]
+            mdef = MODULE_REGISTRY.get(mid)  # ModuleSpec(dataclass) — dict 아님, 속성으로 접근
+            default_tool = (mdef.tools or {}).get("default") if mdef else None
+            picked_tool = (m.get("tools") or [default_tool])[0] if (m.get("tools") or default_tool) else None
+            modules.append({
+                "module_id": mid,
+                "purpose": mdef.purpose if mdef else "",
+                "tool": picked_tool,
+                "params": m.get("params") or {},
+            })
+        applied_steps.append({
+            "step_id": sid,
+            "title": sdef.get("title", sid),
+            "modules": modules,
+        })
+
+    # 뿌리(자료확인·총평)/꼬리(결론) 스텝에 locked 플래그 부착 — 오른편 옵션 패널이
+    # 순서 이동 불가 표시를 별도 규칙 없이 그대로 읽는다. 단독앱
+    # pr_module_insight_202608061005/src/engine/operations.py::is_locked_step 규칙과 동일.
+    _ROOT_MODULE_IDS = {"period_dataset", "measure_summary"}
+    _TAIL_MODULE_IDS = {"conclusion"}
+    for s in applied_steps:
+        s["locked"] = any(
+            m.get("module_id") in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS
+            for m in s.get("modules", [])
+        )
+
+    return {
+        "scenario": matched,
+        "report_title": scenario_def.get("report_title", ""),
+        "applied_steps": applied_steps,
+    }
 
 
 # ── 기타 ─────────────────────────────────────────────────────────
