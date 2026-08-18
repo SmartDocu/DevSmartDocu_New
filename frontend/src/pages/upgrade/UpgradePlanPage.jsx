@@ -25,10 +25,10 @@ export default function UpgradePlanPage() {
     return found ? (t(found.term_key) || found.default_name) : scd
   }
 
+  const { data: billingTermCodes = [] } = useMenuCodes('billingtermcd')
   const billingLabel = (cd) => {
-    if (cd === 'Mo') return t('cod.billingtermcd_Mo')
-    if (cd === 'Yr') return t('cod.billingtermcd_Yr')
-    return cd || '-'
+    const found = billingTermCodes.find((c) => c.codevalue === cd)
+    return found ? (t(found.term_key) || found.default_name) : (cd || '-')
   }
 
   const handleUpgrade = () => {
