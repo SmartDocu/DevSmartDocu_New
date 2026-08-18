@@ -144,6 +144,9 @@ def run_report_from_spec(spec: dict, user_id: str | None = None,
             f"{target_month} {report_type} 보고서. "
             f"기준 데이터 {months_back}개월, 주요 품목 상위 {top_n}개, 이상치 기준 {threshold}."
         ),
+        # "이대로 작성" 확정 후 기준월을 나중에 물어본 경우, create_spec()에 실어뒀던 스텝
+        # 확정 옵션을 여기서 꺼내 넘긴다 — 없으면(자유 대화형) None 그대로.
+        "scenario_options": spec.get("scenario_options"),
     }
     return run_tool("report", target_month, months_back, intent=intent, user_id=user_id,
                     project_id=project_id, tenant_id=tenant_id, user_uid=user_id, account_uid=account_uid,
@@ -253,6 +256,13 @@ def run_tool(
                 section_plan_override = [
                     s.get("title") for s in scenario_options["applied_steps"] if s.get("title")
                 ]
+                # 카탈로그 시나리오는 전부 마지막 스텝 title이 "결론"이다(engine/catalog/scenarios.py
+                # — 7개 시나리오 전부 확인됨). ReportAgent.generate()는 목차와 별개로 항상 자기가
+                # 전용 결론 단계를 하나 더 붙이므로(agent.py), "결론"을 목차에도 그대로 두면 일반
+                # 데이터 섹션으로 한 번 더 실행돼 결론이 두 번 나온다(2026-08-19 확인). ReportAgent는
+                # title 문자열만 쓰고 카탈로그의 모듈/purpose 구조 자체는 안 쓰므로, 여기서 빼도
+                # 실제 결론 내용은 ReportAgent의 전용 결론 단계가 그대로 만들어 정확히 하나만 남는다.
+                section_plan_override = [t for t in section_plan_override if t != "결론"]
             report_result = agent.generate(
                 report_type, target_month, months_back,
                 user_request=user_request,
@@ -286,7 +296,14 @@ def run_tool(
                 answer += brief
             result["answer"] = answer
             result["report_path"] = md_filename
-            result["applied_steps"] = report_result.get("applied_steps")
+            # 옵션 패널 "이대로 작성"으로 확정된 스텝이 있으면 그걸 그대로 되돌려준다 — 오른쪽
+            # 패널이 작성 전(preview)·후에 똑같은 제목/모듈/purpose를 보여줘야 하기 때문이다
+            # (ReportAgent.generate()가 만드는 report_result["applied_steps"]는 실행 중 실제로
+            # 호출한 도구(execute_query/create_chart 등)의 원시 트레이스라 형태가 다르고, 사용자에게
+            # 노출하기엔 너무 상세하다). 이 값은 _session.append_qa로 그대로 저장되므로 이력·즐겨찾기·
+            # 공유에서 다시 볼 때도 동일하게 보인다. scenario_options가 없는(=preview 매칭 안 된) 자유
+            # 대화형 보고서만 기존처럼 agent의 실행 트레이스를 그대로 쓴다.
+            result["applied_steps"] = scenario_options.get("applied_steps") or report_result.get("applied_steps")
 
             try:
                 from d2insight.db.insight_storage import record_analytics

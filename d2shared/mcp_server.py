@@ -67,9 +67,50 @@ class MCPServer:
         return response
 
     def _clean_sql(self, sql: str) -> str:
+        """LLM 원응답에서 SQL 문 하나만 뽑아내 정제한다.
+
+        프롬프트가 "SQL 끝에 세미콜론, 그 뒤엔 아무 것도 쓰지 말 것"을 지시하므로, 세미콜론이
+        있으면 그 지점까지만 SQL로 인정하고 뒤는 버린다(2026-08-19) — LLM이 지시를 어기고
+        CANNOT_ANSWER 사유 등 설명 문단을 SQL 뒤에 덧붙여도(가끔 실제로 그런다) 안전하게
+        잘라낸다. 절 사이에 빈 줄을 넣는 등 SQL 자체의 줄바꿈 스타일과 무관하게 동작한다.
+        세미콜론이 없으면(LLM이 지시를 어긴 경우) 빈 줄에서 끊는 보조 규칙으로 대신한다 —
+        이 코드베이스의 생성 SQL은 보통 절 사이 빈 줄 없이 이어지므로, 빈 줄은 대개
+        "SQL 끝, 설명 시작" 신호로 봐도 안전하다.
+        """
         sql = sql.replace("```sql", "").replace("```", "").strip()
-        lines = [line.strip() for line in sql.split('\n') if not line.strip().startswith('--')]
-        return ' '.join(lines)
+
+        if ';' in sql:
+            sql = sql.split(';', 1)[0] + ';'
+            lines = [line.strip() for line in sql.split('\n') if not line.strip().startswith('--')]
+            return self._pretty_sql(' '.join(lines))
+
+        lines = []
+        started = False
+        for raw_line in sql.split('\n'):
+            line = raw_line.strip()
+            if line.startswith('--'):
+                continue
+            if not line:
+                if started:
+                    break
+                continue
+            started = True
+            lines.append(line)
+        return self._pretty_sql(' '.join(lines))
+
+    @staticmethod
+    def _pretty_sql(sql: str) -> str:
+        """실행·로그·화면 표시에 공통으로 쓸 수 있게 SQL을 절 단위로 줄바꿈해 보기 좋게 만든다.
+
+        DB는 SQL 문의 개행을 그냥 무시하므로 실행에는 영향이 없다 — 표시용 버전을 따로 만들
+        필요 없이 이 결과를 그대로 실행·저장·표시에 다 쓴다. 포맷 실패 시(예상 밖 구문 등)
+        원본을 그대로 반환해 조용히 폴백한다.
+        """
+        try:
+            import sqlparse
+            return sqlparse.format(sql, reindent=True, keyword_case='upper', wrap_after=200).strip()
+        except Exception:
+            return sql
 
     # ── SQL 생성 ──────────────────────────────────────────────────
 
@@ -146,7 +187,9 @@ class MCPServer:
             "그 비율의 절대 금액으로 ORDER BY 할 것.\n"
             "- '월별' 집계 시 '년'과 '월' 컬럼이 분리돼 있고 월 값이 연도 구분 없이 반복되면(01~12), 단순히 월로만 "
             "GROUP BY하면 서로 다른 연도의 같은 월이 합산됨. 질문에 특정 연도가 있으면 먼저 그 연도로 WHERE "
-            "필터링 후 월별 집계, 연도가 명시되지 않았으면 년과 월을 함께 GROUP BY(또는 SELECT에 년 포함)할 것."
+            "필터링 후 월별 집계, 연도가 명시되지 않았으면 년과 월을 함께 GROUP BY(또는 SELECT에 년 포함)할 것.\n"
+            "- SQL 문 맨 끝에 반드시 세미콜론(;)을 붙일 것. 세미콜론 뒤에는 아무 것도 쓰지 말 것(설명·주석 절대 금지) "
+            "— 응답 파싱이 첫 번째 세미콜론까지만 SQL로 인식하므로, 뒤에 뭘 붙여도 결과에는 반영되지 않는다."
         )
 
         if extra_rules:

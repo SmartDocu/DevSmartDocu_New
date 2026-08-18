@@ -858,6 +858,13 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
         labels = df.iloc[:, 0]
         values = df.iloc[:, 1:]
 
+        # 맨 위 df.empty/len(df.columns)<2 가드는 _prepare_dataframe_for_visualization()
+        # 호출 전 기준이라, 그 안에서 컬럼이 줄어들면(피봇/정리 등) 여기 시점엔 값 컬럼이
+        # 0개일 수 있다 — 이후 모든 분기가 len(values.columns)로 나누므로 여기서 미리 막는다
+        # (2026-08-19, ZeroDivisionError로 확인됨).
+        if len(values.columns) == 0:
+            return None, None, "차트로 그릴 값(숫자) 컬럼이 없습니다"
+
         # 막대류 차트의 세로/가로 방향 - 실제 렌더링에 쓰일 라벨/행 수 기준으로 판단한다.
         orientation = decide_bar_orientation(df, question)
 
@@ -921,7 +928,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     offset = (idx - len(bar_cols) / 2) * width + width / 2
                     ax.bar(x_pos + offset, values[col], width,
                            color=cmap(idx * 0.2), alpha=0.7, label=col)
-                ax.set_ylabel(' / '.join(bar_cols), fontsize=11)
+                ax.set_ylabel(' / '.join(str(c) for c in bar_cols), fontsize=11)
                 ax.tick_params(axis='y')
                 _format_yaxis(ax)
 
@@ -930,7 +937,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     ax2.plot(x_pos, values[col].values, marker='o',
                              color=cmap(0.6 + idx * 0.15), linewidth=2,
                              linestyle='--', label=col)
-                ax2.set_ylabel(' / '.join(line_cols), fontsize=11)
+                ax2.set_ylabel(' / '.join(str(c) for c in line_cols), fontsize=11)
                 ax2.tick_params(axis='y')
 
                 ax.set_xticks(x_pos)

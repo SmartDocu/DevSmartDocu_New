@@ -58,6 +58,18 @@ def execute_query(question: str, table_name: Optional[str] = None) -> dict:
     all_meta = meta_loader.all_metadata()
     if table_name and table_name in all_meta:
         table_metadata = {table_name: all_meta[table_name]}
+        # 관련 테이블(부모/자식)도 같이 넣어준다 — 안 그러면 날짜처럼 다른 뷰에 있는 컬럼이
+        # 이 테이블엔 없다는 걸 LLM이 몰라서, 있지도 않은 컬럼을 지어내 SQL을 쓰게 된다
+        # (예: view_SalesOrderDetail만 주면 OrderDate가 view_SalesOrderHeader에 있다는 걸 몰라
+        # 조인 없이 잘못 참조함 — 2026-08-18 오류로 확인됨). d2chat/mcp_agent.py와 동일한 패턴.
+        reference = all_meta[table_name].get("reference", {})
+        if isinstance(reference, dict):
+            child = reference.get("child_table")
+            parent = reference.get("parent_table")
+            if child and child in all_meta:
+                table_metadata[child] = all_meta[child]
+            elif parent and parent in all_meta:
+                table_metadata[parent] = all_meta[parent]
     else:
         table_metadata = all_meta
     gen = SqlGenerator()
