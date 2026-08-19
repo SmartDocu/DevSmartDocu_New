@@ -18,7 +18,7 @@ def _to_query_tool_shape(excel_result: dict) -> dict:
     """excel_server 응답({status, data, message, conditions, data_type})을
     execute_query 응답({data, columns, row_count, generated_sql, error?})과 동일한 shape으로 재구성한다.
 
-    시스템 프롬프트의 기존 "조회 결과가 비어 있거나 row_count=0이면 섹션을 작성하지 말고
+    시스템 프롬프트의 기존 "조회 결과가 비어 있거나 row_count=0이면 스텝을 작성하지 말고
     바로 종료하세요" 지시가 업로드 모드에서도 그대로 작동하려면 row_count가 반드시 있어야 한다.
     """
     status = excel_result.get("status")

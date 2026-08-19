@@ -111,6 +111,22 @@ def _strip_leaked_narration(text: str) -> str:
     return '\n\n'.join(kept_paragraphs)
 
 
+# 도구 호출 인자 문자열이 한 번 더 JSON 이스케이프된 채로 오는 경우 방어 — 일부 모델
+# (2026-08-20, Llama 3.3 70B에서 확인)이 tool-call 인자를 만들 때 문자열 값을 실수로 다시
+# JSON-이스케이프해서, 실제 줄바꿈 대신 문자 그대로의 "\n"이, 한글 대신 "\uXXXX" 시퀀스가
+# 텍스트에 그대로 박혀 나온다. 이런 흔적이 보일 때만 한 번 더 언이스케이프한다 — 정상
+# 텍스트(백슬래시를 실제로 쓸 일이 거의 없는 보고서 본문)는 건드리지 않는다.
+_ESCAPED_UNICODE_RE = re.compile(r'\\u([0-9a-fA-F]{4})')
+
+
+def _unescape_stray_json_literals(text: str) -> str:
+    if '\\u' not in text and '\\n' not in text and '\\t' not in text:
+        return text
+    text = _ESCAPED_UNICODE_RE.sub(lambda m: chr(int(m.group(1), 16)), text)
+    text = text.replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '\t')
+    return text
+
+
 # ── 구조화 출력 종료 툴 ────────────────────────────────────────────────────────
 # 정규식 기반 _strip_leaked_narration()만으로는 LLM이 표현을 바꿔가며 계속 새로운 문구로
 # 새는 걸 두 차례 확인했다(2026-08-19 haiku 1차/2차 보고서 리뷰 — "이제 ~하겠습니다" →
@@ -169,6 +185,12 @@ def _condense_meta(meta: dict) -> dict:
         if not isinstance(info, dict):
             continue
         cols = info.get("columns") or []
+        # 메타데이터의 columns는 실제로는 list가 아니라 {컬럼명: {logical_name, data_type, ...}}
+        # 형태의 dict다(view 메타·업로드 메타 공통) — dict에 [:50] 슬라이스를 걸면
+        # KeyError: slice(None, 50, None)로 죽는다(2026-08-20, 데이터셋 여러 개 업로드해
+        # 메타 전체 크기가 커져 이 함수가 호출될 때 확인됨). list/dict 둘 다 대응한다.
+        if isinstance(cols, dict):
+            cols = list(cols.keys())
         col_names = [
             c.get("name", c) if isinstance(c, dict) else str(c)
             for c in cols[:50]
@@ -363,7 +385,9 @@ def _build_system_prompt(
             "   - table_name 지정은 필요 없습니다 — 등록된 데이터셋 중 적합한 것이 자동 선택됩니다.\n"
             f"   - question에 분석 기간({start} ~ {end})을 반드시 포함하세요.\n"
             "   - 반드시 집계 데이터를 요청하세요: \"~별 건수/합계/평균\" 형태로 질문하세요.\n"
-            "   - 조회 결과가 비어 있거나(row_count=0) error가 있으면 해당 스텝을 작성하지 말고 바로 종료하세요.\n"
+            "   - **error가 있으면(예: 컬럼명 오류) 포기하지 말고, 오류 메시지를 참고해 질문을 "
+            "고쳐서 다시 호출하세요.** error 없이 row_count=0(데이터가 실제로 없음)일 때만 "
+            "해당 스텝을 작성하지 말고 바로 종료하세요.\n"
             "   - 등록된 데이터셋에 없는 내용은 절대 지어내지 마세요."
         )
     else:
@@ -374,7 +398,10 @@ def _build_system_prompt(
             "   - table_name에 메타정보에서 확인한 뷰 이름을 반드시 지정하세요. 생략 금지.\n"
             f"   - question에 분석 기간({start} ~ {end})을 반드시 포함하세요.\n"
             "   - 반드시 집계 데이터를 요청하세요: \"~별 건수/합계/평균\" 형태로 질문하세요.\n"
-            "   - 조회 결과가 비어 있거나(row_count=0) CANNOT_ANSWER이면 해당 스텝을 작성하지 말고 바로 종료하세요.\n"
+            "   - **error가 있으면(예: \"Invalid column name\" 같은 SQL 오류) 포기하지 말고, 오류 "
+            "메시지를 읽고 원인을 고쳐서(예: 그 컬럼이 실제로 있는 다른 뷰와 JOIN) 다시 호출하세요.** "
+            "error 없이 row_count=0이거나 CANNOT_ANSWER일 때만(=데이터가 실제로 없음) 해당 스텝을 "
+            "작성하지 말고 바로 종료하세요. 이 둘을 혼동해 오류가 났는데 포기하면 안 됩니다.\n"
             f"   - 현재 작성 중인 '{report_type}' 보고서와 무관한 데이터 뷰는 절대 사용하지 마세요."
         )
 
@@ -868,7 +895,7 @@ class ReportAgent:
                         # 목록에는 넣지 않는다(전체 본문이 params로 들어가 UI만 지저분해짐).
                         body = (call.get("args") or {}).get("body_markdown")
                         if body and body.strip():
-                            finalized_body = body.strip()
+                            finalized_body = _unescape_stray_json_literals(body.strip())
                         continue
                     tool_calls.append({"tool": call.get("name"), "params": call.get("args")})
 

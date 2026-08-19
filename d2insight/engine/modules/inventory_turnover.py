@@ -155,7 +155,7 @@ def run(ctx, params, tools) -> ModuleResult:
 
 
 # ── Dead Stock / Slow Moving 분리 스텝 (2026-07-21, 시나리오 "재고 분석") ─────────
-# 원본 스텝은 회전율과 Dead Stock·Slow Moving이 별도다(스텝=섹션 원칙). 새로 계산하지 않고
+# 원본 스텝은 회전율과 Dead Stock·Slow Moving이 별도다(스텝 분리 원칙). 새로 계산하지 않고
 # inventory_turnover가 이미 만든 이름표 "inventory_metrics"(항목별 Flag 포함 표)를 필터링만
 # 한다 — requires로 명시하면 이 스텝만 골라 실행해도 inventory_turnover가 자동으로 딸려온다.
 def _flagged_table(detail: pd.DataFrame, flag: str, schema, cost_col: str, top_n: int) -> pd.DataFrame:

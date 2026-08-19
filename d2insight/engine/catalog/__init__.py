@@ -20,7 +20,7 @@ __all__ = [
 
 
 class CatalogError(Exception):
-    """카탈로그에 없는 모듈/섹션 조회 등."""
+    """카탈로그에 없는 모듈/스텝 조회 등."""
 
 
 class EngineCatalog:
@@ -46,10 +46,10 @@ class EngineCatalog:
         try:
             return self._steps[step_id]
         except KeyError:
-            raise CatalogError(f"등록되지 않은 섹션: '{step_id}'")
+            raise CatalogError(f"등록되지 않은 스텝: '{step_id}'")
 
     def narrate_step(self, step_label: str, items: list[dict], ctx) -> dict:
-        """섹션 본문 해설 — 섹션당 LLM 1회(§7.1, 결정 2026-07-14).
+        """스텝 본문 해설 — 스텝당 LLM 1회(§7.1, 결정 2026-07-14).
 
         엔진은 "해설을 붙인다"는 사실만 알고, 어떤 모델로 어떻게 쓰는지는 카탈로그 뒤에 숨는다.
         """

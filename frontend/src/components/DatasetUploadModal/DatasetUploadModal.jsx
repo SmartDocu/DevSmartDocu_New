@@ -42,7 +42,10 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       if (user?.accountuid) fd.append('account_uid', user.accountuid)
       if (isInsight && user?.id) fd.append('user_id', user.id)
 
-      const { data } = await apiClient.post(`${apiBase}/upload-dataset`, fd)
+      // 파일마다 LLM으로 메타데이터/역할을 추론하므로(순차 처리) 여러 개를 한 번에 올리면
+      // 기본 60초 타임아웃을 넘기기 쉽다(2026-08-20, 6개 동시 업로드 시 재현 확인 — 3개씩
+      // 나눠 올리면 통과). 이 요청만 넉넉하게 늘려준다.
+      const { data } = await apiClient.post(`${apiBase}/upload-dataset`, fd, { timeout: 300000 })
       message.success(t('msg.d2insight.datasets_registered').replace('{n}', data.datasets.length))
       onSuccess?.(data)
       resetAndClose()

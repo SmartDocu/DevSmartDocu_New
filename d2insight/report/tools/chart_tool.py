@@ -14,7 +14,7 @@ class _ChartStore:
     """차트 base64를 보관하고 짧은 플레이스홀더 키를 발급한다.
 
     LLM이 수십만 자의 base64를 직접 출력하면 max_tokens 한계에 걸려
-    이후 섹션이 잘리는 문제를 방지하기 위해, create_chart는 base64를
+    이후 스텝이 잘리는 문제를 방지하기 위해, create_chart는 base64를
     이 저장소에 보관하고 짧은 키(CHART_PLACEHOLDER_N)만 반환한다.
     agent.generate() 완료 후 키를 실제 data URI로 치환한다.
     """
@@ -57,6 +57,37 @@ def create_chart(data: list, question: str, chart_type: Optional[str] = None) ->
     """
     if not data:
         return {"error": "데이터가 없습니다.", "chart_image": None}
+
+    if not isinstance(data, list) or not all(isinstance(row, dict) for row in data):
+        return {
+            "error": (
+                "data는 execute_query가 반환한 'data' 필드와 같은 list[dict] 형식이어야 "
+                "합니다. 숫자를 손으로 재구성하지 말고, 조회 결과의 레코드를 그대로 전달하세요."
+            ),
+            "chart_image": None,
+        }
+
+    # 두 시점(예: 2월 vs 3월)을 비교하는 차트를 만들려고 두 번의 조회 결과를 손으로
+    # 합치다가, 실제 값이 컬럼명(키) 자리에 잘못 들어가는 사고가 확인됐다(2026-08-19,
+    # 기간비교 dual_axis 차트의 범례·축 라벨에 "2600218.8667" 같은 원값이 그대로 노출됨).
+    # 조용히 깨진 차트를 만드는 대신 에러로 돌려줘 모델이 스스로 데이터를 바로잡게 한다.
+    def _looks_numeric(s) -> bool:
+        try:
+            float(str(s).replace(',', ''))
+            return True
+        except ValueError:
+            return False
+
+    all_keys = {k for row in data for k in row.keys()}
+    if all_keys and all(_looks_numeric(k) for k in all_keys):
+        return {
+            "error": (
+                "data의 컬럼명(키)이 숫자처럼 보입니다 — 실제 값이 컬럼명 자리에 잘못 "
+                "들어간 것으로 보입니다. 두 시점을 비교하는 차트라면, 각 execute_query "
+                "결과의 레코드를 원래 컬럼명(키)을 유지한 채 그대로 이어붙여 전달하세요."
+            ),
+            "chart_image": None,
+        }
 
     df = pd.DataFrame(data)
     try:

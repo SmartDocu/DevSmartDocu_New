@@ -221,7 +221,7 @@ def get_lifecycle_effects(ctx) -> pd.DataFrame | None:
 def get_pvm_effects(ctx) -> dict:
     """물량(Volume)/믹스(Mix)/가격(Price) 분해 — 최초 1회만 계산해 재사용(§6.2 재계산 금지).
 
-    Volume/Price/Mix가 시나리오에서 **각각 독립 스텝**이라(스텝=섹션 원칙, 2026-07-20), 세
+    Volume/Price/Mix가 시나리오에서 **각각 독립 스텝**이라(스텝 분리 원칙, 2026-07-20), 세
     모듈(volume_effect/price_effect/mix_effect)이 이 값을 나눠 쓴다. 여기서 한 번만 계산해야
     세 스텝의 숫자가 항상 같은 계산에서 나온다 — 모듈마다 따로 계산하면 반올림·데이터 스냅샷
     차이로 세 스텝의 합이 어긋날 수 있다.

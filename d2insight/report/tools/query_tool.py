@@ -44,15 +44,52 @@ class _DataStore:
 _data_store = _DataStore()
 
 
+def _format_cell(value) -> str:
+    """표 셀 값 포맷 — 콤마 구분만 적용하고 통화 기호 등 의미 추정은 하지 않는다."""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, float):
+        return f"{value:,.2f}"
+    return "" if value is None else str(value)
+
+
+def _build_markdown_table(columns: list[str], data: list[dict]) -> str:
+    """쿼리 결과를 그대로(행 순서·값 변경 없이) Markdown 표 문자열로 만든다.
+
+    LLM이 조회 결과를 손으로 다시 옮겨 적다가 행을 빠뜨리거나(2026-08-19, 지역별 표에서
+    한 행 누락 확인) 숫자를 잘못 옮기는 사고를 막기 위함이다 — create_chart의
+    markdown_tag와 같은 패턴으로, 이 문자열을 그대로 본문에 삽입하면 된다. 정렬 순서는
+    SQL 결과 순서를 그대로 따른다 — 특정 정렬이 필요하면 execute_query 호출 시 question에
+    정렬 기준을 명시해야 한다(여기서 임의로 재정렬하지 않는다).
+    """
+    if not columns or not data:
+        return ""
+    header = "| " + " | ".join(columns) + " |"
+    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
+    rows = [
+        "| " + " | ".join(_format_cell(row.get(c)) for c in columns) + " |"
+        for row in data
+    ]
+    return "\n".join([header, separator] + rows)
+
+
 @tool
 def execute_query(question: str, table_name: Optional[str] = None) -> dict:
     """분석하고 싶은 내용을 자연어 질문으로 전달하면 SQL을 자동 생성하여 DB에서 데이터를 조회합니다.
     SQL을 직접 작성하지 마세요 — 자연어로 분석 목적을 설명하세요.
     반드시 집계 데이터(GROUP BY + COUNT/SUM/AVG 등)를 요청하세요.
 
+    반환값의 markdown_table을 본문에 그대로 삽입하세요 — data를 보고 표를 손으로 다시
+    작성하지 마세요(행 누락·숫자 오기 방지). 표에 특정 정렬이 필요하면(예: 매출액
+    내림차순) question에 정렬 기준을 명시하세요 — markdown_table은 SQL 결과 순서를
+    그대로 따릅니다.
+
     Args:
-        question: 분석하고 싶은 내용을 자연어로 설명. 분석 기간과 집계 방식을 포함할 것.
-                  예: '2025년 1월 서버별 오류 발생 건수를 집계해줘'
+        question: 분석하고 싶은 내용을 자연어로 설명. 분석 기간과 집계 방식, 필요하면
+                  정렬 기준(예: '매출액 내림차순으로')을 포함할 것.
+                  예: '2025년 1월 서버별 오류 발생 건수를 집계해줘, 건수 내림차순으로'
         table_name: 조회할 뷰 이름 (메타정보에서 선택). 생략하면 전체 뷰 대상.
     """
     all_meta = meta_loader.all_metadata()
@@ -79,4 +116,6 @@ def execute_query(question: str, table_name: Optional[str] = None) -> dict:
         table_metadata=table_metadata,
     )
     _data_store.add(question, result)
+    if result.get("columns") and result.get("data"):
+        result["markdown_table"] = _build_markdown_table(result["columns"], result["data"])
     return result
