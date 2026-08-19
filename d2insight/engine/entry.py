@@ -286,7 +286,7 @@ def preview_report_plan(
 ) -> dict:
     """확인 카드(오른편 패널)용 — 계획만 만들고 **실행하지 않는다**(2026-07-24, 5단계).
 
-    run_plan(DB 조회·섹션별 LLM 서술·결론 LLM)을 타지 않아 run_engine_report보다 훨씬 가볍고
+    run_plan(DB 조회·스텝별 LLM 서술·결론 LLM)을 타지 않아 run_engine_report보다 훨씬 가볍고
     빠르다. resolve_report_plan과 같은 해석 로직을 쓰므로, 사용자가 이 미리보기를 보고
     "이대로 작성"을 누르면 그때 실행되는 것과 **똑같은 구성**이 나온다는 것이 보장된다.
 
@@ -372,7 +372,7 @@ def run_engine_report(
 
     catalog = EngineCatalog()
 
-    # 어떤 섹션-모듈-툴 조합으로 보고서를 만드는지 백엔드 터미널에 JSON으로 남긴다(개발자 확인용
+    # 어떤 스텝-모듈-툴 조합으로 보고서를 만드는지 백엔드 터미널에 JSON으로 남긴다(개발자 확인용
     # 로그일 뿐, 사용자에게 보여주는 것과는 별개다 — 그건 위의 applied_steps가 담당한다).
     try:
         print(f"[engine] 보고서 조합 (target_month={target_month}, compare_type={meta['compare_type']}):")

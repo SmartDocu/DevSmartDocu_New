@@ -264,7 +264,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                               user_uid=req.user_id, account_uid=req.account_uid)
         intent["original_message"] = req.message
         # 옵션 패널 "이대로 작성"에서 온 preview 확정 옵션 — pipeline_runner가 report 실행 시
-        # section plan을 이걸로 강제 (LLM 자유 계획 대신).
+        # step plan을 이걸로 강제 (LLM 자유 계획 대신).
         if req.options:
             intent["scenario_options"] = req.options
             # preview에서 시나리오가 확정됐으면 tool=report, report_type을 시나리오 이름으로 세팅.
@@ -279,6 +279,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             spec = _spec_mod.create_spec(
                 target_month=target_month,
                 report_type=intent.get("report_type"),
+                scenario_options=intent.get("scenario_options"),
             )
             if target_month:
                 spec["entry_asked"] = True

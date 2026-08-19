@@ -42,7 +42,7 @@ def catalog_digest() -> str:
             f"    params: {params}   tools: {tools}   requires: {spec.requires or '없음'}"
         )
     lines.append("")
-    lines.append("[섹션 프리셋] — 그대로 써도 되고, 직접 제목을 지어 모듈을 담아도 된다")
+    lines.append("[스텝 프리셋] — 그대로 써도 되고, 직접 제목을 지어 모듈을 담아도 된다")
     for sid, sec in get_step_registry().items():
         mods = ", ".join(m["module_id"] for m in sec["default_modules"])
         lines.append(f"- {sid}: \"{sec['title']}\" ({mods})")
@@ -71,10 +71,10 @@ _SYSTEM = """당신은 데이터 분석 보고서의 구성을 짜는 설계자�
 1. 모듈은 **purpose를 근거로** 고른다. 요청과 무관한 모듈을 습관적으로 넣지 마라.
 2. 카탈로그에 없는 module_id·step_id·tool을 지어내지 마라.
 3. params의 dimension/measure는 반드시 [분석 가능한 차원/측정] 목록에 있는 이름을 쓴다.
-4. 섹션은 하나의 이야기를 이루도록 묶는다. 빈 섹션은 만들지 않는다.
+4. 스텝은 하나의 이야기를 이루도록 묶는다. 빈 스텝은 만들지 않는다.
 5. 선행 데이터(requires)는 시스템이 자동으로 채워 넣으니, 뿌리 모듈까지 일일이 넣지 않아도 된다.
 6. 같은 모듈을 파라미터만 바꿔 여러 번 넣어도 된다(예: 차원별 실적집계).
-7. 보고서는 보통 3~6개 섹션이면 충분하다. 요청이 좁으면 더 적게 짜라.
+7. 보고서는 보통 3~6개 스텝이면 충분하다. 요청이 좁으면 더 적게 짜라.
 
 출력은 JSON 객체 하나뿐이다. 다른 텍스트를 덧붙이지 마라.
 
@@ -162,7 +162,7 @@ def _producer_of(label: str) -> str | None:
 
 
 def expand_steps(plan: dict) -> tuple[dict, list[str]]:
-    """프리셋 섹션(step_id)을 실제 모듈 목록으로 펼친다.
+    """프리셋 스텝(step_id)을 실제 모듈 목록으로 펼친다.
 
     검증·의존성 계산은 모듈을 봐야 하므로, 무엇보다 먼저 펼쳐야 한다.
     존재하지 않는 step_id는 최근접 프리셋으로 추천 대체한다(§8).
@@ -178,16 +178,16 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
             if preset is None:
                 near = suggest(sid, list(steps))
                 if not near:
-                    notes.append(f"'{sid}' 섹션은 카탈로그에 없어 제외했습니다.")
+                    notes.append(f"'{sid}' 스텝은 카탈로그에 없어 제외했습니다.")
                     continue
-                notes.append(f"'{sid}' 섹션이 없어 가장 비슷한 '{near}'로 대체했습니다.")
+                notes.append(f"'{sid}' 스텝이 없어 가장 비슷한 '{near}'로 대체했습니다.")
                 preset = steps[near]
             expanded.append({
                 "title": sec.get("title") or preset["title"],
                 "modules": [dict(m) for m in (sec.get("modules") or preset["default_modules"])],
             })
         else:
-            expanded.append({"title": sec.get("title") or "무제 섹션",
+            expanded.append({"title": sec.get("title") or "무제 스텝",
                              "modules": [dict(m) for m in (sec.get("modules") or [])]})
 
     plan = dict(plan)
@@ -199,8 +199,8 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
     """requires를 역추적해 빠진 선행 모듈을 끼워 넣는다 (§6.1 자동 보정).
 
     LLM이 within_contribution만 골라도 total_variance가 없으면 실행되지 않는다. 계획 단계에서
-    생산자(measure_summary → period_dataset)를 찾아 **필요한 섹션의 앞쪽**에 넣는다.
-    실행 순서는 runner가 위상정렬로 다시 잡으므로, 여기서는 어느 섹션에 실릴지만 정한다.
+    생산자(measure_summary → period_dataset)를 찾아 **필요한 스텝의 앞쪽**에 넣는다.
+    실행 순서는 runner가 위상정렬로 다시 잡으므로, 여기서는 어느 스텝에 실릴지만 정한다.
     """
     registry = get_module_registry()
     notes: list[str] = []
@@ -213,7 +213,7 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
             if spec:
                 produced.update(spec.produces)
 
-    # 각 섹션을 훑으며 아직 없는 선행 이름표의 생산자를 그 섹션 앞에 삽입한다.
+    # 각 스텝을 훑으며 아직 없는 선행 이름표의 생산자를 그 스텝 앞에 삽입한다.
     for sec in expanded:
         inserted: list[dict] = []
         for m in list(sec["modules"]):
@@ -340,7 +340,7 @@ def validate_plan(plan: dict, schema: Schema) -> tuple[dict, list[str]]:
         if modules:
             out_steps.append(dict(sec, modules=modules))
         else:
-            notes.append(f"섹션 '{sec.get('title')}'은 실행할 모듈이 없어 제외했습니다.")
+            notes.append(f"스텝 '{sec.get('title')}'은 실행할 모듈이 없어 제외했습니다.")
 
     if not out_steps:
         raise PlannerError("실행할 수 있는 모듈이 없습니다. 요청을 다시 말씀해 주세요.")

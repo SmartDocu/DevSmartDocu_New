@@ -43,7 +43,7 @@ def reset() -> None:
     _local.input_tokens = 0
     _local.output_tokens = 0
     _local.calls = []
-    _local.current_section = ""
+    _local.current_step = ""
     _local.provider = ""
 
 
@@ -84,8 +84,8 @@ def add(
     grade: "fast" | "balanced" | "quality"
     label: 폴백용 항목명 (call_type 없을 때 표에 표시)
     is_report: 보고서 작성에 사용된 호출이면 True (보고서 합계 산출 기준)
-    stepnm: 보고서 스텝명 (예: "섹션 계획", "본문", "종합")
-    steptitle: 섹션 타이틀 (예: "월별 매출 추이")
+    stepnm: 보고서 스텝명 (예: "스텝 계획", "본문", "종합")
+    steptitle: 스텝 타이틀 (예: "월별 매출 추이")
     call_type: 호출 유형 (예: "툴 호출", "쿼리 생성", "항목 작성(차트)")
     model_id: 실제 모델 ID (예: "claude-haiku-4-5-20251001") — llmchatlogs/llminsightlogs.llmmodelnm 저장용
     provider: "anthropic" | "openai" — 표시명 분기 및 로그 기록용
@@ -153,14 +153,14 @@ def merge_calls(calls: list[dict]) -> None:
         _local.output_tokens = getattr(_local, "output_tokens", 0) + call.get("output", 0)
 
 
-def set_current_section(name: str) -> None:
-    """섹션 루프 진입 시 호출 — 현재 작성 중인 섹션명을 스레드-로컬에 저장한다."""
-    _local.current_section = name
+def set_current_step(name: str) -> None:
+    """스텝 루프 진입 시 호출 — 현재 작성 중인 스텝명을 스레드-로컬에 저장한다."""
+    _local.current_step = name
 
 
-def get_current_section() -> str:
-    """현재 작성 중인 섹션명을 반환한다. 없으면 빈 문자열."""
-    return getattr(_local, "current_section", "")
+def get_current_step() -> str:
+    """현재 작성 중인 스텝명을 반환한다. 없으면 빈 문자열."""
+    return getattr(_local, "current_step", "")
 
 
 # ── 세션별 턴 기록 (인메모리) ─────────────────────────────────────────────

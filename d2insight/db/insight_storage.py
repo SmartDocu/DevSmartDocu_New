@@ -423,7 +423,7 @@ def record_analytics(
                 "tenantid": tenant_id,
                 "projectid": project_id,
                 "analyticuid": analytic_uid,
-                "stepnm": step.get("section") or f"섹션 {step_idx + 1}",
+                "stepnm": step.get("title") or step.get("step") or f"스텝 {step_idx + 1}",
                 "orderno": step_idx,
                 "useyn": True,
             })

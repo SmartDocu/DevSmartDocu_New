@@ -92,6 +92,23 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
         if not skip_temperature:
             kwargs["temperature"] = 0
         return ChatOpenAI(**kwargs)
+    # ===================================================================
+    # TEMP: 로컬 Llama(Together.ai) 테스트용 — 품질 비교 테스트 종료로 주석처리 (2026-08-20)
+    # 재활성화 시 이 블록의 주석만 해제하면 된다.
+    # if vendor_name == "Llama":
+    #     # Together.ai(https://api.together.ai) — OpenAI 호환 API로 Llama 3.3 70B를
+    #     # 양자화 없는 정식 버전으로 서빙. ChatOpenAI에 base_url만 바꿔서 그대로 재사용한다
+    #     # (2026-08-19, 로컬 Llama 테스트용 — 새 패키지 설치 불필요.
+    #     #  aimlapi 결제 문제 → Groq(Llama 미제공) → Together.ai로 최종 교체).
+    #     from langchain_openai import ChatOpenAI
+    #     kwargs = dict(
+    #         model=model, api_key=api_key, max_tokens=8192,
+    #         base_url="https://api.together.xyz/v1",
+    #     )
+    #     if not skip_temperature:
+    #         kwargs["temperature"] = 0
+    #     return ChatOpenAI(**kwargs)
+    # ===================================================================
     elif vendor_name == "Google":
         from langchain_google_genai import ChatGoogleGenerativeAI
         kwargs = dict(model=model, google_api_key=api_key, max_output_tokens=8192)
@@ -128,6 +145,24 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
     조회를 반복하지 않도록). 반환 튜플 자리 수는 그대로 5개다 — "Do"/"Ch"/그 밖의 기존
     호출부는 손댈 필요 없이 지금처럼 model을 문자열로 받는다.
     """
+    # ===================================================================
+    # TEMP: 로컬 Llama(Together.ai) 테스트용 하드코딩 오버라이드 — 품질 비교 테스트
+    # 종료로 주석처리, 원래 Supabase 조회 로직으로 복원 (2026-08-20)
+    # 재활성화 시 아래 블록의 주석만 해제하면 된다.
+    # d2insight("In")·d2chat("Ch")에만 적용 — d2doc("Do")는 그대로 Supabase 조회를 탄다.
+    # (2026-08-20: aimlapi 결제 미반영 → Groq(Llama 미제공) → Together.ai로 최종 교체)
+    # _LLAMA_TEST_MODE = True
+    # if _LLAMA_TEST_MODE and service_code in ("In", "Ch"):
+    #     _llama_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    #     _llama_api_key = os.getenv("LLAMA_API_KEY")  # .env: LLAMA_API_KEY (평문 하드코딩 금지)
+    #     if service_code == "In":
+    #         return (
+    #             {grade: _llama_model for grade in _GRADE_MODEL_COLUMNS},
+    #             _llama_api_key, "Llama", True, account_uid,
+    #         )
+    #     return (_llama_model, _llama_api_key, "Llama", True, account_uid)
+    # ===================================================================
+
     import random as _random
 
     if supabase is None:

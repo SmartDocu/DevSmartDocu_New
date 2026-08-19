@@ -27,7 +27,7 @@ class SharedContext:
 
     저장 대상은 세 갈래다.
       1. 이름표 값(_store)   — 모듈이 produces로 넣고 다른 모듈이 requires로 꺼내 씀
-      2. 요약 문장(_summaries) — 결론 섹션이 모두 모아 읽음(§6.2)
+      2. 요약 문장(_summaries) — 결론 스텝이 모두 모아 읽음(§6.2)
       3. 실패/생략 기록(_notes) — 결론에 "OO 분석은 [사유]로 생략됨" 명시(§11 Step 2)
     """
 
@@ -84,7 +84,7 @@ class SharedContext:
 
     # ── 요약 문장 수집 (결론용, §6.2) ──────────────────────────────────────
     def add_summary(self, ref: str, text: str) -> None:
-        """모듈이 만든 1~2줄 요약을 결론용으로 모은다. ref는 섹션/모듈 식별 표시."""
+        """모듈이 만든 1~2줄 요약을 결론용으로 모은다. ref는 스텝/모듈 식별 표시."""
         if text:
             self._summaries.append({"ref": ref, "text": text})
 
@@ -101,7 +101,7 @@ class SharedContext:
         self._notes.append({"ref": ref, "reason": reason, "kind": "skipped"})
 
     def notes(self) -> list[dict]:
-        """결론 섹션이 "OO 분석은 [사유]로 생략됨"을 명시할 때 참조하는 실패/생략 기록."""
+        """결론 스텝이 "OO 분석은 [사유]로 생략됨"을 명시할 때 참조하는 실패/생략 기록."""
         return list(self._notes)
 
     def has_notes(self) -> bool:

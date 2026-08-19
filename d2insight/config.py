@@ -8,7 +8,7 @@ from typing import Literal
 Grade = Literal["fast", "balanced", "quality"]
 
 # --- LLM 모델 등급 (벤더별) ---
-# fast: 인텐트 파싱/분류, balanced: 보고서 본문 섹션, quality: 결론/핵심 인사이트
+# fast: 인텐트 파싱/분류, balanced: 보고서 본문 스텝, quality: 결론/핵심 인사이트
 # 벤더는 DB에서 결정, 모델은 아래 LLM_MODELS에서 결정
 # LLM_MODELS: dict[str, dict[str, str]] = {
 #     "Anthropic": {
@@ -48,7 +48,7 @@ LLM_MODELS: dict[str, dict[str, str]] = {
 
 
 # --- 병렬 보고서 생성 ---
-REPORT_MAX_WORKERS: int = 4  # 섹션 병렬 실행 스레드 수
+REPORT_MAX_WORKERS: int = 4  # 스텝 병렬 실행 스레드 수
 
 # --- Data source selection ---
 DATA_SOURCE = "db"  # db | csv | excel (현재 db만 지원)

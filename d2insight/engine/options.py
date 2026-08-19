@@ -167,7 +167,7 @@ def options_to_plan(options: dict, schema: Schema,
 
             modules_out.append(entry)
 
-        if not modules_out:          # modules가 애초에 빈 배열이었던 경우 — 빈 섹션은 만들지 않는다
+        if not modules_out:          # modules가 애초에 빈 배열이었던 경우 — 빈 스텝은 만들지 않는다
             continue
         steps.append({"title": title, "modules": modules_out})
 

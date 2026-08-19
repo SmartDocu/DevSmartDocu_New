@@ -249,24 +249,24 @@ def run_tool(
                                 user_uid=user_id or user_uid, account_uid=account_uid,
                                 session_id=session_id)
             # 옵션 패널 "이대로 작성"에서 확정된 시나리오 스텝 목록 — 있으면 이 title들을
-            # section plan으로 강제(LLM 자유 계획 대신). 없으면 기존대로 LLM이 목차 결정.
+            # step plan으로 강제(LLM 자유 계획 대신). 없으면 기존대로 LLM이 목차 결정.
             scenario_options = intent.get("scenario_options") or {}
-            section_plan_override = None
+            step_plan_override = None
             if scenario_options.get("applied_steps"):
-                section_plan_override = [
+                step_plan_override = [
                     s.get("title") for s in scenario_options["applied_steps"] if s.get("title")
                 ]
                 # 카탈로그 시나리오는 전부 마지막 스텝 title이 "결론"이다(engine/catalog/scenarios.py
                 # — 7개 시나리오 전부 확인됨). ReportAgent.generate()는 목차와 별개로 항상 자기가
                 # 전용 결론 단계를 하나 더 붙이므로(agent.py), "결론"을 목차에도 그대로 두면 일반
-                # 데이터 섹션으로 한 번 더 실행돼 결론이 두 번 나온다(2026-08-19 확인). ReportAgent는
+                # 데이터 스텝으로 한 번 더 실행돼 결론이 두 번 나온다(2026-08-19 확인). ReportAgent는
                 # title 문자열만 쓰고 카탈로그의 모듈/purpose 구조 자체는 안 쓰므로, 여기서 빼도
                 # 실제 결론 내용은 ReportAgent의 전용 결론 단계가 그대로 만들어 정확히 하나만 남는다.
-                section_plan_override = [t for t in section_plan_override if t != "결론"]
+                step_plan_override = [t for t in step_plan_override if t != "결론"]
             report_result = agent.generate(
                 report_type, target_month, months_back,
                 user_request=user_request,
-                section_plan_override=section_plan_override,
+                step_plan_override=step_plan_override,
             )
 
             if report_result.get("skipped_reason"):

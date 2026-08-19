@@ -4,7 +4,7 @@
 자동/수동/디폴트-제시가 모두 이 하나의 실행 엔진을 공유한다(계획 단계만 다름, §4.2).
 
 이 엔진은 카탈로그(Step/Module Registry)의 "내용물"을 모른다. resolver(카탈로그)로부터
-모듈 명세(ModuleSpec)와 섹션 프리셋만 받아 그릇 역할만 한다 → 카탈로그에 무엇이 추가되든 불변.
+모듈 명세(ModuleSpec)와 스텝 프리셋만 받아 그릇 역할만 한다 → 카탈로그에 무엇이 추가되든 불변.
 """
 from __future__ import annotations
 
@@ -17,13 +17,13 @@ from d2insight.engine.context import SharedContext
 from d2insight.engine.format import table_to_markdown
 from d2insight.engine.types import DEFAULT_LAYOUT, ModuleResult, ModuleSpec, Render
 
-# 섹션 제목에 실수로 새어든 스펙 번호(§11, §12-A 등)를 출력 직전에 제거하는 방어 패턴.
+# 스텝 제목에 실수로 새어든 스펙 번호(§11, §12-A 등)를 출력 직전에 제거하는 방어 패턴.
 # 스펙 번호는 코드 주석·설계 문서에만 존재해야 하며 보고서 본문에 노출되면 안 된다.
 _SPEC_MARK = re.compile(r"^\s*§\s*\d+[\-A-Za-z]*\.?\s*")
 
 
 def clean_title(title: str) -> str:
-    """섹션 제목에서 선두의 '§NN.' 류 스펙 마커를 제거한다(중복 적용 안전)."""
+    """스텝 제목에서 선두의 '§NN.' 류 스펙 마커를 제거한다(중복 적용 안전)."""
     prev = None
     out = title or ""
     while out != prev:
@@ -33,7 +33,7 @@ def clean_title(title: str) -> str:
 
 
 class PlanError(Exception):
-    """조합(plan) 자체가 잘못됨 (빈 섹션, 미등록 모듈, 이름표 충돌, 순환 의존 등)."""
+    """조합(plan) 자체가 잘못됨 (빈 스텝, 미등록 모듈, 이름표 충돌, 순환 의존 등)."""
 
 
 class Catalog(Protocol):
@@ -60,11 +60,11 @@ class ModuleInstance:
 
 # ── 1. plan 펼치기 ──────────────────────────────────────────────────────────
 def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], list[str]]:
-    """조합 JSON(§8)을 ModuleInstance 목록 + 섹션 표시 순서로 펼친다.
+    """조합 JSON(§8)을 ModuleInstance 목록 + 스텝 표시 순서로 펼친다.
 
-    - step_id: 프리셋 섹션 참조. modules 생략 시 디폴트 모듈로 채움.
-    - title + custom: 사용자 정의 섹션.
-    - 빈 섹션 금지.
+    - step_id: 프리셋 스텝 참조. modules 생략 시 디폴트 모듈로 채움.
+    - title + custom: 사용자 정의 스텝.
+    - 빈 스텝 금지.
     """
     instances: list[ModuleInstance] = []
     step_order: list[str] = []
@@ -75,11 +75,11 @@ def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], lis
             label = clean_title(sec.get("title") or preset.get("title") or sec["step_id"])
             modules = sec.get("modules") or preset.get("default_modules") or []
         else:
-            label = clean_title(sec.get("title") or "무제 섹션")
+            label = clean_title(sec.get("title") or "무제 스텝")
             modules = sec.get("modules") or []
 
         if not modules:
-            raise PlanError(f"빈 섹션은 허용되지 않습니다: '{label}'")
+            raise PlanError(f"빈 스텝은 허용되지 않습니다: '{label}'")
 
         step_order.append(label)
         for m in modules:
@@ -97,7 +97,7 @@ def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], lis
 
 
 def plan_composition(plan: dict, catalog: Catalog) -> list[dict]:
-    """plan을 섹션→모듈→툴 구조의 직렬화 가능한 목록으로 펼친다(실행 전 조합 확인용).
+    """plan을 스텝→모듈→툴 구조의 직렬화 가능한 목록으로 펼친다(실행 전 조합 확인용).
 
     expand_plan을 재사용해 **기본 툴까지 채워진** 실제 실행 조합을 만든다. 순수 함수라
     부작용이 없고, 터미널/로그에 JSON으로 찍기 좋다.
@@ -161,9 +161,9 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
     실패 처리(Step 2):
       - 선행 이름표 부재 → 생략 기록(선행 모듈이 실패/생략됐다는 뜻). 후속으로 전파됨.
       - 실행 예외/실패 → 실패 기록. produces 이름표는 저장되지 않아 의존 모듈이 자동 생략됨.
-    반환: 섹션 표시명 → [(ModuleInstance, Render), ...]  (렌더 순서 보존)
+    반환: 스텝 표시명 → [(ModuleInstance, Render), ...]  (렌더 순서 보존)
 
-    모듈은 계산만 한다. 본문 해설(narrative)은 이 단계 뒤 섹션 단위로 LLM이 채운다(narrate).
+    모듈은 계산만 한다. 본문 해설(narrative)은 이 단계 뒤 스텝 단위로 LLM이 채운다(narrate).
     """
     step_renders: dict[str, list[tuple[ModuleInstance, Render]]] = {}
 
@@ -192,14 +192,14 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
     return step_renders
 
 
-# ── 4. 해설 (섹션 단위 LLM 1회, 결정 2026-07-14) ─────────────────────────────
+# ── 4. 해설 (스텝 단위 LLM 1회, 결정 2026-07-14) ─────────────────────────────
 def narrate(step_order: list[str],
             step_renders: dict[str, list[tuple[ModuleInstance, Render]]],
             catalog: Catalog, ctx: SharedContext) -> None:
-    """섹션마다 해설자를 1회 호출해 각 모듈의 narrative를 채운다(제자리 수정).
+    """스텝마다 해설자를 1회 호출해 각 모듈의 narrative를 채운다(제자리 수정).
 
-    모듈별로 따로 호출하지 않는 이유: 같은 섹션의 모듈들은 하나의 이야기를 이루므로, 해설자가
-    그 섹션의 표를 **전부 보고** 써야 앞뒤가 이어진다. 호출 1회로 문맥과 비용을 함께 잡는다.
+    모듈별로 따로 호출하지 않는 이유: 같은 스텝의 모듈들은 하나의 이야기를 이루므로, 해설자가
+    그 스텝의 표를 **전부 보고** 써야 앞뒤가 이어진다. 호출 1회로 문맥과 비용을 함께 잡는다.
 
     해설 실패는 본문을 죽이지 않는다. 실패를 기록하고 summary로 대체한다(조용히 감추지 않음).
 
@@ -272,7 +272,7 @@ def _render_block(render: Render, layout: list[str] | None = None) -> list[str]:
 def assemble(plan: dict, step_order: list[str],
              step_renders: dict[str, list[tuple[ModuleInstance, Render]]],
              ctx: SharedContext) -> str:
-    """섹션을 순서대로 조립한다(§6.2). 결론도 이제 평범한 스텝 하나라 이 루프가 그대로
+    """스텝을 순서대로 조립한다(§6.2). 결론도 이제 평범한 스텝 하나라 이 루프가 그대로
     처리한다(2026-07-28, 7단계 — 예전엔 conclusion을 별도 인자로 받아 특수 처리했다).
     """
     md: list[str] = [f"# {clean_title(plan.get('report_title') or '보고서')}"]
@@ -280,7 +280,7 @@ def assemble(plan: dict, step_order: list[str],
     for label in step_order:
         entries = step_renders.get(label)
         if not entries:
-            continue                            # 섹션 내 모듈이 전부 실패·생략된 경우
+            continue                            # 스텝 내 모듈이 전부 실패·생략된 경우
         md.append(f"## {label}")
         for inst, render in entries:
             md.extend(_render_block(render, render.layout or inst.layout))

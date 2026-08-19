@@ -621,6 +621,11 @@ def dataframe_to_html_table(df: pd.DataFrame, max_rows: int = 100) -> tuple:
 _RATIO_KEYWORDS = ['율', '률', '비율', '%', 'rate', 'ratio', 'pct', 'percent']
 _WHOLE_KEYWORDS = ['매출', '판매금액', '판매액', '전체금액', '합계금액', '총매출', '총액']
 _PROFITABILITY_KEYWORDS = ['순이익률', '마진율', '수익률', '이익률', '수익성', 'margin', 'profit']
+# 건수/수량류 컬럼 — 금액(단가·매출 등)과 같은 축에 그리면 서로 다른 단위(개 vs $)가
+# 비슷한 막대 길이로 표시돼 오독을 유발한다(2026-08-19, 단가 차트에서 평균단가($)와
+# 판매건수(개)가 같은 축에 그려진 것 확인) — 비율 컬럼과 별개로 이 컬럼도 금액 컬럼과
+# 섞이면 dual_axis로 분리한다.
+_COUNT_KEYWORDS = ['건수', '수량', '개수', 'count', 'qty', 'quantity', 'cnt']
 
 # 의미 기반 색상 팔레트 (차트 종류에 관계없이 공용으로 사용)
 _C_GREEN = '#1baf7a'        # 증가/달성/집중
@@ -641,6 +646,12 @@ def _is_ratio_column(col_name, series: pd.Series) -> bool:
         return bool(len(series) and series.max() <= 100 and series.min() >= 0)
     except Exception:
         return False
+
+
+def _is_count_column(col_name) -> bool:
+    """컬럼명으로 건수/수량류(단위: 개)인지 판단 — 값 범위만으로는 금액과 구분 안 됨."""
+    col_lower = str(col_name).lower()
+    return any(kw in col_lower for kw in _COUNT_KEYWORDS)
 
 
 def _pick_color_strategy(chart_type, col_name, series: pd.Series) -> str:
@@ -810,6 +821,16 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
     def _format_yaxis(ax):
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
 
+    # 차트 제목 — 예전엔 '비교'/'이중축 차트' 같은 자리표시자 문자열이 그대로 렌더링됐다
+    # (2026-08-19, 고객 데모용 보고서 리뷰에서 발견). 호출부가 넘겨준 question(예: "2013년
+    # 3월 카테고리별 매출 비교")이 섹션 맥락을 담고 있으므로 이걸 제목으로 쓰고, question이
+    # 없을 때만 기존 자리표시자로 폴백한다. 차트 폭에 비해 너무 길면 잘라낸다.
+    def _chart_title(fallback: str) -> str:
+        q = (question or '').strip()
+        if not q:
+            return fallback
+        return q if len(q) <= 40 else q[:39] + '…'
+
     try:
         # 폰트 설정: NanumGothic(static/fonts, d2doc·d2chat·d2insight 공용) → 시스템 한글 폰트 순
         font_path = os.path.abspath(
@@ -875,8 +896,13 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
         # 우선이며, 그 판단은 split_by_unit()을 통해 호출자(mcp_agent.py)가 먼저 수행한다.
         if chart_type in (None, 'bar') and len(values.columns) >= 2:
             _ratio_detected = [c for c in values.columns if _is_ratio_column(c, values[c])]
-            _amount_detected = [c for c in values.columns if c not in _ratio_detected]
-            if _ratio_detected and _amount_detected:
+            _count_detected = [c for c in values.columns if c not in _ratio_detected and _is_count_column(c)]
+            _other_detected = [
+                c for c in values.columns if c not in _ratio_detected and c not in _count_detected
+            ]
+            # 비율(%) 컬럼과 금액 컬럼이 섞였거나, 건수(개)와 금액 컬럼이 섞인 경우 —
+            # 둘 다 서로 다른 단위를 같은 축에 그리면 오독을 유발하므로 dual_axis로 분리.
+            if (_ratio_detected and (_count_detected or _other_detected)) or (_count_detected and _other_detected):
                 chart_type = 'dual_axis'
 
         # 이중축 (막대 + 선)
@@ -884,14 +910,15 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             if len(values.columns) < 2:
                 values_1d = values.iloc[:, 0].tolist()
                 ax.bar(labels, values_1d, color=_make_colors(cmap, len(values_1d)))
-                _set_axes(ax, xlabel=df.columns[0], ylabel=values.columns[0], title='비교', rotate_x=True)
+                _set_axes(ax, xlabel=df.columns[0], ylabel=values.columns[0], title=_chart_title('비교'), rotate_x=True)
                 _format_yaxis(ax)
             else:
-                # 막대(왼쪽 축) / 선(오른쪽 축) 분류
+                # 막대(왼쪽 축) / 선(오른쪽 축) 분류 — 비율(%)뿐 아니라 건수(개)도 금액과
+                # 단위가 다르므로 같은 취급으로 오른쪽 축(선)에 분리한다.
                 bar_cols = []
                 line_cols = []
                 for col in values.columns:
-                    if _is_ratio_column(col, values[col]):
+                    if _is_ratio_column(col, values[col]) or _is_count_column(col):
                         line_cols.append(col)
                     else:
                         bar_cols.append(col)
@@ -943,7 +970,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 ax.set_xticks(x_pos)
                 ax.set_xticklabels(labels, rotation=45, ha='right')
                 ax.set_xlabel(df.columns[0], fontsize=12)
-                ax.set_title('이중축 차트', fontsize=14, fontweight='bold')
+                ax.set_title(_chart_title('이중축 차트'), fontsize=14, fontweight='bold')
                 ax.grid(True, alpha=0.3)
 
                 lines1, labels1 = ax.get_legend_handles_labels()
@@ -1028,7 +1055,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             for idx in range(n_cols_data, len(axes)):
                 axes[idx].set_visible(False)
 
-            fig.suptitle('항목별 비교', fontsize=14, fontweight='bold', y=1.02)
+            fig.suptitle(_chart_title('항목별 비교'), fontsize=14, fontweight='bold', y=1.02)
             fig.tight_layout()
 
         # 누적 막대 (대상별 비용/구성 비교) - stacked: 절대금액 그대로, stacked100: 100% 비중
@@ -1058,12 +1085,12 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 denom = (numeric_amounts[whole_col] if whole_col else plot_df.sum(axis=1)).replace(0, np.nan)
                 plot_values = plot_df.div(denom, axis=0).fillna(0) * 100
                 y_fmt = _pct_fmt
-                y_label, title, y_lim = '비중(%)', '구성비 비교', (0, 100)
+                y_label, title, y_lim = '비중(%)', _chart_title('구성비 비교'), (0, 100)
             else:
                 plot_values = plot_df
                 y_fmt = _plain_fmt
                 y_label = whole_col or (values.columns[0] if len(values.columns) == 1 else '금액')
-                title, y_lim = '구성 비교', None
+                title, y_lim = _chart_title('구성 비교'), None
 
             n_series = max(len(plot_values.columns), 1)
             if orientation == 'h':
@@ -1099,10 +1126,22 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
 
         elif chart_type == 'pie':
             values_1d = values.iloc[:, 0].tolist()
-            wedges, _, __ = ax.pie(values_1d, autopct='%1.1f%%', startangle=90,
+            total = sum(v for v in values_1d if v) or 1
+
+            # 비중이 작은 조각(대략 3% 미만)은 퍼센트 라벨을 파이 위에 그리면 서로 겹쳐
+            # 판독 불가능해진다(2026-08-19, 고객 데모용 보고서 리뷰에서 발견). 처음엔
+            # 작은 조각의 라벨을 아예 생략했으나, 그러면 수치 자체가 안 보이는 정보
+            # 손실이 생긴다(2026-08-19, 후속 리뷰에서 지적) — 대신 파이 위 라벨은
+            # 겹치지 않게 3% 미만만 생략하고, 그 수치는 범례 항목에 퍼센트로 병기해
+            # 정보는 보존한다.
+            def _autopct_hide_small(pct):
+                return f'{pct:.1f}%' if pct >= 3 else ''
+
+            wedges, _, __ = ax.pie(values_1d, autopct=_autopct_hide_small, startangle=90,
                                    colors=_make_colors(cmap, len(values_1d)))
             _set_axes(ax, title=df.columns[1], grid=False)
-            ax.legend(wedges, labels, title=df.columns[0], loc="best", bbox_to_anchor=(1, 0, 0.5, 1))
+            legend_labels = [f'{lbl} ({v / total * 100:.1f}%)' for lbl, v in zip(labels, values_1d)]
+            ax.legend(wedges, legend_labels, title=df.columns[0], loc="best", bbox_to_anchor=(1, 0, 0.5, 1))
 
         elif chart_type == 'line':
             try:
@@ -1362,11 +1401,11 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     h_values = values_1d.loc[order]
                     h_colors = [bar_colors[i] for i in order]
                     ax.barh(h_labels, h_values.tolist(), color=h_colors)
-                    _set_axes(ax, xlabel=col, ylabel=df.columns[0], title='비교')
+                    _set_axes(ax, xlabel=col, ylabel=df.columns[0], title=_chart_title('비교'))
                     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
                 else:
                     ax.bar(labels, values_1d.tolist(), color=bar_colors)
-                    _set_axes(ax, xlabel=df.columns[0], ylabel=col, title='비교', rotate_x=True)
+                    _set_axes(ax, xlabel=df.columns[0], ylabel=col, title=_chart_title('비교'), rotate_x=True)
                     _format_yaxis(ax)
             else:
                 if orientation == 'h':
@@ -1382,7 +1421,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     ax.set_yticks(y)
                     ax.set_yticklabels(h_labels)
                     ax.legend(loc='best')
-                    _set_axes(ax, xlabel='값', ylabel=df.columns[0], title='비교')
+                    _set_axes(ax, xlabel='값', ylabel=df.columns[0], title=_chart_title('비교'))
                     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
                 else:
                     x = np.arange(len(labels))
@@ -1394,7 +1433,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     ax.set_xticks(x)
                     ax.set_xticklabels(labels)
                     ax.legend(loc='best')
-                    _set_axes(ax, xlabel=df.columns[0], ylabel='값', title='비교', rotate_x=True)
+                    _set_axes(ax, xlabel=df.columns[0], ylabel='값', title=_chart_title('비교'), rotate_x=True)
                     _format_yaxis(ax)
 
         buffer = io.BytesIO()
