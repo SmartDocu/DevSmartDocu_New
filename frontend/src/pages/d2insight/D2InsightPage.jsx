@@ -431,6 +431,9 @@ export default function D2InsightPage() {
   }
 
   // "이대로 작성" 클릭 — preview 확정 후 /chat 실제 실행. 옵션은 서버가 이해할 형태로 전달.
+  // previewData는 보고서 생성이 끝날 때까지 지우지 않는다 — 생성 중에도 오른쪽 패널이 방금
+  // 확인한 스텝 목록을 계속 보여줘야 하고(카탈로그만 남는 빈 화면 방지), 생성이 끝나면 백엔드가
+  // 이 스텝 목록을 그대로 되돌려주므로(pipeline_runner.py) 패널 내용이 그대로 이어진다.
   const handleConfirmPreview = async () => {
     if (!previewData || isLoading) return
     const text = previewOriginalMessage
@@ -438,12 +441,12 @@ export default function D2InsightPage() {
       scenario: previewData.scenario,
       applied_steps: previewData.applied_steps,
     }
-    setPreviewData(null)
-    setPreviewOriginalMessage('')
     setIsLoading(true)
     try {
       await _executeChat(text, options)
     } finally {
+      setPreviewData(null)
+      setPreviewOriginalMessage('')
       setIsLoading(false)
     }
   }
@@ -732,12 +735,21 @@ export default function D2InsightPage() {
 
   // 우측 옵션 패널에 보여줄 대상 — 말풍선을 클릭하면 그 보고서로 전환되고(activeReportIndex),
   // 아무것도 클릭하지 않았으면(null) 가장 최근에 생성된 보고서를 기본으로 보여준다.
+  // activeReportMsgIndex는 실제로 패널에 표시 중인 assistant 메시지의 인덱스 — 말풍선 목록에서
+  // 그 보고서를 하이라이트(active-report)하는 데도 같이 쓴다.
   const activeMessages = viewMode === 'history' ? historyMessages : messages
-  const activeReportMessage = (
-    activeReportIndex != null && activeMessages[activeReportIndex]
-      ? (activeMessages[activeReportIndex].role === 'assistant' ? activeMessages[activeReportIndex] : null)
-      : [...activeMessages].reverse().find((m) => m.role === 'assistant' && m.appliedSteps)
-  ) || null
+  const findLatestReportIndex = (list) => {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].role === 'assistant' && list[i].appliedSteps) return i
+    }
+    return null
+  }
+  const activeReportMsgIndex = (
+    activeReportIndex != null && activeMessages[activeReportIndex]?.role === 'assistant'
+      ? activeReportIndex
+      : findLatestReportIndex(activeMessages)
+  )
+  const activeReportMessage = activeReportMsgIndex != null ? activeMessages[activeReportMsgIndex] : null
   const activeAppliedSteps = activeReportMessage?.appliedSteps || null
 
   // 말풍선 클릭 → 그 보고서(assistant 메시지)의 옵션을 패널에 표시한다.
@@ -1120,8 +1132,16 @@ export default function D2InsightPage() {
                       >★</button>
                     ) : null
 
+                    // 이 말풍선을 클릭하면 그 보고서(appliedSteps)를 오른쪽 옵션 패널에 띄운다 —
+                    // 한 대화창에서 여러 보고서를 작성했을 때 어떤 보고서가 패널에 보이는지
+                    // 구분할 수 있도록 현재 선택된 보고서의 assistant 말풍선을 강조 표시한다.
+                    const isActiveReport = msg.role === 'assistant' && index === activeReportMsgIndex
                     return (
-                      <div key={index} className="msg-row">
+                      <div
+                        key={index}
+                        className={`msg-row turn-clickable${isActiveReport ? ' active-report' : ''}`}
+                        onClick={() => selectReportForIndex(index, messages)}
+                      >
                         <MessageBubble
                           role={msg.role}
                           content={msg.content}
@@ -1207,10 +1227,11 @@ export default function D2InsightPage() {
                       >★</button>
                     ) : null
 
+                    const isActiveReport = msg.role === 'assistant' && index === activeReportMsgIndex
                     return (
                       <div
                         key={index}
-                        className={`history-msg-wrapper msg-row${viewingSessionId ? ' turn-clickable' : ''}`}
+                        className={`history-msg-wrapper msg-row${viewingSessionId ? ' turn-clickable' : ''}${isActiveReport ? ' active-report' : ''}`}
                         onClick={viewingSessionId ? () => selectReportForIndex(index, historyMessages) : undefined}
                       >
                         <div className="history-msg-inner">
@@ -1262,6 +1283,7 @@ export default function D2InsightPage() {
           onPreviewScheduleUpdate={handlePreviewScheduleUpdate}
           onApplyScheduleUpdate={handleApplyScheduleUpdate}
           preview={previewData}
+          previewGenerating={isLoading}
           onConfirmPreview={handleConfirmPreview}
           onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage('') }}
           onReorderPreviewSteps={(newSteps) =>
@@ -1328,7 +1350,7 @@ function ReportOptionsPanel({
   scheduleSettings,
   onPreviewRegisterSchedule, onRegisterSchedule,
   onPreviewScheduleUpdate, onApplyScheduleUpdate,
-  preview, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
+  preview, previewGenerating, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
@@ -1372,7 +1394,7 @@ function ReportOptionsPanel({
 
   // preview 스텝 드래그 순서 재정렬 — 사용자가 스텝을 위/아래로 드래그하면
   // 그 순서가 부모의 previewData.applied_steps에 반영되고, "이대로 작성" 시
-  // 그대로 백엔드로 전달돼 보고서 섹션 순서가 바뀐다.
+  // 그대로 백엔드로 전달돼 보고서 스텝 순서가 바뀐다.
   // 참고: pr_module_insight_202608061005/frontend/src/components/OptionsPanel.jsx의
   //       handleDragStart/handleDragOver/handleDrop 패턴만 발췌.
   // 잠금 규칙은 백엔드가 이미 각 step에 locked 플래그로 부착해 내려준다
@@ -1584,14 +1606,23 @@ function ReportOptionsPanel({
               <button
                 type="button"
                 onClick={onConfirmPreview}
-                style={{ padding: '8px 14px', background: '#1976d2', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+                disabled={previewGenerating}
+                style={{
+                  padding: '8px 14px', background: '#1976d2', color: 'white', border: 'none',
+                  borderRadius: 4, cursor: previewGenerating ? 'default' : 'pointer', fontWeight: 600,
+                  opacity: previewGenerating ? 0.6 : 1,
+                }}
               >
-                이대로 작성
+                {previewGenerating ? '작성 중...' : '이대로 작성'}
               </button>
               <button
                 type="button"
                 onClick={onCancelPreview}
-                style={{ padding: '8px 14px', background: '#eee', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer' }}
+                disabled={previewGenerating}
+                style={{
+                  padding: '8px 14px', background: '#eee', border: '1px solid #ccc', borderRadius: 4,
+                  cursor: previewGenerating ? 'default' : 'pointer', opacity: previewGenerating ? 0.6 : 1,
+                }}
               >
                 취소
               </button>
@@ -1599,8 +1630,11 @@ function ReportOptionsPanel({
           </div>
         )}
 
-        {!appliedSteps || appliedSteps.length === 0 ? (
-          !preview && <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
+        {/* preview가 떠 있는 동안(= 새 보고서 확인/생성 중)에는 이전 보고서의 "적용된 옵션"을
+            같이 보여주지 않는다 — 그렇지 않으면 두 번째 보고서를 만들 때 방금 뜬 preview 카드
+            아래에 직전 보고서의 스텝 카드가 나란히 남아 스텝이 두 벌 보이는 것처럼 보인다. */}
+        {!preview && (!appliedSteps || appliedSteps.length === 0 ? (
+          <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
         ) : (
           <>
             {reportQauid && !scheduleSettings && isTemplate && (
@@ -1673,42 +1707,32 @@ function ReportOptionsPanel({
               </div>
             )}
 
+            {/* 스텝 카드 — "이대로 작성"으로 확정한 보고서는 preview 때 봤던 것과 같은 형태
+                (제목 + 모듈 purpose)로 그대로 보여준다(pipeline_runner.py가 scenario_options의
+                applied_steps를 그대로 되돌려주므로 여기 step.title/step.modules가 채워져 있다).
+                옛날에 저장된 보고서(자유 대화형, scenario 매칭 없이 생성됨)는 실행 트레이스
+                형태(step.step/step.tools, 2026-08-20 이전 저장분은 구 키 step.section)라
+                모듈 purpose가 없다 — 제목만 보여주고 실행 중 호출한 도구·파라미터 같은 상세
+                내용은 노출하지 않는다(JSON 원문 보기로만 확인). step.section은 리네임 전에
+                저장된 이력과의 하위호환을 위해 남겨둔 폴백이다. */}
             <div className="opt-steps">
               {appliedSteps.map((step, idx) => (
                 <div key={idx} className="opt-step">
                   <div className="opt-step-header">
-                    <span className="opt-step-title">{idx + 1}. {step.section}</span>
+                    <span className="opt-step-title">{idx + 1}. {step.title || step.step || step.section}</span>
                   </div>
-                  {(step.tools || []).length === 0 ? (
-                    <div className="opt-module"><span className="opt-module-name">사용된 도구 없음</span></div>
-                  ) : (
-                    step.tools.map((tc, i) => (
-                      <div key={i} className="opt-module">
-                        <div className="opt-module-name">
-                          {tc.tool}
-                          {catalog?.tools?.[tc.tool]?.purpose && (
-                            <span style={{ marginLeft: 6, color: '#888', fontWeight: 'normal', fontSize: 12 }}>
-                              — {catalog.tools[tc.tool].purpose}
-                            </span>
-                          )}
-                        </div>
-                        {tc.params && (
-                          <ul className="opt-module-params">
-                            {Object.entries(tc.params)
-                              .filter(([k]) => k !== 'data' && k !== 'actual_data' && k !== 'compare_data')
-                              .map(([k, v]) => (
-                                <li key={k}>{k}: <strong>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</strong></li>
-                              ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))
+                  {(step.modules || []).length > 0 && (
+                    <div className="opt-module">
+                      <span className="opt-module-name" style={{ fontWeight: 'normal', color: '#666' }}>
+                        {step.modules.map((m, j) => m.purpose || m.module_id).join(' · ')}
+                      </span>
+                    </div>
                   )}
                 </div>
               ))}
             </div>
           </>
-        )}
+        ))}
 
         {/* 카탈로그 참조 — appliedSteps 유무와 무관하게 항상 표시 (시연용 참조 브라우저). */}
         {catalog && (
