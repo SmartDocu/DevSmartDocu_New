@@ -202,6 +202,7 @@ export default function HomePage() {
               { label: '체험하기', path: '/experience' },
               { label: '따라하기', path: '/follow' },
               { label: '문의', path: '/contact' },
+              { label: '이용요금', path: '/pricing' },
               { label: 'Chat', path: 'https://dev-rag-medicine.azurewebsites.net/?projectid=6', external: true },
             ].map(m => (
               <a

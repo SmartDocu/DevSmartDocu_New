@@ -631,8 +631,11 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
     if not accountuid:
         return {"subscriptions": []}
 
+    # 예약된 Pro 해지 중 이번 결제 주기가 끝난 건이 있으면 Free로 자동 전환 후 조회
+    _apply_due_pro_downgrades(svc, accountuid)
+
     svcs = svc.table("accountservices").select(
-        "productcd,plancd,servicecd,servicestatus"
+        "productcd,plancd,servicecd,servicestatus,subscriptionuid"
     ).eq("accountuid", accountuid).eq("servicestatus", "Active").execute()
     if not svcs.data:
         return {"subscriptions": []}
@@ -647,6 +650,21 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
     prods = svc.table("products").select("productcd,productnm").in_("productcd", productcds).execute()
     name_map = {p["productcd"]: p.get("productnm", p["productcd"]) for p in (prods.data or [])}
 
+    sub_ids = [s["subscriptionuid"] for s in svcs.data if s.get("subscriptionuid")]
+    cancel_map = {}
+    bucket_map = {}
+    if sub_ids:
+        cancel_rows = svc.table("subscriptions").select("subscriptionuid,canceldts").in_(
+            "subscriptionuid", sub_ids
+        ).execute().data or []
+        cancel_map = {r["subscriptionuid"]: r.get("canceldts") for r in cancel_rows}
+
+        bucket_rows = svc.table("creditbuckets").select("subscriptionuid,expiredts").in_(
+            "subscriptionuid", sub_ids
+        ).eq("creditchargecd", "Ba").execute().data or []
+        bucket_map = {r["subscriptionuid"]: r.get("expiredts") for r in bucket_rows}
+
+    offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
     sorted_svcs = sorted(svcs.data, key=lambda s: order_map.get(s.get("servicecd", ""), 999))
 
     return {
@@ -656,6 +674,11 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
                 "productnm": name_map.get(s["productcd"], s["productcd"]),
                 "plancd": s.get("plancd", ""),
                 "servicecd": s.get("servicecd", ""),
+                "cancel_reserved": bool(cancel_map.get(s.get("subscriptionuid"))),
+                "cancel_effective_date": (
+                    _fmt_dt(bucket_map.get(s.get("subscriptionuid")), offsetminutes)
+                    if cancel_map.get(s.get("subscriptionuid")) else None
+                ),
             }
             for s in sorted_svcs
         ]
@@ -1260,6 +1283,215 @@ def upgrade_plan(
         _compensate_and_raise(svc, user_id, charge_result, e, context="업그레이드")
 
     return {"result": "success", "message": "업그레이드가 완료되었습니다."}
+
+
+def _get_free_product(svc, servicecd: str) -> Optional[dict]:
+    rows = svc.table("products").select(
+        "productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
+    ).eq("servicecd", servicecd).eq("plancd", "Fr").eq("useyn", True).eq(
+        "is_sales", True
+    ).limit(1).execute().data or []
+    return rows[0] if rows else None
+
+
+def _apply_due_pro_downgrades(svc, accountuid: str) -> None:
+    """예약된 Pro 해지(subscriptions.canceldts) 중 이번 결제 주기(Ba 크레딧버킷 expiredts)가
+    끝난 건을 Free로 자동 전환한다. 별도 배치/스케줄러가 없어 /myinfo/subscriptions 조회
+    시점에 지연 평가로 처리한다 — 정기결제 자동 재청구 자체가 아직 없어 갱신일 개념이
+    없으므로, 해지 예약은 즉시 반영하지 않고 이 시점에만 적용한다."""
+    from datetime import datetime, timezone as tz
+    from dateutil.relativedelta import relativedelta
+    from dateutil import parser as dtparser
+
+    active_rows = svc.table("accountservices").select(
+        "servicecd,productcd,plancd,subscriptionuid,tenantid"
+    ).eq("accountuid", accountuid).eq("servicestatus", "Active").execute().data or []
+
+    for row in active_rows:
+        if row.get("plancd") == "Fr" or not row.get("subscriptionuid"):
+            continue
+
+        sub_row = svc.table("subscriptions").select(
+            "subscriptionuid,canceldts,canceluseruid"
+        ).eq("subscriptionuid", row["subscriptionuid"]).maybe_single().execute()
+        sub = sub_row.data if sub_row else None
+        if not sub or not sub.get("canceldts"):
+            continue
+
+        bucket_row = svc.table("creditbuckets").select("expiredts").eq(
+            "subscriptionuid", row["subscriptionuid"]
+        ).eq("creditchargecd", "Ba").maybe_single().execute()
+        expiredts = bucket_row.data.get("expiredts") if bucket_row and bucket_row.data else None
+        if not expiredts:
+            continue
+        try:
+            due = dtparser.parse(expiredts) <= datetime.now(tz.utc)
+        except Exception:
+            continue
+        if not due:
+            continue
+
+        free_product = _get_free_product(svc, row["servicecd"])
+        if not free_product:
+            continue
+
+        now_utc = datetime.now(tz.utc)
+        today = now_utc.date()
+        actor = sub.get("canceluseruid")
+
+        new_sub_resp = svc.table("subscriptions").insert({
+            "tenantid": row["tenantid"],
+            "accountuid": accountuid,
+            "productcd": free_product["productcd"],
+            "plancd": free_product["plancd"],
+            "servicecd": row["servicecd"],
+            "billingtermcd": free_product.get("billingtermcd"),
+            "old_productcd": row["productcd"],
+            "subscription_status": "Paid",
+            "creator": actor,
+        }).execute()
+        if not new_sub_resp.data:
+            continue
+        new_subscriptionuid = new_sub_resp.data[0]["subscriptionuid"]
+
+        svc.table("accountservices").update({
+            "old_subscriptionuid": row["subscriptionuid"],
+            "old_productcd": row["productcd"],
+            "old_plancd": row["plancd"],
+            "subscriptionuid": new_subscriptionuid,
+            "productcd": free_product["productcd"],
+            "plancd": free_product["plancd"],
+            "is_customerAIKey": free_product.get("is_customeraikey", False),
+            "billingfirstdt": today.isoformat(),
+            "billingday": today.day,
+            "included_users": free_product.get("users", 1),
+            "add_users": 0,
+            "total_users": free_product.get("users", 1),
+            "is_autotopup": False,
+            "updater": actor,
+        }).eq("accountuid", accountuid).eq("servicecd", row["servicecd"]).execute()
+
+        expiredts_new = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
+        upsert_ba_creditbucket(
+            svc,
+            subscriptionuid=new_subscriptionuid,
+            tenantid=row["tenantid"],
+            accountuid=accountuid,
+            servicecd=row["servicecd"],
+            chargecredit=free_product.get("credit", 0),
+            granteddts=now_utc.isoformat(),
+            expiredts=expiredts_new,
+            startdt=today.isoformat(),
+        )
+
+
+def _get_personal_active_subscription(svc, user_id: str, tenantid: Optional[str], servicecd: str) -> tuple[str, dict]:
+    """개인(시스템 테넌트) 계정의 특정 servicecd 활성 구독을 조회.
+
+    반환: (accountuid, subscriptions 행). 조직 테넌트이거나 구독이 없으면 예외를 던진다.
+    """
+    _, issystemtenant = _get_tenant_and_issystemtenant(svc, user_id, tenantid)
+    if not issystemtenant:
+        raise HTTPException(status_code=400, detail="개인 요금제만 해지할 수 있습니다.")
+
+    acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    if not acc or not acc.data:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+    accountuid = acc.data["accountuid"]
+
+    accsvc_row = svc.table("accountservices").select(
+        "plancd,subscriptionuid"
+    ).eq("accountuid", accountuid).eq("servicecd", servicecd).eq(
+        "servicestatus", "Active"
+    ).maybe_single().execute()
+    accsvc = accsvc_row.data if accsvc_row else None
+    if not accsvc or not accsvc.get("subscriptionuid"):
+        raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+    if accsvc.get("plancd") == "Fr":
+        raise HTTPException(status_code=400, detail="이미 무료 요금제입니다.")
+
+    sub_row = svc.table("subscriptions").select(
+        "subscriptionuid,canceldts"
+    ).eq("subscriptionuid", accsvc["subscriptionuid"]).maybe_single().execute()
+    sub = sub_row.data if sub_row else None
+    if not sub:
+        raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+    return accountuid, sub
+
+
+class ProCancelRequest(BaseModel):
+    servicecd: str
+    cancel_reasoncd: str
+    cancel_reasondesc: Optional[str] = None
+
+
+@router.post("/myinfo/pro-cancel")
+def request_pro_cancel(
+    body: ProCancelRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """개인(Pro) 요금제 해지 예약 — 즉시 다운그레이드하지 않고, 이미 낸 결제는 그대로 두고
+    현재 결제 주기가 끝나는 시점까지 Pro를 유지한 뒤 자동으로 Free로 전환한다."""
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    accountuid, sub = _get_personal_active_subscription(svc, user_id, tenantid, body.servicecd)
+    if sub.get("canceldts"):
+        raise HTTPException(status_code=400, detail="이미 해지가 예약되어 있습니다.")
+
+    now_utc = datetime.now(tz.utc)
+    svc.table("subscriptions").update({
+        "canceluseruid": user_id,
+        "canceldts": now_utc.isoformat(),
+        "cancel_reasoncd": body.cancel_reasoncd,
+        "cancel_reasondesc": body.cancel_reasondesc,
+        "updater": user_id,
+        "updatedts": now_utc.isoformat(),
+    }).eq("subscriptionuid", sub["subscriptionuid"]).execute()
+
+    bucket_row = svc.table("creditbuckets").select("expiredts").eq(
+        "subscriptionuid", sub["subscriptionuid"]
+    ).eq("creditchargecd", "Ba").maybe_single().execute()
+    effective_date = bucket_row.data.get("expiredts") if bucket_row and bucket_row.data else None
+
+    return {"result": "success", "effective_date": effective_date}
+
+
+class ProCancelUndoRequest(BaseModel):
+    servicecd: str
+
+
+@router.post("/myinfo/pro-cancel-undo")
+def undo_pro_cancel(
+    body: ProCancelUndoRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """예약된 Pro 해지 철회 — 결제 주기가 끝나기 전까지만 가능하다."""
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    accountuid, sub = _get_personal_active_subscription(svc, user_id, tenantid, body.servicecd)
+    if not sub.get("canceldts"):
+        raise HTTPException(status_code=400, detail="예약된 해지가 없습니다.")
+
+    svc.table("subscriptions").update({
+        "canceluseruid": None,
+        "canceldts": None,
+        "cancel_reasoncd": None,
+        "cancel_reasondesc": None,
+        "updater": user_id,
+        "updatedts": datetime.now(tz.utc).isoformat(),
+    }).eq("subscriptionuid", sub["subscriptionuid"]).execute()
+
+    return {"result": "success"}
 
 
 # ══════════════════════════════════════════════════════

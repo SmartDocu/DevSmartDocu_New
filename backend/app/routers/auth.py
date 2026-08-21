@@ -1072,6 +1072,7 @@ def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
                 .table("products")
                 .select("productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey")
                 .in_("productcd", body.products)
+                .eq("plancd", "Fr")
                 .execute()
             )
             prod_map = {p["productcd"]: p for p in (prod_rows.data or [])}

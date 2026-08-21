@@ -328,3 +328,25 @@ def send_contact(body: ContactRequest):
         return {"result": "success", "message": "문의가 성공적으로 전송되었습니다."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"메일 전송 실패: {str(e)}")
+
+
+@router.get("/pricing")
+def get_public_pricing():
+    """비로그인 사용자도 볼 수 있는 서비스 이용요금 안내 페이지용 데이터.
+    회원가입 여부와 무관하게 공개하는 화면이라 인증을 요구하지 않는다."""
+    from backend.app.routers.settings import _attach_prices
+
+    sb = _sb_svc().schema(SUPABASE_SCHEMA)
+
+    rows = (
+        sb.table("products")
+        .select("productcd,productnm,servicecd,plancd,producttype,billingtermcd,users,credit,is_customeraikey,orderno")
+        .eq("useyn", True)
+        .eq("is_sales", True)
+        .order("orderno")
+        .execute()
+        .data or []
+    )
+    _attach_prices(sb, rows)
+
+    return {"products": rows}

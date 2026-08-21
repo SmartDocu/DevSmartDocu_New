@@ -17,6 +17,7 @@ const FaqPage = lazy(() => import('@/pages/public/FaqPage'))
 const QnaPage = lazy(() => import('@/pages/public/QnaPage'))
 const FollowPage = lazy(() => import('@/pages/public/FollowPage'))
 const ContactPage = lazy(() => import('@/pages/public/ContactPage'))
+const PricingPage = lazy(() => import('@/pages/public/PricingPage'))
 const MasterDocsPage = lazy(() => import('@/pages/master/MasterDocsPage'))
 const MasterChaptersPage = lazy(() => import('@/pages/master/MasterChaptersPage'))
 const MasterObjectPage = lazy(() => import('@/pages/master/MasterObjectPage'))
@@ -105,6 +106,7 @@ export const router = createBrowserRouter([
       { path: 'follow', element: <FollowPage /> },
       { path: 'contact', element: <ContactPage /> },
       { path: 'experience', element: <ExperiencePage /> },
+      { path: 'pricing', element: <PricingPage /> },
     ],
   },
 

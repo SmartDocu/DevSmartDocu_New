@@ -176,6 +176,26 @@ export function useUpgradePlan() {
   })
 }
 
+export function useProCancel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/myinfo/pro-cancel', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myinfo-subscriptions'] })
+    },
+  })
+}
+
+export function useProCancelUndo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/myinfo/pro-cancel-undo', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myinfo-subscriptions'] })
+    },
+  })
+}
+
 // ─── Tenant Subscription (신규 테넌트 셀프 생성) ────────────────────────────────
 
 export function useTenantSubscriptionInit() {

@@ -1,20 +1,22 @@
 import { useState } from 'react'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
-  Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
+  App, Button, Card, Col, Descriptions, Form, Input, Modal, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
 import {
   useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions,
-  useMyInfoCreditPurchase,
+  useMyInfoCreditPurchase, useProCancel, useProCancelUndo,
 } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
+import { useMenuCodes } from '@/hooks/useMenus'
 import { useLangStore, t } from '@/stores/langStore'
 
 const { Title } = Typography
 
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
+  const { message } = App.useApp()
   const openInTab = useOpenInTab()
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
@@ -24,11 +26,18 @@ export default function MyInfoPage() {
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
   const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
   const { data: otherSubData } = useTenantManageOtherSubscriptions()
+  const { data: cancelReasonCodes = [] } = useMenuCodes('cancel_reasoncd')
   const hasMfaFeature = (otherSubData?.owned || []).some((o) => o.productcd === 'mfa')
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
   const [timezoneVal, setTimezoneVal] = useState(null)
   const [form] = Form.useForm()
+
+  const proCancelMutation = useProCancel()
+  const proCancelUndoMutation = useProCancelUndo()
+  const [cancelTarget, setCancelTarget] = useState(null)
+  const [cancelReasonCd, setCancelReasonCd] = useState(null)
+  const [cancelReasonDesc, setCancelReasonDesc] = useState('')
 
   const userInfo = data.user_info || {}
   const tenant = data.tenant || {}
@@ -70,6 +79,33 @@ export default function MyInfoPage() {
 
   const handleToggleMarketing = () => {
     updateMarketing.mutate({ marketingyn: isAgreed(userInfo.marketingyn) ? 'N' : 'Y' })
+  }
+
+  const handleProCancel = (servicecd) => {
+    setCancelTarget(servicecd)
+    setCancelReasonCd(null)
+    setCancelReasonDesc('')
+  }
+
+  const handleProCancelSubmit = () => {
+    if (!cancelReasonCd) { message.warning(t('msg.select.placeholder')); return }
+    proCancelMutation.mutate(
+      { servicecd: cancelTarget, cancel_reasoncd: cancelReasonCd, cancel_reasondesc: cancelReasonDesc || null },
+      {
+        onSuccess: () => { message.success(t('msg.save.success')); setCancelTarget(null) },
+        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+      },
+    )
+  }
+
+  const handleProCancelUndo = (servicecd) => {
+    proCancelUndoMutation.mutate(
+      { servicecd },
+      {
+        onSuccess: () => { message.success(t('msg.save.success')) },
+        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+      },
+    )
   }
 
   const roleLabel = (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-'
@@ -194,10 +230,19 @@ export default function MyInfoPage() {
                   title: t('lbl.upgrade'),
                   key: 'actions',
                   render: (_, row) => {
-                    if (isSystemTenant && row.plancd === 'Fr') return (
+                    if (!isSystemTenant) return null
+                    if (row.plancd === 'Fr') return (
                       <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`)}>{t('btn.upgrade.pro')}</Button>
                     )
-                    return null
+                    if (row.cancel_reserved) return (
+                      <Space size="small">
+                        <Tag color="orange">{t('lbl.pro.cancel.reserved')}{row.cancel_effective_date ? ` (${row.cancel_effective_date})` : ''}</Tag>
+                        <Button size="small" loading={proCancelUndoMutation.isPending} onClick={() => handleProCancelUndo(row.servicecd)}>{t('btn.pro.cancel.undo')}</Button>
+                      </Space>
+                    )
+                    return (
+                      <Button size="small" danger onClick={() => handleProCancel(row.servicecd)}>{t('btn.subscription.cancel')}</Button>
+                    )
                   },
                 },
               ]}
@@ -302,6 +347,38 @@ export default function MyInfoPage() {
         />
       </Card>
 
+      <Modal
+        title={t('btn.subscription.cancel')}
+        open={!!cancelTarget}
+        onOk={handleProCancelSubmit}
+        onCancel={() => setCancelTarget(null)}
+        confirmLoading={proCancelMutation.isPending}
+        okType="danger"
+      >
+        <div style={{ marginBottom: 12, color: '#888', fontSize: 12 }}>{t('inf.pro.cancel.notice')}</div>
+        <div className="form-group">
+          <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.cancel_reasoncd')}:</label>
+          <Select
+            value={cancelReasonCd}
+            onChange={setCancelReasonCd}
+            style={{ width: '100%' }}
+            placeholder={t('msg.select.placeholder')}
+            options={cancelReasonCodes.map((c) => ({
+              label: t(c.term_key) || c.default_name,
+              value: c.codevalue,
+            }))}
+          />
+        </div>
+        <div className="form-group">
+          <label>{t('lbl.cancel_reasondesc')}:</label>
+          <Input.TextArea
+            rows={3}
+            style={{ resize: 'vertical' }}
+            value={cancelReasonDesc}
+            onChange={(e) => setCancelReasonDesc(e.target.value)}
+          />
+        </div>
+      </Modal>
     </div>
   )
 }
