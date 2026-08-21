@@ -5,6 +5,7 @@ import {
   useTenantManageCreditSubscriptions,
   usePurchaseTenantManageCreditSubscription,
 } from '@/hooks/useSettings'
+import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
 export default function OrgCreditManagePage() {
   const { message, modal } = App.useApp()
@@ -20,9 +21,14 @@ export default function OrgCreditManagePage() {
     return found ? (t(found.term_key) || found.default_name) : cd
   }
 
+  const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('org/payment-manage')
   const purchaseMutation = usePurchaseTenantManageCreditSubscription()
 
   const handlePurchase = (productcd) => {
+    if (!hasPaymentMethod) {
+      promptCardRegistration()
+      return
+    }
     modal.confirm({
       content: t('msg.confirm.purchase'),
       onOk: () => {
@@ -30,7 +36,14 @@ export default function OrgCreditManagePage() {
           { productcd },
           {
             onSuccess: () => { message.success(t('msg.save.success')) },
-            onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+            onError: (err) => {
+              const detail = err.response?.data?.detail
+              if (detail === PAYMENT_METHOD_REQUIRED) {
+                promptCardRegistration()
+                return
+              }
+              message.error(detail || t('msg.save.error'))
+            },
           },
         )
       },
@@ -105,6 +118,11 @@ export default function OrgCreditManagePage() {
                 <div style={{ fontSize: 12, color: '#888' }}>
                   {serviceLabel(p.servicecd)} · {p.credit} credit
                 </div>
+                {p.price != null && (
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#163E64', marginTop: 4 }}>
+                    {Number(p.price).toLocaleString()} {p.currencycd}
+                  </div>
+                )}
               </div>
               <button
                 className="btn btn-primary"

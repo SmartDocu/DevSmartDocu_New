@@ -297,10 +297,11 @@ export function usePurchaseTenantManageCreditSubscription() {
   })
 }
 
-export function useMyInfoCreditPurchase() {
+export function useMyInfoCreditPurchase(enabled = true) {
   return useQuery({
     queryKey: ['myinfo-credit-purchase'],
     queryFn: () => apiClient.get('/settings/myinfo/credit-purchase').then((r) => r.data),
+    enabled,
   })
 }
 

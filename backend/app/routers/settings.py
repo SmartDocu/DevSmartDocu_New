@@ -2,7 +2,7 @@
 import json
 import os
 import uuid
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -1125,6 +1125,7 @@ def get_upgrade_products(
         .execute()
         .data or []
     )
+    _attach_prices(svc, rows)
     return {"products": rows}
 
 
@@ -1139,7 +1140,10 @@ def upgrade_plan(
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """Free → Pro 업그레이드: subscriptions / accountservices / creditbuckets 처리."""
+    """Free → Pro 업그레이드: subscriptions / accountservices / creditbuckets 처리.
+
+    등록된 결제수단으로 상품 가격만큼 실제(테스트 채널 기준) 청구 후에만 반영한다.
+    """
     from datetime import datetime, timezone, timedelta
     from dateutil.relativedelta import relativedelta
 
@@ -1159,7 +1163,7 @@ def upgrade_plan(
 
     # 선택한 product 조회
     prod_row = svc.table("products").select(
-        "productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
+        "productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
     ).eq("productcd", body.productcd).maybe_single().execute()
     if not prod_row.data:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
@@ -1179,58 +1183,81 @@ def upgrade_plan(
         raise HTTPException(status_code=404, detail="기존 구독 정보를 찾을 수 없습니다.")
     past_sub = past_rows[0]
 
-    now_utc = datetime.now(timezone.utc)
-    today = now_utc.date()
-
-    # ① subscriptions 신규 행 삽입 ([갱신_sub])
-    new_sub_resp = svc.table("subscriptions").insert({
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "productcd": product["productcd"],
-        "plancd": product["plancd"],
-        "servicecd": product["servicecd"],
-        "billingtermcd": product.get("billingtermcd"),
-        "old_productcd": past_sub["productcd"],
-        "subscription_status": "Paid",
-        "creator": user_id,
-    }).execute()
-    if not new_sub_resp.data:
-        raise HTTPException(status_code=500, detail="구독 저장에 실패했습니다.")
-    new_sub = new_sub_resp.data[0]
-    new_subscriptionuid = new_sub["subscriptionuid"]
-
-    # ② accountservices 기존 행 갱신
-    svc.table("accountservices").update({
-        "old_subscriptionuid": past_sub["subscriptionuid"],
-        "old_productcd": past_sub["productcd"],
-        "old_plancd": past_sub["plancd"],
-        "subscriptionuid": new_subscriptionuid,
-        "productcd": product["productcd"],
-        "plancd": product["plancd"],
-        "is_customerAIKey": product.get("is_customeraikey", False),
-        "billingfirstdt": today.isoformat(),
-        "billingday": today.day,
-        "included_users": 1,
-        "add_users": 0,
-        "total_users": 1,
-        "is_autotopup": False,
-        "creator": user_id,
-    }).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
-
-    # ③ creditbuckets — 기존 Ba 버킷이 있으면 잔여 크레딧 병합 후 creditbucket_historys로 이관, 신규 Ba 버킷 발급
-    # (Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단)
-    expiredts = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
-    upsert_ba_creditbucket(
-        svc,
-        subscriptionuid=new_subscriptionuid,
-        tenantid=int(tenantid),
-        accountuid=accountuid,
-        servicecd=product["servicecd"],
-        chargecredit=product.get("credit", 0),
-        granteddts=now_utc.isoformat(),
-        expiredts=expiredts,
-        startdt=today.isoformat(),
+    previous_accountservices = (
+        svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute().data
     )
+
+    charge_result = _require_payment_and_charge(
+        svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
+        product.get("productnm") or product["productcd"],
+    )
+
+    # 결제는 이미 성공했으므로, 이 아래(구독 반영) 단계에서 무엇이 실패하든
+    # (1) 이미 반영한 변경을 되돌리고 (2) 결제를 자동 환불한다.
+    subscription_inserted = False
+    accountservices_updated = False
+    new_subscriptionuid = None
+    try:
+        now_utc = datetime.now(timezone.utc)
+        today = now_utc.date()
+
+        # ① subscriptions 신규 행 삽입 ([갱신_sub])
+        new_sub_resp = svc.table("subscriptions").insert({
+            "tenantid": int(tenantid),
+            "accountuid": accountuid,
+            "productcd": product["productcd"],
+            "plancd": product["plancd"],
+            "servicecd": product["servicecd"],
+            "billingtermcd": product.get("billingtermcd"),
+            "old_productcd": past_sub["productcd"],
+            "subscription_status": "Paid",
+            "creator": user_id,
+        }).execute()
+        if not new_sub_resp.data:
+            raise RuntimeError("구독 저장에 실패했습니다.")
+        new_sub = new_sub_resp.data[0]
+        new_subscriptionuid = new_sub["subscriptionuid"]
+        subscription_inserted = True
+
+        # ② accountservices 기존 행 갱신
+        svc.table("accountservices").update({
+            "old_subscriptionuid": past_sub["subscriptionuid"],
+            "old_productcd": past_sub["productcd"],
+            "old_plancd": past_sub["plancd"],
+            "subscriptionuid": new_subscriptionuid,
+            "productcd": product["productcd"],
+            "plancd": product["plancd"],
+            "is_customerAIKey": product.get("is_customeraikey", False),
+            "billingfirstdt": today.isoformat(),
+            "billingday": today.day,
+            "included_users": 1,
+            "add_users": 0,
+            "total_users": 1,
+            "is_autotopup": False,
+            "creator": user_id,
+        }).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
+        accountservices_updated = True
+
+        # ③ creditbuckets — 기존 Ba 버킷이 있으면 잔여 크레딧 병합 후 creditbucket_historys로 이관, 신규 Ba 버킷 발급
+        # (Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단)
+        expiredts = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
+        upsert_ba_creditbucket(
+            svc,
+            subscriptionuid=new_subscriptionuid,
+            tenantid=int(tenantid),
+            accountuid=accountuid,
+            servicecd=product["servicecd"],
+            chargecredit=product.get("credit", 0),
+            granteddts=now_utc.isoformat(),
+            expiredts=expiredts,
+            startdt=today.isoformat(),
+        )
+    except Exception as e:
+        if accountservices_updated and previous_accountservices:
+            svc.table("accountservices").update(previous_accountservices).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
+        if subscription_inserted:
+            svc.table("subscriptions").delete().eq("subscriptionuid", new_subscriptionuid).execute()
+        _compensate_and_raise(svc, user_id, charge_result, e, context="업그레이드")
 
     return {"result": "success", "message": "업그레이드가 완료되었습니다."}
 
@@ -1370,6 +1397,91 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
     return {"subscriptions": result, "accountuid": accountuid}
 
 
+def _attach_prices(svc, rows: list, currencycd: str = "KRW") -> None:
+    """products 행에 config_price 기준 현재 유효한 price/currencycd를 채운다 (in-place)."""
+    productcds = [r["productcd"] for r in rows if r.get("productcd")]
+    if not productcds:
+        return
+    today = date.today().isoformat()
+    price_rows = (
+        svc.table("config_price")
+        .select("productcd,billingtermcd,price,currencycd,effectivefromdt,effectivetodt")
+        .in_("productcd", productcds)
+        .eq("currencycd", currencycd)
+        .lte("effectivefromdt", today)
+        .execute()
+        .data or []
+    )
+    price_map = {}
+    for p in price_rows:
+        if p.get("effectivetodt") and p["effectivetodt"] < today:
+            continue
+        key = (p["productcd"], p["billingtermcd"])
+        existing = price_map.get(key)
+        if not existing or p["effectivefromdt"] > existing["effectivefromdt"]:
+            price_map[key] = p
+
+    for r in rows:
+        price_row = price_map.get((r.get("productcd"), r.get("billingtermcd")))
+        r["price"] = price_row["price"] if price_row else None
+        r["currencycd"] = price_row["currencycd"] if price_row else None
+
+
+def _get_current_price(svc, productcd: str, billingtermcd: Optional[str], currencycd: str = "KRW"):
+    """productcd의 오늘 기준 유효 가격(price)을 반환. 없으면 None."""
+    rows = (
+        svc.table("config_price").select("price")
+        .eq("productcd", productcd).eq("currencycd", currencycd).eq("billingtermcd", billingtermcd)
+        .lte("effectivefromdt", date.today().isoformat())
+        .order("effectivefromdt", desc=True).limit(1)
+        .execute().data or []
+    )
+    return rows[0]["price"] if rows else None
+
+
+def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str) -> dict:
+    """
+    실제 상품 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 공통 결제 게이트.
+    가격 조회 → 계정 기본 결제수단 확인 → 그 결제수단으로 실제 청구까지 수행한다.
+    가격 미등록/결제수단 없음/청구 실패 시 적절한 HTTPException을 던진다.
+    성공 시 execute_charge()의 반환값(paymentuid 포함)을 그대로 돌려준다.
+    """
+    from backend.app.routers.payments import execute_charge
+
+    price = _get_current_price(svc, productcd, billingtermcd)
+    if price is None:
+        raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+
+    method_row = (
+        svc.table("payment_methods").select("*")
+        .eq("accountuid", accountuid).eq("is_default", True).eq("payment_method_status", "Active")
+        .maybe_single().execute()
+    )
+    if not method_row or not method_row.data:
+        raise HTTPException(status_code=400, detail="msg.payment.method.required")
+
+    charge_result = execute_charge(svc, user_id, int(tenantid), method_row.data, price, order_name)
+    if not charge_result["success"]:
+        raise HTTPException(status_code=400, detail=charge_result["message"])
+    return charge_result
+
+
+def _compensate_and_raise(svc, user_id: str, charge_result: dict, error: Exception, context: str) -> None:
+    """상품 지급/처리 단계가 실패했을 때 방금 성공한 결제를 자동 환불하고 적절한 HTTPException을 던진다."""
+    from backend.app.routers.payments import refund_charge
+
+    refund_result = refund_charge(svc, user_id, charge_result["paymentuid"], f"{context} 실패로 자동 환불: {error}"[:500])
+    if refund_result["success"]:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{context} 중 오류가 발생하여 결제를 자동 환불했습니다. 잠시 후 다시 시도해주세요.",
+        )
+    raise HTTPException(
+        status_code=500,
+        detail=f"{context} 중 오류가 발생했고 자동 환불도 실패했습니다. 고객센터에 문의해주세요. (결제ID: {charge_result['paymentuid']})",
+    )
+
+
 @router.get("/tenant-manage/team-products")
 def get_tenant_manage_team_products(servicecd: str, token: str = Depends(get_token)):
     """구독 관리 화면 우측: 선택한 서비스의 Team/Enterprise 상품 목록."""
@@ -1386,6 +1498,7 @@ def get_tenant_manage_team_products(servicecd: str, token: str = Depends(get_tok
         .execute()
         .data or []
     )
+    _attach_prices(svc, rows)
     return {"products": rows}
 
 
@@ -1402,8 +1515,7 @@ def change_tenant_subscription(
 ):
     """구독 관리 화면: 선택한 상품으로 구독 변경.
 
-    결제 연동 전까지는 저장 즉시 accountservices에 반영한다.
-    추후 결제 게이트가 추가되면 결제 성공 콜백에서 이 로직을 호출하도록 변경해야 한다.
+    등록된 결제수단으로 상품 가격만큼 실제(테스트 채널 기준) 청구 후에만 반영한다.
     """
     from datetime import datetime, timezone as tz, timedelta as td
     from dateutil.relativedelta import relativedelta
@@ -1419,7 +1531,7 @@ def change_tenant_subscription(
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
     prod_row = svc.table("products").select(
-        "productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
+        "productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
     ).eq("productcd", body.productcd).maybe_single().execute()
     if not prod_row.data:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
@@ -1438,74 +1550,94 @@ def change_tenant_subscription(
                 detail=f"현재 활성 사용자가 {active_user_count}명으로 변경하려는 플랜의 인원 제한({product['users']}명)을 초과합니다. 먼저 사용자를 비활성화해주세요.",
             )
 
-    cur_row = svc.table("accountservices").select(
-        "subscriptionuid,productcd,plancd"
-    ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
+    cur_row = svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
     current = cur_row.data if cur_row else {}  # 없으면 해당 서비스 신규 구독
 
-    now_utc = datetime.now(tz.utc)
-    today = now_utc.date()
-
-    new_sub_resp = svc.table("subscriptions").insert({
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "productcd": product["productcd"],
-        "plancd": product["plancd"],
-        "servicecd": product["servicecd"],
-        "billingtermcd": product.get("billingtermcd"),
-        "old_productcd": current.get("productcd"),
-        "subscription_status": "Paid",
-        "creator": user_id,
-    }).execute()
-    if not new_sub_resp.data:
-        raise HTTPException(status_code=500, detail="구독 저장에 실패했습니다.")
-    new_subscriptionuid = new_sub_resp.data[0]["subscriptionuid"]
-
-    users = product.get("users") or 1
-    accountservices_payload = {
-        "old_subscriptionuid": current.get("subscriptionuid"),
-        "old_productcd": current.get("productcd"),
-        "old_plancd": current.get("plancd"),
-        "subscriptionuid": new_subscriptionuid,
-        "productcd": product["productcd"],
-        "plancd": product["plancd"],
-        "is_customerAIKey": product.get("is_customeraikey", False),
-        "billingfirstdt": today.isoformat(),
-        "billingday": today.day,
-        "included_users": users,
-        "add_users": 0,
-        "total_users": users,
-        "is_autotopup": False,
-        "creator": user_id,
-    }
-    if current:
-        svc.table("accountservices").update(accountservices_payload).eq(
-            "accountuid", accountuid
-        ).eq("servicecd", body.servicecd).execute()
-    else:
-        # 해당 서비스 최초 구독 — accountservices 신규 행 생성
-        svc.table("accountservices").insert({
-            **accountservices_payload,
-            "accountuid": accountuid,
-            "servicecd": body.servicecd,
-            "tenantid": int(tenantid),
-            "servicestatus": "Active",
-            "is_postpaid": False,
-        }).execute()
-
-    # Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단
-    expiredts = (today + relativedelta(months=1) - td(days=1)).isoformat()
-    upsert_ba_creditbucket(
-        svc,
-        subscriptionuid=new_subscriptionuid,
-        tenantid=int(tenantid),
-        accountuid=accountuid,
-        servicecd=product["servicecd"],
-        chargecredit=product.get("credit", 0),
-        granteddts=now_utc.isoformat(),
-        expiredts=expiredts,
-        startdt=today.isoformat(),
+    charge_result = _require_payment_and_charge(
+        svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
+        product.get("productnm") or product["productcd"],
     )
+
+    # 결제는 이미 성공했으므로, 이 아래(구독 반영) 단계에서 무엇이 실패하든
+    # (1) 이미 반영한 변경을 되돌리고 (2) 결제를 자동 환불한다.
+    subscription_inserted = False
+    accountservices_written = False
+    new_subscriptionuid = None
+    try:
+        now_utc = datetime.now(tz.utc)
+        today = now_utc.date()
+
+        new_sub_resp = svc.table("subscriptions").insert({
+            "tenantid": int(tenantid),
+            "accountuid": accountuid,
+            "productcd": product["productcd"],
+            "plancd": product["plancd"],
+            "servicecd": product["servicecd"],
+            "billingtermcd": product.get("billingtermcd"),
+            "old_productcd": current.get("productcd"),
+            "subscription_status": "Paid",
+            "creator": user_id,
+        }).execute()
+        if not new_sub_resp.data:
+            raise RuntimeError("구독 저장에 실패했습니다.")
+        new_subscriptionuid = new_sub_resp.data[0]["subscriptionuid"]
+        subscription_inserted = True
+
+        users = product.get("users") or 1
+        accountservices_payload = {
+            "old_subscriptionuid": current.get("subscriptionuid"),
+            "old_productcd": current.get("productcd"),
+            "old_plancd": current.get("plancd"),
+            "subscriptionuid": new_subscriptionuid,
+            "productcd": product["productcd"],
+            "plancd": product["plancd"],
+            "is_customerAIKey": product.get("is_customeraikey", False),
+            "billingfirstdt": today.isoformat(),
+            "billingday": today.day,
+            "included_users": users,
+            "add_users": 0,
+            "total_users": users,
+            "is_autotopup": False,
+            "creator": user_id,
+        }
+        if current:
+            svc.table("accountservices").update(accountservices_payload).eq(
+                "accountuid", accountuid
+            ).eq("servicecd", body.servicecd).execute()
+        else:
+            # 해당 서비스 최초 구독 — accountservices 신규 행 생성
+            svc.table("accountservices").insert({
+                **accountservices_payload,
+                "accountuid": accountuid,
+                "servicecd": body.servicecd,
+                "tenantid": int(tenantid),
+                "servicestatus": "Active",
+                "is_postpaid": False,
+            }).execute()
+        accountservices_written = True
+
+        # Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단
+        expiredts = (today + relativedelta(months=1) - td(days=1)).isoformat()
+        upsert_ba_creditbucket(
+            svc,
+            subscriptionuid=new_subscriptionuid,
+            tenantid=int(tenantid),
+            accountuid=accountuid,
+            servicecd=product["servicecd"],
+            chargecredit=product.get("credit", 0),
+            granteddts=now_utc.isoformat(),
+            expiredts=expiredts,
+            startdt=today.isoformat(),
+        )
+    except Exception as e:
+        if accountservices_written:
+            if current:
+                svc.table("accountservices").update(current).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
+            else:
+                svc.table("accountservices").delete().eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
+        if subscription_inserted:
+            svc.table("subscriptions").delete().eq("subscriptionuid", new_subscriptionuid).execute()
+        _compensate_and_raise(svc, user_id, charge_result, e, context="구독 변경")
 
     return {"result": "success", "message": "구독이 변경되었습니다."}
 
@@ -1676,6 +1808,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
         if not (p["producttype"] == "Feature" and p["productcd"] in owned_productcds)
         and (p["producttype"] == "Feature" or p["servicecd"] in subscribed_servicecds)
     ]
+    _attach_prices(svc, products)
 
     owned = []
     if accountuid:
@@ -1714,7 +1847,7 @@ def purchase_tenant_manage_other_subscription(
 ):
     """기타 구독 관리 화면: User/Feature 상품 구매.
 
-    결제 연동 전까지는 저장 즉시 accountservices/account_features에 반영한다.
+    등록된 결제수단으로 상품 가격만큼 실제(테스트 채널 기준) 청구 후에만 반영한다.
     Credit(producttype='Credit') 구매는 이번 범위에서 제외한다.
     """
     from datetime import datetime, timezone as tz
@@ -1730,7 +1863,7 @@ def purchase_tenant_manage_other_subscription(
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
     prod_row = svc.table("products").select(
-        "productcd,productnm,servicecd,producttype,users,useyn"
+        "productcd,productnm,servicecd,producttype,users,useyn,billingtermcd"
     ).eq("productcd", body.productcd).maybe_single().execute()
     product = prod_row.data if prod_row else None
     if not product or product.get("producttype") not in ("User", "Feature"):
@@ -1746,54 +1879,94 @@ def purchase_tenant_manage_other_subscription(
     accsvc = None
     if product["producttype"] == "User":
         svcrow = svc.table("accountservices").select(
-            "included_users,add_users"
+            "included_users,add_users,total_users"
         ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
         accsvc = svcrow.data if svcrow else None
         if not accsvc:
             raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
 
-    svc.table("subscription_features").insert({
-        "subscriptionuid": str(uuid.uuid4()),
-        "productcd": product["productcd"],
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "quantity": 1,
-        "subscriptionstatus": "Paid",
-        "creator": user_id,
-    }).execute()
+    charge_result = _require_payment_and_charge(
+        svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
+        product.get("productnm") or product["productcd"],
+    )
 
-    existing_af = svc.table("account_features").select("accountuid").eq(
-        "accountuid", accountuid
-    ).eq("productcd", product["productcd"]).maybe_single().execute()
-    if existing_af and existing_af.data:
-        svc.table("account_features").update({
-            "updater": user_id,
-            "updatedts": datetime.now(tz.utc).isoformat(),
-        }).eq("accountuid", accountuid).eq("productcd", product["productcd"]).execute()
-    else:
-        svc.table("account_features").insert({
-            "accountuid": accountuid,
+    # 결제는 이미 성공했으므로, 이 아래(상품 지급) 단계에서 무엇이 실패하든
+    # (1) 이미 반영한 변경을 되돌리고 (2) 결제를 자동 환불한다.
+    subscription_feature_id = str(uuid.uuid4())
+    subscription_feature_inserted = False
+    account_features_written = False
+    previous_account_features = None
+    accountservices_updated = False
+    config_tenants_touched: list[tuple[str, bool]] = []  # (configcd, previous_value)
+    try:
+        svc.table("subscription_features").insert({
+            "subscriptionuid": subscription_feature_id,
             "productcd": product["productcd"],
             "tenantid": int(tenantid),
+            "accountuid": accountuid,
+            "quantity": 1,
+            "subscriptionstatus": "Paid",
             "creator": user_id,
         }).execute()
+        subscription_feature_inserted = True
 
-    if product["producttype"] == "User":
-        new_add_users = (accsvc.get("add_users") or 0) + (product.get("users") or 0)
-        new_total_users = (accsvc.get("included_users") or 0) + new_add_users
-        svc.table("accountservices").update({
-            "add_users": new_add_users,
-            "total_users": new_total_users,
-            "updater": user_id,
-        }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+        existing_af = svc.table("account_features").select("*").eq(
+            "accountuid", accountuid
+        ).eq("productcd", product["productcd"]).maybe_single().execute()
+        if existing_af and existing_af.data:
+            previous_account_features = existing_af.data
+            svc.table("account_features").update({
+                "updater": user_id,
+                "updatedts": datetime.now(tz.utc).isoformat(),
+            }).eq("accountuid", accountuid).eq("productcd", product["productcd"]).execute()
+        else:
+            svc.table("account_features").insert({
+                "accountuid": accountuid,
+                "productcd": product["productcd"],
+                "tenantid": int(tenantid),
+                "creator": user_id,
+            }).execute()
+        account_features_written = True
 
-    if product["productcd"] == "mfa":
-        svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute()
+        if product["producttype"] == "User":
+            new_add_users = (accsvc.get("add_users") or 0) + (product.get("users") or 0)
+            new_total_users = (accsvc.get("included_users") or 0) + new_add_users
+            svc.table("accountservices").update({
+                "add_users": new_add_users,
+                "total_users": new_total_users,
+                "updater": user_id,
+            }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+            accountservices_updated = True
 
-    if product["productcd"] == "whitelist":
-        svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).in_(
-            "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
-        ).execute()
+        if product["productcd"] == "mfa":
+            prev = svc.table("config_tenants").select("configcd,value").eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute().data or []
+            svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute()
+            config_tenants_touched.extend((r["configcd"], r["value"]) for r in prev)
+
+        if product["productcd"] == "whitelist":
+            prev = svc.table("config_tenants").select("configcd,value").eq("tenantid", int(tenantid)).in_(
+                "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
+            ).execute().data or []
+            svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).in_(
+                "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
+            ).execute()
+            config_tenants_touched.extend((r["configcd"], r["value"]) for r in prev)
+    except Exception as e:
+        for configcd, prev_value in config_tenants_touched:
+            svc.table("config_tenants").update({"value": prev_value}).eq("tenantid", int(tenantid)).eq("configcd", configcd).execute()
+        if accountservices_updated:
+            svc.table("accountservices").update({
+                "add_users": accsvc.get("add_users") or 0,
+                "total_users": accsvc.get("total_users") or 0,
+            }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+        if account_features_written:
+            if previous_account_features:
+                svc.table("account_features").update(previous_account_features).eq("accountuid", accountuid).eq("productcd", product["productcd"]).execute()
+            else:
+                svc.table("account_features").delete().eq("accountuid", accountuid).eq("productcd", product["productcd"]).execute()
+        if subscription_feature_inserted:
+            svc.table("subscription_features").delete().eq("subscriptionuid", subscription_feature_id).execute()
+        _compensate_and_raise(svc, user_id, charge_result, e, context="상품 지급")
 
     return {"result": "success"}
 
@@ -1894,7 +2067,7 @@ def _get_credit_subscriptions_data(svc, user_id: str, tenantid: str, accountuid:
 
     all_products = (
         svc.table("products").select(
-            "productcd,productnm,servicecd,producttype,credit,expiremonths,orderno"
+            "productcd,productnm,servicecd,producttype,credit,expiremonths,billingtermcd,orderno"
         )
         .eq("producttype", "Credit")
         .eq("useyn", True)
@@ -1905,6 +2078,7 @@ def _get_credit_subscriptions_data(svc, user_id: str, tenantid: str, accountuid:
     prod_map = {p["productcd"]: p for p in all_products}
     # 구독 중인 서비스의 크레딧 상품만 노출
     products = [p for p in all_products if p["servicecd"] in subscribed_servicecds]
+    _attach_prices(svc, products)
 
     owned = []
     if accountuid:
@@ -1942,7 +2116,7 @@ def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: 
     from dateutil.relativedelta import relativedelta
 
     prod_row = svc.table("products").select(
-        "productcd,productnm,servicecd,producttype,credit"
+        "productcd,productnm,servicecd,producttype,credit,billingtermcd"
     ).eq("productcd", productcd).maybe_single().execute()
     product = prod_row.data if prod_row else None
     if not product or product.get("producttype") != "Credit":
@@ -1959,63 +2133,83 @@ def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: 
         if svcrow.data.get("is_customerAIKey"):
             raise HTTPException(status_code=400, detail="msg.credit.purchase.byok.blocked")
 
-    now_utc = datetime.now(tz.utc)
-    # creditchargecd가 Ba가 아닌 크레딧은 구매 시점 + 1년 - 1일을 만료일로 고정
-    expiresdts = (now_utc + relativedelta(years=1) - timedelta(days=1)).isoformat()
-    credit = product.get("credit") or 0
+    # 등록된 결제수단으로 상품 가격만큼 실제(테스트 채널 기준) 청구 후에만 크레딧을 지급한다.
+    charge_result = _require_payment_and_charge(
+        svc, user_id, tenantid, accountuid, productcd, product.get("billingtermcd"), product.get("productnm") or productcd,
+    )
+
+    # 결제는 이미 성공했으므로, 이 아래(크레딧 지급) 단계에서 무엇이 실패하든
+    # (1) 이미 만들어진 크레딧 레코드가 있으면 되돌리고 (2) 결제를 자동 환불한다.
+    # ("결제는 됐는데 크레딧은 안 들어간" 상태 방지 — 진짜 DB 트랜잭션이 아니라 앱단 보정이라
+    #  offset_negative_ba_bucket 내부에서 일부만 반영된 채 실패하는 경우까지는 못 되돌린다.)
     new_subscriptionuid = str(uuid.uuid4())
-    creditchargecd = "Ma"
+    credit_inserted = False
+    bucket_inserted = False
+    try:
+        now_utc = datetime.now(tz.utc)
+        # creditchargecd가 Ba가 아닌 크레딧은 구매 시점 + 1년 - 1일을 만료일로 고정
+        expiresdts = (now_utc + relativedelta(years=1) - timedelta(days=1)).isoformat()
+        credit = product.get("credit") or 0
+        creditchargecd = "Ma"
 
-    # creditbuckets.startdt는 같은 tenantid/accountuid/servicecd의 아직 유효한(만료 전) Ba 버킷 startdt를 그대로 이관
-    ba_rows = (
-        svc.table("creditbuckets").select("startdt")
-        .eq("tenantid", int(tenantid)).eq("accountuid", accountuid)
-        .eq("servicecd", product.get("servicecd")).eq("creditchargecd", "Ba")
-        .gt("expiredts", now_utc.isoformat())
-        .order("startdt", desc=True).limit(1)
-        .execute().data or []
-    )
-    if not ba_rows:
-        raise HTTPException(status_code=400, detail="기준이 되는 플랜 기본(Ba) 크레딧 정보를 찾을 수 없습니다.")
-    startdt = ba_rows[0]["startdt"]
+        # creditbuckets.startdt는 같은 tenantid/accountuid/servicecd의 아직 유효한(만료 전) Ba 버킷 startdt를 그대로 이관
+        ba_rows = (
+            svc.table("creditbuckets").select("startdt")
+            .eq("tenantid", int(tenantid)).eq("accountuid", accountuid)
+            .eq("servicecd", product.get("servicecd")).eq("creditchargecd", "Ba")
+            .gt("expiredts", now_utc.isoformat())
+            .order("startdt", desc=True).limit(1)
+            .execute().data or []
+        )
+        if not ba_rows:
+            raise RuntimeError("기준이 되는 플랜 기본(Ba) 크레딧 정보를 찾을 수 없습니다.")
+        startdt = ba_rows[0]["startdt"]
 
-    svc.table("subscription_credits").insert({
-        "subscriptionuid": new_subscriptionuid,
-        "creditchargecd": creditchargecd,
-        "creditdesc": product.get("productnm"),
-        "productcd": product["productcd"],
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "servicecd": product.get("servicecd"),
-        "quantity": credit,
-        "expiresdts": expiresdts,
-        "creator": user_id,
-    }).execute()
+        svc.table("subscription_credits").insert({
+            "subscriptionuid": new_subscriptionuid,
+            "creditchargecd": creditchargecd,
+            "creditdesc": product.get("productnm"),
+            "productcd": product["productcd"],
+            "tenantid": int(tenantid),
+            "accountuid": accountuid,
+            "servicecd": product.get("servicecd"),
+            "quantity": credit,
+            "expiresdts": expiresdts,
+            "creator": user_id,
+        }).execute()
+        credit_inserted = True
 
-    svc.table("creditbuckets").insert({
-        "subscriptionuid": new_subscriptionuid,
-        "tenantid": int(tenantid),
-        "accountuid": accountuid,
-        "servicecd": product.get("servicecd"),
-        "chargecredit": credit,
-        "creditchargecd": creditchargecd,
-        "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
-        "usecredit": 0,
-        "remaincredit": credit,
-        "granteddts": now_utc.isoformat(),
-        "expiredts": expiresdts,
-        "startdt": startdt,
-    }).execute()
+        svc.table("creditbuckets").insert({
+            "subscriptionuid": new_subscriptionuid,
+            "tenantid": int(tenantid),
+            "accountuid": accountuid,
+            "servicecd": product.get("servicecd"),
+            "chargecredit": credit,
+            "creditchargecd": creditchargecd,
+            "priorityno": CREDITCHARGECD_PRIORITY[creditchargecd],
+            "usecredit": 0,
+            "remaincredit": credit,
+            "granteddts": now_utc.isoformat(),
+            "expiredts": expiresdts,
+            "startdt": startdt,
+        }).execute()
+        bucket_inserted = True
 
-    # 기존 Ba(기본) 버킷이 마이너스 상태면, 이번에 새로 산 버킷에서 그 마이너스분만큼 차감해 상쇄한다
-    # (Ba는 0으로 정리 — utilsPrj/credit_helper.offset_negative_ba_bucket 참고)
-    offset_negative_ba_bucket(
-        svc,
-        tenantid=int(tenantid),
-        accountuid=accountuid,
-        servicecd=product.get("servicecd"),
-        new_bucket_subscriptionuid=new_subscriptionuid,
-    )
+        # 기존 Ba(기본) 버킷이 마이너스 상태면, 이번에 새로 산 버킷에서 그 마이너스분만큼 차감해 상쇄한다
+        # (Ba는 0으로 정리 — utilsPrj/credit_helper.offset_negative_ba_bucket 참고)
+        offset_negative_ba_bucket(
+            svc,
+            tenantid=int(tenantid),
+            accountuid=accountuid,
+            servicecd=product.get("servicecd"),
+            new_bucket_subscriptionuid=new_subscriptionuid,
+        )
+    except Exception as e:
+        if bucket_inserted:
+            svc.table("creditbuckets").delete().eq("subscriptionuid", new_subscriptionuid).execute()
+        if credit_inserted:
+            svc.table("subscription_credits").delete().eq("subscriptionuid", new_subscriptionuid).execute()
+        _compensate_and_raise(svc, user_id, charge_result, e, context="크레딧 지급")
 
 
 class CreditSubscriptionPurchaseRequest(BaseModel):

@@ -1,18 +1,24 @@
 import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMyInfoCreditPurchase, usePurchaseMyInfoCredit } from '@/hooks/useSettings'
+import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
 export default function CreditPurchasePage() {
   useLangStore((s) => s.translations)
   const { message, modal } = App.useApp()
 
   const { data = {}, isLoading } = useMyInfoCreditPurchase()
+  const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('payment-manage')
   const purchaseMutation = usePurchaseMyInfoCredit()
 
   const products = data.products || []
   const owned = data.owned || []
 
   const handlePurchase = (productcd) => {
+    if (!hasPaymentMethod) {
+      promptCardRegistration()
+      return
+    }
     modal.confirm({
       content: t('msg.confirm.purchase'),
       onOk: () => {
@@ -20,7 +26,14 @@ export default function CreditPurchasePage() {
           { productcd },
           {
             onSuccess: () => { message.success(t('msg.save.success')) },
-            onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+            onError: (err) => {
+              const detail = err.response?.data?.detail
+              if (detail === PAYMENT_METHOD_REQUIRED) {
+                promptCardRegistration()
+                return
+              }
+              message.error(detail || t('msg.save.error'))
+            },
           },
         )
       },
@@ -91,6 +104,11 @@ export default function CreditPurchasePage() {
               <div>
                 <div style={{ fontWeight: 600 }}>{p.productnm}</div>
                 <div style={{ fontSize: 12, color: '#888' }}>{p.credit} credit</div>
+                {p.price != null && (
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#163E64', marginTop: 4 }}>
+                    {Number(p.price).toLocaleString()} {p.currencycd}
+                  </div>
+                )}
               </div>
               <button
                 className="btn btn-primary"

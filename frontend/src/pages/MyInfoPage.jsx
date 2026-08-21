@@ -24,7 +24,6 @@ export default function MyInfoPage() {
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
   const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
   const { data: otherSubData } = useTenantManageOtherSubscriptions()
-  const { data: creditPurchaseData, isLoading: creditPurchaseLoading } = useMyInfoCreditPurchase()
   const hasMfaFeature = (otherSubData?.owned || []).some((o) => o.productcd === 'mfa')
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
@@ -41,6 +40,11 @@ export default function MyInfoPage() {
   const isMfaEnabled = factorsData?.mfa_enabled ?? false
   const subscriptions = subsData?.subscriptions || []
   const isSystemTenant = tenant.issystemtenant === true
+
+  // 크레딧 구매는 개인(시스템) 테넌트 전용 화면이라, 기업 테넌트에서는 애초에 요청하지 않는다
+  // (백엔드가 403을 정상적으로 돌려주더라도, 전역 인터셉터가 GET 403마다 토스트를 띄우기 때문에
+  //  기업 테넌트 사용자에게는 매번 에러 알림이 뜨는 문제가 있었다 — 2026-08-19).
+  const { data: creditPurchaseData, isLoading: creditPurchaseLoading } = useMyInfoCreditPurchase(isSystemTenant)
   const ownedCredits = creditPurchaseData?.owned || []
 
   const isAgreed = (v) => v === 'Y' || v === true
@@ -170,7 +174,11 @@ export default function MyInfoPage() {
             size="small"
             title={t('ttl.myinfo.plan')}
             extra={isSystemTenant ? (
-              <Button size="small" onClick={() => openInTab('tenant-subscription', '', t('ttl.tenant.subscription'))}>{t('ttl.tenant.subscription')}</Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Button size="small" onClick={() => openInTab('payment-manage', '', t('ttl.tenant.manage.payment'))}>{t('btn.payment.manage')}</Button>
+                <span style={{ color: '#d9d9d9' }}>|</span>
+                <Button size="small" onClick={() => openInTab('tenant-subscription', '', t('ttl.tenant.subscription'))}>{t('ttl.tenant.subscription')}</Button>
+              </div>
             ) : null}
             loading={subsLoading}
             style={{ height: '100%' }}

@@ -7,6 +7,7 @@ import {
   usePurchaseTenantManageOtherSubscription,
   useCancelTenantManageOtherSubscription,
 } from '@/hooks/useSettings'
+import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
 export default function OrgOtherSubscriptionManagePage() {
   const { message, modal } = App.useApp()
@@ -20,6 +21,7 @@ export default function OrgOtherSubscriptionManagePage() {
   const { data: producttypeCodes = [] } = useMenuCodes('producttype')
   const { data: cancelReasonCodes = [] } = useMenuCodes('cancel_reasoncd')
 
+  const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('org/payment-manage')
   const purchaseMutation = usePurchaseTenantManageOtherSubscription()
   const cancelMutation = useCancelTenantManageOtherSubscription()
 
@@ -34,6 +36,10 @@ export default function OrgOtherSubscriptionManagePage() {
   const serviceLabel = (cd) => (!cd || cd === 'Tenant' ? t('lbl.common.tenant') : codeLabel(serviceCodes, cd))
 
   const handlePurchase = (productcd) => {
+    if (!hasPaymentMethod) {
+      promptCardRegistration()
+      return
+    }
     modal.confirm({
       content: t('msg.confirm.purchase'),
       onOk: () => {
@@ -41,7 +47,14 @@ export default function OrgOtherSubscriptionManagePage() {
           { productcd },
           {
             onSuccess: () => { message.success(t('msg.save.success')) },
-            onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+            onError: (err) => {
+              const detail = err.response?.data?.detail
+              if (detail === PAYMENT_METHOD_REQUIRED) {
+                promptCardRegistration()
+                return
+              }
+              message.error(detail || t('msg.save.error'))
+            },
           },
         )
       },
@@ -148,6 +161,11 @@ export default function OrgOtherSubscriptionManagePage() {
                   {serviceLabel(p.servicecd)} · {codeLabel(producttypeCodes, p.producttype)}
                   {p.users ? ` · ${p.users} users` : ''}
                 </div>
+                {p.price != null && (
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#163E64', marginTop: 4 }}>
+                    {Number(p.price).toLocaleString()} {p.currencycd}
+                  </div>
+                )}
               </div>
               <button
                 className="btn btn-primary"

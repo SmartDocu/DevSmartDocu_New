@@ -40,6 +40,7 @@ const SettingsDatasetsPage = lazy(() => import('@/pages/settings/SettingsDataset
 const SettingsLlmKeysPage = lazy(() => import('@/pages/settings/SettingsLlmKeysPage'))
 const UpgradePlanPage = lazy(() => import('@/pages/upgrade/UpgradePlanPage'))
 const CreditPurchasePage = lazy(() => import('@/pages/upgrade/CreditPurchasePage'))
+const PaymentManagePage = lazy(() => import('@/pages/upgrade/PaymentManagePage'))
 const TenantSubscriptionPage = lazy(() => import('@/pages/tenant/TenantSubscriptionPage'))
 const MyInfoPage = lazy(() => import('@/pages/MyInfoPage'))
 const MyUsagePage = lazy(() => import('@/pages/MyUsagePage'))
@@ -55,8 +56,10 @@ const OrgTenantBasicInfoPage = lazy(() => import('@/pages/org/OrgTenantBasicInfo
 const OrgSubscriptionManagePage = lazy(() => import('@/pages/org/OrgSubscriptionManagePage'))
 const OrgOtherSubscriptionManagePage = lazy(() => import('@/pages/org/OrgOtherSubscriptionManagePage'))
 const OrgCreditManagePage = lazy(() => import('@/pages/org/OrgCreditManagePage'))
+const OrgPaymentManagePage = lazy(() => import('@/pages/org/OrgPaymentManagePage'))
 const OrgWhitelistManagePage = lazy(() => import('@/pages/org/OrgWhitelistManagePage'))
 const AdminUserRolePage = lazy(() => import('@/pages/admin/AdminUserRolePage'))
+const AdminProductsPage = lazy(() => import('@/pages/admin/AdminProductsPage'))
 const AdminSamplePromptPage = lazy(() => import('@/pages/admin/AdminSamplePromptPage'))
 const AdminHelpsPage = lazy(() => import('@/pages/admin/AdminHelpsPage'))
 const AdminMenusPage = lazy(() => import('@/pages/admin/AdminMenusPage'))
@@ -167,6 +170,7 @@ export const router = createBrowserRouter([
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'upgrade', element: <UpgradePlanPage /> },
       { path: 'credit-purchase', element: <CreditPurchasePage /> },
+      { path: 'payment-manage', element: <PaymentManagePage /> },
       { path: 'tenant-subscription', element: <TenantSubscriptionPage /> },
       { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },
@@ -182,6 +186,7 @@ export const router = createBrowserRouter([
       { path: 'org/subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/other-subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgOtherSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/credit-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgCreditManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/payment-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgPaymentManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/tenant-manage/whitelist', element: <RequireTenantManager><RequireNotSystemTenant><OrgWhitelistManagePage /></RequireNotSystemTenant></RequireTenantManager> },
 
       // AI LLM 설정 (CA/SA/TA)
@@ -191,6 +196,7 @@ export const router = createBrowserRouter([
 
       // admin/ (roleid=7 전용)
       { path: 'admin/user-role', element: <AdminUserRolePage /> },
+      { path: 'admin/products', element: <AdminProductsPage /> },
       { path: 'admin/sample-prompts', element: <AdminSamplePromptPage /> },
       { path: 'admin/helps', element: <AdminHelpsPage /> },
       { path: 'admin/menus', element: <AdminMenusPage /> },

@@ -7,6 +7,7 @@ import {
   useTenantManageTeamProducts,
   useChangeTenantSubscription,
 } from '@/hooks/useSettings'
+import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
 export default function OrgSubscriptionManagePage() {
   const { message, modal } = App.useApp()
@@ -24,6 +25,7 @@ export default function OrgSubscriptionManagePage() {
   const { data: prodData = {}, isLoading: prodsLoading } = useTenantManageTeamProducts(selectedServicecd)
   const products = prodData.products || []
 
+  const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('org/payment-manage')
   const changeMutation = useChangeTenantSubscription()
 
   // 상품 목록 로딩 완료 시 현재 구독 중인 상품을 기본 선택
@@ -54,6 +56,11 @@ export default function OrgSubscriptionManagePage() {
       return
     }
 
+    if (!hasPaymentMethod) {
+      promptCardRegistration()
+      return
+    }
+
     modal.confirm({
       content: t('msg.confirm.subscription.change'),
       onOk: () => {
@@ -61,7 +68,14 @@ export default function OrgSubscriptionManagePage() {
           { servicecd: selectedServicecd, productcd: selectedProductcd },
           {
             onSuccess: () => { message.success(t('msg.save.success')); setSelectedProductcd(null) },
-            onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+            onError: (err) => {
+              const detail = err.response?.data?.detail
+              if (detail === PAYMENT_METHOD_REQUIRED) {
+                promptCardRegistration()
+                return
+              }
+              message.error(detail || t('msg.save.error'))
+            },
           },
         )
       },
@@ -152,6 +166,11 @@ export default function OrgSubscriptionManagePage() {
                     <div style={{ fontSize: 12, color: '#888' }}>
                       {codeLabel(planCodes, p.plancd)} · {p.billingtermcd} · {p.users} users · {p.credit} credit
                     </div>
+                    {p.price != null && (
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#163E64', marginTop: 4 }}>
+                        {Number(p.price).toLocaleString()} {p.currencycd}
+                      </div>
+                    )}
                   </Radio>
                 </div>
               ))}

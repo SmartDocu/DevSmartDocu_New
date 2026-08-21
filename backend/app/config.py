@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     EMAIL_HOST_USER: str = ""
     EMAIL_HOST_PASSWORD: str = ""
 
+    # PortOne (결제)
+    PORTONE_STORE_ID: str = ""
+    PORTONE_CHANNEL_KEY: str = ""
+    PORTONE_API_SECRET: str = ""
+    PORTONE_WEBHOOK_SECRET: str = ""
+
     # SMS (Naver Cloud)
     NAVER_ACCESS_KEY_ID: str = ""
     NAVER_SECRET_KEY: str = ""

@@ -4,6 +4,7 @@ import { App } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useUpgradeProducts, useUpgradePlan } from '@/hooks/useSettings'
 import { useMenuCodes } from '@/hooks/useMenus'
+import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
 export default function UpgradePlanPage() {
   useLangStore((s) => s.translations)
@@ -16,6 +17,7 @@ export default function UpgradePlanPage() {
 
   const { data: initData = {}, isLoading } = useUpgradeProducts(servicecd, plancd)
   const { data: serviceCodes = [] } = useMenuCodes('servicecd')
+  const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('payment-manage')
   const upgradeMutation = useUpgradePlan()
 
   const products = initData.products || []
@@ -33,6 +35,10 @@ export default function UpgradePlanPage() {
 
   const handleUpgrade = () => {
     if (!selectedProduct) return
+    if (!hasPaymentMethod) {
+      promptCardRegistration()
+      return
+    }
     upgradeMutation.mutate(
       { productcd: selectedProduct.productcd, servicecd: selectedProduct.servicecd },
       {
@@ -40,7 +46,14 @@ export default function UpgradePlanPage() {
           message.success(t('msg.upgrade.success'))
           setSelectedProduct(null)
         },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.upgrade.error')),
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          if (detail === PAYMENT_METHOD_REQUIRED) {
+            promptCardRegistration()
+            return
+          }
+          message.error(detail || t('msg.upgrade.error'))
+        },
       },
     )
   }
@@ -71,14 +84,15 @@ export default function UpgradePlanPage() {
               <th style={{ width: '15%' }}>{t('thd.servicecd_thd')}</th>
               <th style={{ width: '15%' }}>{t('thd.billingtermcd_thd')}</th>
               <th style={{ width: '15%' }}>{t('thd.credit_thd')}</th>
-              <th style={{ width: '25%' }}>{t('thd.is_customeraikey_thd')}</th>
+              <th style={{ width: '20%' }}>{t('thd.is_customeraikey_thd')}</th>
+              <th style={{ width: '20%' }}>{t('lbl.price')}</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
             ) : products.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
             ) : products.map((p) => (
               <tr
                 key={p.productcd}
@@ -90,6 +104,7 @@ export default function UpgradePlanPage() {
                 <td>{billingLabel(p.billingtermcd)}</td>
                 <td style={{ textAlign: 'center' }}>{p.credit ?? '-'}</td>
                 <td style={{ textAlign: 'center' }}>{p.is_customeraikey ? '✔' : '-'}</td>
+                <td style={{ textAlign: 'right' }}>{p.price != null ? `${Number(p.price).toLocaleString()} ${p.currencycd}` : '-'}</td>
               </tr>
             ))}
           </tbody>

@@ -21,6 +21,19 @@ function PlaceholderCard({ icon, titleKey, onClick }) {
   )
 }
 
+function PaymentCard({ openInTab }) {
+  return (
+    <Card
+      hoverable
+      onClick={() => openInTab('org/payment-manage', '', t('ttl.tenant.manage.payment'))}
+      style={{ textAlign: 'center', height: '100%' }}
+    >
+      <div style={{ fontSize: 32, color: '#163E64', marginBottom: 12 }}><CreditCardOutlined /></div>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('ttl.tenant.manage.payment')}</div>
+    </Card>
+  )
+}
+
 function TenantInfoCard({ openInTab }) {
   const { data = {}, isLoading } = useTenantManageTenantInfo()
 
@@ -235,7 +248,7 @@ export default function OrgTenantManagePage() {
           <PlaceholderCard icon={<HistoryOutlined />} titleKey="ttl.tenant.manage.billing_history" onClick={comingSoon} />
         </Col>
         <Col span={12}>
-          <PlaceholderCard icon={<CreditCardOutlined />} titleKey="ttl.tenant.manage.payment" onClick={comingSoon} />
+          <PaymentCard openInTab={openInTab} />
         </Col>
       </Row>
     </div>

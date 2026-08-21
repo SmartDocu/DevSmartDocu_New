@@ -3,6 +3,7 @@ import sys
 import uuid
 import traceback
 
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -640,3 +641,200 @@ def list_ui_terms(
         ]
 
     return {"items": result, "total": len(result)}
+
+
+# ══════════════════════════════════════════════════════
+#  PRODUCTS (상품/가격 관리)
+# ══════════════════════════════════════════════════════
+
+PRODUCT_TAX_RATE = 0.1  # unit_tax = price의 10%, unit_price = price의 90%
+
+
+def _attach_current_prices(sb, rows: list, currencycd: str = "KRW") -> None:
+    """products 행에 config_price 기준 오늘 날짜에 유효한 price/unit_price/unit_tax를 채운다 (in-place)."""
+    productcds = [r["productcd"] for r in rows if r.get("productcd")]
+    if not productcds:
+        return
+    today = date.today().isoformat()
+    price_rows = (
+        sb.schema(SUPABASE_SCHEMA).table("config_price")
+        .select("productcd,billingtermcd,price,unit_price,unit_tax,currencycd,effectivefromdt,effectivetodt")
+        .in_("productcd", productcds)
+        .eq("currencycd", currencycd)
+        .lte("effectivefromdt", today)
+        .execute().data or []
+    )
+    price_map: dict = {}
+    for p in price_rows:
+        if p.get("effectivetodt") and p["effectivetodt"] < today:
+            continue
+        key = (p["productcd"], p["billingtermcd"])
+        existing = price_map.get(key)
+        if not existing or p["effectivefromdt"] > existing["effectivefromdt"]:
+            price_map[key] = p
+
+    for r in rows:
+        price_row = price_map.get((r.get("productcd"), r.get("billingtermcd")))
+        r["price"] = price_row["price"] if price_row else None
+        r["unit_price"] = price_row["unit_price"] if price_row else None
+        r["unit_tax"] = price_row["unit_tax"] if price_row else None
+        r["currencycd"] = price_row["currencycd"] if price_row else None
+        r["effectivefromdt"] = price_row["effectivefromdt"] if price_row else None
+
+
+@router.get("/products")
+def list_admin_products(token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("products").select("*")
+        .order("servicecd").order("orderno")
+        .execute().data or []
+    )
+    _attach_current_prices(sb, rows)
+    return {"products": rows}
+
+
+class ProductSaveRequest(BaseModel):
+    productcd: str
+    productnm: Optional[str] = None
+    servicecd: Optional[str] = None
+    plancd: Optional[str] = None
+    producttype: Optional[str] = None
+    billingtermcd: Optional[str] = None
+    users: Optional[int] = None
+    credit: Optional[int] = None
+    useyn: bool = True
+    is_sales: bool = True
+    is_customeraikey: bool = False
+    orderno: Optional[int] = None
+    expiremonths: Optional[int] = None
+
+
+@router.post("/products")
+def create_admin_product(body: ProductSaveRequest, token: str = Depends(get_token)):
+    user = _require_admin(token)
+    sb = _sb_service()
+
+    existing = sb.schema(SUPABASE_SCHEMA).table("products").select("productcd").eq("productcd", body.productcd).execute().data
+    if existing:
+        raise HTTPException(status_code=400, detail=f"이미 존재하는 상품코드입니다: {body.productcd}")
+
+    record = body.model_dump()
+    record["creator"] = str(user.id)
+    sb.schema(SUPABASE_SCHEMA).table("products").insert(record).execute()
+    return {"result": "success", "productcd": body.productcd}
+
+
+@router.put("/products/{productcd}")
+def update_admin_product(productcd: str, body: ProductSaveRequest, token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+
+    existing = sb.schema(SUPABASE_SCHEMA).table("products").select("productcd").eq("productcd", productcd).execute().data
+    if not existing:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+
+    record = body.model_dump()
+    record.pop("productcd", None)
+    sb.schema(SUPABASE_SCHEMA).table("products").update(record).eq("productcd", productcd).execute()
+    return {"result": "success", "productcd": productcd}
+
+
+@router.delete("/products/{productcd}")
+def delete_admin_product(productcd: str, token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+
+    existing = sb.schema(SUPABASE_SCHEMA).table("products").select("productcd").eq("productcd", productcd).execute().data
+    if not existing:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+
+    sb.schema(SUPABASE_SCHEMA).table("config_price").delete().eq("productcd", productcd).execute()
+    sb.schema(SUPABASE_SCHEMA).table("products").delete().eq("productcd", productcd).execute()
+    return {"result": "success", "message": "상품이 삭제되었습니다."}
+
+
+class ProductPriceSaveRequest(BaseModel):
+    price: float
+    currencycd: str = "KRW"
+    effectivefromdt: Optional[str] = None  # "YYYY-MM-DD", 생략 시 오늘
+
+
+@router.post("/products/{productcd}/price")
+def save_admin_product_price(productcd: str, body: ProductPriceSaveRequest, token: str = Depends(get_token)):
+    """
+    productcd의 지정일(기본 오늘)자 가격을 등록/수정한다. unit_price(90%)/unit_tax(10%)는 자동 계산한다.
+    같은 날짜의 기존 행이 있으면 그 행을 덮어쓰고, 없으면 새 이력을 추가하면서 그 직전까지
+    열려있던(effectivetodt IS NULL) 행의 종료일을 하루 전으로 닫아 기간이 겹치지 않게 한다.
+    """
+    from datetime import timedelta
+
+    user = _require_admin(token)
+    sb = _sb_service()
+
+    prod_row = sb.schema(SUPABASE_SCHEMA).table("products").select("billingtermcd").eq("productcd", productcd).maybe_single().execute()
+    if not prod_row or not prod_row.data:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    billingtermcd = prod_row.data.get("billingtermcd")
+    if not billingtermcd:
+        raise HTTPException(status_code=400, detail="상품에 결제주기(billingtermcd)가 설정되어 있지 않습니다.")
+
+    effectivefromdt = body.effectivefromdt or date.today().isoformat()
+    unit_tax = round(body.price * PRODUCT_TAX_RATE)
+    unit_price = round(body.price - unit_tax)
+
+    record = {
+        "productcd": productcd,
+        "currencycd": body.currencycd,
+        "billingtermcd": billingtermcd,
+        "effectivefromdt": effectivefromdt,
+        "price": body.price,
+        "unit_price": unit_price,
+        "unit_tax": unit_tax,
+        "creator": str(user.id),
+    }
+
+    existing = (
+        sb.schema(SUPABASE_SCHEMA).table("config_price").select("productcd")
+        .eq("productcd", productcd).eq("currencycd", body.currencycd)
+        .eq("billingtermcd", billingtermcd).eq("effectivefromdt", effectivefromdt)
+        .execute().data
+    )
+    if existing:
+        record.pop("creator", None)
+        sb.schema(SUPABASE_SCHEMA).table("config_price").update(record).eq("productcd", productcd).eq(
+            "currencycd", body.currencycd
+        ).eq("billingtermcd", billingtermcd).eq("effectivefromdt", effectivefromdt).execute()
+    else:
+        # 직전까지 열려있던 이전 이력을 새 시작일 하루 전으로 닫는다
+        open_rows = (
+            sb.schema(SUPABASE_SCHEMA).table("config_price").select("effectivefromdt")
+            .eq("productcd", productcd).eq("currencycd", body.currencycd).eq("billingtermcd", billingtermcd)
+            .is_("effectivetodt", "null").lt("effectivefromdt", effectivefromdt)
+            .execute().data or []
+        )
+        if open_rows:
+            close_dt = (date.fromisoformat(effectivefromdt) - timedelta(days=1)).isoformat()
+            for r in open_rows:
+                sb.schema(SUPABASE_SCHEMA).table("config_price").update({"effectivetodt": close_dt}).eq(
+                    "productcd", productcd
+                ).eq("currencycd", body.currencycd).eq("billingtermcd", billingtermcd).eq(
+                    "effectivefromdt", r["effectivefromdt"]
+                ).execute()
+        sb.schema(SUPABASE_SCHEMA).table("config_price").insert(record).execute()
+
+    return {"result": "success", "unit_price": unit_price, "unit_tax": unit_tax}
+
+
+@router.get("/products/{productcd}/price-history")
+def list_admin_product_price_history(productcd: str, token: str = Depends(get_token)):
+    _require_admin(token)
+    sb = _sb_service()
+    rows = (
+        sb.schema(SUPABASE_SCHEMA).table("config_price").select("*")
+        .eq("productcd", productcd)
+        .order("billingtermcd").order("effectivefromdt", desc=True)
+        .execute().data or []
+    )
+    return {"history": rows}
