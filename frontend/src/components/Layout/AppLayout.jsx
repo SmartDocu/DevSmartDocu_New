@@ -21,7 +21,7 @@ import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
 import { useApps } from '@/hooks/useApps'
-import { useNotifications, navigateToNotificationTarget } from '@/hooks/useNotifications'
+import { useNotifications, navigateToNotificationTarget, translateNotification } from '@/hooks/useNotifications'
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -565,7 +565,9 @@ export default function AppLayout() {
                             {t('msg.notification.empty')}
                           </div>
                         ) : (
-                          notifications.map((n) => (
+                          notifications.map((n) => {
+                            const { title, message } = translateNotification(n)
+                            return (
                             <div
                               key={n.notificationuid}
                               onClick={() => handleNotificationClick(n)}
@@ -579,12 +581,13 @@ export default function AppLayout() {
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {!n.is_read && <span style={{ width: 6, height: 6, borderRadius: '50%', background: n.notificationstatus === 'error' ? '#dc3545' : '#245F97', flexShrink: 0 }} />}
-                                <span style={{ fontWeight: n.is_read ? 400 : 600, fontSize: 13 }}>{n.title}</span>
+                                <span style={{ fontWeight: n.is_read ? 400 : 600, fontSize: 13 }}>{title}</span>
                               </div>
-                              <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>{n.message}</div>
+                              <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>{message}</div>
                               <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>{n.createdts}</div>
                             </div>
-                          ))
+                            )
+                          })
                         )}
                       </div>
                       <div

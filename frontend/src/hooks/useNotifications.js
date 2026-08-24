@@ -4,6 +4,21 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useReqStore } from '@/stores/reqStore'
 import { supabase } from '@/lib/supabaseClient'
+import { t } from '@/stores/langStore'
+
+// 알림 title/message 번역 렌더링 — titlekey/messagekey(ui_terms의 msg.* term_key)가 있으면
+// 로그인 언어로 번역하고 params의 값으로 {placeholder}를 치환. 키가 없는 레거시 알림은
+// 백엔드가 생성 시점에 넣어둔 한글 title/message를 그대로 사용(t()의 fallback으로 처리됨).
+export function translateNotification(n) {
+  const title = t(n.titlekey, n.title)
+  let message = t(n.messagekey, n.message)
+  if (n.params) {
+    for (const [key, value] of Object.entries(n.params)) {
+      message = message.replaceAll(`{${key}}`, value)
+    }
+  }
+  return { title, message }
+}
 
 export function useNotifications() {
   const userId = useAuthStore((s) => s.user?.id)

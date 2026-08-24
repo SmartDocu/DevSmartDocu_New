@@ -4,7 +4,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
   useNotificationsList, useMarkNotificationRead, useMarkAllNotificationsRead,
-  useDeleteNotification, navigateToNotificationTarget,
+  useDeleteNotification, navigateToNotificationTarget, translateNotification,
 } from '@/hooks/useNotifications'
 
 const { Search } = Input
@@ -20,6 +20,7 @@ export default function NotificationsPage() {
     { value: '', label: t('cod.filter_all') },
     { value: 'doc', label: t('cod.notificationcategory_doc') },
     { value: 'chapter', label: t('cod.notificationcategory_chapter') },
+    { value: 'payment', label: t('cod.notificationcategory_payment') },
   ]
 
   const NOTIFICATION_STATUS_OPTIONS = [
@@ -127,7 +128,9 @@ export default function NotificationsPage() {
             <tbody>
               {notifications.length === 0 ? (
                 <tr><td colSpan={4} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.notification.empty')}</td></tr>
-              ) : notifications.map((n) => (
+              ) : notifications.map((n) => {
+                const { title, message } = translateNotification(n)
+                return (
                 <tr
                   key={n.notificationuid}
                   style={{
@@ -139,12 +142,12 @@ export default function NotificationsPage() {
                   <td
                     onClick={() => handleTitleClick(n)}
                     style={{ color: n.notificationstatus === 'error' ? '#a8202f' : 'inherit', cursor: 'pointer' }}
-                  >{n.title}</td>
+                  >{title}</td>
                   <td
                     onClick={() => handleTitleClick(n)}
                     style={{ fontWeight: 400, color: '#666', maxWidth: 220, cursor: 'pointer' }}
                   >
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.message}</div>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{message}</div>
                     {expandedUid === n.notificationuid && (
                       <div style={{ marginTop: 8 }}>
                         {n.target_url && (
@@ -158,10 +161,11 @@ export default function NotificationsPage() {
                       </div>
                     )}
                   </td>
-                  <td>{n.notificationcategory}</td>
+                  <td>{t(`cod.notificationcategory_${n.notificationcategory}`)}</td>
                   <td>{n.createdts}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_user as _get_user
+from utilsPrj.notifications import create_notification
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 
 router = APIRouter()
@@ -31,6 +32,11 @@ def _resolve_tenant_accountuid(sd, tenantid: int, user_id: str) -> Optional[str]
     else:
         acc = sd.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
     return acc.data["accountuid"] if acc and acc.data else None
+
+
+def _payment_manage_url(issystemtenant: bool) -> str:
+    """알림 target_url — 개인(시스템) 테넌트는 개인 결제 관리, 기업 테넌트는 기업 결제 관리 화면으로 안내."""
+    return "upgrade/payment-manage" if issystemtenant else "org/payment-manage"
 
 
 def _require_tenant_manager_tenantid(user_id: str, header_tenantid: Optional[str]) -> int:
@@ -164,6 +170,29 @@ def refund_charge(sd, user_id: str, paymentuid: str, reason: str) -> dict:
         "processeddts": now_iso,
         "creator": user_id,
     }).execute()
+
+    t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", payment.get("tenantid")).maybe_single().execute()
+    issystemtenant = (t_row.data or {}).get("issystemtenant", True) if t_row else True
+    payment_url = _payment_manage_url(issystemtenant)
+    amount_txt = f"{int(payment.get('payment_amount') or 0):,}원"
+
+    refund_params = {"amount": int(payment.get("payment_amount") or 0)}
+    if success:
+        create_notification(
+            get_service_client(), category="payment", status="info",
+            title="결제 환불 완료", message=f"결제({amount_txt})가 환불되었습니다.",
+            title_key="msg.notification.payment.refund.completed.title",
+            message_key="msg.notification.payment.refund.completed.body", params=refund_params,
+            target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+        )
+    else:
+        create_notification(
+            get_service_client(), category="payment", status="error",
+            title="결제 환불 실패", message=f"결제({amount_txt}) 환불 처리 중 오류가 발생했습니다. 고객센터에 문의해주세요.",
+            title_key="msg.notification.payment.refund.failed.title",
+            message_key="msg.notification.payment.refund.failed.body", params=refund_params,
+            target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+        )
 
     if not success:
         return {"success": False, "message": pg_result.get("message") or str(pg_result)}
@@ -343,8 +372,9 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
     payment_methoduid = method["payment_methoduid"]
     accountuid = method.get("accountuid")
 
-    t_row = sd.table("tenants").select("disptenantnm").eq("tenantid", tenantid).maybe_single().execute()
+    t_row = sd.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
     disptenantnm = (t_row.data or {}).get("disptenantnm") or "고객"
+    payment_url = _payment_manage_url((t_row.data or {}).get("issystemtenant", True))
 
     email, telno = "", ""
     if accountuid:
@@ -385,6 +415,8 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
         f"charge-{paymentuid}", method["billing_key"], order_name, amount, customer,
     )
 
+    amount_txt = f"{int(amount):,}원"
+
     if status_code == 200:
         sd.table("payments").update({
             "payment_status": "Success",
@@ -393,6 +425,13 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
             "succesful_attemptdts": datetime.now(timezone.utc).isoformat(),
         }).eq("paymentuid", paymentuid).execute()
         sd.table("payment_attempts").update({"attempt_status": "Success"}).eq("attemptuid", attemptuid).execute()
+        create_notification(
+            get_service_client(), category="payment", status="info",
+            title="결제 완료", message=f"'{order_name}' 결제가 완료되었습니다. ({amount_txt})",
+            title_key="msg.notification.payment.completed.title", message_key="msg.notification.payment.completed.body",
+            params={"order_name": order_name, "amount": int(amount)},
+            target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+        )
         return {"success": True, "pgTxId": (pg_result.get("payment") or {}).get("pgTxId"), "paymentuid": paymentuid}
 
     failure_message = pg_result.get("message") or str(pg_result)
@@ -402,6 +441,13 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
         "failure_code": pg_result.get("type", ""),
         "failure_message": failure_message[:250],
     }).eq("attemptuid", attemptuid).execute()
+    create_notification(
+        get_service_client(), category="payment", status="error",
+        title="결제 실패", message=f"'{order_name}' 결제가 실패했습니다. ({amount_txt})",
+        title_key="msg.notification.payment.failed.title", message_key="msg.notification.payment.failed.body",
+        params={"order_name": order_name, "amount": int(amount)},
+        target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+    )
     return {"success": False, "message": failure_message, "paymentuid": paymentuid}
 
 

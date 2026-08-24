@@ -305,6 +305,8 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         create_notification(
             sb_svc, category="doc", status="info",
             title="문서 작성 완료", message=f"'{gendocnm}' 문서 작성이 완료되었습니다.",
+            title_key="msg.notification.doc.completed.title", message_key="msg.notification.doc.completed.body",
+            params={"gendocnm": gendocnm},
             target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
         )
 
@@ -323,6 +325,8 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             create_notification(
                 sb_svc, category="doc", status="error",
                 title="문서 작성 실패", message=f"'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
+                params={"gendocnm": gendocnm},
                 target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
             )
         except Exception:
@@ -428,6 +432,8 @@ def process_message(msg):
             create_notification(
                 sb_svc, category="doc", status="error",
                 title="문서 작성 실패", message=f"'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
+                params={"gendocnm": gendocnm},
                 target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
             )
         except Exception:
@@ -547,6 +553,8 @@ def process_chapter_message(msg):
             create_notification(
                 sb_svc, category="chapter", status="info",
                 title="챕터 작성 완료", message=f"'{gendocnm}' 문서의 '{chapternm}' 챕터 작성이 완료되었습니다.",
+                title_key="msg.notification.chapter.completed.title", message_key="msg.notification.chapter.completed.body",
+                params={"gendocnm": gendocnm, "chapternm": chapternm},
                 target_object="gendoc", target_uid=gendocuid,
                 target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=user_id,
             )
@@ -588,6 +596,8 @@ def process_chapter_message(msg):
                 create_notification(
                     sb_svc, category="chapter", status="error",
                     title="챕터 작성 실패", message=f"'{gendocnm}' 문서의 '{chapternm}' 챕터 작성 중 오류가 발생했습니다.",
+                    title_key="msg.notification.chapter.failed.title", message_key="msg.notification.chapter.failed.body",
+                    params={"gendocnm": gendocnm, "chapternm": chapternm},
                     target_object="gendoc", target_uid=gendocuid,
                     target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=user_id,
                 )
@@ -606,6 +616,8 @@ def process_chapter_message(msg):
                         sb_svc, category="doc", status="error",
                         title="문서 작성 실패",
                         message=f"'{doc_rt[0].get('gendocnm') or gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                        title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
+                        params={"gendocnm": doc_rt[0].get("gendocnm") or gendocnm},
                         target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
                     )
                     sb.schema(SUPABASE_SCHEMA).table("genlocks").update({

@@ -1079,6 +1079,8 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
                     create_notification(
                         sb_svc, category="chapter", status="error",
                         title="챕터 작성 실패", message=f"'{_gendocnm}' 문서의 '{_chapternm}' 챕터 작성 중 오류가 발생했습니다.",
+                        title_key="msg.notification.chapter.failed.title", message_key="msg.notification.chapter.failed.body",
+                        params={"gendocnm": _gendocnm, "chapternm": _chapternm},
                         target_object="gendoc", target_uid=gendocuid,
                         target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=row[0]["creator"],
                     )
@@ -1329,6 +1331,8 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
                         sb_svc, category="doc", status="error",
                         title="문서 작성 실패",
                         message=f"'{row[0].get('gendocnm') or ''}' 문서 작성 중 오류가 발생했습니다.",
+                        title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
+                        params={"gendocnm": row[0].get("gendocnm") or ""},
                         target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=row[0]["creator"],
                     )
                 return {"JobStatusCD": "E", "ErrorCD": "CRASH", "ErrorMessage": "Worker process terminated unexpectedly"}
