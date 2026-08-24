@@ -176,11 +176,14 @@ export default function MyInfoPage() {
         <Col span={12}>
           <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ height: '100%' }}>
             <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label={`${t('lbl.terms.privacy')} (${t('lbl.required')})`}>
+                {isAgreed(userInfo.userinfoyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
+              </Descriptions.Item>
               <Descriptions.Item label={`${t('lbl.terms.service')} (${t('lbl.required')})`}>
                 {isAgreed(userInfo.termsofuseyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
               </Descriptions.Item>
-              <Descriptions.Item label={`${t('lbl.terms.privacy')} (${t('lbl.required')})`}>
-                {isAgreed(userInfo.userinfoyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
+              <Descriptions.Item label={`${t('lbl.terms.electronic')} (${t('lbl.required')})`}>
+                {isAgreed(userInfo.electronicfinancialtermsyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
               </Descriptions.Item>
               <Descriptions.Item label={`${t('lbl.terms.marketing')} (${t('lbl.optional')})`}>
                 <Popconfirm

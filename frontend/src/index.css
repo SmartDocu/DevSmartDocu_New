@@ -399,6 +399,19 @@ table tr.selected-row {
   background-color: var(--selected-row-bg) !important;
 }
 
+/* ── 약관 페이지 표(terms.json content 안의 <table>) — 컨테이너 폭까지 안 늘어나게 상한 지정 ── */
+.terms-table {
+  width: 100%;
+  max-width: 800px;
+  margin: 12px 0;
+  table-layout: fixed;
+}
+
+.terms-table td,
+.terms-table th {
+  word-break: break-word;
+}
+
 /* Bootstrap 호환 유틸 */
 .table-sm td, .table-sm th { padding: 3px 8px; }
 .table-bordered, .table-bordered td, .table-bordered th { border: 1px solid var(--border-color); }

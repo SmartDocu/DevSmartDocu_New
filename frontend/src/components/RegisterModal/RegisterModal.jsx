@@ -11,6 +11,7 @@ export default function RegisterModal({ open, onClose }) {
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [userinfoyn, setUserinfoyn] = useState(false)
   const [termsofuseyn, setTermsofuseyn] = useState(false)
+  const [electronicfinancialtermsyn, setElectronicfinancialtermsyn] = useState(false)
   const [marketingyn, setMarketingyn] = useState(false)
   const [agreeAll, setAgreeAll] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -38,6 +39,7 @@ export default function RegisterModal({ open, onClose }) {
     setPasswordConfirm('')
     setUserinfoyn(false)
     setTermsofuseyn(false)
+    setElectronicfinancialtermsyn(false)
     setMarketingyn(false)
     setAgreeAll(false)
   }, [open])
@@ -53,15 +55,16 @@ export default function RegisterModal({ open, onClose }) {
     setAgreeAll(checked)
     setUserinfoyn(checked)
     setTermsofuseyn(checked)
+    setElectronicfinancialtermsyn(checked)
     setMarketingyn(checked)
   }
 
-  const syncAgreeAll = (info, terms, mkt) => {
-    setAgreeAll(info && terms && mkt)
+  const syncAgreeAll = (info, terms, elec, mkt) => {
+    setAgreeAll(info && terms && elec && mkt)
   }
 
   const handleSubmit = async () => {
-    if (!termsofuseyn || !userinfoyn) { alert(t('msg.register.terms.required')); return }
+    if (!termsofuseyn || !userinfoyn || !electronicfinancialtermsyn) { alert(t('msg.register.terms.required')); return }
     if (!usernm) { alert(t('msg.usernm.required')); return }
     if (!email) { alert(t('msg.email.required')); return }
     if (!password) { alert(t('msg.password.required')); return }
@@ -78,6 +81,7 @@ export default function RegisterModal({ open, onClose }) {
         accounttype: 'U',
         userinfoyn: userinfoyn ? 'Y' : 'N',
         termsofuseyn: termsofuseyn ? 'Y' : 'N',
+        electronicfinancialtermsyn: electronicfinancialtermsyn ? 'Y' : 'N',
         marketingyn: marketingyn ? 'Y' : 'N',
         products: selectedProducts,
       })
@@ -91,7 +95,7 @@ export default function RegisterModal({ open, onClose }) {
     }
   }
 
-  const submitDisabled = !usernm.trim() || !email.trim() || !password.trim() || !passwordConfirm.trim() || !userinfoyn || !termsofuseyn
+  const submitDisabled = !usernm.trim() || !email.trim() || !password.trim() || !passwordConfirm.trim() || !userinfoyn || !termsofuseyn || !electronicfinancialtermsyn
 
   if (!open) return null
 
@@ -180,26 +184,34 @@ export default function RegisterModal({ open, onClose }) {
           {t('lbl.agree.all')}
         </label>
 
-        {/* 개인정보수집 (필수) */}
+        {/* 개인정보 수집·이용 동의 (필수) */}
         <label style={{ display: 'block', marginBottom: 6, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={userinfoyn}
-            onChange={(e) => { setUserinfoyn(e.target.checked); syncAgreeAll(e.target.checked, termsofuseyn, marketingyn) }}
+            onChange={(e) => { setUserinfoyn(e.target.checked); syncAgreeAll(e.target.checked, termsofuseyn, electronicfinancialtermsyn, marketingyn) }}
             style={{ marginRight: 6 }} />
           <a href="/terms?terms=collection" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.privacy')}</a> ({t('lbl.required')})
         </label>
 
-        {/* 이용약관 (필수) */}
+        {/* 서비스 이용약관 (필수) */}
         <label style={{ display: 'block', marginBottom: 6, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={termsofuseyn}
-            onChange={(e) => { setTermsofuseyn(e.target.checked); syncAgreeAll(userinfoyn, e.target.checked, marketingyn) }}
+            onChange={(e) => { setTermsofuseyn(e.target.checked); syncAgreeAll(userinfoyn, e.target.checked, electronicfinancialtermsyn, marketingyn) }}
             style={{ marginRight: 6 }} />
-          <a href="/terms?terms=service" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.service')}</a>{t('lbl.terms.agree')} ({t('lbl.required')})
+          <a href="/terms?terms=service" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.service')}</a> ({t('lbl.required')})
         </label>
 
-        {/* 마케팅 (선택) */}
+        {/* 전자금융거래 이용약관 (필수) */}
+        <label style={{ display: 'block', marginBottom: 6, textAlign: 'left', fontSize: 14 }}>
+          <input type="checkbox" checked={electronicfinancialtermsyn}
+            onChange={(e) => { setElectronicfinancialtermsyn(e.target.checked); syncAgreeAll(userinfoyn, termsofuseyn, e.target.checked, marketingyn) }}
+            style={{ marginRight: 6 }} />
+          <a href="/terms?terms=finance" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.electronic')}</a> ({t('lbl.required')})
+        </label>
+
+        {/* 광고성 정보 수신 동의 (선택) */}
         <label style={{ display: 'block', marginBottom: 20, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={marketingyn}
-            onChange={(e) => { setMarketingyn(e.target.checked); syncAgreeAll(userinfoyn, termsofuseyn, e.target.checked) }}
+            onChange={(e) => { setMarketingyn(e.target.checked); syncAgreeAll(userinfoyn, termsofuseyn, electronicfinancialtermsyn, e.target.checked) }}
             style={{ marginRight: 6 }} />
           <a href="/terms?terms=marketing" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.marketing')}</a> ({t('lbl.optional')})
         </label>

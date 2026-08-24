@@ -75,6 +75,7 @@ class RegisterRequest(BaseModel):
     usernm: str
     termsofuseyn: str = "Y"
     userinfoyn: str = "Y"
+    electronicfinancialtermsyn: str = "Y"
     marketingyn: str = "N"
     accounttype: str = "U"
     single: Optional[str] = None
@@ -89,6 +90,7 @@ class RegisterInviteRequest(BaseModel):
     password_confirm: Optional[str] = None
     termsofuseyn: str = "Y"
     userinfoyn: str = "Y"
+    electronicfinancialtermsyn: str = "Y"
     marketingyn: str = "N"
 
 
