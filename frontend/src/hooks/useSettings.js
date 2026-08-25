@@ -305,6 +305,26 @@ export function useCancelUndoTenantManageOtherSubscription() {
   })
 }
 
+export function useTenantManageMfaConfig() {
+  return useQuery({
+    queryKey: ['tenant-manage-mfa-config'],
+    queryFn: () => apiClient.get('/settings/tenant-manage/mfa-config').then((r) => r.data),
+  })
+}
+
+export function useSaveTenantManageMfaConfig() {
+  const qc = useQueryClient()
+  const { message } = App.useApp()
+  return useMutation({
+    mutationFn: (payload) => apiClient.post('/settings/tenant-manage/mfa-config', payload).then((r) => r.data),
+    onSuccess: () => {
+      message.success(t('msg.save.success'))
+      qc.invalidateQueries({ queryKey: ['tenant-manage-mfa-config'] })
+    },
+    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+  })
+}
+
 export function useTenantManageCreditSubscriptions() {
   return useQuery({
     queryKey: ['tenant-manage-credit-subscriptions'],

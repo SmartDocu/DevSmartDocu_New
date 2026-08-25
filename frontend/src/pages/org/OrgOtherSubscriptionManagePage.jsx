@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Modal, Select, Input, Tag, Button } from 'antd'
+import { App, Modal, Select, Input, Tag, Button, Switch } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -7,6 +7,8 @@ import {
   usePurchaseTenantManageOtherSubscription,
   useCancelTenantManageOtherSubscription,
   useCancelUndoTenantManageOtherSubscription,
+  useTenantManageMfaConfig,
+  useSaveTenantManageMfaConfig,
 } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
@@ -26,6 +28,12 @@ export default function OrgOtherSubscriptionManagePage() {
   const purchaseMutation = usePurchaseTenantManageOtherSubscription()
   const cancelMutation = useCancelTenantManageOtherSubscription()
   const cancelUndoMutation = useCancelUndoTenantManageOtherSubscription()
+
+  const { data: mfaConfig = {}, isLoading: mfaLoading } = useTenantManageMfaConfig()
+  const saveMfaConfig = useSaveTenantManageMfaConfig()
+  const handleMfaToggle = (checked) => {
+    saveMfaConfig.mutate({ is_mfa: checked })
+  }
 
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelReasonCd, setCancelReasonCd] = useState(null)
@@ -101,6 +109,23 @@ export default function OrgOtherSubscriptionManagePage() {
           <div className="gradient-bar" />
           <div>{t('ttl.tenant.manage.other_subscription')}</div>
         </div>
+      </div>
+
+      <div
+        style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          border: '1px solid #eee', borderRadius: 6, padding: '12px 16px', marginBottom: 20, marginRight: 10,
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 600 }}>{t('lbl.tenant.mfa.enable')}</div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{t('inf.mfa.free.notice')}</div>
+        </div>
+        <Switch
+          checked={!!mfaConfig.is_mfa}
+          loading={mfaLoading || saveMfaConfig.isPending}
+          onChange={handleMfaToggle}
+        />
       </div>
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>

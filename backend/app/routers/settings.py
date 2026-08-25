@@ -389,6 +389,13 @@ def _save_tenant_contact(tenantid: int, email: Optional[str], telno: Optional[st
 
 
 def _save_default_tenant_configs(tenantid: int, creator: str):
+    """테넌트 생성 시 config_tenants 기본값을 심는다.
+
+    MFA는 2026-08-25부터 시스템 테넌트를 제외한 개별(조직) 테넌트에 기본 제공(무료)으로 전환됐지만,
+    생성 시점엔 항상 비활성 상태로 시작하고 테넌트 매니저가 /tenant-manage/mfa-config에서
+    직접 켜고 끈다(더 이상 구매/취소 흐름이 아님 — products.mfa는 is_sales=False로 판매 카탈로그에서 제외됨).
+    IP Whitelist/SSO는 계속 opt-in(구매 필요, 기본 False) 유지.
+    """
     svc = get_service_client().schema(SUPABASE_SCHEMA)
     rows = [
         {"tenantid": tenantid, "configcd": configcd, "value": False, "creator": creator}
@@ -2118,6 +2125,11 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
     if accountuid:
         _apply_due_feature_cancellations(svc, accountuid)
 
+    issystemtenant = True
+    if tenantid:
+        t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
+        issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
+
     subscribed_servicecds = set()
     owned_productcds = set()
     if accountuid:
@@ -2145,10 +2157,13 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
     prod_map = {p["productcd"]: p for p in all_products}
     # User 타입은 구독 중인 서비스의 상품만 노출 (Feature는 서비스 무관, 반복 구매 가능)
     # Feature 타입은 취소 전까지 1회만 구독 가능 — 이미 보유 중이면 목록에서 제외
+    # 테넌트 단위 보안 기능(MFA/Whitelist/SSO 등 servicecd='Tenant'인 Feature)은 시스템 테넌트(개인)엔
+    # 애초에 "테넌트" 개념이 없으므로 구매 목록에서 노출하지 않는다.
     products = [
         p for p in all_products
         if not (p["producttype"] == "Feature" and p["productcd"] in owned_productcds)
         and (p["producttype"] == "Feature" or p["servicecd"] in subscribed_servicecds)
+        and not (issystemtenant and p["producttype"] == "Feature" and p["servicecd"] == "Tenant")
     ]
     _attach_prices(svc, products)
 
@@ -2218,11 +2233,13 @@ def purchase_tenant_manage_other_subscription(
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
     prod_row = svc.table("products").select(
-        "productcd,productnm,servicecd,producttype,users,useyn,billingtermcd"
+        "productcd,productnm,servicecd,producttype,users,useyn,is_sales,billingtermcd"
     ).eq("productcd", body.productcd).maybe_single().execute()
     product = prod_row.data if prod_row else None
     if not product or product.get("producttype") not in ("User", "Feature"):
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    if not product.get("useyn") or not product.get("is_sales"):
+        raise HTTPException(status_code=400, detail="더 이상 판매하지 않는 상품입니다.")
 
     if product["producttype"] == "Feature":
         existing_feature = svc.table("account_features").select("accountuid").eq(
@@ -2422,6 +2439,61 @@ def undo_cancel_tenant_manage_other_subscription(
         "updater": user_id,
         "updatedts": datetime.now(tz.utc).isoformat(),
     }).eq("subscriptionuid", body.subscriptionuid).execute()
+
+    return {"result": "success"}
+
+
+# ─── MFA 활성/비활성 토글 (config_tenants.Is_MFA) ──────────────────────────────
+# MFA는 더 이상 구매 상품이 아니라 시스템 테넌트 제외 전 테넌트에 기본 제공되는 무료 기능이다.
+# 접근 권한 자체는 항상 열려 있고, 테넌트 매니저가 이 토글로 실제 사용 여부만 켜고 끈다.
+# whitelists.py의 GET/POST /whitelists/config(Is_Manager_IP_Allow/Is_User_IP_Allow)와 동일한 패턴 —
+# 다만 whitelist와 달리 구매(account_features) 여부를 검사하지 않는다(무료라 검사 대상 자체가 없음).
+
+@router.get("/tenant-manage/mfa-config")
+def get_tenant_manage_mfa_config(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, _ = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+
+    row = svc.table("config_tenants").select("value").eq(
+        "tenantid", int(tenantid)
+    ).eq("configcd", "Is_MFA").maybe_single().execute()
+    return {"is_mfa": bool(row.data.get("value")) if row and row.data else False}
+
+
+class MfaConfigSaveRequest(BaseModel):
+    is_mfa: bool
+
+
+@router.post("/tenant-manage/mfa-config")
+def save_tenant_manage_mfa_config(
+    body: MfaConfigSaveRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, _ = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+
+    existing = svc.table("config_tenants").select("tenantid").eq(
+        "tenantid", int(tenantid)
+    ).eq("configcd", "Is_MFA").maybe_single().execute()
+    if existing and existing.data:
+        svc.table("config_tenants").update({"value": body.is_mfa}).eq(
+            "tenantid", int(tenantid)
+        ).eq("configcd", "Is_MFA").execute()
+    else:
+        svc.table("config_tenants").insert({
+            "tenantid": int(tenantid), "configcd": "Is_MFA", "value": body.is_mfa, "creator": user_id,
+        }).execute()
 
     return {"result": "success"}
 
