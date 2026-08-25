@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { marked } from 'marked'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useDeactivatePopup } from '@/hooks/usePopups'
@@ -15,6 +16,8 @@ function saveDeactivateLocally(popupid, days) {
   end.setDate(end.getDate() + days)
   localStorage.setItem(`popup_deactivate_${popupid}`, end.toISOString().split('T')[0])
 }
+
+const ALIGN_TO_FLEX = { left: 'flex-start', center: 'center', right: 'flex-end' }
 
 // content_type='inline'인 팝업의 제목/본문/버튼을 langCd 기준으로 로컬라이즈.
 // 번역 오버라이드가 없으면 base(popups.title/body/button_text) 사용.
@@ -93,21 +96,24 @@ export default function PopupManager({ popups = [] }) {
           {/* 팝업 콘텐츠 */}
           {popup.content_type === 'inline' ? (
             <div style={{ width: '100%', height: popup.height ?? 280, overflow: 'auto', padding: 16, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#333', flex: 1 }}>{loc.body}</div>
+              <div
+                style={{ fontSize: 13, color: '#333', flex: 1, textAlign: popup.text_align || 'left' }}
+                dangerouslySetInnerHTML={{ __html: marked.parse(loc.body || '') }}
+              />
               {loc.buttonText && (
                 popup.button_url ? (
                   <a
                     href={popup.button_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ alignSelf: 'flex-start', padding: '6px 16px', background: '#1677ff', color: '#fff', borderRadius: 4, fontSize: 13, textDecoration: 'none' }}
+                    style={{ alignSelf: ALIGN_TO_FLEX[popup.text_align] ?? 'flex-start', padding: '6px 16px', background: '#1677ff', color: '#fff', borderRadius: 4, fontSize: 13, textDecoration: 'none' }}
                   >
                     {loc.buttonText}
                   </a>
                 ) : (
                   <button
                     onClick={() => handleClose(popup.popupid)}
-                    style={{ alignSelf: 'flex-start', padding: '6px 16px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
+                    style={{ alignSelf: ALIGN_TO_FLEX[popup.text_align] ?? 'flex-start', padding: '6px 16px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
                   >
                     {loc.buttonText}
                   </button>

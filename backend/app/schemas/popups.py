@@ -6,9 +6,10 @@ from pydantic import BaseModel, field_validator, model_validator
 class PopupAdminItem(BaseModel):
     popupid: int
     title: str
-    content_type: str = "page"
+    content_type: str = "inline"
     pageurl: Optional[str] = None
     body: Optional[str] = None
+    text_align: Optional[str] = "left"
     button_text: Optional[str] = None
     button_url: Optional[str] = None
     startdts: Optional[str] = None
@@ -28,9 +29,10 @@ class PopupsAdminListResponse(BaseModel):
 
 class PopupSaveRequest(BaseModel):
     title: str
-    content_type: str = "page"
+    content_type: str = "inline"
     pageurl: Optional[str] = None
     body: Optional[str] = None
+    text_align: Optional[str] = "left"
     button_text: Optional[str] = None
     button_url: Optional[str] = None
     startdts: str
@@ -55,6 +57,14 @@ class PopupSaveRequest(BaseModel):
     def _content_type_valid(cls, v: str) -> str:
         if v not in ("page", "inline"):
             raise ValueError("content_type은 'page' 또는 'inline'이어야 합니다.")
+        return v
+
+    @field_validator("text_align")
+    @classmethod
+    def _text_align_valid(cls, v: Optional[str]) -> str:
+        v = v or "left"
+        if v not in ("left", "center", "right"):
+            raise ValueError("text_align은 'left'/'center'/'right' 중 하나여야 합니다.")
         return v
 
     @field_validator("startdts", "enddts")

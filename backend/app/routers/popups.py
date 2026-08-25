@@ -1,7 +1,9 @@
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from backend.app.dependencies import get_optional_token, get_token, get_sb as _sb, get_user as _get_user
 from backend.app.schemas.popups import (
@@ -11,6 +13,9 @@ from backend.app.schemas.popups import (
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
+
+_ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB
 
 
 def _svc():
@@ -32,7 +37,7 @@ def list_popups(
     q = (
         sb.schema(SUPABASE_SCHEMA).table("popups")
         .select(
-            "popupid, title, content_type, pageurl, body, button_text, button_url, "
+            "popupid, title, content_type, pageurl, body, text_align, button_text, button_url, "
             "width, height, lefts, top, deactivateday, mainlogin"
         )
         .eq("useyn", True)
@@ -179,6 +184,37 @@ def update_popup(popupid: int, body: PopupSaveRequest, token: str = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB 저장 실패: {str(e)}")
     return PopupSaveResponse(result="success", popupid=popupid)
+
+
+# ─── 관리자: 본문 이미지 업로드 ─────────────────────────────────────────────────
+
+@router.post("/{popupid}/upload-image")
+def upload_popup_image(popupid: int, file: UploadFile = File(...), token: str = Depends(get_token)):
+    """Body(마크다운/HTML)에 삽입할 이미지를 Supabase Storage(sdoc 버킷)에 업로드하고 공개 URL을 반환."""
+    sb = _sb(token)
+
+    existing = (
+        sb.schema(SUPABASE_SCHEMA).table("popups").select("popupid").eq("popupid", popupid).execute().data
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="팝업을 찾을 수 없습니다.")
+
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="이미지 파일(PNG/JPEG/GIF/WEBP/SVG)만 업로드할 수 있습니다.")
+
+    content = file.file.read()
+    if len(content) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="이미지 용량은 5MB를 초과할 수 없습니다.")
+
+    ext = os.path.splitext(file.filename)[1]
+    storage_path = f"iconfiles/popup/{popupid}/{uuid.uuid4()}{ext}"
+    try:
+        sb.storage.from_("sdoc").upload(storage_path, content, {"content-type": file.content_type})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"이미지 업로드 실패: {str(e)}")
+
+    public_url = sb.storage.from_("sdoc").get_public_url(storage_path).split("?")[0]
+    return {"url": public_url}
 
 
 # ─── 관리자: 삭제 ──────────────────────────────────────────────────────────────

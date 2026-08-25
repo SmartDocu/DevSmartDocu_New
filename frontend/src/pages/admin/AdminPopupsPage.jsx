@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { App, DatePicker } from 'antd'
 import dayjs from 'dayjs'
+import { marked } from 'marked'
 import { useLangStore, t } from '@/stores/langStore'
 import {
   useAdminPopups,
@@ -9,14 +10,15 @@ import {
   useDeletePopup,
   useSavePopupTranslation,
   useDeletePopupTranslation,
+  useUploadPopupImage,
 } from '@/hooks/usePopups'
 import { useLanguages, useMenuCodes } from '@/hooks/useMenus'
 
 const EMPTY_POPUP = {
   title: '',
-  content_type: 'page',
-  pageurl: '',
+  content_type: 'inline',
   body: '',
+  text_align: 'left',
   button_text: '',
   button_url: '',
   startdts: '',
@@ -30,26 +32,35 @@ const EMPTY_POPUP = {
   mainlogin: 'M',
 }
 
+// 관리자가 입력한 마크다운을 미리보기용 HTML로 변환 (본문 전용 — 신뢰된 관리자 입력만 렌더링됨,
+// D2InsightPage.jsx의 marked.parse() + dangerouslySetInnerHTML 패턴과 동일)
+function renderMarkdownPreview(text) {
+  return marked.parse(text || '')
+}
+
 export default function AdminPopupsPage() {
   const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data: popups = [] } = useAdminPopups()
   const { data: languages = [] } = useLanguages()
-  const { data: contentTypeCodes = [] } = useMenuCodes('popup_content_type')
   const { data: mainloginCodes = [] } = useMenuCodes('popup_mainlogin')
+  const { data: textAlignCodes = [] } = useMenuCodes('popup_textalign')
 
   const [selectedPopup, setSelectedPopup] = useState(null)
   const [isNew, setIsNew] = useState(true)
   const [form, setForm] = useState(EMPTY_POPUP)
   const [transEdits, setTransEdits] = useState({})
   const [searchText, setSearchText] = useState('')
+  const bodyTextareaRef = useRef(null)
+  const imageInputRef = useRef(null)
 
   const { data: translations = [] } = usePopupTranslations(selectedPopup?.popupid)
   const savePopup = useSavePopup()
   const deletePopup = useDeletePopup()
   const saveTrans = useSavePopupTranslation()
   const deleteTrans = useDeletePopupTranslation()
+  const uploadImage = useUploadPopupImage()
 
   const translationsKey = translations.map((tr) => `${tr.languagecd}:${tr.title}:${tr.body}:${tr.button_text}`).join(',')
   const languagesKey = languages.map((l) => l.languagecd).join(',')
@@ -73,9 +84,9 @@ export default function AdminPopupsPage() {
     setIsNew(false)
     setForm({
       title: p.title || '',
-      content_type: p.content_type || 'page',
-      pageurl: p.pageurl || '',
+      content_type: 'inline',
       body: p.body || '',
+      text_align: p.text_align || 'left',
       button_text: p.button_text || '',
       button_url: p.button_url || '',
       startdts: p.startdts || '',
@@ -103,7 +114,6 @@ export default function AdminPopupsPage() {
     if (dayjs(form.enddts).isSame(dayjs(form.startdts)) || dayjs(form.enddts).isBefore(dayjs(form.startdts))) {
       message.warning(t('msg.popup.period.invalid')); return
     }
-    if (form.content_type === 'page' && !form.pageurl.trim()) { message.warning(t('msg.popup.pageurl.required')); return }
 
     const payload = {
       ...form,
@@ -150,6 +160,26 @@ export default function AdminPopupsPage() {
     })
   }
 
+  const handleImageButtonClick = () => {
+    if (!selectedPopup?.popupid) { message.warning(t('msg.popup.image.save.first')); return }
+    imageInputRef.current?.click()
+  }
+
+  const handleImageSelected = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !selectedPopup?.popupid) return
+    try {
+      const { url } = await uploadImage.mutateAsync({ popupid: selectedPopup.popupid, file })
+      const markdown = `![image](${url})`
+      const ta = bodyTextareaRef.current
+      const pos = ta ? ta.selectionStart : form.body.length
+      setForm((f) => ({ ...f, body: f.body.slice(0, pos) + markdown + f.body.slice(pos) }))
+    } catch {
+      // 에러 메시지는 useUploadPopupImage의 onError에서 처리됨
+    }
+  }
+
   return (
     <div>
       <div className="page-title">
@@ -181,7 +211,6 @@ export default function AdminPopupsPage() {
               <thead>
                 <tr>
                   <th>{t('lbl.popup.title')}</th>
-                  <th>{t('lbl.popup.content_type')}</th>
                   <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
@@ -198,12 +227,6 @@ export default function AdminPopupsPage() {
                     onClick={() => handleSelect(p)}
                   >
                     <td>{p.title}</td>
-                    <td>
-                      {(() => {
-                        const c = contentTypeCodes.find((c) => c.codevalue === p.content_type)
-                        return c ? (t(c.term_key) || c.default_name) : p.content_type
-                      })()}
-                    </td>
                     <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
                   </tr>
                 ))}
@@ -228,50 +251,58 @@ export default function AdminPopupsPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="popup-content-type"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.popup.content_type')}:</label>
-            <select
-              id="popup-content-type" value={form.content_type}
-              onChange={(e) => setForm((f) => ({ ...f, content_type: e.target.value }))}
+            <label htmlFor="popup-body">{t('lbl.popup.body')}:</label>
+            <textarea
+              id="popup-body" ref={bodyTextareaRef} rows={5} style={{ resize: 'vertical' }} value={form.body}
+              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+            />
+            <input
+              type="file" accept="image/*" ref={imageInputRef} style={{ display: 'none' }}
+              onChange={handleImageSelected}
+            />
+            <button
+              className="btn" type="button" style={{ marginTop: 6 }}
+              onClick={handleImageButtonClick} disabled={uploadImage.isPending}
             >
-              {contentTypeCodes.map((c) => (
+              {t('btn.popup.image.insert')}
+            </button>
+            <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>{t('inf.popup.body.markdown.hint')}</div>
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 12, color: '#999', marginBottom: 2 }}>{t('lbl.popup.preview')}</div>
+              <div
+                style={{
+                  border: '1px solid #e8e8e8', borderRadius: 4, padding: '8px 12px',
+                  minHeight: 40, fontSize: 13, textAlign: form.text_align,
+                }}
+                dangerouslySetInnerHTML={{ __html: renderMarkdownPreview(form.body) }}
+              />
+            </div>
+          </div>
+          <div className="form-group">
+            <label htmlFor="popup-text-align">{t('lbl.popup.text_align')}:</label>
+            <select
+              id="popup-text-align" value={form.text_align}
+              onChange={(e) => setForm((f) => ({ ...f, text_align: e.target.value }))}
+            >
+              {textAlignCodes.map((c) => (
                 <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
               ))}
             </select>
           </div>
-
-          {form.content_type === 'page' ? (
-            <div className="form-group">
-              <label htmlFor="popup-pageurl"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.popup.pageurl')}:</label>
-              <input
-                id="popup-pageurl" type="text" placeholder="/popup/my-popup" value={form.pageurl}
-                onChange={(e) => setForm((f) => ({ ...f, pageurl: e.target.value }))}
-              />
-            </div>
-          ) : (
-            <>
-              <div className="form-group">
-                <label htmlFor="popup-body">{t('lbl.popup.body')}:</label>
-                <textarea
-                  id="popup-body" rows={5} style={{ resize: 'vertical' }} value={form.body}
-                  onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="popup-button-text">{t('lbl.popup.button_text')}:</label>
-                <input
-                  id="popup-button-text" type="text" value={form.button_text}
-                  onChange={(e) => setForm((f) => ({ ...f, button_text: e.target.value }))}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="popup-button-url">{t('lbl.popup.button_url')}:</label>
-                <input
-                  id="popup-button-url" type="text" placeholder="https://..." value={form.button_url}
-                  onChange={(e) => setForm((f) => ({ ...f, button_url: e.target.value }))}
-                />
-              </div>
-            </>
-          )}
+          <div className="form-group">
+            <label htmlFor="popup-button-text">{t('lbl.popup.button_text')}:</label>
+            <input
+              id="popup-button-text" type="text" value={form.button_text}
+              onChange={(e) => setForm((f) => ({ ...f, button_text: e.target.value }))}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="popup-button-url">{t('lbl.popup.button_url')}:</label>
+            <input
+              id="popup-button-url" type="text" placeholder="https://..." value={form.button_url}
+              onChange={(e) => setForm((f) => ({ ...f, button_url: e.target.value }))}
+            />
+          </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
             <div className="form-group" style={{ flex: 1 }}>
@@ -358,45 +389,49 @@ export default function AdminPopupsPage() {
             </div>
           </div>
           {(selectedPopup || isNew) ? (
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ width: '18%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('lbl.popup.title')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('lbl.popup.body')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('lbl.popup.button_text')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {languages.map((l) => (
-                    <tr key={l.languagecd}>
-                      <td style={{ padding: '3px 8px' }}>{l.languagenm}</td>
-                      <td style={{ padding: '3px 4px' }}>
-                        <input
-                          type="text" style={{ width: '100%', boxSizing: 'border-box' }}
-                          value={transEdits[l.languagecd]?.title ?? ''}
-                          onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], title: e.target.value } }))}
-                        />
-                      </td>
-                      <td style={{ padding: '3px 4px' }}>
-                        <input
-                          type="text" style={{ width: '100%', boxSizing: 'border-box' }}
-                          value={transEdits[l.languagecd]?.body ?? ''}
-                          onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], body: e.target.value } }))}
-                        />
-                      </td>
-                      <td style={{ padding: '3px 4px' }}>
-                        <input
-                          type="text" style={{ width: '100%', boxSizing: 'border-box' }}
-                          value={transEdits[l.languagecd]?.button_text ?? ''}
-                          onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], button_text: e.target.value } }))}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ fontSize: 12, color: '#999' }}>{t('inf.popup.body.markdown.hint')}</div>
+              {languages.map((l) => (
+                <div key={l.languagecd} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 10 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, color: '#666', marginBottom: 6 }}>{l.languagenm}</div>
+
+                  <div className="form-group">
+                    <label>{t('lbl.popup.title')}:</label>
+                    <input
+                      type="text" style={{ width: '100%', boxSizing: 'border-box' }}
+                      value={transEdits[l.languagecd]?.title ?? ''}
+                      onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], title: e.target.value } }))}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>{t('lbl.popup.body')}:</label>
+                    <textarea
+                      rows={3} style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                      value={transEdits[l.languagecd]?.body ?? ''}
+                      onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], body: e.target.value } }))}
+                    />
+                    {transEdits[l.languagecd]?.body && (
+                      <div
+                        style={{
+                          border: '1px solid #e8e8e8', borderRadius: 4, padding: '6px 10px', marginTop: 4,
+                          minHeight: 30, fontSize: 13, textAlign: form.text_align,
+                        }}
+                        dangerouslySetInnerHTML={{ __html: renderMarkdownPreview(transEdits[l.languagecd]?.body) }}
+                      />
+                    )}
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>{t('lbl.popup.button_text')}:</label>
+                    <input
+                      type="text" style={{ width: '100%', boxSizing: 'border-box' }}
+                      value={transEdits[l.languagecd]?.button_text ?? ''}
+                      onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], button_text: e.target.value } }))}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.popup.select.trans')}</div>

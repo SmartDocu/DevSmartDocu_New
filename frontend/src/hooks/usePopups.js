@@ -90,6 +90,18 @@ export function useSavePopupTranslation() {
   })
 }
 
+export function useUploadPopupImage() {
+  const { message } = App.useApp()
+  return useMutation({
+    mutationFn: ({ popupid, file }) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return apiClient.post(`/popups/${popupid}/upload-image`, formData).then((r) => r.data)
+    },
+    onError: (err) => { message.error(extractErrorMessage(err, t('msg.save.error'))) },
+  })
+}
+
 export function useDeletePopupTranslation() {
   const qc = useQueryClient()
   const { message } = App.useApp()
