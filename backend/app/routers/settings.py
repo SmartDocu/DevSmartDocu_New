@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket, offset_negative_ba_bucket
+from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
 
 router = APIRouter()
@@ -1383,6 +1384,15 @@ def _apply_due_pro_downgrades(svc, accountuid: str) -> None:
             expiredts=expiredts_new,
             startdt=today.isoformat(),
         )
+
+        if actor:
+            create_notification(
+                svc, category="plan", status="info",
+                title="요금제 변경", message=f"'{row['servicecd']}' 서비스 요금제가 무료(Free)로 전환되었습니다.",
+                title_key="msg.notification.plan.downgraded.title", message_key="msg.notification.plan.downgraded.body",
+                params={"servicecd": row["servicecd"]},
+                target_object="accountservice", target_uid=accountuid, target_url="myinfo", target_useruid=actor,
+            )
 
 
 def _get_personal_active_subscription(svc, user_id: str, tenantid: Optional[str], servicecd: str) -> tuple[str, dict]:
