@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { App, Modal, Select, Input } from 'antd'
+import { App, Modal, Select, Input, Tag, Button } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
   useTenantManageOtherSubscriptions,
   usePurchaseTenantManageOtherSubscription,
   useCancelTenantManageOtherSubscription,
+  useCancelUndoTenantManageOtherSubscription,
 } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 
@@ -24,6 +25,7 @@ export default function OrgOtherSubscriptionManagePage() {
   const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('org/payment-manage')
   const purchaseMutation = usePurchaseTenantManageOtherSubscription()
   const cancelMutation = useCancelTenantManageOtherSubscription()
+  const cancelUndoMutation = useCancelUndoTenantManageOtherSubscription()
 
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelReasonCd, setCancelReasonCd] = useState(null)
@@ -82,6 +84,16 @@ export default function OrgOtherSubscriptionManagePage() {
     )
   }
 
+  const handleCancelUndo = (subscriptionuid) => {
+    cancelUndoMutation.mutate(
+      { subscriptionuid },
+      {
+        onSuccess: () => { message.success(t('msg.save.success')) },
+        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+      },
+    )
+  }
+
   return (
     <div>
       <div className="page-title">
@@ -123,13 +135,24 @@ export default function OrgOtherSubscriptionManagePage() {
                     <td>{row.users ? `${row.users} users` : '-'}</td>
                     <td>{row.createdts}</td>
                     <td style={{ textAlign: 'center' }}>
-                      <button
-                        className="btn btn-danger"
-                        type="button"
-                        onClick={() => handleCancel(row.subscriptionuid)}
-                      >
-                        {t('btn.subscription.cancel')}
-                      </button>
+                      {row.cancel_reserved ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <Tag color="orange">
+                            {t('lbl.pro.cancel.reserved')}{row.cancel_effective_date ? ` (${row.cancel_effective_date})` : ''}
+                          </Tag>
+                          <Button size="small" loading={cancelUndoMutation.isPending} onClick={() => handleCancelUndo(row.subscriptionuid)}>
+                            {t('btn.pro.cancel.undo')}
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          className="btn btn-danger"
+                          type="button"
+                          onClick={() => handleCancel(row.subscriptionuid)}
+                        >
+                          {t('btn.subscription.cancel')}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

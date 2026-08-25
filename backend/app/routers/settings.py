@@ -1395,6 +1395,103 @@ def _apply_due_pro_downgrades(svc, accountuid: str) -> None:
             )
 
 
+def _apply_due_feature_cancellations(svc, accountuid: str) -> None:
+    """예약된 기타구독(User/Feature 부가상품) 해지 중, 구매일 기준 결제 주기(1개월)가 끝난 건을
+    실제로 Cancelled 처리한다. 개인 Pro 해지(_apply_due_pro_downgrades)와 동일한 지연 평가 패턴 —
+    이미 결제한 기간은 그대로 유지하고 주기가 끝난 시점에만 실제 접근 권한을 회수한다.
+    별도 배치/스케줄러가 없어 '기타 구독' 목록 조회(/tenant-manage/other-subscriptions) 시점에 처리."""
+    from datetime import datetime, timezone as tz
+    from dateutil.relativedelta import relativedelta
+    from dateutil import parser as dtparser
+
+    rows = svc.table("subscription_features").select(
+        "subscriptionuid,productcd,tenantid,createdts,canceldts,canceluseruid"
+    ).eq("accountuid", accountuid).eq("subscriptionstatus", "Paid").execute().data or []
+
+    now_utc = datetime.now(tz.utc)
+    for row in rows:
+        if not row.get("canceldts"):
+            continue
+        try:
+            period_end = dtparser.parse(row["createdts"]) + relativedelta(months=1)
+        except Exception:
+            continue
+        if now_utc < period_end:
+            continue
+
+        actor = row.get("canceluseruid")
+        svc.table("subscription_features").update({
+            "subscriptionstatus": "Cancelled",
+            "updater": actor,
+            "updatedts": now_utc.isoformat(),
+        }).eq("subscriptionuid", row["subscriptionuid"]).execute()
+
+        prod_row = svc.table("products").select(
+            "productcd,productnm,servicecd,producttype,users"
+        ).eq("productcd", row["productcd"]).maybe_single().execute()
+        product = prod_row.data if prod_row else {}
+
+        if product.get("producttype") == "User" and product.get("servicecd"):
+            svcrow = svc.table("accountservices").select(
+                "included_users,add_users"
+            ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
+            accsvc = svcrow.data if svcrow else None
+            if accsvc:
+                new_add_users = max((accsvc.get("add_users") or 0) - (product.get("users") or 0), 0)
+                new_total_users = (accsvc.get("included_users") or 0) + new_add_users
+                svc.table("accountservices").update({
+                    "add_users": new_add_users,
+                    "total_users": new_total_users,
+                    "updater": actor,
+                }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+
+                # 정원 축소 후 실제 활성 인원이 초과 상태인지 확인 — 자동 비활성화는 하지 않고
+                # 관리자에게 알림만 보낸다(누구를 뺄지는 관리자가 직접 판단해야 하는 결정이라
+                # invite/신규 활성화는 total_users 재조회 시점에 자동으로 막히지만, 이미 활성인
+                # 기존 인원을 시스템이 임의로 골라 비활성화하지는 않는다).
+                active_cnt = svc.table("serviceusers").select("useruid", count="exact").eq(
+                    "accountuid", accountuid
+                ).eq("servicecd", product["servicecd"]).eq("useyn", True).execute()
+                active_count = active_cnt.count or 0
+                if active_count > new_total_users and actor:
+                    create_notification(
+                        svc, category="plan", status="error",
+                        title="인원 초과 안내",
+                        message=(
+                            f"'{product['servicecd']}' 서비스 정원이 {new_total_users}명으로 줄었지만 "
+                            f"현재 활성 인원은 {active_count}명입니다. 인원을 비활성화해주세요."
+                        ),
+                        title_key="msg.notification.overcapacity.title", message_key="msg.notification.overcapacity.body",
+                        params={"servicecd": product["servicecd"], "total_users": new_total_users, "active_count": active_count},
+                        target_object="accountservice", target_uid=accountuid,
+                        target_url="org/tenant-users", target_useruid=actor,
+                    )
+
+        remaining = svc.table("subscription_features").select("subscriptionuid").eq(
+            "accountuid", accountuid
+        ).eq("productcd", row["productcd"]).eq("subscriptionstatus", "Paid").execute().data or []
+        if not remaining:
+            svc.table("account_features").delete().eq("accountuid", accountuid).eq("productcd", row["productcd"]).execute()
+
+        if row["productcd"] == "mfa":
+            svc.table("config_tenants").update({"value": False}).eq("tenantid", row["tenantid"]).eq("configcd", "Is_MFA").execute()
+        if row["productcd"] == "whitelist":
+            svc.table("config_tenants").update({"value": False}).eq("tenantid", row["tenantid"]).in_(
+                "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
+            ).execute()
+
+        if actor:
+            create_notification(
+                svc, category="plan", status="info",
+                title="구독 해지 완료",
+                message=f"'{product.get('productnm') or row['productcd']}' 구독이 해지되었습니다.",
+                title_key="msg.notification.feature.cancelled.title", message_key="msg.notification.feature.cancelled.body",
+                params={"productnm": product.get("productnm") or row["productcd"]},
+                target_object="subscription_feature", target_uid=row["subscriptionuid"],
+                target_url="org/other-subscription-manage", target_useruid=actor,
+            )
+
+
 def _get_personal_active_subscription(svc, user_id: str, tenantid: Optional[str], servicecd: str) -> tuple[str, dict]:
     """개인(시스템 테넌트) 계정의 특정 servicecd 활성 구독을 조회.
 
@@ -2018,6 +2115,9 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
 
+    if accountuid:
+        _apply_due_feature_cancellations(svc, accountuid)
+
     subscribed_servicecds = set()
     owned_productcds = set()
     if accountuid:
@@ -2054,14 +2154,25 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
 
     owned = []
     if accountuid:
+        from dateutil.relativedelta import relativedelta
+        from dateutil import parser as dtparser
+
         offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
         rows = (
-            svc.table("subscription_features").select("subscriptionuid,productcd,createdts")
+            svc.table("subscription_features").select("subscriptionuid,productcd,createdts,canceldts")
             .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
             .order("createdts").execute().data or []
         )
         for r in rows:
             p = prod_map.get(r["productcd"], {})
+            cancel_effective_date = None
+            if r.get("canceldts"):
+                try:
+                    cancel_effective_date = _fmt_dt(
+                        (dtparser.parse(r["createdts"]) + relativedelta(months=1)).isoformat(), offsetminutes
+                    )
+                except Exception:
+                    cancel_effective_date = None
             owned.append({
                 "subscriptionuid": r["subscriptionuid"],
                 "productcd": r["productcd"],
@@ -2071,6 +2182,8 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
                 "users": p.get("users"),
                 "createdts": _fmt_dt(r.get("createdts"), offsetminutes),
                 "orderno": p.get("orderno", 999),
+                "cancel_reserved": bool(r.get("canceldts")),
+                "cancel_effective_date": cancel_effective_date,
             })
         owned.sort(key=lambda o: o["orderno"])
 
@@ -2225,7 +2338,61 @@ def cancel_tenant_manage_other_subscription(
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """기타 구독 관리 화면: User/Feature 구매 건 취소."""
+    """기타 구독 관리 화면: User/Feature 구매 건 해지 예약.
+
+    개인 Pro 해지와 동일하게 즉시 취소하지 않는다 — 이미 결제한 기간(구매일+1개월)까지는
+    그대로 이용 가능하게 두고, 실제 접근 권한 회수는 주기가 끝난 뒤
+    _apply_due_feature_cancellations()가 지연 평가로 처리한다."""
+    from datetime import datetime, timezone as tz
+    from dateutil.relativedelta import relativedelta
+    from dateutil import parser as dtparser
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    sf_row = svc.table("subscription_features").select(
+        "subscriptionuid,productcd,accountuid,subscriptionstatus,createdts,canceldts"
+    ).eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+    sf = sf_row.data if sf_row else None
+    if not sf or sf.get("accountuid") != accountuid:
+        raise HTTPException(status_code=404, detail="구독 내역을 찾을 수 없습니다.")
+    if sf.get("subscriptionstatus") == "Cancelled":
+        raise HTTPException(status_code=400, detail="이미 취소된 구독입니다.")
+    if sf.get("canceldts"):
+        raise HTTPException(status_code=400, detail="이미 해지가 예약되어 있습니다.")
+
+    now_utc = datetime.now(tz.utc)
+    svc.table("subscription_features").update({
+        "canceluseruid": user_id,
+        "canceldts": now_utc.isoformat(),
+        "cancel_reasoncd": body.cancel_reasoncd,
+        "cancel_reasondesc": body.cancel_reasondesc,
+        "updater": user_id,
+        "updatedts": now_utc.isoformat(),
+    }).eq("subscriptionuid", body.subscriptionuid).execute()
+
+    effective_date = (dtparser.parse(sf["createdts"]) + relativedelta(months=1)).isoformat()
+    return {"result": "success", "effective_date": effective_date}
+
+
+class OtherSubscriptionCancelUndoRequest(BaseModel):
+    subscriptionuid: str
+
+
+@router.post("/tenant-manage/other-subscription-cancel-undo")
+def undo_cancel_tenant_manage_other_subscription(
+    body: OtherSubscriptionCancelUndoRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """기타 구독 관리 화면: 예약된 해지 철회 — 결제 주기가 끝나기 전까지만 가능."""
     from datetime import datetime, timezone as tz
 
     user = _get_user(token)
@@ -2239,57 +2406,22 @@ def cancel_tenant_manage_other_subscription(
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
     sf_row = svc.table("subscription_features").select(
-        "subscriptionuid,productcd,accountuid,subscriptionstatus"
+        "subscriptionuid,accountuid,subscriptionstatus,canceldts"
     ).eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
     sf = sf_row.data if sf_row else None
     if not sf or sf.get("accountuid") != accountuid:
         raise HTTPException(status_code=404, detail="구독 내역을 찾을 수 없습니다.")
-    if sf.get("subscriptionstatus") == "Cancelled":
-        raise HTTPException(status_code=400, detail="이미 취소된 구독입니다.")
+    if not sf.get("canceldts"):
+        raise HTTPException(status_code=400, detail="예약된 해지가 없습니다.")
 
-    prod_row = svc.table("products").select(
-        "productcd,servicecd,producttype,users"
-    ).eq("productcd", sf["productcd"]).maybe_single().execute()
-    product = prod_row.data if prod_row else {}
-
-    now_utc = datetime.now(tz.utc)
     svc.table("subscription_features").update({
-        "subscriptionstatus": "Cancelled",
-        "canceluseruid": user_id,
-        "canceldts": now_utc.isoformat(),
-        "cancel_reasoncd": body.cancel_reasoncd,
-        "cancel_reasondesc": body.cancel_reasondesc,
+        "canceluseruid": None,
+        "canceldts": None,
+        "cancel_reasoncd": None,
+        "cancel_reasondesc": None,
         "updater": user_id,
-        "updatedts": now_utc.isoformat(),
+        "updatedts": datetime.now(tz.utc).isoformat(),
     }).eq("subscriptionuid", body.subscriptionuid).execute()
-
-    if product.get("producttype") == "User" and product.get("servicecd"):
-        svcrow = svc.table("accountservices").select(
-            "included_users,add_users"
-        ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
-        accsvc = svcrow.data if svcrow else None
-        if accsvc:
-            new_add_users = max((accsvc.get("add_users") or 0) - (product.get("users") or 0), 0)
-            new_total_users = (accsvc.get("included_users") or 0) + new_add_users
-            svc.table("accountservices").update({
-                "add_users": new_add_users,
-                "total_users": new_total_users,
-                "updater": user_id,
-            }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
-
-    remaining = svc.table("subscription_features").select("subscriptionuid").eq(
-        "accountuid", accountuid
-    ).eq("productcd", sf["productcd"]).eq("subscriptionstatus", "Paid").execute().data or []
-    if not remaining:
-        svc.table("account_features").delete().eq("accountuid", accountuid).eq("productcd", sf["productcd"]).execute()
-
-    if sf["productcd"] == "mfa":
-        svc.table("config_tenants").update({"value": False}).eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute()
-
-    if sf["productcd"] == "whitelist":
-        svc.table("config_tenants").update({"value": False}).eq("tenantid", int(tenantid)).in_(
-            "configcd", ["Is_Manager_IP_Allow", "Is_User_IP_Allow"]
-        ).execute()
 
     return {"result": "success"}
 

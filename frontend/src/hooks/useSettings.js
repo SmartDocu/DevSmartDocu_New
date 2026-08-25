@@ -295,6 +295,16 @@ export function useCancelTenantManageOtherSubscription() {
   })
 }
 
+export function useCancelUndoTenantManageOtherSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/other-subscription-cancel-undo', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-other-subscriptions'] })
+    },
+  })
+}
+
 export function useTenantManageCreditSubscriptions() {
   return useQuery({
     queryKey: ['tenant-manage-credit-subscriptions'],
