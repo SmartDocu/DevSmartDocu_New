@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { App, Radio } from 'antd'
+import { App, Alert, Radio, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -99,13 +99,13 @@ export default function OrgSubscriptionManagePage() {
             <div />
           </div>
           <div className="table-container">
-            <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
+            <table className="table table-bordered table-sm" style={{ cursor: 'pointer', tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th>{t('lbl.service_name_lbl')}</th>
-                  <th>{t('lbl.product')}</th>
-                  <th>{t('lbl.plan')}</th>
-                  <th>{t('lbl.items')}</th>
+                  <th style={{ width: '15%' }}>{t('lbl.service_name_lbl')}</th>
+                  <th style={{ width: '50%' }}>{t('lbl.product')}</th>
+                  <th style={{ width: '15%' }}>{t('lbl.plan')}</th>
+                  <th style={{ width: '20%' }}>{t('lbl.items')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,6 +156,9 @@ export default function OrgSubscriptionManagePage() {
               value={selectedProductcd}
               onChange={(e) => setSelectedProductcd(e.target.value)}
             >
+              {products.some((p) => p.currencycd === 'USD') && (
+                <Alert type="info" showIcon message={t('inf.pricing.usd_notice')} style={{ marginBottom: 10 }} />
+              )}
               {products.map((p) => (
                 <div
                   key={p.productcd}
@@ -178,6 +181,26 @@ export default function OrgSubscriptionManagePage() {
           )}
         </div>
       </div>
+
+      {/* 로딩 오버레이 */}
+      {changeMutation.isPending && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{t('msg.loading.wait')}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

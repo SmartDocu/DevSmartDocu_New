@@ -331,10 +331,14 @@ def send_contact(body: ContactRequest):
 
 
 @router.get("/pricing")
-def get_public_pricing():
+def get_public_pricing(currencycd: str = "KRW"):
     """비로그인 사용자도 볼 수 있는 서비스 이용요금 안내 페이지용 데이터.
-    회원가입 여부와 무관하게 공개하는 화면이라 인증을 요구하지 않는다."""
+    회원가입 여부와 무관하게 공개하는 화면이라 인증을 요구하지 않는다.
+    currencycd: 화면의 KRW/USD 토글에서 사용자가 직접 선택 — 기본값 KRW."""
     from backend.app.routers.settings import _attach_prices
+
+    if currencycd not in ("KRW", "USD"):
+        currencycd = "KRW"
 
     sb = _sb_svc().schema(SUPABASE_SCHEMA)
 
@@ -347,6 +351,6 @@ def get_public_pricing():
         .execute()
         .data or []
     )
-    _attach_prices(sb, rows)
+    _attach_prices(sb, rows, currencycd=currencycd)
 
     return {"products": rows}

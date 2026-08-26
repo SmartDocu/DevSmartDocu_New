@@ -1,4 +1,4 @@
-import { App } from 'antd'
+import { App, Alert, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -35,7 +35,7 @@ export default function OrgCreditManagePage() {
         purchaseMutation.mutate(
           { productcd },
           {
-            onSuccess: () => { message.success(t('msg.save.success')) },
+            onSuccess: () => { message.success(t('msg.purchase.success')) },
             onError: (err) => {
               const detail = err.response?.data?.detail
               if (detail === PAYMENT_METHOD_REQUIRED) {
@@ -103,6 +103,9 @@ export default function OrgCreditManagePage() {
             <div />
           </div>
 
+          {products.some((p) => p.currencycd === 'USD') && (
+            <Alert type="info" showIcon message={t('inf.pricing.usd_notice')} style={{ marginBottom: 10 }} />
+          )}
           {products.length === 0 ? (
             <div style={{ color: '#999', padding: '40px 0', textAlign: 'center' }}>{t('msg.no.data')}</div>
           ) : products.map((p) => (
@@ -136,6 +139,26 @@ export default function OrgCreditManagePage() {
           ))}
         </div>
       </div>
+
+      {/* 로딩 오버레이 */}
+      {purchaseMutation.isPending && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{t('msg.loading.wait')}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

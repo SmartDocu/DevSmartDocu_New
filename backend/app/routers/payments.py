@@ -239,6 +239,102 @@ def list_payment_methods(token: str = Depends(get_token), header_tenantid: Optio
     return {"methods": rows}
 
 
+def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
+    """tenantid를 주면 그 테넌트 기준으로, 없으면(다중 테넌트일 때 모호해질 수 있어) 활성(useyn=True) 소속 행을 사용."""
+    try:
+        q = sb.table("tenantusers").select("timezone,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
+            return None
+        tu_data = rows[0]
+        tz = tu_data.get("timezone")
+        if not tz and tu_data.get("tenantid"):
+            t = sb.table("tenants").select("timezone").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
+                tz = t.data.get("timezone")
+        if not tz:
+            return None
+        tz_row = sb.table("timezones").select("offsetminutes").eq("timezone", tz).maybe_single().execute()
+        return tz_row.data.get("offsetminutes") if tz_row and tz_row.data else None
+    except Exception:
+        return None
+
+
+def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
+    if not raw:
+        return ""
+    try:
+        from datetime import timedelta
+        from dateutil import parser as dtparser
+        dt = dtparser.parse(raw) if isinstance(raw, str) else raw
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if offsetminutes is not None:
+            dt = dt.astimezone(timezone.utc) + timedelta(minutes=offsetminutes)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(raw)
+
+
+@router.get("/history")
+def list_payment_history(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    token: str = Depends(get_token),
+    header_tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """결제 이력 조회 화면: 계정의 결제(payments) 내역을 최신순으로 반환한다.
+    start_date/end_date: "YYYY-MM-DD"(사용자 로컬 날짜) — 미지정 시 최근 1개월."""
+    from datetime import date, timedelta as td
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    tenantid = _require_tenant_manager_tenantid(user_id, header_tenantid)
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+    accountuid = _resolve_tenant_accountuid(sd, tenantid, user_id)
+    if not accountuid:
+        return {"payments": []}
+
+    offsetminutes = _get_offsetminutes(sd, user_id, str(tenantid))
+
+    today = date.today()
+    sd_str = start_date or (today - td(days=30)).strftime("%Y-%m-%d")
+    ed_str = end_date or today.strftime("%Y-%m-%d")
+
+    query = (
+        sd.table("payments").select(
+            "paymentuid,productcd,quantity,currencycd,payment_amount,payment_status,createdts"
+        )
+        .eq("accountuid", accountuid)
+    )
+    if offsetminutes is not None:
+        sd_utc = datetime.strptime(sd_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) - td(minutes=offsetminutes)
+        ed_utc = datetime.strptime(ed_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + td(days=1) - td(minutes=offsetminutes)
+        query = query.gte("createdts", sd_utc.isoformat()).lt("createdts", ed_utc.isoformat())
+    else:
+        end_plus = (datetime.strptime(ed_str, "%Y-%m-%d") + td(days=1)).strftime("%Y-%m-%d")
+        query = query.gte("createdts", sd_str).lt("createdts", end_plus)
+
+    rows = query.order("createdts", desc=True).execute().data or []
+    productcds = [r["productcd"] for r in rows if r.get("productcd")]
+    prod_map = {}
+    if productcds:
+        prod_rows = sd.table("products").select("productcd,productnm").in_("productcd", productcds).execute().data or []
+        prod_map = {p["productcd"]: p["productnm"] for p in prod_rows}
+
+    for r in rows:
+        r["productnm"] = prod_map.get(r.get("productcd"))
+        r["createdts"] = _fmt_dt(r.get("createdts"), offsetminutes)
+
+    return {"payments": rows}
+
+
 class BillingKeySaveRequest(BaseModel):
     billing_key_id: str
     is_default: bool = False
@@ -360,11 +456,13 @@ class ChargeRequest(BaseModel):
     order_name: Optional[str] = None
 
 
-def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float, order_name: str) -> dict:
+def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float, order_name: str, productcd: Optional[str] = None, quantity: Optional[int] = None) -> dict:
     """
     등록된 빌링키로 즉시 결제를 청구하는 공용 로직 (payments/payment_attempts 기록 포함).
     payments.py의 /methods/{id}/charge 엔드포인트와 settings.py의 크레딧 구매 등 다른 도메인에서
     "이미 등록된 카드로 상품 금액만큼 청구"가 필요할 때 공용으로 재사용한다.
+    productcd/quantity: 결제 이력에서 "무엇을 몇 개 샀는지" 확인용(테스트 결제 등 상품 연결이
+    없는 경우 None으로 둔다).
     반환: {"success": True, "pgTxId": ...} 또는 {"success": False, "message": ...}
     """
     from utilsPrj.crypto_helper import decrypt_value
@@ -392,6 +490,8 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
         "currencycd": "KRW",
         "payment_amount": amount,
         "payment_status": "Pending",
+        "productcd": productcd,
+        "quantity": quantity,
         "creator": user_id,
     }
     paymentuid = sd.table("payments").insert(payment_row).execute().data[0]["paymentuid"]
@@ -474,7 +574,7 @@ def charge_payment_method(
         raise HTTPException(status_code=404, detail="결제수단을 찾을 수 없습니다.")
 
     order_name = body.order_name or "결제 테스트"
-    result = execute_charge(sd, user_id, tenantid, method_row.data, body.amount, order_name)
+    result = execute_charge(sd, user_id, tenantid, method_row.data, body.amount, order_name, productcd=None, quantity=None)
 
     if result["success"]:
         return {"result": "success", "message": "결제가 완료되었습니다.", "pgTxId": result["pgTxId"]}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { App } from 'antd'
+import { App, Alert, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useUpgradeProducts, useUpgradePlan } from '@/hooks/useSettings'
 import { useMenuCodes } from '@/hooks/useMenus'
@@ -76,6 +76,10 @@ export default function UpgradePlanPage() {
         </div>
       </div>
 
+      {products.some((p) => p.currencycd === 'USD') && (
+        <Alert type="info" showIcon message={t('inf.pricing.usd_notice')} style={{ marginBottom: 10 }} />
+      )}
+
       <div className="table-container">
         <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
           <thead>
@@ -110,6 +114,26 @@ export default function UpgradePlanPage() {
           </tbody>
         </table>
       </div>
+
+      {/* 로딩 오버레이 */}
+      {upgradeMutation.isPending && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{t('msg.loading.wait')}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,22 +1,23 @@
-import { App, Button, Card, Row, Col, Table, Tag } from 'antd'
+import { Button, Card, Row, Col, Table } from 'antd'
 import { CreditCardOutlined, HistoryOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
   useTenantManageSubscriptions,
   useTenantManageTenantInfo,
-  useTenantManageOtherSubscriptions,
-  useTenantManageCreditSubscriptions,
   useTenantManageOverview,
 } from '@/hooks/useSettings'
 import { useMenuCodes } from '@/hooks/useMenus'
 
-function PlaceholderCard({ icon, titleKey, onClick }) {
+function NavCard({ icon, titleKey, routePath, openInTab }) {
   return (
-    <Card hoverable onClick={onClick} style={{ textAlign: 'center', height: '100%' }}>
+    <Card
+      hoverable
+      onClick={() => openInTab(routePath, '', t(titleKey))}
+      style={{ textAlign: 'center', height: '100%' }}
+    >
       <div style={{ fontSize: 32, color: '#163E64', marginBottom: 12 }}>{icon}</div>
       <div style={{ fontWeight: 600, marginBottom: 8 }}>{t(titleKey)}</div>
-      <Tag>{t('msg.coming.soon')}</Tag>
     </Card>
   )
 }
@@ -78,11 +79,8 @@ function TenantInfoCard({ openInTab }) {
 }
 
 export default function OrgTenantManagePage() {
-  const { message } = App.useApp()
   useLangStore((s) => s.translations)
   const openInTab = useOpenInTab()
-
-  const comingSoon = () => { message.info(t('msg.coming.soon')) }
 
   const { data: subData = {}, isLoading: subsLoading } = useTenantManageSubscriptions()
   const subscriptions = (subData.subscriptions || []).filter((s) => !!s.productcd)
@@ -91,12 +89,6 @@ export default function OrgTenantManagePage() {
     const found = planCodes.find((c) => c.codevalue === cd)
     return found ? (t(found.term_key) || found.default_name) : cd
   }
-
-  const { data: otherSubData = {}, isLoading: otherSubsLoading } = useTenantManageOtherSubscriptions()
-  const otherOwned = otherSubData.owned || []
-
-  const { data: creditSubData = {}, isLoading: creditSubsLoading } = useTenantManageCreditSubscriptions()
-  const creditOwned = creditSubData.owned || []
 
   const { data: overviewData = {}, isLoading: overviewLoading } = useTenantManageOverview()
   const serviceOverviews = overviewData.services || []
@@ -121,18 +113,27 @@ export default function OrgTenantManagePage() {
           <TenantInfoCard openInTab={openInTab} />
         </Col>
 
-        {/* 제품 구독 관리: 상단 좌측 제목 / 상단 우측 이동 버튼, 하단 구독 리스트 */}
-        <Col flex="30 1 0" style={{ minWidth: 0 }}>
+        {/* 구독 통합 카드: 구독 + 기타 구독 + 크레딧 영역 통합 */}
+        <Col flex="80 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.subscription')}
             extra={(
-              <Button
-                size="small"
-                onClick={() => openInTab('org/subscription-manage', '', t('ttl.tenant.manage.subscription'))}
-              >
-                {t('btn.subscription.manage')}
-              </Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Button
+                  size="small"
+                  onClick={() => openInTab('org/other-subscription-manage', '', t('ttl.tenant.manage.other_subscription'))}
+                >
+                  {t('btn.other.manage')}
+                </Button>
+                <span style={{ color: '#d9d9d9' }}>|</span>
+                <Button
+                  size="small"
+                  onClick={() => openInTab('org/subscription-manage', '', t('ttl.tenant.manage.subscription'))}
+                >
+                  {t('btn.product.manage')}
+                </Button>
+              </div>
             )}
             style={{ height: '100%' }}
           >
@@ -142,72 +143,12 @@ export default function OrgTenantManagePage() {
               loading={subsLoading}
               dataSource={subscriptions}
               rowKey="servicecd"
-              // scroll={{ y: 195 }}
-              locale={{ emptyText: t('msg.no.data') }}
-              columns={[
-                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm', width: '65%' },
-                { title: t('lbl.plan'), key: 'plancd', render: (_, row) => planLabel(row.plancd), width: '35%' },
-              ]}
-            />
-          </Card>
-        </Col>
-
-        {/* 기타 구독 정보: User/Feature 상품 보유 현황 */}
-        <Col flex="20 1 0" style={{ minWidth: 0 }}>
-          <Card
-            size="small"
-            title={t('ttl.tenant.manage.other_subscription')}
-            extra={(
-              <Button
-                size="small"
-                onClick={() => openInTab('org/other-subscription-manage', '', t('ttl.tenant.manage.other_subscription'))}
-              >
-                {t('btn.subscription.manage')}
-              </Button>
-            )}
-            style={{ height: '100%' }}
-          >
-            <Table
-              size="small"
-              pagination={false}
-              loading={otherSubsLoading}
-              dataSource={otherOwned}
-              rowKey="subscriptionuid"
-              scroll={{ y: 195 }}
               locale={{ emptyText: t('msg.no.data') }}
               columns={[
                 { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
-              ]}
-            />
-          </Card>
-        </Col>
-
-        {/* 크레딧 구매 내역 */}
-        <Col flex="30 1 0" style={{ minWidth: 0 }}>
-          <Card
-            size="small"
-            title={t('ttl.tenant.manage.credit')}
-            extra={(
-              <Button
-                size="small"
-                onClick={() => openInTab('org/credit-manage', '', t('ttl.tenant.manage.credit'))}
-              >
-                {t('btn.subscription.manage')}
-              </Button>
-            )}
-            style={{ height: '100%' }}
-          >
-            <Table
-              size="small"
-              pagination={false}
-              loading={creditSubsLoading}
-              dataSource={creditOwned}
-              rowKey="subscriptionuid"
-              scroll={{ y: 195 }}
-              locale={{ emptyText: t('msg.no.data') }}
-              columns={[
-                { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm', width: '70%' },
-                { title: t('lbl.credit'), dataIndex: 'quantity', key: 'quantity', width: '30%' },
+                { title: t('lbl.plan'), key: 'plancd', render: (_, row) => planLabel(row.plancd) },
+                { title: t('thd.included_users_thd'), dataIndex: 'included_users', key: 'included_users', align: 'center' },
+                { title: t('thd.add_users_thd'), dataIndex: 'add_users', key: 'add_users', align: 'center' },
               ]}
             />
           </Card>
@@ -220,6 +161,14 @@ export default function OrgTenantManagePage() {
           <Card
             size="small"
             title={t('ttl.tenant.manage.overview.services')}
+            extra={(
+              <Button
+                size="small"
+                onClick={() => openInTab('org/credit-manage', '', t('ttl.tenant.manage.credit'))}
+              >
+                {t('btn.credit.manage')}
+              </Button>
+            )}
             loading={overviewLoading}
           >
             <Table
@@ -234,9 +183,9 @@ export default function OrgTenantManagePage() {
                 { title: t('thd.project_count_thd'), dataIndex: 'projects', key: 'projects' },
                 { title: t('thd.total_users_thd'), dataIndex: 'total_users', key: 'total_users' },
                 { title: t('thd.used_users_thd'), dataIndex: 'used_users', key: 'used_users' },
-                { title: t('thd.total_credit_thd'), dataIndex: 'total_credit', key: 'total_credit' },
-                { title: t('thd.used_credit_thd'), dataIndex: 'used_credit', key: 'used_credit' },
-                { title: t('thd.remain_credit_thd'), dataIndex: 'remain_credit', key: 'remain_credit' },
+                { title: t('thd.total_credit_thd'), dataIndex: 'total_credit', key: 'total_credit', render: (v) => Number(v || 0).toLocaleString() },
+                { title: t('thd.used_credit_thd'), dataIndex: 'used_credit', key: 'used_credit', render: (v) => Number(v || 0).toLocaleString() },
+                { title: t('thd.remain_credit_thd'), dataIndex: 'remain_credit', key: 'remain_credit', render: (v) => Number(v || 0).toLocaleString() },
               ]}
             />
           </Card>
@@ -245,7 +194,7 @@ export default function OrgTenantManagePage() {
 
       <Row gutter={20} style={{ paddingRight: 10 }}>
         <Col span={12}>
-          <PlaceholderCard icon={<HistoryOutlined />} titleKey="ttl.tenant.manage.billing_history" onClick={comingSoon} />
+          <NavCard icon={<HistoryOutlined />} titleKey="ttl.tenant.manage.billing_history" routePath="org/billing-history" openInTab={openInTab} />
         </Col>
         <Col span={12}>
           <PaymentCard openInTab={openInTab} />

@@ -42,6 +42,7 @@ const SettingsLlmKeysPage = lazy(() => import('@/pages/settings/SettingsLlmKeysP
 const UpgradePlanPage = lazy(() => import('@/pages/upgrade/UpgradePlanPage'))
 const CreditPurchasePage = lazy(() => import('@/pages/upgrade/CreditPurchasePage'))
 const PaymentManagePage = lazy(() => import('@/pages/upgrade/PaymentManagePage'))
+const BillingHistoryPage = lazy(() => import('@/pages/upgrade/BillingHistoryPage'))
 const TenantSubscriptionPage = lazy(() => import('@/pages/tenant/TenantSubscriptionPage'))
 const MyInfoPage = lazy(() => import('@/pages/MyInfoPage'))
 const MyUsagePage = lazy(() => import('@/pages/MyUsagePage'))
@@ -58,6 +59,7 @@ const OrgSubscriptionManagePage = lazy(() => import('@/pages/org/OrgSubscription
 const OrgOtherSubscriptionManagePage = lazy(() => import('@/pages/org/OrgOtherSubscriptionManagePage'))
 const OrgCreditManagePage = lazy(() => import('@/pages/org/OrgCreditManagePage'))
 const OrgPaymentManagePage = lazy(() => import('@/pages/org/OrgPaymentManagePage'))
+const OrgBillingHistoryPage = lazy(() => import('@/pages/org/OrgBillingHistoryPage'))
 const OrgWhitelistManagePage = lazy(() => import('@/pages/org/OrgWhitelistManagePage'))
 const AdminUserRolePage = lazy(() => import('@/pages/admin/AdminUserRolePage'))
 const AdminProductsPage = lazy(() => import('@/pages/admin/AdminProductsPage'))
@@ -174,6 +176,7 @@ export const router = createBrowserRouter([
       { path: 'upgrade', element: <UpgradePlanPage /> },
       { path: 'credit-purchase', element: <CreditPurchasePage /> },
       { path: 'payment-manage', element: <PaymentManagePage /> },
+      { path: 'billing-history', element: <BillingHistoryPage /> },
       { path: 'tenant-subscription', element: <TenantSubscriptionPage /> },
       { path: 'settings/mfa', element: <MfaSetupPage />},
       { path: 'qna', element: <QnaPage /> },
@@ -190,6 +193,7 @@ export const router = createBrowserRouter([
       { path: 'org/other-subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgOtherSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/credit-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgCreditManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/payment-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgPaymentManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/billing-history', element: <RequireTenantManager><RequireNotSystemTenant><OrgBillingHistoryPage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/tenant-manage/whitelist', element: <RequireTenantManager><RequireNotSystemTenant><OrgWhitelistManagePage /></RequireNotSystemTenant></RequireTenantManager> },
 
       // AI LLM 설정 (CA/SA/TA)

@@ -305,6 +305,16 @@ export function useCancelUndoTenantManageOtherSubscription() {
   })
 }
 
+export function useUpdateTenantManageOtherSubscriptionQuantity() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/other-subscription-quantity', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-other-subscriptions'] })
+    },
+  })
+}
+
 export function useTenantManageMfaConfig() {
   return useQuery({
     queryKey: ['tenant-manage-mfa-config'],

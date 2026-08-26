@@ -1156,7 +1156,7 @@ def get_upgrade_products(
         .execute()
         .data or []
     )
-    _attach_prices(svc, rows)
+    _attach_prices(svc, rows, currencycd=_get_user_currencycd(svc, user_id, tenantid))
     return {"products": rows}
 
 
@@ -1412,7 +1412,7 @@ def _apply_due_feature_cancellations(svc, accountuid: str) -> None:
     from dateutil import parser as dtparser
 
     rows = svc.table("subscription_features").select(
-        "subscriptionuid,productcd,tenantid,createdts,canceldts,canceluseruid"
+        "subscriptionuid,productcd,tenantid,quantity,createdts,canceldts,canceluseruid"
     ).eq("accountuid", accountuid).eq("subscriptionstatus", "Paid").execute().data or []
 
     now_utc = datetime.now(tz.utc)
@@ -1444,7 +1444,8 @@ def _apply_due_feature_cancellations(svc, accountuid: str) -> None:
             ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
             accsvc = svcrow.data if svcrow else None
             if accsvc:
-                new_add_users = max((accsvc.get("add_users") or 0) - (product.get("users") or 0), 0)
+                removed_users = (product.get("users") or 0) * (row.get("quantity") or 1)
+                new_add_users = max((accsvc.get("add_users") or 0) - removed_users, 0)
                 new_total_users = (accsvc.get("included_users") or 0) + new_add_users
                 svc.table("accountservices").update({
                     "add_users": new_add_users,
@@ -1497,6 +1498,141 @@ def _apply_due_feature_cancellations(svc, accountuid: str) -> None:
                 target_object="subscription_feature", target_uid=row["subscriptionuid"],
                 target_url="org/other-subscription-manage", target_useruid=actor,
             )
+
+
+def _next_billing_date(billingday: int, today: date) -> date:
+    """오늘(today) 기준, billingday(매월 결제일)의 다음 도래일을 계산한다.
+    오늘이 billingday보다 이전이면 이번 달, 아니면(오늘이 billingday거나 지났으면) 다음 달.
+    월말 초과(예: billingday=30인데 2월)는 그 달의 마지막 날로 보정한다."""
+    import calendar
+
+    def _clamp(y: int, m: int, d: int) -> date:
+        last = calendar.monthrange(y, m)[1]
+        return date(y, m, min(d, last))
+
+    if today.day < billingday:
+        return _clamp(today.year, today.month, billingday)
+    y, m = today.year, today.month + 1
+    if m > 12:
+        y += 1
+        m = 1
+    return _clamp(y, m, billingday)
+
+
+def _apply_due_quantity_decreases(svc, accountuid: str) -> None:
+    """Add User 등 producttype='User' 상품의 수량 감소 예약(pending_decrease_qty) 중,
+    적용일(pending_decrease_applydt)이 도래한 건을 실제로 quantity에서 차감한다.
+    증가(+)는 즉시 반영되지만 감소(-)는 다음 결제일까지 유예되는 지연 평가 패턴 —
+    [[_apply_due_feature_cancellations]]와 동일하게 별도 스케줄러 없이 목록 조회 시점에 처리."""
+    from datetime import datetime, timezone as tz
+
+    rows = (
+        svc.table("subscription_features").select(
+            "subscriptionuid,productcd,tenantid,quantity,pending_decrease_qty,pending_decrease_applydt"
+        )
+        .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
+        .gt("pending_decrease_qty", 0)
+        .execute().data or []
+    )
+    if not rows:
+        return
+
+    today = date.today()
+    now_iso = datetime.now(tz.utc).isoformat()
+    for row in rows:
+        applydt = row.get("pending_decrease_applydt")
+        if not applydt or date.fromisoformat(applydt) > today:
+            continue
+
+        prod_row = svc.table("products").select(
+            "productcd,servicecd,producttype,users"
+        ).eq("productcd", row["productcd"]).maybe_single().execute()
+        product = prod_row.data if prod_row else {}
+        if product.get("producttype") != "User" or not product.get("servicecd"):
+            # 상품이 이미 카탈로그에서 사라졌으면 감소분을 안전하게 quantity에서만 차감
+            product = {"servicecd": None, "users": 1}
+
+        decrease_qty = row["pending_decrease_qty"]
+        new_quantity = (row.get("quantity") or 0) - decrease_qty
+
+        if new_quantity <= 0:
+            svc.table("subscription_features").update({
+                "subscriptionstatus": "Cancelled",
+                "quantity": 0,
+                "pending_decrease_qty": 0,
+                "pending_decrease_applydt": None,
+                "updatedts": now_iso,
+            }).eq("subscriptionuid", row["subscriptionuid"]).execute()
+            svc.table("account_features").delete().eq(
+                "accountuid", accountuid
+            ).eq("productcd", row["productcd"]).execute()
+            removed_units = row.get("quantity") or 0
+        else:
+            svc.table("subscription_features").update({
+                "quantity": new_quantity,
+                "pending_decrease_qty": 0,
+                "pending_decrease_applydt": None,
+                "updatedts": now_iso,
+            }).eq("subscriptionuid", row["subscriptionuid"]).execute()
+            removed_units = decrease_qty
+
+        if product.get("servicecd"):
+            svcrow = svc.table("accountservices").select(
+                "included_users,add_users"
+            ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
+            accsvc = svcrow.data if svcrow else None
+            if accsvc:
+                removed_users = (product.get("users") or 0) * removed_units
+                new_add_users = max((accsvc.get("add_users") or 0) - removed_users, 0)
+                new_total_users = (accsvc.get("included_users") or 0) + new_add_users
+                svc.table("accountservices").update({
+                    "add_users": new_add_users,
+                    "total_users": new_total_users,
+                }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+
+                active_cnt = svc.table("serviceusers").select("useruid", count="exact").eq(
+                    "accountuid", accountuid
+                ).eq("servicecd", product["servicecd"]).eq("useyn", True).execute()
+                active_count = active_cnt.count or 0
+                if active_count > new_total_users:
+                    create_notification(
+                        svc, category="plan", status="error",
+                        title="인원 초과 안내",
+                        message=(
+                            f"'{product['servicecd']}' 서비스 정원이 {new_total_users}명으로 줄었지만 "
+                            f"현재 활성 인원은 {active_count}명입니다. 인원을 비활성화해주세요."
+                        ),
+                        title_key="msg.notification.overcapacity.title", message_key="msg.notification.overcapacity.body",
+                        params={"servicecd": product["servicecd"], "total_users": new_total_users, "active_count": active_count},
+                        target_object="accountservice", target_uid=accountuid,
+                        target_url="org/tenant-users", target_useruid=None,
+                    )
+
+
+def _calc_addon_users(svc, accountuid: str, servicecd: str) -> int:
+    """해당 계정+서비스의 현재 활성(Paid) producttype='User' 부가상품(Add User) 보유 수량 합계.
+    Add User는 플랜과 무관하게 유지되는 별도 구독이므로, 플랜 변경 시 accountservices.add_users를
+    이 값으로 재계산해서 반영해야 한다 (과거엔 무조건 0으로 초기화하던 버그가 있었음)."""
+    rows = (
+        svc.table("subscription_features").select("productcd,quantity")
+        .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
+        .execute().data or []
+    )
+    if not rows:
+        return 0
+    productcds = list({r["productcd"] for r in rows})
+    products = (
+        svc.table("products").select("productcd,servicecd,producttype,users")
+        .in_("productcd", productcds).execute().data or []
+    )
+    prod_map = {p["productcd"]: p for p in products}
+    total = 0
+    for r in rows:
+        p = prod_map.get(r["productcd"])
+        if not p or p.get("producttype") != "User" or p.get("servicecd") != servicecd:
+            continue
+        total += (p.get("users") or 0) * (r.get("quantity") or 1)
+    return total
 
 
 def _get_personal_active_subscription(svc, user_id: str, tenantid: Optional[str], servicecd: str) -> tuple[str, dict]:
@@ -1694,7 +1830,7 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
                 {
                     "servicecd": c["codevalue"], "productcd": None, "productnm": None,
                     "plancd": None, "billingtermcd": None, "users": None, "credit": None,
-                    "servicestatus": None,
+                    "servicestatus": None, "included_users": None, "add_users": None,
                 }
                 for c in service_codes
             ],
@@ -1703,7 +1839,7 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
 
     rows = (
         svc.table("accountservices")
-        .select("servicecd,productcd,plancd,servicestatus")
+        .select("servicecd,productcd,plancd,servicestatus,included_users,add_users")
         .eq("accountuid", accountuid)
         .execute()
         .data or []
@@ -1725,7 +1861,7 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
             result.append({
                 "servicecd": scd, "productcd": None, "productnm": None,
                 "plancd": None, "billingtermcd": None, "users": None, "credit": None,
-                "servicestatus": None,
+                "servicestatus": None, "included_users": None, "add_users": None,
             })
             continue
         p = prod_map.get(r.get("productcd"), {})
@@ -1738,9 +1874,35 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
             "users": p.get("users"),
             "credit": p.get("credit"),
             "servicestatus": r.get("servicestatus"),
+            "included_users": r.get("included_users"),
+            "add_users": r.get("add_users"),
         })
 
     return {"subscriptions": result, "accountuid": accountuid}
+
+
+def _get_user_currencycd(svc, user_id: str, tenantid: Optional[str] = None) -> str:
+    """사용자 언어(languagecd) 기준 가격 통화 결정 — ko면 KRW, 그 외(en/ja 등)/미설정이면 USD.
+    실제 결제(포트원)는 통화와 무관하게 항상 KRW로 진행되며, 여기서 정해지는 통화는 화면 표시 전용이다."""
+    try:
+        q = svc.table("tenantusers").select("languagecd,tenantid").eq("useruid", user_id)
+        if tenantid:
+            q = q.eq("tenantid", int(tenantid))
+        else:
+            q = q.eq("useyn", True)
+        rows = q.limit(1).execute().data or []
+        if not rows:
+            return "KRW"
+        tu_data = rows[0]
+        lang = tu_data.get("languagecd")
+        if not lang and tu_data.get("tenantid"):
+            t = svc.table("tenants").select("languagecd").eq("tenantid", tu_data["tenantid"]).maybe_single().execute()
+            if t and t.data:
+                lang = t.data.get("languagecd")
+        # 언어 미설정(lang=None)은 기존 사용자 대다수가 한국어라 KRW로 처리 — 명시적으로 ko가 아닌 언어일 때만 USD
+        return "USD" if lang and lang != "ko" else "KRW"
+    except Exception:
+        return "KRW"
 
 
 def _attach_prices(svc, rows: list, currencycd: str = "KRW") -> None:
@@ -1785,18 +1947,20 @@ def _get_current_price(svc, productcd: str, billingtermcd: Optional[str], curren
     return rows[0]["price"] if rows else None
 
 
-def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str) -> dict:
+def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1) -> dict:
     """
     실제 상품 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 공통 결제 게이트.
     가격 조회 → 계정 기본 결제수단 확인 → 그 결제수단으로 실제 청구까지 수행한다.
     가격 미등록/결제수단 없음/청구 실패 시 적절한 HTTPException을 던진다.
     성공 시 execute_charge()의 반환값(paymentuid 포함)을 그대로 돌려준다.
+    quantity: 단가 상품을 N개 단위로 한 번에 청구할 때(예: Add User 수량 구매) 사용 — 단가 × quantity가 청구된다.
     """
     from backend.app.routers.payments import execute_charge
 
-    price = _get_current_price(svc, productcd, billingtermcd)
-    if price is None:
+    unit_price = _get_current_price(svc, productcd, billingtermcd)
+    if unit_price is None:
         raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+    price = unit_price * quantity
 
     method_row = (
         svc.table("payment_methods").select("*")
@@ -1806,7 +1970,7 @@ def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, pr
     if not method_row or not method_row.data:
         raise HTTPException(status_code=400, detail="msg.payment.method.required")
 
-    charge_result = execute_charge(svc, user_id, int(tenantid), method_row.data, price, order_name)
+    charge_result = execute_charge(svc, user_id, int(tenantid), method_row.data, price, order_name, productcd=productcd, quantity=quantity)
     if not charge_result["success"]:
         raise HTTPException(status_code=400, detail=charge_result["message"])
     return charge_result
@@ -1829,9 +1993,13 @@ def _compensate_and_raise(svc, user_id: str, charge_result: dict, error: Excepti
 
 
 @router.get("/tenant-manage/team-products")
-def get_tenant_manage_team_products(servicecd: str, token: str = Depends(get_token)):
+def get_tenant_manage_team_products(
+    servicecd: str,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
     """구독 관리 화면 우측: 선택한 서비스의 Team/Enterprise 상품 목록."""
-    _get_user(token)
+    user = _get_user(token)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
     rows = (
         svc.table("products")
@@ -1844,7 +2012,7 @@ def get_tenant_manage_team_products(servicecd: str, token: str = Depends(get_tok
         .execute()
         .data or []
     )
-    _attach_prices(svc, rows)
+    _attach_prices(svc, rows, currencycd=_get_user_currencycd(svc, str(user.id), tenantid))
     return {"products": rows}
 
 
@@ -1930,6 +2098,10 @@ def change_tenant_subscription(
         subscription_inserted = True
 
         users = product.get("users") or 1
+        # Add User 등 producttype='User' 부가상품은 플랜과 별개로 유지되는 구독이므로,
+        # 플랜 변경 시 add_users를 0으로 초기화하지 않고 현재 활성(Paid) 보유분을 그대로 재계산해 반영한다
+        # (예전엔 무조건 0으로 리셋해서, 이미 결제한 추가 인원이 플랜 변경할 때마다 사라지는 버그가 있었음).
+        add_users = _calc_addon_users(svc, accountuid, product["servicecd"])
         accountservices_payload = {
             "old_subscriptionuid": current.get("subscriptionuid"),
             "old_productcd": current.get("productcd"),
@@ -1941,8 +2113,8 @@ def change_tenant_subscription(
             "billingfirstdt": today.isoformat(),
             "billingday": today.day,
             "included_users": users,
-            "add_users": 0,
-            "total_users": users,
+            "add_users": add_users,
+            "total_users": users + add_users,
             "is_autotopup": False,
             "creator": user_id,
         }
@@ -1975,6 +2147,26 @@ def change_tenant_subscription(
             expiredts=expiredts,
             startdt=today.isoformat(),
         )
+
+        # 동일 서비스(servicecd) 상품을 24시간 이내에 다시 변경한 경우, 바로 직전 결제를 자동 환불한다
+        # (예: BYOK로 바꿨다가 몇 분 뒤 일반으로 재변경 — 짧은 시간 안의 반복 변경으로 중복 청구되는 것 방지).
+        # current.productcd는 이 servicecd의 직전 상품(구조상 항상 Service 타입)이므로 producttype 체크는 불필요.
+        if current.get("productcd") and current["productcd"] != product["productcd"]:
+            from dateutil import parser as dtparser
+            prev_payments = (
+                svc.table("payments").select("paymentuid,createdts")
+                .eq("accountuid", accountuid).eq("productcd", current["productcd"])
+                .eq("payment_status", "Success")
+                .order("createdts", desc=True).limit(1).execute().data or []
+            )
+            if prev_payments:
+                prev_dt = dtparser.parse(prev_payments[0]["createdts"])
+                if now_utc - prev_dt <= td(hours=24):
+                    from backend.app.routers.payments import refund_charge
+                    refund_charge(
+                        svc, user_id, prev_payments[0]["paymentuid"],
+                        f"{product['servicecd']} 서비스 상품을 24시간 이내에 재변경하여 이전 결제를 자동 환불함",
+                    )
     except Exception as e:
         if accountservices_written:
             if current:
@@ -2124,6 +2316,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
 
     if accountuid:
         _apply_due_feature_cancellations(svc, accountuid)
+        _apply_due_quantity_decreases(svc, accountuid)
 
     issystemtenant = True
     if tenantid:
@@ -2155,26 +2348,29 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
         .execute().data or []
     )
     prod_map = {p["productcd"]: p for p in all_products}
-    # User 타입은 구독 중인 서비스의 상품만 노출 (Feature는 서비스 무관, 반복 구매 가능)
-    # Feature 타입은 취소 전까지 1회만 구독 가능 — 이미 보유 중이면 목록에서 제외
+    # 이미 보유 중인 상품(User/Feature 공통)은 구매 목록에서 제외 — User 타입은 보유 후
+    # 목록(owned)에서 수량(+/-)으로 조정하고, Feature 타입은 취소 전까지 1회만 구독 가능.
     # 테넌트 단위 보안 기능(MFA/Whitelist/SSO 등 servicecd='Tenant'인 Feature)은 시스템 테넌트(개인)엔
     # 애초에 "테넌트" 개념이 없으므로 구매 목록에서 노출하지 않는다.
     products = [
         p for p in all_products
-        if not (p["producttype"] == "Feature" and p["productcd"] in owned_productcds)
+        if p["productcd"] not in owned_productcds
         and (p["producttype"] == "Feature" or p["servicecd"] in subscribed_servicecds)
         and not (issystemtenant and p["producttype"] == "Feature" and p["servicecd"] == "Tenant")
     ]
-    _attach_prices(svc, products)
+    _attach_prices(svc, products, currencycd=_get_user_currencycd(svc, user_id, tenantid))
 
     owned = []
     if accountuid:
         from dateutil.relativedelta import relativedelta
         from dateutil import parser as dtparser
 
+        currencycd = _get_user_currencycd(svc, user_id, tenantid)
         offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
         rows = (
-            svc.table("subscription_features").select("subscriptionuid,productcd,createdts,canceldts")
+            svc.table("subscription_features").select(
+                "subscriptionuid,productcd,quantity,pending_decrease_qty,pending_decrease_applydt,createdts,canceldts"
+            )
             .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
             .order("createdts").execute().data or []
         )
@@ -2188,6 +2384,9 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
                     )
                 except Exception:
                     cancel_effective_date = None
+            unit_price = None
+            if p.get("producttype") == "User":
+                unit_price = _get_current_price(svc, r["productcd"], p.get("billingtermcd"), currencycd)
             owned.append({
                 "subscriptionuid": r["subscriptionuid"],
                 "productcd": r["productcd"],
@@ -2195,6 +2394,11 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
                 "servicecd": p.get("servicecd"),
                 "producttype": p.get("producttype"),
                 "users": p.get("users"),
+                "quantity": r.get("quantity") or 1,
+                "pending_decrease_qty": r.get("pending_decrease_qty") or 0,
+                "pending_decrease_applydt": r.get("pending_decrease_applydt"),
+                "unit_price": unit_price,
+                "currencycd": currencycd if unit_price is not None else None,
                 "createdts": _fmt_dt(r.get("createdts"), offsetminutes),
                 "orderno": p.get("orderno", 999),
                 "cancel_reserved": bool(r.get("canceldts")),
@@ -2207,6 +2411,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
 
 class OtherSubscriptionPurchaseRequest(BaseModel):
     productcd: str
+    quantity: int = 1
 
 
 @router.post("/tenant-manage/other-subscription-purchase")
@@ -2219,6 +2424,8 @@ def purchase_tenant_manage_other_subscription(
 
     등록된 결제수단으로 상품 가격만큼 실제(테스트 채널 기준) 청구 후에만 반영한다.
     Credit(producttype='Credit') 구매는 이번 범위에서 제외한다.
+    quantity: producttype='User' 상품(예: Add User)만 1보다 클 수 있다 — 단가 × quantity 청구,
+    이미 보유 중이면 이 엔드포인트가 아니라 /other-subscription-quantity로 조정한다.
     """
     from datetime import datetime, timezone as tz
 
@@ -2241,12 +2448,16 @@ def purchase_tenant_manage_other_subscription(
     if not product.get("useyn") or not product.get("is_sales"):
         raise HTTPException(status_code=400, detail="더 이상 판매하지 않는 상품입니다.")
 
-    if product["producttype"] == "Feature":
-        existing_feature = svc.table("account_features").select("accountuid").eq(
-            "accountuid", accountuid
-        ).eq("productcd", product["productcd"]).maybe_single().execute()
-        if existing_feature and existing_feature.data:
-            raise HTTPException(status_code=400, detail="이미 구독 중인 기능입니다.")
+    quantity = body.quantity if product["producttype"] == "User" else 1
+    if quantity < 1:
+        raise HTTPException(status_code=400, detail="수량은 1개 이상이어야 합니다.")
+
+    existing_feature = svc.table("account_features").select("accountuid").eq(
+        "accountuid", accountuid
+    ).eq("productcd", product["productcd"]).maybe_single().execute()
+    if existing_feature and existing_feature.data:
+        detail = "이미 구독 중인 기능입니다." if product["producttype"] == "Feature" else "이미 보유 중입니다. 목록에서 수량을 조정해주세요."
+        raise HTTPException(status_code=400, detail=detail)
 
     accsvc = None
     if product["producttype"] == "User":
@@ -2259,7 +2470,7 @@ def purchase_tenant_manage_other_subscription(
 
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
-        product.get("productnm") or product["productcd"],
+        product.get("productnm") or product["productcd"], quantity=quantity,
     )
 
     # 결제는 이미 성공했으므로, 이 아래(상품 지급) 단계에서 무엇이 실패하든
@@ -2276,7 +2487,7 @@ def purchase_tenant_manage_other_subscription(
             "productcd": product["productcd"],
             "tenantid": int(tenantid),
             "accountuid": accountuid,
-            "quantity": 1,
+            "quantity": quantity,
             "subscriptionstatus": "Paid",
             "creator": user_id,
         }).execute()
@@ -2301,7 +2512,7 @@ def purchase_tenant_manage_other_subscription(
         account_features_written = True
 
         if product["producttype"] == "User":
-            new_add_users = (accsvc.get("add_users") or 0) + (product.get("users") or 0)
+            new_add_users = (accsvc.get("add_users") or 0) + (product.get("users") or 0) * quantity
             new_total_users = (accsvc.get("included_users") or 0) + new_add_users
             svc.table("accountservices").update({
                 "add_users": new_add_users,
@@ -2385,6 +2596,10 @@ def cancel_tenant_manage_other_subscription(
     if sf.get("canceldts"):
         raise HTTPException(status_code=400, detail="이미 해지가 예약되어 있습니다.")
 
+    product = svc.table("products").select("producttype").eq("productcd", sf["productcd"]).maybe_single().execute().data
+    if product and product.get("producttype") == "User":
+        raise HTTPException(status_code=400, detail="msg.quantity.decrease.use_stepper")
+
     now_utc = datetime.now(tz.utc)
     svc.table("subscription_features").update({
         "canceluseruid": user_id,
@@ -2441,6 +2656,131 @@ def undo_cancel_tenant_manage_other_subscription(
     }).eq("subscriptionuid", body.subscriptionuid).execute()
 
     return {"result": "success"}
+
+
+class OtherSubscriptionQuantityRequest(BaseModel):
+    subscriptionuid: str
+    delta: int
+
+
+@router.post("/tenant-manage/other-subscription-quantity")
+def update_tenant_manage_other_subscription_quantity(
+    body: OtherSubscriptionQuantityRequest,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """기타 구독 관리 화면: 이미 보유 중인 producttype='User' 상품(Add User)의 수량을 조정한다.
+
+    delta > 0(증가): 예약된 감소(pending_decrease_qty)가 있으면 우선 상쇄(무료)하고,
+      상쇄하고 남는 만큼만 즉시 결제 후 quantity에 즉시 반영한다.
+    delta < 0(감소): 결제/즉시 반영 없이 pending_decrease_qty에 누적 — 다음 결제일
+      (accountservices.billingday 기준)이 되면 _apply_due_quantity_decreases()가 실제로 차감한다.
+    """
+    from datetime import datetime, timezone as tz
+
+    if body.delta == 0:
+        raise HTTPException(status_code=400, detail="변경할 수량을 입력해주세요.")
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    sf_row = svc.table("subscription_features").select(
+        "subscriptionuid,productcd,accountuid,quantity,pending_decrease_qty,subscriptionstatus,canceldts"
+    ).eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+    sf = sf_row.data if sf_row else None
+    if not sf or sf.get("accountuid") != accountuid:
+        raise HTTPException(status_code=404, detail="구독 내역을 찾을 수 없습니다.")
+    if sf.get("subscriptionstatus") != "Paid":
+        raise HTTPException(status_code=400, detail="취소된 구독입니다.")
+    if sf.get("canceldts"):
+        raise HTTPException(status_code=400, detail="해지가 예약된 상품은 수량을 조정할 수 없습니다.")
+
+    product = svc.table("products").select(
+        "productcd,productnm,servicecd,producttype,users,billingtermcd,useyn,is_sales"
+    ).eq("productcd", sf["productcd"]).maybe_single().execute().data
+    if not product or product.get("producttype") != "User":
+        raise HTTPException(status_code=400, detail="수량 조정을 지원하지 않는 상품입니다.")
+
+    quantity = sf.get("quantity") or 1
+    pending = sf.get("pending_decrease_qty") or 0
+
+    if body.delta > 0:
+        offset = min(body.delta, pending)
+        new_pending = pending - offset
+        charge_qty = body.delta - offset
+
+        charge_result = None
+        if charge_qty > 0:
+            if not product.get("useyn") or not product.get("is_sales"):
+                raise HTTPException(status_code=400, detail="더 이상 판매하지 않는 상품입니다.")
+            charge_result = _require_payment_and_charge(
+                svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
+                product.get("productnm") or product["productcd"], quantity=charge_qty,
+            )
+
+        new_quantity = quantity + charge_qty
+        try:
+            svc.table("subscription_features").update({
+                "quantity": new_quantity,
+                "pending_decrease_qty": new_pending,
+                "pending_decrease_applydt": None if new_pending == 0 else sf.get("pending_decrease_applydt"),
+                "updater": user_id,
+                "updatedts": datetime.now(tz.utc).isoformat(),
+            }).eq("subscriptionuid", body.subscriptionuid).execute()
+
+            if charge_qty > 0:
+                svcrow = svc.table("accountservices").select(
+                    "included_users,add_users"
+                ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
+                accsvc = svcrow.data if svcrow else None
+                if accsvc:
+                    new_add_users = (accsvc.get("add_users") or 0) + (product.get("users") or 0) * charge_qty
+                    new_total_users = (accsvc.get("included_users") or 0) + new_add_users
+                    svc.table("accountservices").update({
+                        "add_users": new_add_users,
+                        "total_users": new_total_users,
+                        "updater": user_id,
+                    }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
+        except Exception as e:
+            if charge_result:
+                _compensate_and_raise(svc, user_id, charge_result, e, context="수량 증가 반영")
+            raise
+
+        return {
+            "result": "success", "quantity": new_quantity, "pending_decrease_qty": new_pending,
+            "charged_quantity": charge_qty,
+        }
+
+    # delta < 0 — 감소는 결제 없이 다음 결제일에 반영되도록 예약만 한다.
+    decrease_qty = -body.delta
+    if pending + decrease_qty > quantity:
+        raise HTTPException(status_code=400, detail="현재 보유 수량보다 많이 줄일 수 없습니다.")
+
+    svcrow = svc.table("accountservices").select("billingday").eq(
+        "accountuid", accountuid
+    ).eq("servicecd", product["servicecd"]).maybe_single().execute()
+    billingday = (svcrow.data or {}).get("billingday") if svcrow else None
+    apply_dt = _next_billing_date(billingday, date.today()) if billingday else date.today()
+
+    new_pending = pending + decrease_qty
+    svc.table("subscription_features").update({
+        "pending_decrease_qty": new_pending,
+        "pending_decrease_applydt": apply_dt.isoformat(),
+        "updater": user_id,
+        "updatedts": datetime.now(tz.utc).isoformat(),
+    }).eq("subscriptionuid", body.subscriptionuid).execute()
+
+    return {
+        "result": "success", "quantity": quantity, "pending_decrease_qty": new_pending,
+        "effective_date": apply_dt.isoformat(),
+    }
 
 
 # ─── MFA 활성/비활성 토글 (config_tenants.Is_MFA) ──────────────────────────────
@@ -2524,7 +2864,7 @@ def _get_credit_subscriptions_data(svc, user_id: str, tenantid: str, accountuid:
     prod_map = {p["productcd"]: p for p in all_products}
     # 구독 중인 서비스의 크레딧 상품만 노출
     products = [p for p in all_products if p["servicecd"] in subscribed_servicecds]
-    _attach_prices(svc, products)
+    _attach_prices(svc, products, currencycd=_get_user_currencycd(svc, user_id, tenantid))
 
     owned = []
     if accountuid:
@@ -2783,7 +3123,10 @@ def get_tenant_manage_overview(token: str = Depends(get_token), tenantid: Option
             svc.table("vw_creditbucketsums").select("servicecd,remaincredit")
             .eq("accountuid", accountuid).execute().data or []
         )
-        remain_map = {r["servicecd"]: r.get("remaincredit") or 0 for r in remain_rows}
+        remain_map = {}
+        for r in remain_rows:
+            scd = r["servicecd"]
+            remain_map[scd] = remain_map.get(scd, 0) + (r.get("remaincredit") or 0)
 
         for scd, s in svc_map.items():
             credit = credit_totals.get(scd, {"total_credit": 0, "used_credit": 0})

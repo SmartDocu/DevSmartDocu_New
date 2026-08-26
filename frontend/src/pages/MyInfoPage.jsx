@@ -92,7 +92,7 @@ export default function MyInfoPage() {
     proCancelMutation.mutate(
       { servicecd: cancelTarget, cancel_reasoncd: cancelReasonCd, cancel_reasondesc: cancelReasonDesc || null },
       {
-        onSuccess: () => { message.success(t('msg.save.success')); setCancelTarget(null) },
+        onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
         onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
       },
     )
@@ -102,7 +102,7 @@ export default function MyInfoPage() {
     proCancelUndoMutation.mutate(
       { servicecd },
       {
-        onSuccess: () => { message.success(t('msg.save.success')) },
+        onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
         onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
       },
     )
@@ -215,6 +215,8 @@ export default function MyInfoPage() {
             extra={isSystemTenant ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Button size="small" onClick={() => openInTab('payment-manage', '', t('ttl.tenant.manage.payment'))}>{t('btn.payment.manage')}</Button>
+                <span style={{ color: '#d9d9d9' }}>|</span>
+                <Button size="small" onClick={() => openInTab('billing-history', '', t('ttl.tenant.manage.billing_history'))}>{t('ttl.tenant.manage.billing_history')}</Button>
                 <span style={{ color: '#d9d9d9' }}>|</span>
                 <Button size="small" onClick={() => openInTab('tenant-subscription', '', t('ttl.tenant.subscription'))}>{t('ttl.tenant.subscription')}</Button>
               </div>

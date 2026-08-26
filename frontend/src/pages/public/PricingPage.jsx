@@ -6,14 +6,16 @@ import apiClient from '@/api/client'
 
 const SERVICE_ORDER = ['Do', 'Ch', 'In']
 const PLAN_ORDER = ['Fr', 'Pr', 'Te', 'En']
-const BILLING_TERMS = ['Monthly', 'Annual']
+const CURRENCIES = ['KRW', 'USD']
 
 export default function PricingPage() {
   useLangStore((s) => s.translations)
 
+  const [currencycd, setCurrencycd] = useState('KRW')
+
   const { data, isLoading } = useQuery({
-    queryKey: ['public-pricing'],
-    queryFn: () => apiClient.get('/misc/pricing').then((r) => r.data.products),
+    queryKey: ['public-pricing', currencycd],
+    queryFn: () => apiClient.get('/misc/pricing', { params: { currencycd } }).then((r) => r.data.products),
   })
   const products = data || []
 
@@ -23,14 +25,12 @@ export default function PricingPage() {
   }, [products])
 
   const [selectedService, setSelectedService] = useState(null)
-  const [billingTerm, setBillingTerm] = useState('Monthly')
   const [byok, setByok] = useState(false)
 
   const activeService = availableServices.includes(selectedService) ? selectedService : availableServices[0]
 
   const serviceLabel = (cd) => t(`cod.servicecd_${cd}`) || cd
   const planLabel = (cd) => t(`cod.plancd_${cd}`) || cd
-  const termLabel = (cd) => t(`cod.billingtermcd_${cd}`) || cd
 
   const formatPrice = (p) => {
     if (!p) return '-'
@@ -44,7 +44,7 @@ export default function PricingPage() {
       (p) => p.servicecd === activeService && p.plancd === plancd && p.producttype === 'Service',
     )
     if (plancd === 'Fr') return candidates[0]
-    return candidates.find((p) => p.billingtermcd === billingTerm && !!p.is_customeraikey === byok) || candidates[0]
+    return candidates.find((p) => !!p.is_customeraikey === byok) || candidates[0]
   }
 
   const addonUsers = products.filter((p) => p.servicecd === activeService && p.producttype === 'User')
@@ -71,9 +71,9 @@ export default function PricingPage() {
               options={availableServices.map((s) => ({ label: serviceLabel(s), value: s }))}
             />
             <Segmented
-              value={billingTerm}
-              onChange={setBillingTerm}
-              options={BILLING_TERMS.map((cd) => ({ label: termLabel(cd), value: cd }))}
+              value={currencycd}
+              onChange={setCurrencycd}
+              options={CURRENCIES.map((cd) => ({ label: cd, value: cd }))}
             />
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
               <Switch checked={byok} onChange={setByok} />
@@ -108,9 +108,10 @@ export default function PricingPage() {
                     pagination={false}
                     dataSource={addonUsers}
                     rowKey="productcd"
+                    tableLayout="fixed"
                     columns={[
-                      { title: t('lbl.pricing.included_users'), dataIndex: 'users', key: 'users' },
-                      { title: t('lbl.price'), key: 'price', render: (_, r) => formatPrice(r) },
+                      { title: t('lbl.pricing.included_users'), dataIndex: 'users', key: 'users', width: '50%' },
+                      { title: t('lbl.price'), key: 'price', width: '50%', render: (_, r) => formatPrice(r) },
                     ]}
                   />
                 </div>
@@ -123,9 +124,10 @@ export default function PricingPage() {
                     pagination={false}
                     dataSource={addonCredits}
                     rowKey="productcd"
+                    tableLayout="fixed"
                     columns={[
-                      { title: t('lbl.pricing.included_credit'), dataIndex: 'credit', key: 'credit' },
-                      { title: t('lbl.price'), key: 'price', render: (_, r) => formatPrice(r) },
+                      { title: t('lbl.pricing.included_credit'), dataIndex: 'credit', key: 'credit', width: '50%' },
+                      { title: t('lbl.price'), key: 'price', width: '50%', render: (_, r) => formatPrice(r) },
                     ]}
                   />
                 </div>
@@ -141,15 +143,19 @@ export default function PricingPage() {
                 pagination={false}
                 dataSource={tenantFeatures}
                 rowKey="productcd"
+                tableLayout="fixed"
                 columns={[
-                  { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
-                  { title: t('lbl.price'), key: 'price', render: (_, r) => formatPrice(r) },
+                  { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm', width: '50%' },
+                  { title: t('lbl.price'), key: 'price', width: '50%', render: (_, r) => formatPrice(r) },
                 ]}
               />
             </div>
           )}
 
           <div style={{ fontSize: 12, color: '#888', marginTop: 24 }}>{t('inf.pricing.notice')}</div>
+          {currencycd === 'USD' && (
+            <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{t('inf.pricing.usd_notice')}</div>
+          )}
         </div>
       )}
     </div>

@@ -19,6 +19,13 @@ export function usePaymentMethods() {
   })
 }
 
+export function usePaymentHistory(startDate, endDate) {
+  return useQuery({
+    queryKey: ['payment-history', startDate, endDate],
+    queryFn: () => apiClient.get('/payments/history', { params: { start_date: startDate, end_date: endDate } }).then((r) => r.data),
+  })
+}
+
 export function useSaveBillingKey() {
   const qc = useQueryClient()
   return useMutation({
