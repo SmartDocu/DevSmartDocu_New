@@ -28,6 +28,7 @@ export default function BillingHistoryPanel({ pageTitle }) {
 
   const { data = {}, isLoading } = usePaymentHistory(startDate, endDate)
   const payments = data.payments || []
+  const hasExpandableRows = payments.some((p) => Array.isArray(p.items) && p.items.length > 0)
 
   const { data: statusCodes = [] } = useMenuCodes('payment_status')
   const statusLabel = (cd) => {
@@ -55,6 +56,29 @@ export default function BillingHistoryPanel({ pageTitle }) {
         dataSource={payments}
         rowKey="paymentuid"
         locale={{ emptyText: t('msg.no.data') }}
+        expandable={!hasExpandableRows ? undefined : {
+          rowExpandable: (r) => Array.isArray(r.items) && r.items.length > 0,
+          expandedRowRender: (r) => (
+            <table className="table table-sm table-bordered" style={{ marginBottom: 0 }}>
+              <thead>
+                <tr>
+                  <th>{t('thd.product_thd')}</th>
+                  <th style={{ width: 100, textAlign: 'center' }}>{t('thd.quantity_thd')}</th>
+                  <th style={{ width: 160, textAlign: 'right' }}>{t('thd.amount_thd')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.items.map((it, idx) => (
+                  <tr key={idx}>
+                    <td>{it.desc || it.productcd}</td>
+                    <td style={{ textAlign: 'center' }}>{it.quantity}</td>
+                    <td style={{ textAlign: 'right' }}>{Number(it.amount).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ),
+        }}
         columns={[
           { title: t('thd.createdts_thd'), dataIndex: 'createdts', key: 'createdts', width: 160 },
           { title: t('thd.product_thd'), key: 'productnm', render: (_, r) => r.productnm || r.productcd || '-' },

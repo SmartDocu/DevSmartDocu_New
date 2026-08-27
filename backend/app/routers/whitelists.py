@@ -47,7 +47,7 @@ def _require_not_system_tenant(tenantid: Optional[str]) -> None:
         raise HTTPException(status_code=400, detail="msg.tenant.required")
     svc = get_service_client().schema(SUPABASE_SCHEMA)
     t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    if t_row.data and t_row.data.get("issystemtenant"):
+    if t_row and t_row.data and t_row.data.get("issystemtenant"):
         raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
 
 

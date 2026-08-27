@@ -15,12 +15,12 @@ def _get_tenant_and_account(sd, user_id: str, tenantid: Optional[str]) -> tuple[
     """tenantid와 accountuid를 반환."""
     if not tenantid:
         tu = sd.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
-        if not tu.data:
+        if not tu or not tu.data:
             raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
         tenantid = str(tu.data["tenantid"])
 
     t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
     if issystemtenant:
         acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
@@ -142,7 +142,7 @@ def save_llmkey(
         encapikey = encrypt_value(apikey)
     elif body.llmkeyuid:
         existing = sd.table("llmapikeys").select("encapikey").eq("llmkeyuid", body.llmkeyuid).maybe_single().execute()
-        if existing.data:
+        if existing and existing.data:
             encapikey = existing.data.get("encapikey")
 
     data = {

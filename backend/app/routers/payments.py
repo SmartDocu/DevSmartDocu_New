@@ -5,7 +5,7 @@ import hmac
 import json
 import re
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import requests
@@ -26,7 +26,7 @@ WEBHOOK_TOLERANCE_SECONDS = 300  # 리플레이 공격 방지용 타임스탬프
 def _resolve_tenant_accountuid(sd, tenantid: int, user_id: str) -> Optional[str]:
     """tenantid → accountuid 해석. issystemtenant면 useruid 기준, 아니면 tenantid 기준."""
     t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
     if issystemtenant:
         acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
     else:
@@ -52,7 +52,7 @@ def _require_tenant_manager_tenantid(user_id: str, header_tenantid: Optional[str
     sd = svc.schema(SUPABASE_SCHEMA)
 
     t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
     tu_row = (
         sd.table("tenantusers")
@@ -309,7 +309,7 @@ def list_payment_history(
 
     query = (
         sd.table("payments").select(
-            "paymentuid,productcd,quantity,currencycd,payment_amount,payment_status,createdts"
+            "paymentuid,productcd,quantity,currencycd,payment_amount,payment_status,createdts,invoiceuid"
         )
         .eq("accountuid", accountuid)
     )
@@ -328,9 +328,24 @@ def list_payment_history(
         prod_rows = sd.table("products").select("productcd,productnm").in_("productcd", productcds).execute().data or []
         prod_map = {p["productcd"]: p["productnm"] for p in prod_rows}
 
+    # 정기결제 자동 재청구(run-billing-cycle)로 생긴 통합 청구는 payments.productcd가 비어있고
+    # invoiceuid로 invoice_items(여러 상품 묶음)와 연결된다 — 화면에 항목 breakdown을 같이 내려준다.
+    invoiceuids = [r["invoiceuid"] for r in rows if not r.get("productcd") and r.get("invoiceuid")]
+    items_map = {}
+    if invoiceuids:
+        item_rows = (
+            sd.table("invoice_items").select("invoiceuid,productcd,desc,quantity,amount")
+            .in_("invoiceuid", invoiceuids).execute().data or []
+        )
+        for it in item_rows:
+            items_map.setdefault(it["invoiceuid"], []).append(it)
+
     for r in rows:
         r["productnm"] = prod_map.get(r.get("productcd"))
         r["createdts"] = _fmt_dt(r.get("createdts"), offsetminutes)
+        if not r.get("productcd") and r.get("invoiceuid"):
+            r["items"] = items_map.get(r["invoiceuid"], [])
+            r["productnm"] = r["productnm"] or "정기 결제"
 
     return {"payments": rows}
 
@@ -439,7 +454,7 @@ def set_default_payment_method(
     method_row = sd.table("payment_methods").select("accountuid,payment_method_status").eq(
         "payment_methoduid", payment_methoduid
     ).eq("tenantid", tenantid).maybe_single().execute()
-    if not method_row.data:
+    if not method_row or not method_row.data:
         raise HTTPException(status_code=404, detail="결제수단을 찾을 수 없습니다.")
     if method_row.data.get("payment_method_status") != "Active":
         raise HTTPException(status_code=400, detail="사용할 수 없는 결제수단입니다.")
@@ -471,13 +486,14 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
     accountuid = method.get("accountuid")
 
     t_row = sd.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
-    disptenantnm = (t_row.data or {}).get("disptenantnm") or "고객"
-    payment_url = _payment_manage_url((t_row.data or {}).get("issystemtenant", True))
+    t_data = (t_row.data if t_row else None) or {}
+    disptenantnm = t_data.get("disptenantnm") or "고객"
+    payment_url = _payment_manage_url(t_data.get("issystemtenant", True))
 
     email, telno = "", ""
     if accountuid:
         acc_row = sd.table("accounts").select("encemail,enctelno").eq("accountuid", accountuid).maybe_single().execute()
-        acc = acc_row.data or {}
+        acc = (acc_row.data if acc_row else None) or {}
         if acc.get("encemail"):
             email = decrypt_value(acc["encemail"])
         if acc.get("enctelno"):
@@ -570,7 +586,7 @@ def charge_payment_method(
     sd = svc.schema(SUPABASE_SCHEMA)
 
     method_row = sd.table("payment_methods").select("*").eq("payment_methoduid", payment_methoduid).eq("tenantid", tenantid).maybe_single().execute()
-    if not method_row.data:
+    if not method_row or not method_row.data:
         raise HTTPException(status_code=404, detail="결제수단을 찾을 수 없습니다.")
 
     order_name = body.order_name or "결제 테스트"
@@ -653,3 +669,275 @@ async def receive_webhook(request: Request):
         raise HTTPException(status_code=400, detail="웹훅 서명 검증에 실패했습니다.")
 
     return {"result": "ok"}
+
+
+# ══════════════════════════════════════════════════════
+#  정기결제 자동 재청구 (account_billing 기준, 매일 배치)
+#  AWS EventBridge Scheduler → POST /api/payments/run-billing-cycle (X-Billing-Secret 헤더 인증)
+#  로그인 사용자가 없는 서버-서버 호출이라 get_token을 쓰지 않는다.
+# ══════════════════════════════════════════════════════
+
+GRACE_PERIOD_DAYS = 3
+SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"  # 프로젝트 관례상 자동화 작업의 creator 플레이스홀더
+
+
+def _resolve_billing_notify_useruid(sd, tenantid: int, accountuid: str) -> Optional[str]:
+    """청구 결과 알림을 받을 사용자 — 개인(시스템) 테넌트는 accounts.useruid, 기업 테넌트는 매니저."""
+    acc = sd.table("accounts").select("useruid").eq("accountuid", accountuid).maybe_single().execute()
+    if acc and acc.data and acc.data.get("useruid"):
+        return acc.data["useruid"]
+    tu = (
+        sd.table("tenantusers").select("useruid")
+        .eq("tenantid", tenantid).eq("rolecd", "M").eq("useyn", True)
+        .limit(1).execute().data or []
+    )
+    return tu[0]["useruid"] if tu else None
+
+
+def _get_price_row_krw(sd, productcd: str, billingtermcd: Optional[str]) -> Optional[dict]:
+    """실제 청구는 항상 KRW로 진행되므로(정책상 확정) config_price를 KRW로 고정 조회한다."""
+    rows = (
+        sd.table("config_price").select("price,unit_price,unit_tax")
+        .eq("productcd", productcd).eq("currencycd", "KRW").eq("billingtermcd", billingtermcd)
+        .lte("effectivefromdt", date.today().isoformat())
+        .order("effectivefromdt", desc=True).limit(1)
+        .execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def _collect_billing_items(sd, accountuid: str) -> list[dict]:
+    """계정의 이번 사이클 청구 대상(유료 서비스 플랜 + User/Feature 부가상품)을 모은다.
+    Free 플랜과 가격 미등록 상품은 제외한다. Credit(크레딧) 상품은 정기결제 대상이 아니라 제외한다."""
+    items = []
+
+    svc_rows = (
+        sd.table("accountservices").select("servicecd,productcd,subscriptionuid")
+        .eq("accountuid", accountuid).in_("servicestatus", ["Active", "PastDue"]).execute().data or []
+    )
+    for row in svc_rows:
+        prod_row = sd.table("products").select("productnm,plancd,billingtermcd,credit").eq(
+            "productcd", row["productcd"]
+        ).maybe_single().execute()
+        prod = (prod_row.data if prod_row else None) or {}
+        if prod.get("plancd") == "Fr":
+            continue
+        price_row = _get_price_row_krw(sd, row["productcd"], prod.get("billingtermcd"))
+        if not price_row:
+            continue
+        items.append({
+            "kind": "service", "servicecd": row["servicecd"], "subscriptionuid": row.get("subscriptionuid"),
+            "productcd": row["productcd"], "productnm": prod.get("productnm") or row["productcd"],
+            "quantity": 1, "credit": prod.get("credit") or 0,
+            "unit_price": price_row["unit_price"], "unit_tax": price_row["unit_tax"], "amount": price_row["price"],
+        })
+
+    sf_rows = (
+        sd.table("subscription_features").select("productcd,quantity")
+        .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid").is_("canceldts", "null")
+        .execute().data or []
+    )
+    for row in sf_rows:
+        prod_row = sd.table("products").select("productnm,billingtermcd").eq(
+            "productcd", row["productcd"]
+        ).maybe_single().execute()
+        prod = (prod_row.data if prod_row else None) or {}
+        price_row = _get_price_row_krw(sd, row["productcd"], prod.get("billingtermcd"))
+        if not price_row:
+            continue
+        qty = row.get("quantity") or 1
+        items.append({
+            "kind": "addon",
+            "productcd": row["productcd"], "productnm": prod.get("productnm") or row["productcd"],
+            "quantity": qty,
+            "unit_price": price_row["unit_price"] * qty, "unit_tax": price_row["unit_tax"] * qty,
+            "amount": price_row["price"] * qty,
+        })
+
+    return items
+
+
+def _handle_billing_failure(sd, ab: dict, today: date, notify_useruid: str, message: str) -> dict:
+    """청구 실패 처리 — 유예기간(GRACE_PERIOD_DAYS) 이내면 PastDue(읽기만 허용), 유예 종료면 Suspended(완전 차단)."""
+    accountuid = ab["accountuid"]
+    tenantid = ab["tenantid"]
+
+    failure_count = (ab.get("failure_count") or 0) + 1
+    first_failure_dt = ab.get("first_failure_dt") or today.isoformat()
+    grace_until = ab.get("grace_until_dt") or (
+        date.fromisoformat(first_failure_dt) + timedelta(days=GRACE_PERIOD_DAYS)
+    ).isoformat()
+
+    t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
+    payment_url = _payment_manage_url(((t_row.data if t_row else None) or {}).get("issystemtenant", True))
+
+    if today.isoformat() > grace_until:
+        sd.table("accountservices").update({"servicestatus": "Suspended"}).eq(
+            "accountuid", accountuid
+        ).in_("servicestatus", ["Active", "PastDue"]).execute()
+        sd.table("account_billing").update({
+            "billing_status": "Suspended", "failure_count": failure_count,
+            "first_failure_dt": first_failure_dt, "grace_until_dt": grace_until,
+        }).eq("accountuid", accountuid).execute()
+        create_notification(
+            get_service_client(), category="payment", status="error",
+            title="서비스 정지", message=f"정기 결제 실패가 지속되어 서비스가 정지되었습니다. ({message})",
+            title_key="msg.notification.billing.suspended.title", message_key="msg.notification.billing.suspended.body",
+            params={"message": message},
+            target_object="account_billing", target_uid=accountuid, target_url=payment_url, target_useruid=notify_useruid,
+        )
+        return {"result": "suspended", "message": message}
+
+    sd.table("accountservices").update({"servicestatus": "PastDue"}).eq(
+        "accountuid", accountuid
+    ).eq("servicestatus", "Active").execute()
+    sd.table("account_billing").update({
+        "billing_status": "PastDue", "failure_count": failure_count,
+        "first_failure_dt": first_failure_dt, "grace_until_dt": grace_until,
+    }).eq("accountuid", accountuid).execute()
+    create_notification(
+        get_service_client(), category="payment", status="error",
+        title="정기 결제 실패",
+        message=f"정기 결제에 실패했습니다. {grace_until}까지 결제수단을 갱신해주세요. ({message})",
+        title_key="msg.notification.billing.failed.title", message_key="msg.notification.billing.failed.body",
+        params={"message": message, "grace_until": grace_until},
+        target_object="account_billing", target_uid=accountuid, target_url=payment_url, target_useruid=notify_useruid,
+    )
+    return {"result": "failed_grace", "message": message, "grace_until": grace_until}
+
+
+def _process_account_billing_cycle(sd, ab: dict, today: date) -> dict:
+    """계정 1건의 통합 결제 사이클을 처리한다 — 만료된 부가상품/기능/Pro 해지를 먼저 정리한 뒤
+    이번 사이클에 청구할 항목을 모아 한 번에 청구하고, 성공하면 invoices/invoice_items를 남긴다."""
+    from backend.app.routers.settings import (
+        _apply_due_pro_downgrades, _apply_due_feature_cancellations, _apply_due_quantity_decreases, _next_billing_date,
+    )
+
+    accountuid = ab["accountuid"]
+    tenantid = ab["tenantid"]
+
+    _apply_due_pro_downgrades(sd, accountuid)
+    _apply_due_feature_cancellations(sd, accountuid)
+    _apply_due_quantity_decreases(sd, accountuid)
+
+    items = _collect_billing_items(sd, accountuid)
+    total_amount = sum(i["amount"] for i in items)
+    notify_useruid = _resolve_billing_notify_useruid(sd, tenantid, accountuid) or SYSTEM_USER_ID
+
+    if total_amount <= 0:
+        next_dt = _next_billing_date(ab["billingday"], today)
+        sd.table("account_billing").update({
+            "next_billing_dt": next_dt.isoformat(), "last_billed_dt": today.isoformat(),
+            "billing_status": "Active", "failure_count": 0, "first_failure_dt": None, "grace_until_dt": None,
+        }).eq("accountuid", accountuid).execute()
+        return {"result": "skipped_zero_amount"}
+
+    method_row = (
+        sd.table("payment_methods").select("*")
+        .eq("accountuid", accountuid).eq("is_default", True).eq("payment_method_status", "Active")
+        .maybe_single().execute()
+    )
+    if not method_row or not method_row.data:
+        return _handle_billing_failure(sd, ab, today, notify_useruid, "등록된 결제수단이 없습니다.")
+
+    order_name = f"정기 결제 ({today.strftime('%Y-%m')})"
+    charge_result = execute_charge(
+        sd, notify_useruid, tenantid, method_row.data, total_amount, order_name, productcd=None, quantity=None,
+    )
+    if not charge_result["success"]:
+        return _handle_billing_failure(sd, ab, today, notify_useruid, charge_result["message"])
+
+    invoice_no_rows = (
+        sd.table("invoices").select("invoice_number").eq("tenantid", tenantid)
+        .order("invoice_number", desc=True).limit(1).execute().data or []
+    )
+    next_invoice_number = (invoice_no_rows[0]["invoice_number"] + 1) if invoice_no_rows else 1
+    subtotal = sum(i["unit_price"] for i in items)
+    tax = sum(i["unit_tax"] for i in items)
+
+    inv_resp = sd.table("invoices").insert({
+        "tenantid": tenantid, "accountuid": accountuid, "invoice_number": next_invoice_number,
+        "invoice_status": "Paid",
+        "billing_period_from": ab.get("last_billed_dt") or today.isoformat(),
+        "billing_period_to": today.isoformat(),
+        "invoice_date": today.isoformat(), "due_date": today.isoformat(),
+        "currencycd": "KRW", "subtotal_amount": subtotal, "tax_amount": tax,
+        "discount_amount": 0, "total_amount": total_amount, "paid_amount": total_amount,
+        "creator": notify_useruid,
+    }).execute()
+    invoiceuid = inv_resp.data[0]["invoiceuid"]
+
+    for i in items:
+        sd.table("invoice_items").insert({
+            "tenantid": tenantid, "invoiceuid": invoiceuid, "productcd": i["productcd"],
+            "item_type": "Recurring", "desc": i["productnm"], "quantity": i["quantity"],
+            "regular_price": i["unit_price"], "price": i["unit_price"],
+            "regular_amount": i["amount"], "amount": i["amount"],
+            "creator": notify_useruid,
+        }).execute()
+
+    if charge_result.get("paymentuid"):
+        sd.table("payments").update({"invoiceuid": invoiceuid}).eq("paymentuid", charge_result["paymentuid"]).execute()
+
+    next_dt = _next_billing_date(ab["billingday"], today)
+
+    # 서비스 플랜 구독으로 부여되는 Ba 크레딧을 이번 사이클만큼 갱신 — 만료일은 다음 통합 결제일 전날로
+    # 맞춰서 "월 사용량 리셋"이 항상 결제일과 같이 움직이게 한다.
+    from utilsPrj.credit_helper import upsert_ba_creditbucket
+    credit_expiredts = (next_dt - timedelta(days=1)).isoformat()
+    for i in items:
+        if i["kind"] != "service":
+            continue
+        upsert_ba_creditbucket(
+            sd,
+            subscriptionuid=i.get("subscriptionuid"),
+            tenantid=tenantid,
+            accountuid=accountuid,
+            servicecd=i["servicecd"],
+            chargecredit=i.get("credit") or 0,
+            granteddts=datetime.now(timezone.utc).isoformat(),
+            expiredts=credit_expiredts,
+            startdt=today.isoformat(),
+        )
+
+    sd.table("account_billing").update({
+        "next_billing_dt": next_dt.isoformat(), "last_billed_dt": today.isoformat(),
+        "billing_status": "Active", "failure_count": 0, "first_failure_dt": None, "grace_until_dt": None,
+    }).eq("accountuid", accountuid).execute()
+    # 유예기간 중 회복된 경우 PastDue였던 서비스를 Active로 복귀
+    sd.table("accountservices").update({"servicestatus": "Active"}).eq(
+        "accountuid", accountuid
+    ).eq("servicestatus", "PastDue").execute()
+
+    return {"result": "charged", "amount": total_amount, "invoiceuid": invoiceuid}
+
+
+@router.post("/run-billing-cycle")
+def run_billing_cycle(request: Request):
+    """정기결제 자동 재청구 배치 엔드포인트 — 로그인 세션이 아닌 X-Billing-Secret 헤더로 인증한다.
+    AWS EventBridge Scheduler가 매일 1회 호출하는 것을 전제로 설계됨(스케줄 자체는 아직 미등록 —
+    실사용자 대상 자동 결제라 최종 점검 전에는 트리거하지 않는다)."""
+    secret = request.headers.get("x-billing-secret")
+    if not settings.BILLING_CRON_SECRET or secret != settings.BILLING_CRON_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+    today = datetime.now(timezone.utc).date()
+
+    due_rows = (
+        sd.table("account_billing").select("*")
+        .lte("next_billing_dt", today.isoformat())
+        .neq("billing_status", "Suspended")
+        .execute().data or []
+    )
+
+    results = []
+    for ab in due_rows:
+        try:
+            result = _process_account_billing_cycle(sd, ab, today)
+        except Exception as e:
+            result = {"result": "error", "message": str(e)}
+        results.append({"accountuid": ab["accountuid"], **result})
+
+    return {"processed": len(results), "results": results}

@@ -376,7 +376,7 @@ def _save_tenant_contact(tenantid: int, email: Optional[str], telno: Optional[st
         payload["enctelno"] = _encrypt(telno)
 
     existing = svc.table("accounts").select("accountuid").eq("tenantid", tenantid).maybe_single().execute()
-    if existing.data:
+    if existing and existing.data:
         svc.table("accounts").update(payload).eq("tenantid", tenantid).execute()
     else:
         payload.update({
@@ -628,7 +628,7 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
     accountuid = None
     if tenantid:
         t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-        issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+        issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
         if issystemtenant:
             acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
         else:
@@ -1196,7 +1196,7 @@ def upgrade_plan(
     prod_row = svc.table("products").select(
         "productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
     ).eq("productcd", body.productcd).maybe_single().execute()
-    if not prod_row.data:
+    if not prod_row or not prod_row.data:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
     product = prod_row.data
 
@@ -1214,24 +1214,35 @@ def upgrade_plan(
         raise HTTPException(status_code=404, detail="기존 구독 정보를 찾을 수 없습니다.")
     past_sub = past_rows[0]
 
-    previous_accountservices = (
-        svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute().data
+    _prev_accountservices_row = (
+        svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
+    )
+    previous_accountservices = (_prev_accountservices_row.data if _prev_accountservices_row else None)
+
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
+
+    account_billing = _lookup_account_billing(svc, accountuid)
+    full_price = _get_current_price(svc, product["productcd"], product.get("billingtermcd"))
+    if full_price is None:
+        raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+    charge_amount = (
+        _calc_prorated_amount(full_price, today, date.fromisoformat(account_billing["next_billing_dt"]))
+        if account_billing else full_price
     )
 
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
-        product.get("productnm") or product["productcd"],
+        product.get("productnm") or product["productcd"], override_amount=charge_amount,
     )
 
     # 결제는 이미 성공했으므로, 이 아래(구독 반영) 단계에서 무엇이 실패하든
     # (1) 이미 반영한 변경을 되돌리고 (2) 결제를 자동 환불한다.
     subscription_inserted = False
     accountservices_updated = False
+    account_billing_bootstrapped = False
     new_subscriptionuid = None
     try:
-        now_utc = datetime.now(timezone.utc)
-        today = now_utc.date()
-
         # ① subscriptions 신규 행 삽입 ([갱신_sub])
         new_sub_resp = svc.table("subscriptions").insert({
             "tenantid": int(tenantid),
@@ -1259,8 +1270,8 @@ def upgrade_plan(
             "productcd": product["productcd"],
             "plancd": product["plancd"],
             "is_customerAIKey": product.get("is_customeraikey", False),
-            "billingfirstdt": today.isoformat(),
-            "billingday": today.day,
+            "billingfirstdt": (account_billing.get("last_billed_dt") or today.isoformat()) if account_billing else today.isoformat(),
+            "billingday": account_billing["billingday"] if account_billing else today.day,
             "included_users": 1,
             "add_users": 0,
             "total_users": 1,
@@ -1269,9 +1280,16 @@ def upgrade_plan(
         }).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
         accountservices_updated = True
 
+        if not account_billing:
+            _bootstrap_account_billing(svc, accountuid, tenantid, user_id, today)
+            account_billing_bootstrapped = True
+
         # ③ creditbuckets — 기존 Ba 버킷이 있으면 잔여 크레딧 병합 후 creditbucket_historys로 이관, 신규 Ba 버킷 발급
         # (Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단)
-        expiredts = (today + relativedelta(months=1) - timedelta(days=1)).isoformat()
+        # 제품 구독으로 부여되는 크레딧의 만료일은 통합 결제일(다음 재청구일 전날)에 맞춘다 —
+        # 그래야 다음 통합 청구 시점에 크레딧도 같이 갱신되어 "월 사용량 리셋"이 결제일과 어긋나지 않는다.
+        _next_bill_dt = date.fromisoformat(account_billing["next_billing_dt"]) if account_billing else _next_billing_date(today.day, today)
+        expiredts = (_next_bill_dt - timedelta(days=1)).isoformat()
         upsert_ba_creditbucket(
             svc,
             subscriptionuid=new_subscriptionuid,
@@ -1284,6 +1302,8 @@ def upgrade_plan(
             startdt=today.isoformat(),
         )
     except Exception as e:
+        if account_billing_bootstrapped:
+            svc.table("account_billing").delete().eq("accountuid", accountuid).execute()
         if accountservices_updated and previous_accountservices:
             svc.table("accountservices").update(previous_accountservices).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
         if subscription_inserted:
@@ -1752,12 +1772,12 @@ def _get_tenant_and_issystemtenant(svc, user_id: str, tenantid: Optional[str]) -
     """tenantid와 issystemtenant 여부를 반환."""
     if not tenantid:
         tu = svc.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
-        if not tu.data:
+        if not tu or not tu.data:
             raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
         tenantid = str(tu.data["tenantid"])
 
     t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
     return tenantid, issystemtenant
 
 
@@ -1765,12 +1785,12 @@ def _get_tenant_and_account(svc, user_id: str, tenantid: Optional[str]) -> tuple
     """tenantid와 accountuid를 반환."""
     if not tenantid:
         tu = svc.table("tenantusers").select("tenantid").eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
-        if not tu.data:
+        if not tu or not tu.data:
             raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
         tenantid = str(tu.data["tenantid"])
 
     t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
     if issystemtenant:
         acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
@@ -1788,14 +1808,14 @@ def _require_tenant_manager(svc, user_id: str, tenantid: str) -> None:
         .eq("useruid", user_id).eq("tenantid", int(tenantid))
         .maybe_single().execute()
     )
-    if not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
+    if not tu or not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
         raise HTTPException(status_code=403, detail="테넌트 관리자만 접근할 수 있습니다.")
 
 
 def _require_not_system_tenant(svc, tenantid: str) -> None:
     """조직/구독 관리 화면은 시스템(개인) 테넌트에서 의미가 없어 차단한다."""
     t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    if t_row.data and t_row.data.get("issystemtenant"):
+    if t_row and t_row.data and t_row.data.get("issystemtenant"):
         raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
 
 
@@ -1803,7 +1823,7 @@ def _require_system_tenant(svc, tenantid: str) -> None:
     """개인 계정 전용 화면(예: 내 정보 크레딧 구매)은 조직 테넌트에서 의미가 없어 차단한다.
     (org/credit-manage와 반대 방향 가드 — 이쪽은 개인 계정 전용, 그쪽은 조직 전용으로 서로 겹치지 않게 분리)"""
     t_row = svc.table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    if not t_row.data or not t_row.data.get("issystemtenant"):
+    if not t_row or not t_row.data or not t_row.data.get("issystemtenant"):
         raise HTTPException(status_code=403, detail="msg.feature.unavailable.org.tenant")
 
 
@@ -1947,20 +1967,55 @@ def _get_current_price(svc, productcd: str, billingtermcd: Optional[str], curren
     return rows[0]["price"] if rows else None
 
 
-def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1) -> dict:
+def _lookup_account_billing(svc, accountuid: str) -> Optional[dict]:
+    """계정의 통합 결제일 앵커 행(account_billing) 조회. 없으면 None(=이 계정의 최초 유료 결제 시점)."""
+    row = svc.table("account_billing").select("*").eq("accountuid", accountuid).maybe_single().execute()
+    return row.data if row and row.data else None
+
+
+def _bootstrap_account_billing(svc, accountuid: str, tenantid, user_id: str, today: date) -> None:
+    """계정의 최초 유료 결제 성공 직후 호출 — 오늘을 기준으로 통합 결제일 앵커 행을 새로 만든다."""
+    next_dt = _next_billing_date(today.day, today)
+    svc.table("account_billing").insert({
+        "accountuid": accountuid,
+        "tenantid": int(tenantid),
+        "billingday": today.day,
+        "next_billing_dt": next_dt.isoformat(),
+        "last_billed_dt": today.isoformat(),
+        "billing_status": "Active",
+        "creator": user_id,
+    }).execute()
+
+
+def _calc_prorated_amount(full_price: float, today: date, next_billing_dt: date) -> int:
+    """오늘부터 next_billing_dt(통합 결제일) 직전까지 남은 일수만큼, 30일 기준 일할 계산한 금액.
+    남은 일수가 0 이하이면 0원(다음 통합 결제 사이클에 자동으로 포함되므로 별도 청구 불필요)."""
+    remaining_days = (next_billing_dt - today).days
+    if remaining_days <= 0:
+        return 0
+    prorated = round(full_price * remaining_days / 30)
+    return max(0, min(prorated, round(full_price)))
+
+
+def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1, override_amount: Optional[float] = None) -> dict:
     """
     실제 상품 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 공통 결제 게이트.
     가격 조회 → 계정 기본 결제수단 확인 → 그 결제수단으로 실제 청구까지 수행한다.
     가격 미등록/결제수단 없음/청구 실패 시 적절한 HTTPException을 던진다.
     성공 시 execute_charge()의 반환값(paymentuid 포함)을 그대로 돌려준다.
     quantity: 단가 상품을 N개 단위로 한 번에 청구할 때(예: Add User 수량 구매) 사용 — 단가 × quantity가 청구된다.
+    override_amount: 계산된 금액(예: 통합 결제일 기준 일할 계산액)을 그대로 청구하고 싶을 때 사용 —
+      지정하면 unit_price × quantity 대신 이 금액을 청구한다(가격 미등록 여부 확인용으로 unit_price 조회는 그대로 수행).
     """
     from backend.app.routers.payments import execute_charge
 
     unit_price = _get_current_price(svc, productcd, billingtermcd)
     if unit_price is None:
         raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
-    price = unit_price * quantity
+    price = override_amount if override_amount is not None else unit_price * quantity
+
+    if price <= 0:
+        return {"success": True, "paymentuid": None, "pgTxId": None, "skipped_zero_amount": True}
 
     method_row = (
         svc.table("payment_methods").select("*")
@@ -2047,7 +2102,7 @@ def change_tenant_subscription(
     prod_row = svc.table("products").select(
         "productcd,productnm,plancd,servicecd,billingtermcd,users,credit,is_customeraikey"
     ).eq("productcd", body.productcd).maybe_single().execute()
-    if not prod_row.data:
+    if not prod_row or not prod_row.data:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
     product = prod_row.data
 
@@ -2067,20 +2122,30 @@ def change_tenant_subscription(
     cur_row = svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
     current = cur_row.data if cur_row else {}  # 없으면 해당 서비스 신규 구독
 
+    now_utc = datetime.now(tz.utc)
+    today = now_utc.date()
+
+    account_billing = _lookup_account_billing(svc, accountuid)
+    full_price = _get_current_price(svc, product["productcd"], product.get("billingtermcd"))
+    if full_price is None:
+        raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+    charge_amount = (
+        _calc_prorated_amount(full_price, today, date.fromisoformat(account_billing["next_billing_dt"]))
+        if account_billing else full_price
+    )
+
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
-        product.get("productnm") or product["productcd"],
+        product.get("productnm") or product["productcd"], override_amount=charge_amount,
     )
 
     # 결제는 이미 성공했으므로, 이 아래(구독 반영) 단계에서 무엇이 실패하든
     # (1) 이미 반영한 변경을 되돌리고 (2) 결제를 자동 환불한다.
     subscription_inserted = False
     accountservices_written = False
+    account_billing_bootstrapped = False
     new_subscriptionuid = None
     try:
-        now_utc = datetime.now(tz.utc)
-        today = now_utc.date()
-
         new_sub_resp = svc.table("subscriptions").insert({
             "tenantid": int(tenantid),
             "accountuid": accountuid,
@@ -2110,8 +2175,8 @@ def change_tenant_subscription(
             "productcd": product["productcd"],
             "plancd": product["plancd"],
             "is_customerAIKey": product.get("is_customeraikey", False),
-            "billingfirstdt": today.isoformat(),
-            "billingday": today.day,
+            "billingfirstdt": (account_billing.get("last_billed_dt") or today.isoformat()) if account_billing else today.isoformat(),
+            "billingday": account_billing["billingday"] if account_billing else today.day,
             "included_users": users,
             "add_users": add_users,
             "total_users": users + add_users,
@@ -2134,8 +2199,15 @@ def change_tenant_subscription(
             }).execute()
         accountservices_written = True
 
+        if not account_billing:
+            _bootstrap_account_billing(svc, accountuid, tenantid, user_id, today)
+            account_billing_bootstrapped = True
+
         # Ba는 subscription_credits에 넣지 않는다 — Ba 갱신 여부는 subscriptions.subscription_status로만 판단
-        expiredts = (today + relativedelta(months=1) - td(days=1)).isoformat()
+        # 제품 구독으로 부여되는 크레딧의 만료일은 통합 결제일(다음 재청구일 전날)에 맞춘다 —
+        # 그래야 다음 통합 청구 시점에 크레딧도 같이 갱신되어 "월 사용량 리셋"이 결제일과 어긋나지 않는다.
+        _next_bill_dt = date.fromisoformat(account_billing["next_billing_dt"]) if account_billing else _next_billing_date(today.day, today)
+        expiredts = (_next_bill_dt - td(days=1)).isoformat()
         upsert_ba_creditbucket(
             svc,
             subscriptionuid=new_subscriptionuid,
@@ -2168,6 +2240,8 @@ def change_tenant_subscription(
                         f"{product['servicecd']} 서비스 상품을 24시간 이내에 재변경하여 이전 결제를 자동 환불함",
                     )
     except Exception as e:
+        if account_billing_bootstrapped:
+            svc.table("account_billing").delete().eq("accountuid", accountuid).execute()
         if accountservices_written:
             if current:
                 svc.table("accountservices").update(current).eq("accountuid", accountuid).eq("servicecd", body.servicecd).execute()
@@ -2200,11 +2274,17 @@ def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Opt
         languagenm = l_row.data.get("languagenm") if l_row and l_row.data else None
 
     email, telno = "", ""
+    is_whitelist_subscribed = False
     if accountuid:
         acc_row = svc.table("accounts").select("encemail,enctelno").eq("accountuid", accountuid).maybe_single().execute()
         acc = acc_row.data if acc_row else {}
         email = _decrypt(acc.get("encemail"))
         telno = _decrypt(acc.get("enctelno"))
+
+        wl_row = svc.table("account_features").select("accountuid").eq(
+            "accountuid", accountuid
+        ).eq("productcd", "whitelist").maybe_single().execute()
+        is_whitelist_subscribed = bool(wl_row and wl_row.data)
 
     return {
         "disptenantnm": tenant.get("disptenantnm"),
@@ -2213,6 +2293,7 @@ def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Opt
         "languagecd": tenant.get("languagecd"),
         "languagenm": languagenm,
         "timezone": tenant.get("timezone"),
+        "is_whitelist_subscribed": is_whitelist_subscribed,
     }
 
 
@@ -2369,7 +2450,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
         offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
         rows = (
             svc.table("subscription_features").select(
-                "subscriptionuid,productcd,quantity,pending_decrease_qty,pending_decrease_applydt,createdts,canceldts"
+                "subscriptionuid,productcd,quantity,pending_decrease_qty,pending_decrease_applydt,createdts,updatedts,canceldts"
             )
             .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
             .order("createdts").execute().data or []
@@ -2400,6 +2481,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
                 "unit_price": unit_price,
                 "currencycd": currencycd if unit_price is not None else None,
                 "createdts": _fmt_dt(r.get("createdts"), offsetminutes),
+                "updatedts": _fmt_dt(r.get("updatedts") or r.get("createdts"), offsetminutes),
                 "orderno": p.get("orderno", 999),
                 "cancel_reserved": bool(r.get("canceldts")),
                 "cancel_effective_date": cancel_effective_date,
@@ -2468,9 +2550,20 @@ def purchase_tenant_manage_other_subscription(
         if not accsvc:
             raise HTTPException(status_code=400, detail="먼저 해당 서비스를 구독해야 합니다.")
 
+    today = datetime.now(tz.utc).date()
+    account_billing = _lookup_account_billing(svc, accountuid)
+    unit_price = _get_current_price(svc, product["productcd"], product.get("billingtermcd"))
+    if unit_price is None:
+        raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+    full_price = unit_price * quantity
+    charge_amount = (
+        _calc_prorated_amount(full_price, today, date.fromisoformat(account_billing["next_billing_dt"]))
+        if account_billing else full_price
+    )
+
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
-        product.get("productnm") or product["productcd"], quantity=quantity,
+        product.get("productnm") or product["productcd"], quantity=quantity, override_amount=charge_amount,
     )
 
     # 결제는 이미 성공했으므로, 이 아래(상품 지급) 단계에서 무엇이 실패하든
@@ -2480,6 +2573,7 @@ def purchase_tenant_manage_other_subscription(
     account_features_written = False
     previous_account_features = None
     accountservices_updated = False
+    account_billing_bootstrapped = False
     config_tenants_touched: list[tuple[str, bool]] = []  # (configcd, previous_value)
     try:
         svc.table("subscription_features").insert({
@@ -2521,6 +2615,10 @@ def purchase_tenant_manage_other_subscription(
             }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
             accountservices_updated = True
 
+        if not account_billing:
+            _bootstrap_account_billing(svc, accountuid, tenantid, user_id, today)
+            account_billing_bootstrapped = True
+
         if product["productcd"] == "mfa":
             prev = svc.table("config_tenants").select("configcd,value").eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute().data or []
             svc.table("config_tenants").update({"value": True}).eq("tenantid", int(tenantid)).eq("configcd", "Is_MFA").execute()
@@ -2537,6 +2635,8 @@ def purchase_tenant_manage_other_subscription(
     except Exception as e:
         for configcd, prev_value in config_tenants_touched:
             svc.table("config_tenants").update({"value": prev_value}).eq("tenantid", int(tenantid)).eq("configcd", configcd).execute()
+        if account_billing_bootstrapped:
+            svc.table("account_billing").delete().eq("accountuid", accountuid).execute()
         if accountservices_updated:
             svc.table("accountservices").update({
                 "add_users": accsvc.get("add_users") or 0,
@@ -2596,7 +2696,8 @@ def cancel_tenant_manage_other_subscription(
     if sf.get("canceldts"):
         raise HTTPException(status_code=400, detail="이미 해지가 예약되어 있습니다.")
 
-    product = svc.table("products").select("producttype").eq("productcd", sf["productcd"]).maybe_single().execute().data
+    _product_row = svc.table("products").select("producttype").eq("productcd", sf["productcd"]).maybe_single().execute()
+    product = _product_row.data if _product_row else None
     if product and product.get("producttype") == "User":
         raise HTTPException(status_code=400, detail="msg.quantity.decrease.use_stepper")
 
@@ -2702,9 +2803,10 @@ def update_tenant_manage_other_subscription_quantity(
     if sf.get("canceldts"):
         raise HTTPException(status_code=400, detail="해지가 예약된 상품은 수량을 조정할 수 없습니다.")
 
-    product = svc.table("products").select(
+    _product_row = svc.table("products").select(
         "productcd,productnm,servicecd,producttype,users,billingtermcd,useyn,is_sales"
-    ).eq("productcd", sf["productcd"]).maybe_single().execute().data
+    ).eq("productcd", sf["productcd"]).maybe_single().execute()
+    product = _product_row.data if _product_row else None
     if not product or product.get("producttype") != "User":
         raise HTTPException(status_code=400, detail="수량 조정을 지원하지 않는 상품입니다.")
 
@@ -2717,13 +2819,27 @@ def update_tenant_manage_other_subscription_quantity(
         charge_qty = body.delta - offset
 
         charge_result = None
+        account_billing_bootstrapped = False
         if charge_qty > 0:
             if not product.get("useyn") or not product.get("is_sales"):
                 raise HTTPException(status_code=400, detail="더 이상 판매하지 않는 상품입니다.")
+            today = datetime.now(tz.utc).date()
+            account_billing = _lookup_account_billing(svc, accountuid)
+            unit_price = _get_current_price(svc, product["productcd"], product.get("billingtermcd"))
+            if unit_price is None:
+                raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+            full_price = unit_price * charge_qty
+            charge_amount = (
+                _calc_prorated_amount(full_price, today, date.fromisoformat(account_billing["next_billing_dt"]))
+                if account_billing else full_price
+            )
             charge_result = _require_payment_and_charge(
                 svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
-                product.get("productnm") or product["productcd"], quantity=charge_qty,
+                product.get("productnm") or product["productcd"], quantity=charge_qty, override_amount=charge_amount,
             )
+            if not account_billing:
+                _bootstrap_account_billing(svc, accountuid, tenantid, user_id, today)
+                account_billing_bootstrapped = True
 
         new_quantity = quantity + charge_qty
         try:
@@ -2749,6 +2865,8 @@ def update_tenant_manage_other_subscription_quantity(
                         "updater": user_id,
                     }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
         except Exception as e:
+            if account_billing_bootstrapped:
+                svc.table("account_billing").delete().eq("accountuid", accountuid).execute()
             if charge_result:
                 _compensate_and_raise(svc, user_id, charge_result, e, context="수량 증가 반영")
             raise
@@ -3165,7 +3283,7 @@ def get_tenant_subscription_init(
     tu_row = {}
     if tenantid:
         tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("languagecd,timezone").eq("useruid", user_id).eq("tenantid", tenantid).maybe_single().execute()
-        tu_row = tu.data or {}
+        tu_row = (tu.data if tu else None) or {}
     if not tu_row:
         tu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("languagecd,timezone").eq("useruid", user_id).eq("useyn", True).limit(1).execute().data or []
         tu_row = tu_rows[0] if tu_rows else {}
@@ -3247,6 +3365,6 @@ def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token)
     offsetminutes = None
     if body.timezone:
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", body.timezone).maybe_single().execute()
-        if tz_row.data:
+        if tz_row and tz_row.data:
             offsetminutes = tz_row.data.get("offsetminutes")
     return {"status": "ok", "offsetminutes": offsetminutes}

@@ -72,9 +72,12 @@ aws ecs update-service --cluster smartdocu-cluster --service smartdocu-backend-s
 
 ## 후속 작업 (미완료)
 
+- [x] ~~`BILLING_CRON_SECRET`을 Secrets Manager(`smartdocu/backend/env`)에 추가 + 태스크 정의 secrets 매핑 등록~~ — 2026-08-27 완료. 사용자가 AWS 콘솔에서 시크릿 키 추가, 태스크 정의(`d2doc-service`)에 secrets 매핑 등록은 이어서 진행(리비전 4는 ARN 포맷 실수로 태스크 기동 실패 — `unexpected ARN format with parameters` — 살아있던 기존 리비전3가 계속 트래픽 처리해서 실서비스 영향 없었음; 리비전 5로 정상 ARN 재등록 후 배포 성공). 프로덕션에서 잘못된 시크릿→403, 정상 시크릿→200(처리 대상 0건, 안전) 확인 완료.
+  - **EventBridge Scheduler는 2026-08-27에 만들어뒀지만 DISABLED 상태** — `d2doc-billing-daily-cron`(매일 00:00 KST) → Lambda `d2doc-billing-cron` → `run-billing-cycle` 호출 구조(ALB가 HTTP만 지원해서 API destination 대신 Lambda 경유). **ENABLED 전환은 사용자의 명시적 요청 후에만** — 절대 먼저 켜지 말 것. 상세 리소스 목록/켜는 명령어는 메모리 `portone-integration-progress` 참고.
+
 - [ ] **도메인 연결 + ACM 인증서 + HTTPS 전환** — 도메인 미정. 정해지면 Route53 + ACM 발급 + ALB 리스너 443 추가, `CORS_ORIGINS`/Supabase 리다이렉트 URL 갱신 필요
-- [ ] **d2insight ↔ Azure SQL(`mcp-rtims.database.windows.net`) 네트워크 연결** — 이번 배포 범위에서 제외. NAT Gateway로 고정 아웃바운드 IP 만들어서 Azure SQL 방화벽에 등록하는 방안이 유력 (월 $32~45 + 데이터 전송비)
-- [ ] **워커 서비스(`smartdocu-worker-service`) `desiredCount=0` 원인 확인** — 현재 SQS 큐를 아무도 소비하지 않고 있음. 의도적인지 확인 필요
-- [ ] 워커 태스크 정의도 메인 앱처럼 Secrets Manager 방식으로 시크릿 분리 (현재 평문)
-- [ ] `.dockerignore`/`config.py`(CORS_ORIGINS, BASE_URL)/`auth.py`/`org.py`/`.env` 변경분 git 커밋
+- [x] ~~d2insight ↔ Azure SQL(`mcp-rtims.database.windows.net`) 네트워크 연결~~ — 사용자가 "샘플링이라 미연결이어도 정상 동작, 불필요"로 확정(2026-08-27). 다시 꺼내지 말 것.
+- [x] ~~워커 서비스(`smartdocu-worker-service`) `desiredCount=0` 원인 확인~~ — 의도적인 설계. 평소 0으로 대기하다 SQS 메시지 수신 시 자동으로 스케일업되는 구조, 정상 동작 확인됨(2026-08-27).
+- [x] ~~워커 태스크 정의도 메인 앱처럼 Secrets Manager 방식으로 시크릿 분리~~ — 2026-08-25 완료. `smartdocu-worker` 태스크 정의 리비전 4로 갱신, `CLAUDE_API_KEY`/`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_KEY`/`ENCRYPTION_KEY` 전부 `smartdocu/backend/env` 시크릿 참조로 전환.
+- [x] ~~`.dockerignore`/`config.py`(CORS_ORIGINS, BASE_URL)/`auth.py`/`org.py`/`.env` 변경분 git 커밋~~ — 사용자가 "git은 수동으로 커밋 중"이라고 확인(2026-08-25), 이 프로젝트의 정상 워크플로우라 후속작업 대상 아님.
 - [x] ~~하드코딩된 옛 Azure 주소(dev-smart-doc.azurewebsites.net) 정리~~ — 2026-08-14 완료. `auth.py`(비밀번호 재설정 링크), `org.py`(초대 링크)를 `settings.BASE_URL` 참조로 변경, `config.py` CORS_ORIGINS에서 azurewebsites.net 제거, ECS 태스크 정의(리비전 2)에 `BASE_URL` 추가 후 재배포·스모크테스트 완료. `frontend/src/pages/HomePage.jsx`의 `dev-rag-medicine.azurewebsites.net` 링크는 별개 외부 서비스라 이번 작업에서 제외

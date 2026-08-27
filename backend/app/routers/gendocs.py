@@ -34,10 +34,10 @@ def _get_docid(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int
 
 def _tenant_of_doc(sb, docid: int) -> Optional[str]:
     doc_row = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid").eq("docid", docid).maybe_single().execute()
-    if not doc_row.data or not doc_row.data.get("projectid"):
+    if not doc_row or not doc_row.data or not doc_row.data.get("projectid"):
         return None
     proj_row = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", doc_row.data["projectid"]).maybe_single().execute()
-    return str(proj_row.data["tenantid"]) if proj_row.data and proj_row.data.get("tenantid") is not None else None
+    return str(proj_row.data["tenantid"]) if proj_row and proj_row.data and proj_row.data.get("tenantid") is not None else None
 
 
 def _resolve_docid(sb, user_id: str, tenantid: Optional[str], requested_docid: Optional[int]) -> Optional[int]:

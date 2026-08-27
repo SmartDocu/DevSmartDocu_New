@@ -202,7 +202,7 @@ export default function OrgOtherSubscriptionManagePage() {
                   <th>{t('lbl.product')}</th>
                   <th>{t('thd.producttype_thd')}</th>
                   <th>{t('lbl.quantity')}</th>
-                  <th>{t('thd.createdts_thd')}</th>
+                  <th>{t('thd.updatedts_thd')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -248,7 +248,7 @@ export default function OrgOtherSubscriptionManagePage() {
                         </div>
                       ) : (row.users ? `${row.users} users` : '-')}
                     </td>
-                    <td>{row.createdts}</td>
+                    <td>{row.updatedts}</td>
                     <td style={{ textAlign: 'center' }}>
                       {row.cancel_reserved ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>

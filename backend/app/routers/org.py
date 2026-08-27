@@ -58,7 +58,7 @@ def _require_not_system_tenant(sb, tenantid) -> None:
     if not tenantid:
         raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
     t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-    if t_row.data and t_row.data.get("issystemtenant"):
+    if t_row and t_row.data and t_row.data.get("issystemtenant"):
         raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
 
 
@@ -188,7 +188,7 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     # 신규로 추가되는 서비스만 인원 제한 검사
     for scd in to_add:
         acc_svc = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("total_users").eq("accountuid", body.accountuid).eq("servicecd", scd).maybe_single().execute()
-        total_users = acc_svc.data.get("total_users") if acc_svc.data else None
+        total_users = acc_svc.data.get("total_users") if acc_svc and acc_svc.data else None
         if total_users is not None:
             cnt = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid", count="exact").eq("accountuid", body.accountuid).eq("servicecd", scd).execute()
             if (cnt.count or 0) >= total_users:
@@ -469,12 +469,12 @@ def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token
         svc = sb.schema(SUPABASE_SCHEMA).table("accountservices") \
             .select("plancd").eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
             .maybe_single().execute()
-        plancd = svc.data.get("plancd") if svc.data else None
+        plancd = svc.data.get("plancd") if svc and svc.data else None
         if plancd:
             cfg = sb.schema(SUPABASE_SCHEMA).table("config_plans") \
                 .select("value").eq("configcd", "project_limit").eq("plancd", plancd).eq("servicecd", body.servicecd) \
                 .maybe_single().execute()
-            limit = int(cfg.data["value"]) if cfg.data and cfg.data.get("value") else None
+            limit = int(cfg.data["value"]) if cfg and cfg.data and cfg.data.get("value") else None
             if limit is not None:
                 cnt = sb.schema(SUPABASE_SCHEMA).table("projects") \
                     .select("projectid", count="exact") \
@@ -508,7 +508,7 @@ def delete_org_project(projectid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
     proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", projectid).maybe_single().execute()
-    if proj.data:
+    if proj and proj.data:
         _require_not_system_tenant(sb, proj.data.get("tenantid"))
     sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", projectid).execute()
     return {"result": "success", "message": "프로젝트가 성공적으로 삭제되었습니다."}
@@ -668,8 +668,8 @@ def delete_project_user(body: ProjectUserDeleteRequest, token: str = Depends(get
 def _resolve_tenant_accountuid(sd, tenantid: int, user_id: str) -> tuple[str, Optional[str]]:
     """tenantid → (tenantnm, accountuid) 해석. issystemtenant면 useruid 기준, 아니면 tenantid 기준으로 accounts 조회."""
     t_row = sd.table("tenants").select("tenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
-    tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    tenantnm = t_row.data.get("tenantnm", "") if t_row and t_row.data else ""
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
     if issystemtenant:
         acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
     else:
@@ -766,7 +766,7 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), h
     # 서비스 최대 인원 제한 검사: (신규 초대 인원 수 + 현재 활성 인원 수) > 최대 인원 이면 차단
     if accountuid:
         acc_svc = sd.table("accountservices").select("total_users").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
-        total_users = acc_svc.data.get("total_users") if acc_svc.data else None
+        total_users = acc_svc.data.get("total_users") if acc_svc and acc_svc.data else None
         if total_users is not None:
             active_cnt = (
                 sd.table("serviceusers")

@@ -60,6 +60,7 @@ function TenantInfoCard({ openInTab }) {
           [t('lbl.telno'), data.telno],
           [t('thd.languagenm'), data.languagenm || data.languagecd],
           [t('lbl.timezone'), data.timezone],
+          [t('lbl.tenant.manage.ip_whitelist'), data.is_whitelist_subscribed ? t('lbl.service.subscribed') : t('lbl.service.not_subscribed')],
         ].map(([label, value]) => (
           <div key={label} style={{ display: 'flex', borderBottom: '1px solid #f0f0f0' }}>
             <div style={{ flex: '0 0 90px', padding: '6px 8px', background: '#fafafa', borderRight: '1px solid #f0f0f0' }}>
@@ -109,12 +110,12 @@ export default function OrgTenantManagePage() {
 
       <Row gutter={20} wrap={false} style={{ marginBottom: 20, paddingRight: 10 }}>
         {/* 테넌트 정보: 담당자 연락처 + 언어·타임존 (표시 전용, 수정은 별도 페이지) */}
-        <Col flex="20 1 0" style={{ minWidth: 0 }}>
+        <Col flex="30 1 0" style={{ minWidth: 0 }}>
           <TenantInfoCard openInTab={openInTab} />
         </Col>
 
         {/* 구독 통합 카드: 구독 + 기타 구독 + 크레딧 영역 통합 */}
-        <Col flex="80 1 0" style={{ minWidth: 0 }}>
+        <Col flex="70 1 0" style={{ minWidth: 0 }}>
           <Card
             size="small"
             title={t('ttl.tenant.manage.subscription')}
@@ -176,7 +177,6 @@ export default function OrgTenantManagePage() {
               pagination={false}
               dataSource={serviceOverviews}
               rowKey="servicecd"
-              scroll={{ y: 195 }}
               locale={{ emptyText: t('msg.no.data') }}
               columns={[
                 { title: t('lbl.service_name_lbl'), key: 'servicecd', render: (_, row) => serviceLabel(row.servicecd) },

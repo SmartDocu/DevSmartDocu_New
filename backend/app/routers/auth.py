@@ -160,11 +160,11 @@ def _get_user_info_by_email(email: str) -> tuple[int, Optional[str]]:
         svc = get_service_client()
         sd = svc.schema(SUPABASE_SCHEMA)
         user_row = sd.table("users").select("useruid").eq("email", email).maybe_single().execute()
-        if not user_row.data:
+        if not user_row or not user_row.data:
             return 0, None
         useruid = user_row.data["useruid"]
         tu_row = sd.table("tenantusers").select("tenantid").eq("useruid", useruid).maybe_single().execute()
-        tenantid = int(tu_row.data["tenantid"]) if tu_row.data else 0
+        tenantid = int(tu_row.data["tenantid"]) if tu_row and tu_row.data else 0
         return tenantid, str(useruid)
     except Exception:
         return 0, None
@@ -351,7 +351,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
         if ctx.tenantid:
             svc_q = svc_q.eq("tenantid", int(ctx.tenantid))
         svc_row = svc_q.maybe_single().execute()
-        if svc_row.data:
+        if svc_row and svc_row.data:
             mydocid = svc_row.data.get("mydocid")
     except Exception:
         pass
@@ -503,7 +503,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         if ctx.tenantid:
             t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
-            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
             ctx.issystemtenant = issystemtenant
 
             if issystemtenant:
@@ -513,7 +513,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
                 acc = sd.table("accounts").select("accountuid, accountstatus").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
                 # 기업 테넌트: tenantusers.rolecd = "M" 이면 accountmanager
                 tu_row = sd.table("tenantusers").select("rolecd").eq("tenantid", int(ctx.tenantid)).eq("useruid", user_id).maybe_single().execute()
-                ctx.accountmanager = "Y" if tu_row.data and tu_row.data.get("rolecd") == "M" else "N"
+                ctx.accountmanager = "Y" if tu_row and tu_row.data and tu_row.data.get("rolecd") == "M" else "N"
 
             if acc and acc.data:
                 ctx.accountuid = str(acc.data["accountuid"])
@@ -1510,7 +1510,7 @@ def _resolve_invite(req_uuid: str) -> dict:
     sd = svc.schema(SUPABASE_SCHEMA)
 
     row = sd.table("userregreqs").select("*").eq("userregrequid", req_uuid).maybe_single().execute()
-    if not row.data:
+    if not row or not row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="유효하지 않은 초대 링크입니다.")
 
     invite = row.data
@@ -1535,7 +1535,7 @@ def _resolve_invite(req_uuid: str) -> dict:
             productcds.append(prod_rows[0]["productcd"])
 
     t_row = sd.table("tenants").select("tenantnm").eq("tenantid", tenantid).maybe_single().execute()
-    tenantnm = t_row.data.get("tenantnm", "") if t_row.data else ""
+    tenantnm = t_row.data.get("tenantnm", "") if t_row and t_row.data else ""
 
     return {
         "email": email,

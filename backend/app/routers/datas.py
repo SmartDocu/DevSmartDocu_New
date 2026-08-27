@@ -470,7 +470,7 @@ def list_datas(
         issystemtenant = True
         if tenantid:
             t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
         if issystemtenant:
             query = query.eq("creator", str(user.id))
 
@@ -484,7 +484,7 @@ def list_datas(
         issystemtenant = True
         if tenantid:
             t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
         query = (
             sb.schema(SUPABASE_SCHEMA).table("dataunits")
@@ -571,7 +571,7 @@ def list_datas(
         issystemtenant = True
         if tenantid:
             t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-            issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+            issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
         if issystemtenant:
             ai_rows = []
@@ -640,7 +640,7 @@ def list_source_datas(projectid: int = None, token: str = Depends(get_token), te
     issystemtenant = True
     if tenantid:
         t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tenantid)).maybe_single().execute()
-        issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+        issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
     # db/api (+ 기업 테넌트의 ex): 프로젝트 연결과 무관하게 테넌트 소속이면 전부 후보
     # (단, 시스템 테넌트는 여러 개인 계정이 tenantid를 공유하므로 creator로 추가 제한)
@@ -963,7 +963,7 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), ten
     sb = _sb(token)
 
     doc_row = sb.schema(SUPABASE_SCHEMA).table("docs").select("projectid").eq("docid", body.dfv_docid).maybe_single().execute()
-    if not doc_row.data or doc_row.data.get("projectid") != body.projectid:
+    if not doc_row or not doc_row.data or doc_row.data.get("projectid") != body.projectid:
         raise HTTPException(status_code=400, detail="msg.dfv.doc.project.mismatch")
 
     record = {

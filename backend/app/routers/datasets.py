@@ -42,7 +42,7 @@ def _tenant_datas_candidates(sb, tid: Optional[str], user_id: str) -> list[dict]
 
     issystemtenant = True
     t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("issystemtenant").eq("tenantid", int(tid)).maybe_single().execute()
-    issystemtenant = t_row.data.get("issystemtenant", True) if t_row.data else True
+    issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
     tenant_wide_types = ["db", "api"] if issystemtenant else ["db", "api", "ex"]
     tenant_wide_query = (
