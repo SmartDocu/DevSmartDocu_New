@@ -85,7 +85,7 @@ aws ecs update-service --cluster smartdocu-cluster --service smartdocu-backend-s
     - 두 곳 다 `_run_merge_and_upload()`가 `tenantid` 파라미터를 새로 받도록 시그니처 변경(호출부 2곳도 함께 수정).
     - `detail`에 `gendocjobuid`/`genchapterjobuid`를 남겨서 기존 `create_requested` row와 매칭 가능.
   - **배포(2026-08-28)** — Docker 빌드 → ECR push → ECS `smartdocu-worker-service` 강제 재배포 완료. 태스크 정의가 `:latest` 태그(가변)를 참조해서, 다음 SQS 메시지 수신 시 워커가 스케일업될 때 새 이미지가 자동 적용됨(`desiredCount=0` 평시 대기 설계라 배포 시점엔 실행 중인 태스크가 없었음).
-  - **미확인 — 후속 필요**: 실제 문서/챕터 작성을 한 번 돌려서 `work_logs`에 `actioncd="create"` row(요청 시 남은 `create_requested`와 별개로)가 새로 남는지는 아직 라이브로 확인 안 함. 다음에 실제 작성 테스트할 때 같이 확인할 것.
+  - **라이브 검증 완료(2026-08-28)** — 실제 문서(`Test_문서` → 챕터 `Test_문서_챕터_3개`)를 API로 생성해 `POST /gendocs/{id}/generate` → SQS → AWS ECS 워커(`smartdocu-worker-service`, 스케일업 확인) 전체 파이프라인을 라이브로 돌려 확인. `gendocs_realtimes.jobstatuscd`가 `S`→`E`로 전이된 후 `sdoc.work_logs`에 `actioncd="create"`, `targettype="gendocs/generate"`, `after_json.createfileurl`(생성된 docx storage URL) 포함 row가 정상적으로 추가됨을 확인 — 기존 요청 시점의 `create_requested` row와 별개로 남는 것도 확인. 검증에 쓴 테스트 계정/문서/챕터/gendoc/로그 row는 전부 삭제 완료(로그 3종 테이블은 `audit_verify_test_cleanup.sql`로 트리거 일시 비활성화 후 정리 — append-only라 반드시 이 방식 사용).
 - [x] ~~d2insight ↔ Azure SQL(`mcp-rtims.database.windows.net`) 네트워크 연결~~ — 사용자가 "샘플링이라 미연결이어도 정상 동작, 불필요"로 확정(2026-08-27). 다시 꺼내지 말 것.
 - [x] ~~워커 서비스(`smartdocu-worker-service`) `desiredCount=0` 원인 확인~~ — 의도적인 설계. 평소 0으로 대기하다 SQS 메시지 수신 시 자동으로 스케일업되는 구조, 정상 동작 확인됨(2026-08-27).
 - [x] ~~워커 태스크 정의도 메인 앱처럼 Secrets Manager 방식으로 시크릿 분리~~ — 2026-08-25 완료. `smartdocu-worker` 태스크 정의 리비전 4로 갱신, `CLAUDE_API_KEY`/`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_KEY`/`ENCRYPTION_KEY` 전부 `smartdocu/backend/env` 시크릿 참조로 전환.

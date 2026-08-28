@@ -1372,7 +1372,7 @@ def generate_doc(gendocuid: str, body: GenerateRequest, request: Request, token:
     )
 
     # SQS 비동기 — 실제 작성 완료는 worker/main.py가 처리(여기선 아직 콘텐츠가 없음).
-    # 완료 시점 기록은 후속 작업으로 worker/main.py에도 로깅을 추가해야 한다(TODO).
+    # 완료 시점 기록(actioncd="create")은 worker/main.py의 _run_merge_and_upload()가 남긴다.
     log_work_action(
         useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
         actioncd="create_requested", targettype="gendocs/generate", targetid=gendocuid,
