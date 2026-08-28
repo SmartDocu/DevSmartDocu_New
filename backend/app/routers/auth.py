@@ -201,14 +201,21 @@ def _insert_login_log(
     browser_version: str,
     os_nm: str,
     device_fingerprint: str,
+    eventtypecd: str = "login",
+    roleid: Optional[int] = None,
 ):
     countrycd = _get_country_code(ip)
     try:
         svc = get_service_client()
+        if roleid is None and useruid:
+            urow = svc.schema(SUPABASE_SCHEMA).table("users").select("roleid").eq("useruid", useruid).maybe_single().execute()
+            roleid = urow.data.get("roleid") if urow and urow.data else None
         svc.schema(SUPABASE_SCHEMA).table("login_logs").insert({
             "tenantid": tenantid,
             "useruid": useruid,
             "logintypecd": logintypecd,
+            "eventtypecd": eventtypecd,
+            "roleid": roleid,
             "is_success": is_success,
             "errorcd": errorcd,
             "errormessage": errormessage,
@@ -223,6 +230,56 @@ def _insert_login_log(
         }).execute()
     except Exception as e:
         # print(f"[login_log] INSERT 실패: {e}")
+        pass
+
+
+# ─── 개인정보 동의 로그 헬퍼 ──────────────────────────────────────────────────
+
+# 회원가입 필수 동의 항목 → terms.json 키 매핑
+_CONSENT_TERMS_KEY = {
+    "userinfo": "collection",
+    "termsofuse": "service",
+    "electronicfinancialterms": "finance",
+}
+
+
+def _get_terms_versions() -> dict:
+    """frontend/public/terms/terms.json에서 약관별 version을 읽어온다. 실패 시 빈 dict."""
+    try:
+        import json
+        from pathlib import Path
+        path = Path("frontend/public/terms/terms.json")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return {k: v.get("version") for k, v in data.items()}
+    except Exception:
+        return {}
+
+
+def _insert_privacy_consent_logs(
+    useruid: str,
+    consents: dict,  # {"userinfo": "Y", "termsofuse": "Y", "electronicfinancialterms": "Y"}
+    ip: str,
+    useragent: str,
+):
+    """회원가입 필수 동의 3개 항목을 항목별 1 row로 기록한다 (append-only, 5년 고정 보존)."""
+    try:
+        versions = _get_terms_versions()
+        svc = get_service_client()
+        rows = [
+            {
+                "useruid": useruid,
+                "consenttypecd": consenttypecd,
+                "consentyn": (consents.get(consenttypecd) == "Y"),
+                "termsversion": versions.get(_CONSENT_TERMS_KEY[consenttypecd]),
+                "ip": ip or None,
+                "useragent": useragent,
+            }
+            for consenttypecd in _CONSENT_TERMS_KEY
+        ]
+        svc.schema(SUPABASE_SCHEMA).table("privacy_consent_logs").insert(rows).execute()
+    except Exception as e:
+        # print(f"[privacy_consent_log] INSERT 실패: {e}")
         pass
 
 
@@ -804,8 +861,29 @@ def select_tenant(body: SelectTenantRequest, request: Request):
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(token: str = Depends(get_token)):
+def logout(request: Request, background_tasks: BackgroundTasks, token: str = Depends(get_token)):
     """로그아웃: Supabase 세션을 무효화한다."""
+    from utilsPrj.audit_log import decode_jwt_sub
+
+    useruid = decode_jwt_sub(token)
+    if useruid:
+        try:
+            svc = get_service_client()
+            tu_row = svc.schema(SUPABASE_SCHEMA).table("tenantusers").select("tenantid").eq("useruid", useruid).maybe_single().execute()
+            tenantid = int(tu_row.data["tenantid"]) if tu_row and tu_row.data else 0
+        except Exception:
+            tenantid = 0
+        ip = _get_client_ip(request)
+        ua_info = _parse_user_agent(request.headers.get("user-agent", ""))
+        background_tasks.add_task(
+            _insert_login_log,
+            tenantid=tenantid, useruid=useruid, logintypecd="Em", eventtypecd="logout",
+            is_success=True, errorcd=None, errormessage=None,
+            ip=ip, is_mfaused=False, sessionid=None,
+            device_fingerprint=_device_fingerprint(ip, request.headers.get("user-agent", "")),
+            **ua_info,
+        )
+
     try:
         supabase = _get_user_client(token)
         supabase.auth.sign_out()
@@ -942,7 +1020,7 @@ def get_tenants():
 
 
 @router.post("/register", response_model=MessageResponse)
-def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
+def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional[int] = None):
     """회원가입: Supabase auth + users 테이블 + 기본 권한 할당.
 
     _invite_tenantid: register_invite()에서 호출 시에만 전달 — 해당 테넌트의
@@ -1021,6 +1099,18 @@ def register(body: RegisterRequest, _invite_tenantid: Optional[int] = None):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"DB 저장 실패: {str(e)}",
         )
+
+    # 개인정보 필수 동의 3개 항목 로그 기록 (실패해도 가입은 계속 진행)
+    _insert_privacy_consent_logs(
+        useruid=user_id,
+        consents={
+            "userinfo": body.userinfoyn,
+            "termsofuse": body.termsofuseyn,
+            "electronicfinancialterms": body.electronicfinancialtermsyn,
+        },
+        ip=_get_client_ip(request),
+        useragent=request.headers.get("user-agent", ""),
+    )
 
     # SmartDoc 기본 tenantid 조회
     smartdoc_row = (
@@ -1286,7 +1376,7 @@ def mfa_enroll(body: MfaEnrollRequest, token: str = Depends(get_token)):
 
 
 @router.post("/mfa-enroll-verify", response_model=MfaEnrollVerifyResponse)
-def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_token)):
+def mfa_enroll_verify(body: MfaEnrollVerifyRequest, request: Request, token: str = Depends(get_token)):
     """
     등록한 TOTP 코드를 검증하여 verified 상태로 전환한다.
     이 단계 완료 후부터 로그인 시 MFA 코드 입력이 요구된다.
@@ -1310,6 +1400,20 @@ def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_tok
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="인증 코드가 올바르지 않습니다. QR 코드를 다시 스캔해주세요.",
         )
+
+    try:
+        user_id = str(user_client.auth.get_user(token).user.id)
+    except Exception:
+        user_id = None
+    if user_id:
+        from utilsPrj.audit_log import log_work_action, get_client_ip
+        log_work_action(
+            useruid=user_id, servicecd="Tenant",
+            actioncd="update", targettype="auth/mfa", targetid=body.factor_id,
+            after={"mfa_enabled": True},
+            detail={"action": "enroll_verify"},
+            ip=get_client_ip(request),
+        )
     return MfaEnrollVerifyResponse(
         ok=True,
         message="MFA가 활성화되었습니다.",
@@ -1319,7 +1423,7 @@ def mfa_enroll_verify(body: MfaEnrollVerifyRequest, token: str = Depends(get_tok
 
 
 @router.delete("/mfa-unenroll", response_model=MessageResponse)
-def mfa_unenroll(body: MfaUnenrollRequest, token: str = Depends(get_token)):
+def mfa_unenroll(body: MfaUnenrollRequest, request: Request, token: str = Depends(get_token)):
     user_client = _get_user_client(token, body.refresh_token or None)  # ← refresh_token 추가
     try:
         user_client.auth.mfa.unenroll({"factor_id": body.factor_id})  # ← body.factor_id로
@@ -1327,6 +1431,20 @@ def mfa_unenroll(body: MfaUnenrollRequest, token: str = Depends(get_token)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"MFA 해제 실패: {str(e)}",
+        )
+
+    try:
+        user_id = str(user_client.auth.get_user(token).user.id)
+    except Exception:
+        user_id = None
+    if user_id:
+        from utilsPrj.audit_log import log_work_action, get_client_ip
+        log_work_action(
+            useruid=user_id, servicecd="Tenant",
+            actioncd="update", targettype="auth/mfa", targetid=body.factor_id,
+            before={"mfa_enabled": True}, after={"mfa_enabled": False},
+            detail={"action": "unenroll"},
+            ip=get_client_ip(request),
         )
     return MessageResponse(ok=True, message="MFA가 비활성화되었습니다.")
 
@@ -1568,7 +1686,7 @@ def get_invite_info(req: str = Query(...)):
 
 
 @router.post("/register-invite", response_model=MessageResponse)
-def register_invite(body: RegisterInviteRequest):
+def register_invite(body: RegisterInviteRequest, request: Request):
     """초대 링크를 통한 회원가입: 기존 register 로직 + 초대 테넌트에 자동 추가.
 
     동일 이메일로 같은 테넌트에서 여러 서비스(예: Doc, Chat) 초대가 동시에 대기 중이면,
@@ -1624,7 +1742,7 @@ def register_invite(body: RegisterInviteRequest):
         accounttype="U",
         products=productcds,
     )
-    register(register_body, _invite_tenantid=tenantid_invite)
+    register(register_body, request, _invite_tenantid=tenantid_invite)
 
     # 초대한 테넌트에 사용자 추가
     if tenantid_invite:

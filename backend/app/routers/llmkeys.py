@@ -1,14 +1,25 @@
 """LLM API Keys router — llmapikeys 테이블 관리"""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.crypto_helper import encrypt_value
+from utilsPrj.audit_log import log_work_action, get_client_ip
 
 router = APIRouter()
+
+_LLMKEY_SAFE_FIELDS = "llmkeyuid,tenantid,accountuid,servicecd,llmvendornm,llmmodelnm,llmmodelnm_smart,llmmodelnm_expert,useyn,orderno,creator,createdts"
+
+
+def _snapshot_llmkey(sd, llmkeyuid: Optional[str]) -> Optional[dict]:
+    """apikey(encapikey)는 감사로그에 남기지 않음."""
+    if not llmkeyuid:
+        return None
+    row = sd.table("llmapikeys").select(_LLMKEY_SAFE_FIELDS).eq("llmkeyuid", llmkeyuid).maybe_single().execute()
+    return row.data if row else None
 
 
 def _get_tenant_and_account(sd, user_id: str, tenantid: Optional[str]) -> tuple[str, Optional[str]]:
@@ -125,6 +136,7 @@ class LlmKeySaveRequest(BaseModel):
 @router.post("")
 def save_llmkey(
     body: LlmKeySaveRequest,
+    request: Request,
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -134,6 +146,7 @@ def save_llmkey(
     sd = svc.schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(sd, user_id, header_tenantid)
+    before = _snapshot_llmkey(sd, body.llmkeyuid)
 
     # encapikey 처리: 입력값 있으면 암호화, 없으면 기존 키 유지
     apikey = (body.apikey or "").strip()
@@ -158,12 +171,16 @@ def save_llmkey(
         "orderno": body.orderno,
     }
 
+    new_llmkeyuid = None
+
     def _do_save(payload: dict):
+        nonlocal new_llmkeyuid
         if body.llmkeyuid:
             sd.table("llmapikeys").update(payload).eq("llmkeyuid", body.llmkeyuid).execute()
         else:
             payload["creator"] = user_id
-            sd.table("llmapikeys").insert(payload).execute()
+            res = sd.table("llmapikeys").insert(payload).execute()
+            new_llmkeyuid = res.data[0]["llmkeyuid"] if res.data else None
 
     try:
         _do_save(data)
@@ -176,12 +193,26 @@ def save_llmkey(
         else:
             raise
 
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update" if body.llmkeyuid else "create",
+        targettype="settings/llm-keys", targetid=body.llmkeyuid or new_llmkeyuid,
+        before=before, after=_snapshot_llmkey(sd, body.llmkeyuid or new_llmkeyuid),
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "저장되었습니다."}
 
 
 @router.delete("/{llmkeyuid}")
-def delete_llmkey(llmkeyuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_llmkey(llmkeyuid: str, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     svc = get_service_client()
-    svc.schema(SUPABASE_SCHEMA).table("llmapikeys").delete().eq("llmkeyuid", llmkeyuid).execute()
+    sd = svc.schema(SUPABASE_SCHEMA)
+    before = _snapshot_llmkey(sd, llmkeyuid)
+    sd.table("llmapikeys").delete().eq("llmkeyuid", llmkeyuid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=before.get("tenantid") if before else None, servicecd="Tenant",
+        actioncd="delete", targettype="settings/llm-keys", targetid=llmkeyuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "삭제되었습니다."}

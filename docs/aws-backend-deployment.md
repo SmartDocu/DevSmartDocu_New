@@ -76,6 +76,16 @@ aws ecs update-service --cluster smartdocu-cluster --service smartdocu-backend-s
   - **EventBridge Scheduler는 2026-08-27에 만들어뒀지만 DISABLED 상태** — `d2doc-billing-daily-cron`(매일 00:00 KST) → Lambda `d2doc-billing-cron` → `run-billing-cycle` 호출 구조(ALB가 HTTP만 지원해서 API destination 대신 Lambda 경유). **ENABLED 전환은 사용자의 명시적 요청 후에만** — 절대 먼저 켜지 말 것. 상세 리소스 목록/켜는 명령어는 메모리 `portone-integration-progress` 참고.
 
 - [ ] **도메인 연결 + ACM 인증서 + HTTPS 전환** — 도메인 미정. 정해지면 Route53 + ACM 발급 + ALB 리스너 443 추가, `CORS_ORIGINS`/Supabase 리다이렉트 URL 갱신 필요
+- [x] ~~`worker/main.py`에 Audit Log(work_logs) "작성 완료" 기록 추가~~ — 2026-08-28 코드 반영 + 배포 완료.
+  - 배경: `sdoc.work_logs`(감사 로그, append-only) 테이블에 일반 사용자의 문서/챕터/항목 작업을 기록하는 시스템을 구축함(`backend/app/main.py`의 ASGI 미들웨어 + 일부 라우터의 직접 `log_work_action()` 호출). 상세는 `utilsPrj/audit_log.py`(`log_work_action`, `snapshot_row`, `get_client_ip`) 참고.
+  - 문제였던 것: `backend/app/routers/gendocs.py`의 비동기 SQS 엔드포인트 3개 — `POST /gendocs/genchapters/{id}/rewrite`(챕터 재작성), `POST /gendocs/{id}/generate`(문서 전체 작성), `POST /gendocs/{id}/combine`(챕터 조합) — 는 SQS에 메시지만 던지고 즉시 응답해서, API 요청 시점엔 "요청(`create_requested`)"만 남고 실제 "작성 완료" 기록이 없었음.
+  - **코드 반영(2026-08-28)** — `worker/main.py`에 3곳 추가:
+    - `_run_merge_and_upload()` 내부, `_update_queue(..., "E", ...)` 직후: DOCX 병합·업로드 성공 시 `log_work_action(actioncd="create", targettype="gendocs/generate" 또는 "gendocs/combine", targetid=gendocuid, ...)` 호출. `selected_chapters is not None`이면 combine, `None`이면(문서 전체 작성 fan-out 완료 후 호출) generate로 자동 판별.
+    - `process_chapter_message()` 내부, `_update_chapter_queue(..., "E", ...)` 직후: `is_start_doc=False`(챕터 "단독" 재작성)일 때만 `log_work_action(actioncd="create", targettype="gendocs/genchapters/rewrite", targetid=genchapteruid, ...)` 호출. 문서 전체 작성의 fan-out 챕터(`is_start_doc=True`)는 여기서 안 남기고, 문서 전체가 끝나는 시점(`_run_merge_and_upload`)에서 `gendocs/generate`로 한 번만 남기게 해서 중복 방지.
+    - 두 곳 다 `_run_merge_and_upload()`가 `tenantid` 파라미터를 새로 받도록 시그니처 변경(호출부 2곳도 함께 수정).
+    - `detail`에 `gendocjobuid`/`genchapterjobuid`를 남겨서 기존 `create_requested` row와 매칭 가능.
+  - **배포(2026-08-28)** — Docker 빌드 → ECR push → ECS `smartdocu-worker-service` 강제 재배포 완료. 태스크 정의가 `:latest` 태그(가변)를 참조해서, 다음 SQS 메시지 수신 시 워커가 스케일업될 때 새 이미지가 자동 적용됨(`desiredCount=0` 평시 대기 설계라 배포 시점엔 실행 중인 태스크가 없었음).
+  - **미확인 — 후속 필요**: 실제 문서/챕터 작성을 한 번 돌려서 `work_logs`에 `actioncd="create"` row(요청 시 남은 `create_requested`와 별개로)가 새로 남는지는 아직 라이브로 확인 안 함. 다음에 실제 작성 테스트할 때 같이 확인할 것.
 - [x] ~~d2insight ↔ Azure SQL(`mcp-rtims.database.windows.net`) 네트워크 연결~~ — 사용자가 "샘플링이라 미연결이어도 정상 동작, 불필요"로 확정(2026-08-27). 다시 꺼내지 말 것.
 - [x] ~~워커 서비스(`smartdocu-worker-service`) `desiredCount=0` 원인 확인~~ — 의도적인 설계. 평소 0으로 대기하다 SQS 메시지 수신 시 자동으로 스케일업되는 구조, 정상 동작 확인됨(2026-08-27).
 - [x] ~~워커 태스크 정의도 메인 앱처럼 Secrets Manager 방식으로 시크릿 분리~~ — 2026-08-25 완료. `smartdocu-worker` 태스크 정의 리비전 4로 갱신, `CLAUDE_API_KEY`/`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_KEY`/`ENCRYPTION_KEY` 전부 `smartdocu/backend/env` 시크릿 참조로 전환.

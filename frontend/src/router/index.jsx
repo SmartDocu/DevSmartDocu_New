@@ -73,6 +73,7 @@ const AdminUiTermsPage = lazy(() => import('@/pages/admin/AdminUiTermsPage'))
 const AdminDatasetsPage = lazy(() => import('@/pages/admin/AdminDatasetsPage'))
 const AdminCodesPage = lazy(() => import('@/pages/admin/AdminCodesPage'))
 const AdminPopupsPage = lazy(() => import('@/pages/admin/AdminPopupsPage'))
+const AdminAuditLogsPage = lazy(() => import('@/pages/admin/AdminAuditLogsPage'))
 const MasterAiChartsPage = lazy(() => import('@/pages/master/MasterAiChartsPage'))
 const MasterAiSentencesPage = lazy(() => import('@/pages/master/MasterAiSentencesPage'))
 const MasterAiTablesPage = lazy(() => import('@/pages/master/MasterAiTablesPage'))
@@ -214,6 +215,7 @@ export const router = createBrowserRouter([
       { path: 'admin/datasets', element: <AdminDatasetsPage /> },
       { path: 'admin/codes', element: <AdminCodesPage /> },
       { path: 'admin/popups', element: <AdminPopupsPage /> },
+      { path: 'admin/audit-logs', element: <AdminAuditLogsPage /> },
 
       // d2chat: AI 데이터 분석 챗봇
       { path: 'd2chat', element: <D2ChatPage /> },

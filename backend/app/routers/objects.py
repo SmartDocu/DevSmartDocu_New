@@ -1,13 +1,14 @@
 from datetime import timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from backend.app.schemas.objects import (
     ObjectItem, ObjectsListResponse, ObjectSaveRequest,
 )
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -74,7 +75,7 @@ def list_objects(chapteruid: str, token: str = Depends(get_token), tenantid: Opt
 
 
 @router.post("", dependencies=[Depends(require_doc_write)])
-def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
+def save_object(body: ObjectSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -82,6 +83,8 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
     # 신규 생성 시 objectnm 필수
     if not body.objectuid and not body.objectnm:
         raise HTTPException(status_code=400, detail="항목명(objectnm)은 필수입니다.")
+
+    before = snapshot_row(sb, "objects", "objectuid", body.objectuid) if body.objectuid else None
 
     transdata = {
         "chapteruid": body.chapteruid,
@@ -100,13 +103,27 @@ def save_object(body: ObjectSaveRequest, token: str = Depends(get_token)):
             sb.schema(SUPABASE_SCHEMA).table(tbl).delete().eq("objectuid", body.objectuid).execute()
         transdata["objectsettingyn"] = False
 
-    sb.schema(SUPABASE_SCHEMA).table("objects").upsert(transdata).execute()
+    res = sb.schema(SUPABASE_SCHEMA).table("objects").upsert(transdata).execute()
+    after = res.data[0] if res.data else snapshot_row(sb, "objects", "objectuid", body.objectuid)
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update" if body.objectuid else "create",
+        targettype="objects", targetid=(after or {}).get("objectuid") if after else body.objectuid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}
 
 
 @router.delete("/{objectuid}", dependencies=[Depends(require_doc_write)])
-def delete_object(objectuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_object(objectuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
+    before = snapshot_row(sb, "objects", "objectuid", objectuid)
     sb.schema(SUPABASE_SCHEMA).table("objects").delete().eq("objectuid", objectuid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="delete", targettype="objects", targetid=objectuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"message": "삭제되었습니다."}

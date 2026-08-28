@@ -6,12 +6,13 @@ import traceback
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 from utilsPrj.user_lookup import get_usernm_email
+from utilsPrj.audit_log import log_admin_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -77,8 +78,8 @@ def _require_admin(token: str):
 # ══════════════════════════════════════════════════════
 
 @router.get("/user-role")
-def list_user_roles(token: str = Depends(get_token)):
-    _require_admin(token)
+def list_user_roles(request: Request, token: str = Depends(get_token)):
+    admin = _require_admin(token)
     sb = _sb_service()
 
     role_options = _role_options(sb)
@@ -88,6 +89,11 @@ def list_user_roles(token: str = Depends(get_token)):
     for u in rows:
         u["role_name"] = role_map.get(u.get("roleid", 1), "User")
 
+    log_admin_action(
+        useruid=str(admin.id), roleid=7, actioncd="view_user",
+        targettype="users", detail={"count": len(rows)},
+        ip=get_client_ip(request),
+    )
     return {"users": rows, "role_options": role_options}
 
 
@@ -97,14 +103,21 @@ class UserRoleSaveRequest(BaseModel):
 
 
 @router.post("/user-role")
-def save_user_role(body: UserRoleSaveRequest, token: str = Depends(get_token)):
-    _require_admin(token)
+def save_user_role(body: UserRoleSaveRequest, request: Request, token: str = Depends(get_token)):
+    admin = _require_admin(token)
     sb = _sb_service()
 
     if body.roleid not in VALID_ROLE_IDS:
         raise HTTPException(status_code=400, detail="유효하지 않은 역할입니다.")
 
+    before = snapshot_row(sb, "users", "useruid", body.useruid)
     sb.schema(SUPABASE_SCHEMA).table("users").update({"roleid": body.roleid}).eq("useruid", body.useruid).execute()
+    after = snapshot_row(sb, "users", "useruid", body.useruid)
+    log_admin_action(
+        useruid=str(admin.id), roleid=7, actioncd="permission_change",
+        targettype="users", targetid=body.useruid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "권한이 변경되었습니다."}
 
 
@@ -185,7 +198,7 @@ class SamplePromptSaveRequest(BaseModel):
 
 
 @router.post("/sample-prompts")
-def save_sample_prompt(body: SamplePromptSaveRequest, token: str = Depends(get_token)):
+def save_sample_prompt(body: SamplePromptSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _require_admin(token)
     sb = _sb_service()
 
@@ -201,12 +214,19 @@ def save_sample_prompt(body: SamplePromptSaveRequest, token: str = Depends(get_t
                 "message": "샘플 프롬프트가 수정되었습니다. 저장할까요?",
                 "promptuid": body.promptuid,
             }
+        before = snapshot_row(sb, "prompts", "promptuid", body.promptuid)
         sb.schema(SUPABASE_SCHEMA).table("prompts").update({
             "promptnm": body.promptnm.strip(),
             "prompt": body.prompt,
             "desc": body.promptdesc,
             "displaytype": body.displaytype,
         }).eq("promptuid", body.promptuid).execute()
+        after = snapshot_row(sb, "prompts", "promptuid", body.promptuid)
+        log_admin_action(
+            useruid=str(user.id), roleid=7, actioncd="update",
+            targettype="prompts", targetid=body.promptuid, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"success": True, "message": "수정되었습니다."}
 
     # 신규 저장
@@ -221,18 +241,30 @@ def save_sample_prompt(body: SamplePromptSaveRequest, token: str = Depends(get_t
         "displaytype": body.displaytype,
         "creator": user.id,
     }).execute()
+    after = snapshot_row(sb, "prompts", "promptuid", new_uid)
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="update",
+        targettype="prompts", targetid=new_uid, after=after,
+        ip=get_client_ip(request),
+    )
     return {"success": True, "message": "저장되었습니다."}
 
 
 @router.delete("/sample-prompts/{promptuid}")
-def delete_sample_prompt(promptuid: str, token: str = Depends(get_token)):
-    _require_admin(token)
+def delete_sample_prompt(promptuid: str, request: Request, token: str = Depends(get_token)):
+    user = _require_admin(token)
     sb = _sb_service()
 
     if not promptuid:
         raise HTTPException(status_code=400, detail="삭제할 프롬프트를 선택해주세요.")
 
+    before = snapshot_row(sb, "prompts", "promptuid", promptuid)
     sb.schema(SUPABASE_SCHEMA).table("prompts").delete().eq("promptuid", promptuid).execute()
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="delete",
+        targettype="prompts", targetid=promptuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"success": True, "message": "삭제되었습니다."}
 
 
@@ -419,7 +451,7 @@ def list_helps(token: str = Depends(get_token)):
 
 
 @router.post("/helps")
-def save_help(body: HelpSaveRequest, token: str = Depends(get_token)):
+def save_help(body: HelpSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _require_admin(token)
     sb = _sb_service()
     payload = {
@@ -430,15 +462,28 @@ def save_help(body: HelpSaveRequest, token: str = Depends(get_token)):
         "languagecd": body.languagecd or "en",
         "creator": str(user.id),
     }
+    before = snapshot_row(sb, "helps", "helpuid", body.helpuid) if body.helpuid else None
     sb.schema(SUPABASE_SCHEMA).table("helps").upsert(payload).execute()
+    after = snapshot_row(sb, "helps", "helpuid", payload["helpuid"])
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="update",
+        targettype="helps", targetid=payload["helpuid"], before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"ok": True, "helpuid": payload["helpuid"]}
 
 
 @router.delete("/helps/{helpuid}")
-def delete_help(helpuid: str, token: str = Depends(get_token)):
-    _require_admin(token)
+def delete_help(helpuid: str, request: Request, token: str = Depends(get_token)):
+    user = _require_admin(token)
     sb = _sb_service()
+    before = snapshot_row(sb, "helps", "helpuid", helpuid)
     sb.schema(SUPABASE_SCHEMA).table("helps").delete().eq("helpuid", helpuid).execute()
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="delete",
+        targettype="helps", targetid=helpuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 
@@ -496,7 +541,7 @@ def list_prompts(token: str = Depends(get_token)):
 
 
 @router.post("/prompts")
-def save_prompt(body: PromptSaveRequest, token: str = Depends(get_token)):
+def save_prompt(body: PromptSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _require_admin(token)
     sb = _sb_service()
     try:
@@ -511,11 +556,18 @@ def save_prompt(body: PromptSaveRequest, token: str = Depends(get_token)):
             "useyn": body.useyn,
             "orderno": body.orderno,
         }
+        before = None if body.is_new else snapshot_row(sb, "prompts", "promptkey", body.promptkey)
         if body.is_new:
             payload["creator"] = str(user.id)
             sb.schema(SUPABASE_SCHEMA).table("prompts").insert(payload).execute()
         else:
             sb.schema(SUPABASE_SCHEMA).table("prompts").update(payload).eq("promptkey", body.promptkey).execute()
+        after = snapshot_row(sb, "prompts", "promptkey", body.promptkey)
+        log_admin_action(
+            useruid=str(user.id), roleid=7, actioncd="update",
+            targettype="prompts", targetid=body.promptkey, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"ok": True, "promptkey": body.promptkey}
     except Exception as e:
         # print(f"[save_prompt] 오류: {e}\n{traceback.format_exc()}", file=sys.stderr, flush=True)
@@ -523,11 +575,19 @@ def save_prompt(body: PromptSaveRequest, token: str = Depends(get_token)):
 
 
 @router.delete("/prompts/{promptkey}")
-def delete_prompt(promptkey: str, token: str = Depends(get_token)):
-    _require_admin(token)
+def delete_prompt(promptkey: str, request: Request, token: str = Depends(get_token)):
+    user = _require_admin(token)
     sb = _sb_service()
+    before = snapshot_row(sb, "prompts", "promptkey", promptkey)
+    translations = sb.schema(SUPABASE_SCHEMA).table("prompt_translations").select("*").eq("promptkey", promptkey).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("prompt_translations").delete().eq("promptkey", promptkey).execute()
     sb.schema(SUPABASE_SCHEMA).table("prompts").delete().eq("promptkey", promptkey).execute()
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="delete",
+        targettype="prompts", targetid=promptkey, before=before,
+        detail={"cascaded_translations": translations} if translations else None,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 
@@ -543,7 +603,7 @@ def list_prompt_translations(promptkey: str, token: str = Depends(get_token)):
 
 
 @router.post("/prompts/{promptkey}/translations")
-def save_prompt_translation(promptkey: str, body: PromptTranslationSaveRequest, token: str = Depends(get_token)):
+def save_prompt_translation(promptkey: str, body: PromptTranslationSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _require_admin(token)
     sb = _sb_service()
     payload = {
@@ -554,19 +614,44 @@ def save_prompt_translation(promptkey: str, body: PromptTranslationSaveRequest, 
         "translated_text2": body.translated_text2 or None,
         "creator": str(user.id),
     }
+    target_id = f"{promptkey}/{body.languagecd}"
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("prompt_translations").select("*")
+        .eq("promptkey", promptkey).eq("languagecd", body.languagecd).maybe_single().execute()
+    )
+    before = before.data if before else None
     sb.schema(SUPABASE_SCHEMA).table("prompt_translations").upsert(
         payload, on_conflict="promptkey,languagecd"
     ).execute()
+    after = (
+        sb.schema(SUPABASE_SCHEMA).table("prompt_translations").select("*")
+        .eq("promptkey", promptkey).eq("languagecd", body.languagecd).maybe_single().execute()
+    )
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="update",
+        targettype="prompt_translations", targetid=target_id, before=before, after=after.data if after else None,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 
 @router.delete("/prompts/{promptkey}/translations/{languagecd}")
-def delete_prompt_translation(promptkey: str, languagecd: str, token: str = Depends(get_token)):
-    _require_admin(token)
+def delete_prompt_translation(promptkey: str, languagecd: str, request: Request, token: str = Depends(get_token)):
+    user = _require_admin(token)
     sb = _sb_service()
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("prompt_translations").select("*")
+        .eq("promptkey", promptkey).eq("languagecd", languagecd).maybe_single().execute()
+    )
+    before = before.data if before else None
     (
         sb.schema(SUPABASE_SCHEMA).table("prompt_translations").delete()
         .eq("promptkey", promptkey).eq("languagecd", languagecd).execute()
+    )
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="delete",
+        targettype="prompt_translations", targetid=f"{promptkey}/{languagecd}", before=before,
+        ip=get_client_ip(request),
     )
     return {"ok": True}
 
@@ -712,7 +797,7 @@ class ProductSaveRequest(BaseModel):
 
 
 @router.post("/products")
-def create_admin_product(body: ProductSaveRequest, token: str = Depends(get_token)):
+def create_admin_product(body: ProductSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _require_admin(token)
     sb = _sb_service()
 
@@ -723,35 +808,56 @@ def create_admin_product(body: ProductSaveRequest, token: str = Depends(get_toke
     record = body.model_dump()
     record["creator"] = str(user.id)
     sb.schema(SUPABASE_SCHEMA).table("products").insert(record).execute()
+    after = snapshot_row(sb, "products", "productcd", body.productcd)
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="update",
+        targettype="products", targetid=body.productcd, after=after,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "productcd": body.productcd}
 
 
 @router.put("/products/{productcd}")
-def update_admin_product(productcd: str, body: ProductSaveRequest, token: str = Depends(get_token)):
-    _require_admin(token)
+def update_admin_product(productcd: str, body: ProductSaveRequest, request: Request, token: str = Depends(get_token)):
+    user = _require_admin(token)
     sb = _sb_service()
 
     existing = sb.schema(SUPABASE_SCHEMA).table("products").select("productcd").eq("productcd", productcd).execute().data
     if not existing:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
 
+    before = snapshot_row(sb, "products", "productcd", productcd)
     record = body.model_dump()
     record.pop("productcd", None)
     sb.schema(SUPABASE_SCHEMA).table("products").update(record).eq("productcd", productcd).execute()
+    after = snapshot_row(sb, "products", "productcd", productcd)
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="update",
+        targettype="products", targetid=productcd, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "productcd": productcd}
 
 
 @router.delete("/products/{productcd}")
-def delete_admin_product(productcd: str, token: str = Depends(get_token)):
-    _require_admin(token)
+def delete_admin_product(productcd: str, request: Request, token: str = Depends(get_token)):
+    user = _require_admin(token)
     sb = _sb_service()
 
     existing = sb.schema(SUPABASE_SCHEMA).table("products").select("productcd").eq("productcd", productcd).execute().data
     if not existing:
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
 
+    before = snapshot_row(sb, "products", "productcd", productcd)
+    price_rows = sb.schema(SUPABASE_SCHEMA).table("config_price").select("*").eq("productcd", productcd).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("config_price").delete().eq("productcd", productcd).execute()
     sb.schema(SUPABASE_SCHEMA).table("products").delete().eq("productcd", productcd).execute()
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="delete",
+        targettype="products", targetid=productcd, before=before,
+        detail={"cascaded_config_price": price_rows} if price_rows else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "상품이 삭제되었습니다."}
 
 
@@ -762,7 +868,7 @@ class ProductPriceSaveRequest(BaseModel):
 
 
 @router.post("/products/{productcd}/price")
-def save_admin_product_price(productcd: str, body: ProductPriceSaveRequest, token: str = Depends(get_token)):
+def save_admin_product_price(productcd: str, body: ProductPriceSaveRequest, request: Request, token: str = Depends(get_token)):
     """
     productcd의 지정일(기본 오늘)자 가격을 등록/수정한다. unit_price(90%)/unit_tax(10%)는 자동 계산한다.
     같은 날짜의 기존 행이 있으면 그 행을 덮어쓰고, 없으면 새 이력을 추가하면서 그 직전까지
@@ -795,12 +901,14 @@ def save_admin_product_price(productcd: str, body: ProductPriceSaveRequest, toke
         "creator": str(user.id),
     }
 
-    existing = (
-        sb.schema(SUPABASE_SCHEMA).table("config_price").select("productcd")
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("config_price").select("*")
         .eq("productcd", productcd).eq("currencycd", body.currencycd)
         .eq("billingtermcd", billingtermcd).eq("effectivefromdt", effectivefromdt)
         .execute().data
     )
+    before = before[0] if before else None
+    existing = before
     if existing:
         record.pop("creator", None)
         sb.schema(SUPABASE_SCHEMA).table("config_price").update(record).eq("productcd", productcd).eq(
@@ -824,6 +932,12 @@ def save_admin_product_price(productcd: str, body: ProductPriceSaveRequest, toke
                 ).execute()
         sb.schema(SUPABASE_SCHEMA).table("config_price").insert(record).execute()
 
+    log_admin_action(
+        useruid=str(user.id), roleid=7, actioncd="config_change",
+        targettype="config_price", targetid=f"{productcd}/{body.currencycd}/{billingtermcd}/{effectivefromdt}",
+        before=before, after=record,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "unit_price": unit_price, "unit_tax": unit_tax}
 
 

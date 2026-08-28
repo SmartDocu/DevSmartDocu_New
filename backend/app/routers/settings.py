@@ -6,7 +6,7 @@ from datetime import date, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from postgrest.utils import sanitize_param
 from pydantic import BaseModel
 
@@ -15,6 +15,7 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket, offset_negative_ba_bucket
 from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -171,12 +172,28 @@ class ServerSaveRequest(BaseModel):
     password: Optional[str] = None
 
 
+_SERVER_SAFE_FIELDS = (
+    "connuid", "connnm", "conntype", "dbtype", "server", "port", "db", "ssl_mode",
+    "service_name", "sid", "tns", "timeout", "retry_count", "desc", "useyn",
+    "tenantid", "creator", "createdts",
+)
+
+
+def _snapshot_server(sb, connuid: Optional[str]) -> Optional[dict]:
+    """비밀번호/자격증명(secret_path)은 감사로그에 남기지 않음."""
+    if not connuid:
+        return None
+    row = sb.schema(SUPABASE_SCHEMA).table("connectors").select(",".join(_SERVER_SAFE_FIELDS)).eq("connuid", connuid).execute().data
+    return row[0] if row else None
+
+
 @router.post("/servers")
-def save_server(body: ServerSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def save_server(body: ServerSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.secrets_cache import save_connector_secret
 
     user = _get_user(token)
     sb = _sb(token)
+    before = _snapshot_server(sb, body.connuid)
 
     if body.connuid:
         existing = (
@@ -213,6 +230,12 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token), tenant
                 "secret_path": "aws-sm",
             }
             sb.schema(SUPABASE_SCHEMA).table("connectors").update(update_fields).eq("connuid", body.connuid).execute()
+            log_work_action(
+                useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+                actioncd="update", targettype="settings/servers", targetid=body.connuid,
+                before=before, after=_snapshot_server(sb, body.connuid),
+                ip=get_client_ip(request),
+            )
             return {"status": "updated"}
 
     # INSERT — Python에서 UUID 생성
@@ -247,11 +270,17 @@ def save_server(body: ServerSaveRequest, token: str = Depends(get_token), tenant
         "creator": str(user.id),
     }
     sb.schema(SUPABASE_SCHEMA).table("connectors").insert(insert_fields).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="create", targettype="settings/servers", targetid=connuid,
+        after=_snapshot_server(sb, connuid),
+        ip=get_client_ip(request),
+    )
     return {"status": "inserted"}
 
 
 @router.delete("/servers/{connuid}")
-def delete_server(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def delete_server(connuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.secrets_cache import delete_connector_secret
 
     user = _get_user(token)
@@ -265,6 +294,7 @@ def delete_server(connuid: str, token: str = Depends(get_token), tenantid: Optio
     if (in_use.count or 0) > 0:
         raise HTTPException(status_code=400, detail="msg.server.in.use")
 
+    before = _snapshot_server(sb, connuid)
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
         .select("secret_path").eq("connuid", connuid).execute().data
@@ -273,6 +303,11 @@ def delete_server(connuid: str, token: str = Depends(get_token), tenantid: Optio
         delete_connector_secret(tenantid, connuid)
 
     sb.schema(SUPABASE_SCHEMA).table("connectors").delete().eq("connuid", connuid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="delete", targettype="settings/servers", targetid=connuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"status": "ok"}
 
 
@@ -302,6 +337,8 @@ class ProjectSaveRequest(BaseModel):
     projectnm: str
     projectdesc: Optional[str] = None
     useyn: bool = True
+    servicecd: Optional[str] = None
+    accountuid: Optional[str] = None
 
 
 @router.post("/projects")
@@ -309,12 +346,34 @@ def save_project(body: ProjectSaveRequest, token: str = Depends(get_token), tena
     user = _get_user(token)
     sb = _sb(token)
 
+    # 신규 생성 시 플랜 제한 체크
+    is_new = not body.projectid
+    if is_new and body.accountuid and body.servicecd:
+        svc = sb.schema(SUPABASE_SCHEMA).table("accountservices") \
+            .select("plancd").eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
+            .maybe_single().execute()
+        plancd = svc.data.get("plancd") if svc and svc.data else None
+        if plancd:
+            cfg = sb.schema(SUPABASE_SCHEMA).table("config_plans") \
+                .select("value").eq("configcd", "project_limit").eq("plancd", plancd).eq("servicecd", body.servicecd) \
+                .maybe_single().execute()
+            limit = int(cfg.data["value"]) if cfg and cfg.data and cfg.data.get("value") else None
+            if limit is not None:
+                cnt = sb.schema(SUPABASE_SCHEMA).table("projects") \
+                    .select("projectid", count="exact") \
+                    .eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
+                    .execute()
+                if (cnt.count or 0) >= limit:
+                    raise HTTPException(status_code=400, detail=f"프로젝트는 최대 {limit}개까지 생성할 수 있습니다.")
+
     data = {
         "projectnm": body.projectnm,
         "projectdesc": body.projectdesc,
         "useyn": body.useyn,
         "tenantid": tenantid,
         "creator": user.id,
+        "servicecd": body.servicecd,
+        "accountuid": body.accountuid,
     }
 
     if body.projectid:
@@ -406,6 +465,7 @@ def _save_default_tenant_configs(tenantid: int, creator: str):
 
 @router.post("/tenants")
 async def save_tenant(
+    request: Request,
     tenantid: Optional[str] = Form(None),
     tenantnm: str = Form(...),
     useyn: str = Form("true"),
@@ -435,7 +495,7 @@ async def save_tenant(
         tenant_data["timezone"] = timezone
 
     if tenantid:
-        existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantid, iconfileurl").eq("tenantid", tenantid).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
         if existing:
             if iconfile and iconfile.filename:
                 existing_url = existing[0].get("iconfileurl")
@@ -444,6 +504,13 @@ async def save_tenant(
                 tenant_data["iconfileurl"] = icon_url
             sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
             _save_tenant_contact(int(tenantid), email, telno, str(user.id))
+            after = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
+            log_work_action(
+                useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
+                actioncd="update", targettype="settings/tenants", targetid=tenantid,
+                before=existing[0], after=after[0] if after else None,
+                ip=get_client_ip(request),
+            )
             return {"status": "updated"}
 
     resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert({**tenant_data, "disptenantnm": tenantnm}).execute()
@@ -457,13 +524,28 @@ async def save_tenant(
             }).eq("tenantid", new_tenantid).execute()
         _save_tenant_contact(int(new_tenantid), email, telno, str(user.id))
         _save_default_tenant_configs(int(new_tenantid), str(user.id))
+    after = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", new_tenantid).execute().data if new_tenantid else []
+    log_work_action(
+        useruid=str(user.id), tenantid=new_tenantid, servicecd="Tenant",
+        actioncd="create", targettype="settings/tenants", targetid=new_tenantid,
+        after=after[0] if after else None,
+        ip=get_client_ip(request),
+    )
     return {"status": "inserted"}
 
 
 @router.delete("/tenants/{tenantid}")
-def delete_tenant(tenantid: str, token: str = Depends(get_token)):
+def delete_tenant(tenantid: str, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
+    before = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
     sb.schema(SUPABASE_SCHEMA).table("tenants").delete().eq("tenantid", tenantid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="delete", targettype="settings/tenants", targetid=tenantid,
+        before=before[0] if before else None,
+        ip=get_client_ip(request),
+    )
     return {"status": "ok"}
 
 
@@ -595,10 +677,17 @@ class UpdateUsernameRequest(BaseModel):
 
 
 @router.post("/myinfo/username")
-def update_username(body: UpdateUsernameRequest, token: str = Depends(get_token)):
+def update_username(body: UpdateUsernameRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    before = sb.schema(SUPABASE_SCHEMA).table("users").select("usernm").eq("useruid", user.id).maybe_single().execute()
     sb.schema(SUPABASE_SCHEMA).table("users").update({"usernm": body.usernm}).eq("useruid", user.id).execute()
+    log_work_action(
+        useruid=str(user.id), servicecd="Tenant",
+        actioncd="update", targettype="settings/myinfo/username", targetid=str(user.id),
+        before=before.data if before else None, after={"usernm": body.usernm},
+        ip=get_client_ip(request),
+    )
     return {"status": "ok"}
 
 
@@ -607,10 +696,17 @@ class UpdateMarketingRequest(BaseModel):
 
 
 @router.post("/myinfo/marketing")
-def update_marketing(body: UpdateMarketingRequest, token: str = Depends(get_token)):
+def update_marketing(body: UpdateMarketingRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    before = sb.schema(SUPABASE_SCHEMA).table("users").select("marketingyn").eq("useruid", user.id).maybe_single().execute()
     sb.schema(SUPABASE_SCHEMA).table("users").update({"marketingyn": body.marketingyn}).eq("useruid", user.id).execute()
+    log_work_action(
+        useruid=str(user.id), servicecd="Tenant",
+        actioncd="update", targettype="settings/myinfo/marketing", targetid=str(user.id),
+        before=before.data if before else None, after={"marketingyn": body.marketingyn},
+        ip=get_client_ip(request),
+    )
     return {"status": "ok"}
 
 
@@ -1168,6 +1264,7 @@ class UpgradePlanRequest(BaseModel):
 @router.post("/upgrade-plan")
 def upgrade_plan(
     body: UpgradePlanRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -1310,6 +1407,14 @@ def upgrade_plan(
             svc.table("subscriptions").delete().eq("subscriptionuid", new_subscriptionuid).execute()
         _compensate_and_raise(svc, user_id, charge_result, e, context="업그레이드")
 
+    after_row = svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="update", targettype="settings/upgrade-plan", targetid=accountuid,
+        before=previous_accountservices, after=after_row.data if after_row else None,
+        detail={"productcd": body.productcd},
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "업그레이드가 완료되었습니다."}
 
 
@@ -1698,6 +1803,7 @@ class ProCancelRequest(BaseModel):
 @router.post("/myinfo/pro-cancel")
 def request_pro_cancel(
     body: ProCancelRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -1728,6 +1834,13 @@ def request_pro_cancel(
     ).eq("creditchargecd", "Ba").maybe_single().execute()
     effective_date = bucket_row.data.get("expiredts") if bucket_row and bucket_row.data else None
 
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="update", targettype="settings/myinfo/pro-cancel", targetid=sub["subscriptionuid"],
+        before={"canceldts": sub.get("canceldts")}, after={"canceldts": now_utc.isoformat()},
+        detail={"cancel_reasoncd": body.cancel_reasoncd},
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "effective_date": effective_date}
 
 
@@ -1738,6 +1851,7 @@ class ProCancelUndoRequest(BaseModel):
 @router.post("/myinfo/pro-cancel-undo")
 def undo_pro_cancel(
     body: ProCancelUndoRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -1761,6 +1875,12 @@ def undo_pro_cancel(
         "updatedts": datetime.now(tz.utc).isoformat(),
     }).eq("subscriptionuid", sub["subscriptionuid"]).execute()
 
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="update", targettype="settings/myinfo/pro-cancel-undo", targetid=sub["subscriptionuid"],
+        before={"canceldts": sub.get("canceldts")}, after={"canceldts": None},
+        ip=get_client_ip(request),
+    )
     return {"result": "success"}
 
 
@@ -2079,6 +2199,7 @@ class SubscriptionChangeRequest(BaseModel):
 @router.post("/tenant-manage/subscription-change")
 def change_tenant_subscription(
     body: SubscriptionChangeRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -2251,6 +2372,14 @@ def change_tenant_subscription(
             svc.table("subscriptions").delete().eq("subscriptionuid", new_subscriptionuid).execute()
         _compensate_and_raise(svc, user_id, charge_result, e, context="구독 변경")
 
+    after_row = svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/subscription-change", targetid=accountuid,
+        before=current or None, after=after_row.data if after_row else None,
+        detail={"new_subscriptionuid": new_subscriptionuid, "charge_amount": charge_amount},
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "구독이 변경되었습니다."}
 
 
@@ -2336,6 +2465,7 @@ def get_tenant_manage_basic_info(token: str = Depends(get_token), tenantid: Opti
 
 @router.post("/tenant-manage/basic-info")
 async def save_tenant_manage_basic_info(
+    request: Request,
     disptenantnm: Optional[str] = Form(None),
     languagecd: Optional[str] = Form(None),
     timezone: Optional[str] = Form(None),
@@ -2354,6 +2484,9 @@ async def save_tenant_manage_basic_info(
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
     _require_tenant_manager(svc, user_id, tenantid)
     _require_not_system_tenant(svc, tenantid)
+
+    before_tenant = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    before_tenant = before_tenant.data if before_tenant else None
 
     tenant_payload = {}
     if disptenantnm:
@@ -2379,6 +2512,14 @@ async def save_tenant_manage_basic_info(
             acc_payload["enctelno"] = _encrypt(telno)
         svc.table("accounts").update(acc_payload).eq("accountuid", accountuid).execute()
 
+    after_tenant = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/basic-info", targetid=str(tenantid),
+        before=before_tenant, after=after_tenant.data if after_tenant else None,
+        detail={"email_changed": bool(email), "telno_changed": bool(telno)},
+        ip=get_client_ip(request),
+    )
     return {"result": "success"}
 
 
@@ -2499,6 +2640,7 @@ class OtherSubscriptionPurchaseRequest(BaseModel):
 @router.post("/tenant-manage/other-subscription-purchase")
 def purchase_tenant_manage_other_subscription(
     body: OtherSubscriptionPurchaseRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -2651,6 +2793,14 @@ def purchase_tenant_manage_other_subscription(
             svc.table("subscription_features").delete().eq("subscriptionuid", subscription_feature_id).execute()
         _compensate_and_raise(svc, user_id, charge_result, e, context="상품 지급")
 
+    after_af = svc.table("account_features").select("*").eq("accountuid", accountuid).eq("productcd", product["productcd"]).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="create", targettype="settings/tenant-manage/other-subscription-purchase", targetid=accountuid,
+        before=previous_account_features, after=after_af.data if after_af else None,
+        detail={"productcd": product["productcd"], "quantity": quantity, "charge_amount": charge_amount},
+        ip=get_client_ip(request),
+    )
     return {"result": "success"}
 
 
@@ -2663,6 +2813,7 @@ class OtherSubscriptionCancelRequest(BaseModel):
 @router.post("/tenant-manage/other-subscription-cancel")
 def cancel_tenant_manage_other_subscription(
     body: OtherSubscriptionCancelRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -2712,6 +2863,13 @@ def cancel_tenant_manage_other_subscription(
     }).eq("subscriptionuid", body.subscriptionuid).execute()
 
     effective_date = (dtparser.parse(sf["createdts"]) + relativedelta(months=1)).isoformat()
+    after_sf = svc.table("subscription_features").select("*").eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/other-subscription-cancel", targetid=body.subscriptionuid,
+        before=sf, after=after_sf.data if after_sf else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "effective_date": effective_date}
 
 
@@ -2722,6 +2880,7 @@ class OtherSubscriptionCancelUndoRequest(BaseModel):
 @router.post("/tenant-manage/other-subscription-cancel-undo")
 def undo_cancel_tenant_manage_other_subscription(
     body: OtherSubscriptionCancelUndoRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -2756,6 +2915,13 @@ def undo_cancel_tenant_manage_other_subscription(
         "updatedts": datetime.now(tz.utc).isoformat(),
     }).eq("subscriptionuid", body.subscriptionuid).execute()
 
+    after_sf = svc.table("subscription_features").select("*").eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/other-subscription-cancel-undo", targetid=body.subscriptionuid,
+        before=sf, after=after_sf.data if after_sf else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success"}
 
 
@@ -2767,6 +2933,7 @@ class OtherSubscriptionQuantityRequest(BaseModel):
 @router.post("/tenant-manage/other-subscription-quantity")
 def update_tenant_manage_other_subscription_quantity(
     body: OtherSubscriptionQuantityRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -2871,6 +3038,14 @@ def update_tenant_manage_other_subscription_quantity(
                 _compensate_and_raise(svc, user_id, charge_result, e, context="수량 증가 반영")
             raise
 
+        after_sf = svc.table("subscription_features").select("*").eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+        log_work_action(
+            useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+            actioncd="update", targettype="settings/tenant-manage/other-subscription-quantity", targetid=body.subscriptionuid,
+            before=sf, after=after_sf.data if after_sf else None,
+            detail={"delta": body.delta, "charged_quantity": charge_qty},
+            ip=get_client_ip(request),
+        )
         return {
             "result": "success", "quantity": new_quantity, "pending_decrease_qty": new_pending,
             "charged_quantity": charge_qty,
@@ -2895,6 +3070,14 @@ def update_tenant_manage_other_subscription_quantity(
         "updatedts": datetime.now(tz.utc).isoformat(),
     }).eq("subscriptionuid", body.subscriptionuid).execute()
 
+    after_sf = svc.table("subscription_features").select("*").eq("subscriptionuid", body.subscriptionuid).maybe_single().execute()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/other-subscription-quantity", targetid=body.subscriptionuid,
+        before=sf, after=after_sf.data if after_sf else None,
+        detail={"delta": body.delta},
+        ip=get_client_ip(request),
+    )
     return {
         "result": "success", "quantity": quantity, "pending_decrease_qty": new_pending,
         "effective_date": apply_dt.isoformat(),
@@ -2930,6 +3113,7 @@ class MfaConfigSaveRequest(BaseModel):
 @router.post("/tenant-manage/mfa-config")
 def save_tenant_manage_mfa_config(
     body: MfaConfigSaveRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -2941,9 +3125,10 @@ def save_tenant_manage_mfa_config(
     _require_tenant_manager(svc, user_id, tenantid)
     _require_not_system_tenant(svc, tenantid)
 
-    existing = svc.table("config_tenants").select("tenantid").eq(
+    existing = svc.table("config_tenants").select("tenantid,value").eq(
         "tenantid", int(tenantid)
     ).eq("configcd", "Is_MFA").maybe_single().execute()
+    before_value = existing.data.get("value") if existing and existing.data else None
     if existing and existing.data:
         svc.table("config_tenants").update({"value": body.is_mfa}).eq(
             "tenantid", int(tenantid)
@@ -2953,6 +3138,12 @@ def save_tenant_manage_mfa_config(
             "tenantid": int(tenantid), "configcd": "Is_MFA", "value": body.is_mfa, "creator": user_id,
         }).execute()
 
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/mfa-config", targetid=str(tenantid),
+        before={"Is_MFA": before_value}, after={"Is_MFA": body.is_mfa},
+        ip=get_client_ip(request),
+    )
     return {"result": "success"}
 
 
@@ -3010,7 +3201,7 @@ def _get_credit_subscriptions_data(svc, user_id: str, tenantid: str, accountuid:
     return {"owned": owned, "products": products, "accountuid": accountuid}
 
 
-def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: str, productcd: str) -> None:
+def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: str, productcd: str, source: str = "settings", ip: Optional[str] = None) -> None:
     """크레딧 상품 구매 — 조직(tenant-manage)/개인(myinfo) 화면 공용 로직.
 
     결제 연동 전까지는 저장 즉시 subscription_credits / creditbuckets에 반영한다.
@@ -3108,6 +3299,15 @@ def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: 
             servicecd=product.get("servicecd"),
             new_bucket_subscriptionuid=new_subscriptionuid,
         )
+
+        after_bucket = svc.table("creditbuckets").select("*").eq("subscriptionuid", new_subscriptionuid).maybe_single().execute()
+        log_work_action(
+            useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+            actioncd="create", targettype=f"{source}/credit-purchase", targetid=new_subscriptionuid,
+            after=after_bucket.data if after_bucket else None,
+            detail={"productcd": productcd, "credit": credit},
+            ip=ip,
+        )
     except Exception as e:
         if bucket_inserted:
             svc.table("creditbuckets").delete().eq("subscriptionuid", new_subscriptionuid).execute()
@@ -3137,6 +3337,7 @@ def get_tenant_manage_credit_subscriptions(token: str = Depends(get_token), tena
 @router.post("/tenant-manage/credit-subscription-purchase")
 def purchase_tenant_manage_credit_subscription(
     body: CreditSubscriptionPurchaseRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -3151,7 +3352,7 @@ def purchase_tenant_manage_credit_subscription(
     if not accountuid:
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
-    _purchase_credit_subscription(svc, user_id, tenantid, accountuid, body.productcd)
+    _purchase_credit_subscription(svc, user_id, tenantid, accountuid, body.productcd, source="settings/tenant-manage", ip=get_client_ip(request))
     return {"result": "success"}
 
 
@@ -3171,6 +3372,7 @@ def get_myinfo_credit_purchase(token: str = Depends(get_token), tenantid: Option
 @router.post("/myinfo/credit-purchase")
 def purchase_myinfo_credit(
     body: CreditSubscriptionPurchaseRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -3184,7 +3386,7 @@ def purchase_myinfo_credit(
     if not accountuid:
         raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
 
-    _purchase_credit_subscription(svc, user_id, tenantid, accountuid, body.productcd)
+    _purchase_credit_subscription(svc, user_id, tenantid, accountuid, body.productcd, source="settings/myinfo", ip=get_client_ip(request))
     return {"result": "success"}
 
 
@@ -3306,7 +3508,7 @@ class TenantSubscriptionRequest(BaseModel):
 
 
 @router.post("/tenant-subscription")
-def create_tenant_subscription(body: TenantSubscriptionRequest, token: str = Depends(get_token)):
+def create_tenant_subscription(body: TenantSubscriptionRequest, request: Request, token: str = Depends(get_token)):
     """신규 테넌트 셀프 생성: tenants(useyn=true) / tenantusers(rolecd=M) / accounts(accounttype=T) 동시 생성."""
     user = _get_user(token)
     user_id = str(user.id)
@@ -3351,13 +3553,23 @@ def create_tenant_subscription(body: TenantSubscriptionRequest, token: str = Dep
 
     _save_default_tenant_configs(new_tenantid, user_id)
 
+    log_work_action(
+        useruid=user_id, tenantid=new_tenantid, servicecd="Tenant",
+        actioncd="create", targettype="settings/tenant-subscription", targetid=new_tenantid,
+        after={"tenants": tenant_data, "tenantusers": tenantuser_data},
+        ip=get_client_ip(request),
+    )
     return {"tenantid": new_tenantid, "tenantnm": body.tenantnm}
 
 
 @router.post("/myinfo/timezone")
-def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def update_timezone(body: UpdateTimezoneRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    before_q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone").eq("useruid", user.id)
+    if tenantid:
+        before_q = before_q.eq("tenantid", tenantid)
+    before = before_q.execute().data
     q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").update({"timezone": body.timezone}).eq("useruid", user.id)
     if tenantid:
         q = q.eq("tenantid", tenantid)
@@ -3367,4 +3579,10 @@ def update_timezone(body: UpdateTimezoneRequest, token: str = Depends(get_token)
         tz_row = sb.schema(SUPABASE_SCHEMA).table("timezones").select("offsetminutes").eq("timezone", body.timezone).maybe_single().execute()
         if tz_row and tz_row.data:
             offsetminutes = tz_row.data.get("offsetminutes")
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="update", targettype="settings/myinfo/timezone", targetid=str(user.id),
+        before=before[0] if before else None, after={"timezone": body.timezone},
+        ip=get_client_ip(request),
+    )
     return {"status": "ok", "offsetminutes": offsetminutes}

@@ -2,13 +2,14 @@
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.user_lookup import get_usernm_email as _get_usernm_email
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -149,7 +150,7 @@ class TenantUserSaveRequest(BaseModel):
 
 
 @router.post("/tenant-users")
-def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token)):
+def save_tenant_user(body: TenantUserSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
@@ -226,6 +227,15 @@ def save_tenant_user(body: TenantUserSaveRequest, token: str = Depends(get_token
     for scd in to_remove:
         sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", body.accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
 
+    after_tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).eq("useruid", useruid).execute().data or []
+    after_su = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("*").eq("accountuid", body.accountuid).eq("useruid", useruid).execute().data or []
+    log_work_action(
+        useruid=str(user_id), tenantid=tenantid, servicecd="Tenant",
+        actioncd="update" if existing else "create", targettype="org/tenant-users", targetid=useruid,
+        before={"tenantusers": existing, "serviceusers": current_su_rows},
+        after={"tenantusers": after_tu[0] if after_tu else None, "serviceusers": after_su},
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "사용자가 성공적으로 저장되었습니다."}
 
 
@@ -236,12 +246,17 @@ class TenantUserDeleteRequest(BaseModel):
 
 
 @router.delete("/tenant-users")
-def delete_tenant_user(body: TenantUserDeleteRequest, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_tenant_user(body: TenantUserDeleteRequest, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
     tenantid = body.tenantid
     useruid = body.useruid
     _require_not_system_tenant(sb, tenantid)
+
+    before = {
+        "tenantusers": sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).eq("useruid", useruid).execute().data or [],
+        "serviceusers": sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("*").eq("accountuid", body.accountuid).eq("useruid", useruid).execute().data if body.accountuid else [],
+    }
 
     # tenantusers에서 삭제
     sb.schema(SUPABASE_SCHEMA).table("tenantusers").delete().eq("tenantid", tenantid).eq("useruid", useruid).execute()
@@ -257,6 +272,11 @@ def delete_tenant_user(body: TenantUserDeleteRequest, token: str = Depends(get_t
     if body.accountuid:
         sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", body.accountuid).eq("useruid", useruid).execute()
 
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="delete", targettype="org/tenant-users", targetid=useruid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "사용자 및 관련 프로젝트 사용자 정보가 모두 삭제되었습니다."}
 
 
@@ -351,8 +371,20 @@ class TenantLlmSaveRequest(BaseModel):
     apikey: Optional[str] = None  # 빈 문자열이면 기존 키 유지
 
 
+def _snapshot_tenant_llm(sb, projectid: Optional[str]) -> Optional[dict]:
+    """apikey/encapikey는 감사로그에 남기지 않음 — has_apikey만 기록."""
+    if not projectid:
+        return None
+    row = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid,llmmodelnm,encapikey").eq("projectid", projectid).execute().data
+    if not row:
+        return None
+    r = row[0]
+    return {"projectid": r["projectid"], "llmmodelnm": r.get("llmmodelnm"), "has_apikey": bool(r.get("encapikey"))}
+
+
 @router.post("/tenant-llms")
-def save_tenant_llm(body: TenantLlmSaveRequest, token: str = Depends(get_token)):
+def save_tenant_llm(body: TenantLlmSaveRequest, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
 
     if not body.projectid:
@@ -360,6 +392,7 @@ def save_tenant_llm(body: TenantLlmSaveRequest, token: str = Depends(get_token))
 
     from utilsPrj.crypto_helper import encrypt_value, decrypt_value
 
+    before = _snapshot_tenant_llm(sb, body.projectid)
     apikey = (body.apikey or "").strip()
 
     # API Key 가 비어 있으면 기존 키 유지
@@ -379,6 +412,12 @@ def save_tenant_llm(body: TenantLlmSaveRequest, token: str = Depends(get_token))
     data = {"projectid": body.projectid, "llmmodelnm": llmmodelnm, "encapikey": encapikey}
     sb.schema(SUPABASE_SCHEMA).table("projects").upsert(data).execute()
 
+    log_work_action(
+        useruid=str(user.id), servicecd="Tenant",
+        actioncd="update", targettype="org/tenant-llms", targetid=body.projectid,
+        before=before, after=_snapshot_tenant_llm(sb, body.projectid),
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "성공적으로 저장되었습니다."}
 
 
@@ -387,15 +426,22 @@ class TenantLlmDeleteRequest(BaseModel):
 
 
 @router.delete("/tenant-llms")
-def delete_tenant_llm(body: TenantLlmDeleteRequest, token: str = Depends(get_token)):
+def delete_tenant_llm(body: TenantLlmDeleteRequest, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
 
     if not body.projectid:
         raise HTTPException(status_code=400, detail="projectid가 필요합니다.")
 
+    before = _snapshot_tenant_llm(sb, body.projectid)
     data = {"projectid": body.projectid, "llmmodelnm": None, "encapikey": None}
     sb.schema(SUPABASE_SCHEMA).table("projects").upsert(data).execute()
 
+    log_work_action(
+        useruid=str(user.id), servicecd="Tenant",
+        actioncd="delete", targettype="org/tenant-llms", targetid=body.projectid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "LLM 정보가 삭제되었습니다."}
 
 
@@ -451,7 +497,7 @@ class OrgProjectSaveRequest(BaseModel):
 
 
 @router.post("/projects")
-def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
+def save_org_project(body: OrgProjectSaveRequest, request: Request, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
 
@@ -494,23 +540,41 @@ def save_org_project(body: OrgProjectSaveRequest, token: str = Depends(get_token
     }
 
     if body.projectid:
-        existing = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("projectid", body.projectid).execute().data
+        existing = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("projectid", body.projectid).execute().data
         if existing:
             sb.schema(SUPABASE_SCHEMA).table("projects").update(data).eq("projectid", body.projectid).execute()
+            after = snapshot_row(sb, "projects", "projectid", body.projectid)
+            log_work_action(
+                useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+                actioncd="update", targettype="org/projects", targetid=body.projectid,
+                before=existing[0], after=after,
+                ip=get_client_ip(request),
+            )
             return {"result": "success", "message": "프로젝트가 성공적으로 저장되었습니다."}
 
-    sb.schema(SUPABASE_SCHEMA).table("projects").insert(data).execute()
+    res = sb.schema(SUPABASE_SCHEMA).table("projects").insert(data).execute()
+    new_id = res.data[0]["projectid"] if res.data else None
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="create", targettype="org/projects", targetid=new_id, after=res.data[0] if res.data else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "프로젝트가 성공적으로 저장되었습니다."}
 
 
 @router.delete("/projects/{projectid}")
-def delete_org_project(projectid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_org_project(projectid: str, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
-    proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("tenantid").eq("projectid", projectid).maybe_single().execute()
+    proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("projectid", projectid).maybe_single().execute()
     if proj and proj.data:
         _require_not_system_tenant(sb, proj.data.get("tenantid"))
     sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", projectid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=proj.data.get("tenantid") if proj and proj.data else None, servicecd="Tenant",
+        actioncd="delete", targettype="org/projects", targetid=projectid, before=proj.data if proj else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "프로젝트가 성공적으로 삭제되었습니다."}
 
 
@@ -620,7 +684,7 @@ class ProjectUserSaveRequest(BaseModel):
 
 
 @router.post("/project-users")
-def save_project_user(body: ProjectUserSaveRequest, token: str = Depends(get_token)):
+def save_project_user(body: ProjectUserSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
 
@@ -645,6 +709,13 @@ def save_project_user(body: ProjectUserSaveRequest, token: str = Depends(get_tok
         data["creator"] = user.id
         sb.schema(SUPABASE_SCHEMA).table("projectusers").insert(data).execute()
 
+    after = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", body.projectid).eq("useruid", useruid).execute().data
+    log_work_action(
+        useruid=str(user.id), servicecd="Tenant",
+        actioncd="update" if existing else "create", targettype="org/project-users", targetid=useruid,
+        before=existing, after=after[0] if after else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "사용자가 성공적으로 저장되었습니다."}
 
 
@@ -654,10 +725,17 @@ class ProjectUserDeleteRequest(BaseModel):
 
 
 @router.delete("/project-users")
-def delete_project_user(body: ProjectUserDeleteRequest, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_project_user(body: ProjectUserDeleteRequest, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
+    before = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", body.projectid).eq("useruid", body.useruid).execute().data
     sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", body.projectid).eq("useruid", body.useruid).execute()
+    log_work_action(
+        useruid=str(user.id), servicecd="Tenant",
+        actioncd="delete", targettype="org/project-users", targetid=body.useruid,
+        before=before[0] if before else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "사용자가 성공적으로 삭제되었습니다."}
 
 
@@ -737,7 +815,7 @@ class InviteMembersRequest(BaseModel):
 
 
 @router.post("/invite-members")
-def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
+def invite_member(body: InviteMembersRequest, request: Request, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
     import smtplib
     from email.mime.text import MIMEText
 
@@ -855,6 +933,12 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), h
             message += f"{len(skipped)}명은 이미 가입되어 있어 제외했습니다. "
         if failed:
             message += f"{len(failed)}건 처리 실패."
+        log_work_action(
+            useruid=user_id, tenantid=tenantid, servicecd="Tenant",
+            actioncd="create", targettype="org/invite-members", targetid=body.servicecd,
+            after={"auto_added": auto_added, "skipped": skipped, "failed": failed},
+            ip=get_client_ip(request),
+        )
         return {
             "ok": len(failed) == 0, "sent": [], "failed": failed, "skipped": skipped, "auto_added": auto_added,
             "message": message.strip() or "처리할 이메일이 없습니다.",
@@ -923,4 +1007,10 @@ def invite_member(body: InviteMembersRequest, token: str = Depends(get_token), h
     if failed:
         message += f" ({len(failed)}건 실패)"
 
+    log_work_action(
+        useruid=user_id, tenantid=tenantid, servicecd="Tenant",
+        actioncd="create", targettype="org/invite-members", targetid=body.servicecd,
+        after={"sent": sent, "auto_added": auto_added, "skipped": skipped, "failed": failed},
+        ip=get_client_ip(request),
+    )
     return {"ok": len(failed) == 0, "sent": sent, "failed": failed, "skipped": skipped, "auto_added": auto_added, "message": message}

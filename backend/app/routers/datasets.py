@@ -1,10 +1,11 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -113,7 +114,7 @@ def list_datasets(token: str = Depends(get_token), tid: Optional[str] = Depends(
 # ── Dataset 저장 (create / update) ────────────────────────────────────────────
 
 @router.post("")
-def save_dataset(body: DatasetSaveRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
+def save_dataset(body: DatasetSaveRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     record = {
@@ -123,24 +124,46 @@ def save_dataset(body: DatasetSaveRequest, token: str = Depends(get_token), tid:
         "useyn":     body.useyn,
     }
     if body.datasetuid:
+        before = snapshot_row(sb, "datasets", "datasetuid", body.datasetuid)
         sb.schema(SUPABASE_SCHEMA).table("datasets").update(record).eq("datasetuid", body.datasetuid).execute()
+        after = snapshot_row(sb, "datasets", "datasetuid", body.datasetuid)
+        log_work_action(
+            useruid=str(user.id), tenantid=int(tid) if tid else None, servicecd="Do",
+            actioncd="update", targettype="datasets", targetid=body.datasetuid, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"datasetuid": body.datasetuid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     resp = sb.schema(SUPABASE_SCHEMA).table("datasets").insert(record).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tid) if tid else None, servicecd="Do",
+        actioncd="create", targettype="datasets", targetid=resp.data[0]["datasetuid"], after=resp.data[0],
+        ip=get_client_ip(request),
+    )
     return {"datasetuid": resp.data[0]["datasetuid"], "message": "저장되었습니다."}
 
 
 # ── Dataset 삭제 ───────────────────────────────────────────────────────────────
 
 @router.delete("/{datasetuid}")
-def delete_dataset(datasetuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_dataset(datasetuid: str, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
+    before = {
+        "datasets": snapshot_row(sb, "datasets", "datasetuid", datasetuid),
+        "datasetmembers": sb.schema(SUPABASE_SCHEMA).table("datasetmembers").select("*").eq("datasetuid", datasetuid).execute().data or [],
+        "project_datasets": sb.schema(SUPABASE_SCHEMA).table("project_datasets").select("*").eq("datasetuid", datasetuid).execute().data or [],
+    }
     sb.schema(SUPABASE_SCHEMA).table("datasetmembers").delete().eq("datasetuid", datasetuid).execute()
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete().eq("datasetuid", datasetuid).execute()
     resp = sb.schema(SUPABASE_SCHEMA).table("datasets").delete().eq("datasetuid", datasetuid).execute()
     if not resp.data:
         raise HTTPException(status_code=404, detail="삭제할 데이터가 없습니다.")
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tid) if tid else None, servicecd="Do",
+        actioncd="delete", targettype="datasets", targetid=datasetuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"message": "삭제되었습니다."}
 
 
@@ -196,17 +219,23 @@ def get_dataset_members(datasetuid: str, token: str = Depends(get_token), tid: O
 # ── Dataset 멤버 저장 (전체 교체) ─────────────────────────────────────────────
 
 @router.post("/{datasetuid}/members")
-def save_dataset_members(datasetuid: str, body: MembersSaveRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
+def save_dataset_members(datasetuid: str, body: MembersSaveRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
 
-
+    before = sb.schema(SUPABASE_SCHEMA).table("datasetmembers").select("*").eq("datasetuid", datasetuid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("datasetmembers").delete().eq("datasetuid", datasetuid).execute()
     if body.datauids:
         sb.schema(SUPABASE_SCHEMA).table("datasetmembers").insert([
             {"datasetuid": datasetuid, "datauid": uid, "tenantid": tid, "useyn": True, "creator": str(user.id)}
             for uid in body.datauids
         ]).execute()
+    after = sb.schema(SUPABASE_SCHEMA).table("datasetmembers").select("*").eq("datasetuid", datasetuid).execute().data or []
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tid) if tid else None, servicecd="Do",
+        actioncd="update", targettype="datasets/members", targetid=datasetuid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}
 
 
@@ -241,27 +270,45 @@ def get_dataset_projects(datasetuid: str, token: str = Depends(get_token), tid: 
 # ── Dataset 프로젝트 매핑 저장 (전체 교체) ────────────────────────────────────
 
 @router.post("/{datasetuid}/projects")
-def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
+def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
 
-
+    before = sb.schema(SUPABASE_SCHEMA).table("project_datasets").select("*").eq("datasetuid", datasetuid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete().eq("datasetuid", datasetuid).execute()
     if body.projectids:
         sb.schema(SUPABASE_SCHEMA).table("project_datasets").insert([
             {"projectid": pid, "datasetuid": datasetuid, "tenantid": tid, "useyn": True, "creator": str(user.id), "is_directdatauid": False}
             for pid in body.projectids
         ]).execute()
+    after = sb.schema(SUPABASE_SCHEMA).table("project_datasets").select("*").eq("datasetuid", datasetuid).execute().data or []
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tid) if tid else None, servicecd="Do",
+        actioncd="update", targettype="datasets/projects", targetid=datasetuid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}
 
 
 # ── Dataset + 멤버 + 프로젝트 통합 저장 ──────────────────────────────────────
 
+def _snapshot_dataset_all(sb, datasetuid: Optional[str]) -> dict:
+    if not datasetuid:
+        return {"datasets": None, "datasetmembers": [], "project_datasets": []}
+    return {
+        "datasets": snapshot_row(sb, "datasets", "datasetuid", datasetuid),
+        "datasetmembers": sb.schema(SUPABASE_SCHEMA).table("datasetmembers").select("*").eq("datasetuid", datasetuid).execute().data or [],
+        "project_datasets": sb.schema(SUPABASE_SCHEMA).table("project_datasets").select("*").eq("datasetuid", datasetuid).execute().data or [],
+    }
+
+
 @router.post("/save-all")
-def save_dataset_all(body: DatasetSaveAllRequest, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
+def save_dataset_all(body: DatasetSaveAllRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
 
+    is_new = not body.datasetuid
+    before = _snapshot_dataset_all(sb, body.datasetuid)
 
     # 1. dataset 기본 정보
     record = {"tenantid": tid, "datasetnm": body.datasetnm, "desc": body.desc, "useyn": body.useyn}
@@ -289,4 +336,11 @@ def save_dataset_all(body: DatasetSaveAllRequest, token: str = Depends(get_token
             for pid in body.projectids
         ]).execute()
 
+    after = _snapshot_dataset_all(sb, datasetuid)
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tid) if tid else None, servicecd="Do",
+        actioncd="create" if is_new else "update", targettype="datasets/save-all", targetid=datasetuid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"datasetuid": datasetuid, "message": "저장되었습니다."}

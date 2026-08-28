@@ -14,6 +14,7 @@ from utilsPrj.chapter_making import replace_doc
 from utilsPrj.credit_helper import apply_chapter_credit_deduction, apply_doc_credit_deduction
 from utilsPrj.html_to_docx import html_to_docx_merge
 from utilsPrj.notifications import create_notification
+from utilsPrj.audit_log import log_work_action
 
 
 class FakeRequest:
@@ -211,7 +212,7 @@ def _add_total_pages(paragraph):
     paragraph._element.append(fld)
 
 
-def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, gendocjobuid, selected_chapters=None):
+def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, gendocjobuid, selected_chapters=None, tenantid=None):
     """DOCX 병합 + Storage 업로드 + 완료 처리.
 
     selected_chapters(list[{genchapteruid, mode}])가 주어지면(문서 조합 작성) 그 챕터들만,
@@ -297,6 +298,17 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         _update_queue(sb_svc, gendocjobuid, "E", end_dts=end_iso)
         logger.info("문서 완료: %s", gendocuid)
 
+        # Audit Log(work_logs) — 요청 시점엔 "create_requested"만 남겼던 걸, 여기서 실제
+        # 완료 시점 기록을 추가한다. selected_chapters 유무로 조합(combine)/전체작성(generate) 구분.
+        log_work_action(
+            useruid=user_id, tenantid=tenantid, servicecd="Do",
+            actioncd="create",
+            targettype="gendocs/combine" if selected_chapters is not None else "gendocs/generate",
+            targetid=gendocuid,
+            after={"createfileurl": public_url},
+            detail={"gendocjobuid": gendocjobuid, "gendocnm": gendocnm, "note": "worker 완료 처리"},
+        )
+
         try:
             apply_doc_credit_deduction(sb_svc, gendocjobuid)
         except Exception:
@@ -363,7 +375,7 @@ def process_message(msg):
         req = FakeRequest(access_token, user_id, docid, tenantid=tenantid, projectid=projectid)
         try:
             _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, gendocjobuid,
-                                   selected_chapters=body.get("chapters"))
+                                   selected_chapters=body.get("chapters"), tenantid=tenantid)
         finally:
             try:
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
@@ -544,6 +556,16 @@ def process_chapter_message(msg):
         _update_chapter_queue(sb_svc, genchapterjobuid, "E", end_dts=end_iso)
         logger.info("챕터 완료: %s", genchapteruid)
 
+        # Audit Log(work_logs) — 챕터 "단독" 재작성(req/chapters-read의 rewrite 버튼)일 때만
+        # 완료 기록을 남긴다. 문서 전체 작성(is_start_doc=True)의 fan-out 챕터는 여기서 남기지
+        # 않고, 문서 전체가 끝나는 시점(_run_merge_and_upload)에 gendocs/generate로 한 번만 남긴다.
+        if not is_start_doc:
+            log_work_action(
+                useruid=user_id, tenantid=tenantid, servicecd="Do",
+                actioncd="create", targettype="gendocs/genchapters/rewrite", targetid=genchapteruid,
+                detail={"genchapterjobuid": genchapterjobuid, "chapternm": chapternm, "note": "worker 완료 처리"},
+            )
+
         try:
             apply_chapter_credit_deduction(sb_svc, genchapterjobuid)
         except Exception:
@@ -579,7 +601,7 @@ def process_chapter_message(msg):
                         .eq("gendocjobuid", gendocjobuid).eq("jobstatuscd", "S").execute()
                     if claim.data:
                         logger.info("Phase 2+3 시작: %s", gendocuid)
-                        _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, stored_gendocnm, user_id, gendocjobuid)
+                        _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, stored_gendocnm, user_id, gendocjobuid, tenantid=tenantid)
                     else:
                         logger.info("Phase 2+3 이미 다른 워커가 처리 중: %s", gendocuid)
             except Exception:

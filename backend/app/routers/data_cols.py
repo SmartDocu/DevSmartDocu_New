@@ -1,11 +1,12 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 from utilsPrj.data_json_utils import master_data_json_create
+from utilsPrj.audit_log import log_work_action, get_client_ip
 
 router = APIRouter()
 
@@ -110,9 +111,14 @@ def list_datacols(datauid: str, token: str = Depends(get_token)):
 # ── datacols aliases 일괄 저장 ─────────────────────────────────────────────────
 
 @router.post("/datacols/aliases")
-def save_col_aliases(cols: list[ColAliasItem], token: str = Depends(get_token)):
-    _get_user(token)
+def save_col_aliases(cols: list[ColAliasItem], request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
+    datauid = cols[0].datauid if cols else None
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm,aliases")
+        .eq("datauid", datauid).execute().data if datauid else []
+    )
     for col in cols:
         sb.schema(SUPABASE_SCHEMA).table("datacols").update(
             {"aliases": col.aliases}
@@ -122,6 +128,16 @@ def save_col_aliases(cols: list[ColAliasItem], token: str = Depends(get_token)):
             master_data_json_create(sb, cols[0].datauid)
         except Exception:
             pass
+    after = (
+        sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm,aliases")
+        .eq("datauid", datauid).execute().data if datauid else []
+    )
+    log_work_action(
+        useruid=str(user.id), servicecd="Do",
+        actioncd="update", targettype="data-cols/datacols/aliases", targetid=datauid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}
 
 
@@ -145,9 +161,14 @@ def list_col_values(datauid: str, querycolnm: str, token: str = Depends(get_toke
 # ── datacolvalues upsert ───────────────────────────────────────────────────────
 
 @router.post("/values")
-def save_col_value(body: ColValueSaveRequest, token: str = Depends(get_token)):
+def save_col_value(body: ColValueSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("datacolvalues").select("*")
+        .eq("datauid", body.datauid).eq("querycolnm", body.querycolnm).eq("value", body.value)
+        .execute().data
+    )
     record = {
         "datauid":      body.datauid,
         "querycolnm":   body.querycolnm,
@@ -164,6 +185,17 @@ def save_col_value(body: ColValueSaveRequest, token: str = Depends(get_token)):
         master_data_json_create(sb, body.datauid)
     except Exception:
         pass
+    after = (
+        sb.schema(SUPABASE_SCHEMA).table("datacolvalues").select("*")
+        .eq("datauid", body.datauid).eq("querycolnm", body.querycolnm).eq("value", body.value)
+        .execute().data
+    )
+    log_work_action(
+        useruid=str(user.id), servicecd="Do",
+        actioncd="update" if before else "create", targettype="data-cols/values", targetid=body.datauid,
+        before=before[0] if before else None, after=after[0] if after else None,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}
 
 
@@ -174,10 +206,16 @@ def delete_col_value(
     datauid: str,
     querycolnm: str,
     value: str,
+    request: Request,
     token: str = Depends(get_token),
 ):
-    _get_user(token)
+    user = _get_user(token)
     sb = _sb(token)
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("datacolvalues").select("*")
+        .eq("datauid", datauid).eq("querycolnm", querycolnm).eq("value", value)
+        .execute().data
+    )
     resp = (
         sb.schema(SUPABASE_SCHEMA).table("datacolvalues")
         .delete()
@@ -192,4 +230,10 @@ def delete_col_value(
         master_data_json_create(sb, datauid)
     except Exception:
         pass
+    log_work_action(
+        useruid=str(user.id), servicecd="Do",
+        actioncd="delete", targettype="data-cols/values", targetid=datauid,
+        before=before[0] if before else None,
+        ip=get_client_ip(request),
+    )
     return {"message": "삭제되었습니다."}

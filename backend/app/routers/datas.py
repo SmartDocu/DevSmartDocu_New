@@ -5,7 +5,7 @@ import uuid
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
@@ -16,6 +16,7 @@ from backend.app.schemas.datas import (
     ApiConnectorsResponse, ApiDataSaveRequest,
 )
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -675,7 +676,7 @@ def list_source_datas(projectid: int = None, token: str = Depends(get_token), te
 # ── DB Data Save ────────────────────────────────────────────────────────────────
 
 @router.post("/db", dependencies=[Depends(require_doc_write)])
-def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def save_db_data(body: DbDataSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     if body.databasiscd == "dbq":
@@ -695,12 +696,24 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenan
         "query":       query_val,
     }
     if body.datauid:
+        before = snapshot_row(sb, "dataunits", "datauid", body.datauid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
+        after = snapshot_row(sb, "dataunits", "datauid", body.datauid)
+        log_work_action(
+            useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+            actioncd="update", targettype="datas/db", targetid=body.datauid, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"datauid": body.datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "db"
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
     datauid = resp.data[0]["datauid"]
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create", targettype="datas/db", targetid=datauid, after=resp.data[0],
+        ip=get_client_ip(request),
+    )
     return {"datauid": datauid, "message": "저장되었습니다."}
 
 
@@ -708,6 +721,7 @@ def save_db_data(body: DbDataSaveRequest, token: str = Depends(get_token), tenan
 
 @router.post("/ex", dependencies=[Depends(require_doc_write)])
 async def save_ex_data(
+    request: Request,
     datanm: str = Form(...),
     datauid: Optional[str] = Form(None),
     accountuid: Optional[str] = Form(None),
@@ -759,19 +773,31 @@ async def save_ex_data(
         record["excelnm"] = excelfile.filename
 
     if datauid:
+        before = snapshot_row(sb, "dataunits", "datauid", datauid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", datauid).execute()
+        after = snapshot_row(sb, "dataunits", "datauid", datauid)
+        log_work_action(
+            useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+            actioncd="update", targettype="datas/ex", targetid=datauid, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"datauid": datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "ex"
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
     new_datauid = resp.data[0]["datauid"]
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create", targettype="datas/ex", targetid=new_datauid, after=resp.data[0],
+        ip=get_client_ip(request),
+    )
     return {"datauid": new_datauid, "message": "저장되었습니다."}
 
 
 # ── AI Data Save ────────────────────────────────────────────────────────────────
 
 @router.post("/ai", dependencies=[Depends(require_doc_write)])
-def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def save_ai_data(body: AiDataSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     record = {
@@ -781,18 +807,38 @@ def save_ai_data(body: AiDataSaveRequest, token: str = Depends(get_token), tenan
         "gensentence": body.sentence,
     }
     if body.datauid:
+        before = snapshot_row(sb, "dataunits", "datauid", body.datauid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
+        after = snapshot_row(sb, "dataunits", "datauid", body.datauid)
+        log_work_action(
+            useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+            actioncd="update", targettype="datas/ai", targetid=body.datauid, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"datauid": body.datauid, "message": "저장되었습니다."}
     record["creator"] = str(user.id)
     record["datasourcecd"] = "df"
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").insert(record).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create", targettype="datas/ai", targetid=resp.data[0]["datauid"], after=resp.data[0],
+        ip=get_client_ip(request),
+    )
     return {"datauid": resp.data[0]["datauid"], "message": "저장되었습니다."}
 
 
 # ── API Data Save ───────────────────────────────────────────────────────────────
 
+def _snapshot_api_data(sb, datauid: Optional[str]) -> Optional[dict]:
+    if not datauid:
+        return None
+    unit = snapshot_row(sb, "dataunits", "datauid", datauid)
+    params = sb.schema(SUPABASE_SCHEMA).table("data_api_params").select("*").eq("datauid", datauid).order("orderno").execute().data or []
+    return {"dataunits": unit, "data_api_params": params}
+
+
 @router.post("/api", dependencies=[Depends(require_doc_write)])
-def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def save_api_data(body: ApiDataSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     record = {
@@ -803,6 +849,8 @@ def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token), ten
         "useyn":     body.useyn,
         "tenantid":  tenantid,
     }
+    before = _snapshot_api_data(sb, body.datauid)
+    is_new = not body.datauid
     if body.datauid:
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
@@ -832,6 +880,13 @@ def save_api_data(body: ApiDataSaveRequest, token: str = Depends(get_token), ten
             for i, p in enumerate(body.params, 1)
         ]).execute()
 
+    after = _snapshot_api_data(sb, datauid)
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create" if is_new else "update", targettype="datas/api", targetid=datauid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"datauid": datauid, "message": "저장되었습니다."}
 
 
@@ -999,12 +1054,19 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), ten
 # ── Delete ──────────────────────────────────────────────────────────────────────
 
 @router.delete("/{datauid}", dependencies=[Depends(require_doc_write)])
-def delete_data(datauid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_data(datauid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
     res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl, datasourcecd").eq("datauid", datauid).execute()
     if res.data:
         _delete_storage(sb, res.data[0].get("excelurl"))
+
+    before = {
+        "dataunits": snapshot_row(sb, "dataunits", "datauid", datauid),
+        "datacols": sb.schema(SUPABASE_SCHEMA).table("datacols").select("*").eq("datauid", datauid).execute().data or [],
+        "data_api_params": sb.schema(SUPABASE_SCHEMA).table("data_api_params").select("*").eq("datauid", datauid).execute().data or [],
+    }
+
     sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("datauid", datauid).execute()
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete() \
         .eq("datasetuid", datauid).eq("is_directdatauid", True).execute()
@@ -1013,6 +1075,12 @@ def delete_data(datauid: str, token: str = Depends(get_token)):
     resp = sb.schema(SUPABASE_SCHEMA).table("dataunits").delete().eq("datauid", datauid).execute()
     if not resp.data:
         raise HTTPException(status_code=404, detail="삭제할 데이터가 없습니다.")
+
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="delete", targettype="datas", targetid=datauid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"message": "삭제되었습니다."}
 
 
@@ -1297,7 +1365,7 @@ def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional
 
 
 @router.post("/datacols", dependencies=[Depends(require_doc_write)])
-def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
+def save_datacols(cols: list[DataColItem], request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     if not cols:
@@ -1307,8 +1375,8 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
         raise HTTPException(status_code=400, detail="모든 컬럼의 datauid가 동일해야 합니다.")
     datauid = datauids.pop()
 
-    existing = sb.schema(SUPABASE_SCHEMA).table("datacols").select("querycolnm").eq("datauid", datauid).execute().data or []
-    existing_names = {r["querycolnm"] for r in existing}
+    before_rows = sb.schema(SUPABASE_SCHEMA).table("datacols").select("*").eq("datauid", datauid).order("orderno").execute().data or []
+    existing_names = {r["querycolnm"] for r in before_rows}
     incoming_map = {c.querycolnm: c for c in cols}
     incoming_names = set(incoming_map.keys())
 
@@ -1351,4 +1419,10 @@ def save_datacols(cols: list[DataColItem], token: str = Depends(get_token)):
             "field_path": c.field_path,
         }).eq("datauid", datauid).eq("querycolnm", c.querycolnm).execute()
 
+    after_rows = sb.schema(SUPABASE_SCHEMA).table("datacols").select("*").eq("datauid", datauid).order("orderno").execute().data or []
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="datas/datacols", targetid=datauid, before=before_rows, after=after_rows,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}

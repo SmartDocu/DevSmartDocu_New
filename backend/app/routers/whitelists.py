@@ -3,11 +3,12 @@ import ipaddress
 from datetime import timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -148,6 +149,7 @@ class WhitelistSaveRequest(BaseModel):
 @router.post("")
 def save_whitelist(
     body: WhitelistSaveRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -172,23 +174,41 @@ def save_whitelist(
     }
 
     if body.whitelistuid:
+        before = snapshot_row(sb, "whitelists", "whitelistuid", body.whitelistuid)
         sb.schema(SUPABASE_SCHEMA).table("whitelists").update(record).eq("whitelistuid", body.whitelistuid).execute()
+        after = snapshot_row(sb, "whitelists", "whitelistuid", body.whitelistuid)
+        log_work_action(
+            useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
+            actioncd="update", targettype="whitelists", targetid=body.whitelistuid, before=before, after=after,
+            ip=get_client_ip(request),
+        )
         return {"result": "updated", "whitelistuid": body.whitelistuid}
 
     record["creator"] = str(user.id)
     res = sb.schema(SUPABASE_SCHEMA).table("whitelists").insert(record).execute()
     new_id = res.data[0]["whitelistuid"] if res.data else None
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="create", targettype="whitelists", targetid=new_id, after=res.data[0] if res.data else None,
+        ip=get_client_ip(request),
+    )
     return {"result": "inserted", "whitelistuid": new_id}
 
 
 @router.delete("/{whitelistuid}")
-def delete_whitelist(whitelistuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def delete_whitelist(whitelistuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     _require_tenant_manager(str(user.id), tenantid)
     _require_not_system_tenant(tenantid)
     _require_whitelist_subscription(tenantid)
     sb = _sb(token)
+    before = snapshot_row(sb, "whitelists", "whitelistuid", whitelistuid)
     sb.schema(SUPABASE_SCHEMA).table("whitelists").delete().eq("whitelistuid", whitelistuid).eq("tenantid", int(tenantid)).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="delete", targettype="whitelists", targetid=whitelistuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 
@@ -225,6 +245,7 @@ class WhitelistConfigSaveRequest(BaseModel):
 @router.post("/config")
 def save_whitelist_config(
     body: WhitelistConfigSaveRequest,
+    request: Request,
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -238,17 +259,26 @@ def save_whitelist_config(
         "Is_Manager_IP_Allow": body.is_manager_ip_allow,
         "Is_User_IP_Allow": body.is_user_ip_allow,
     }
+    before = {}
+    after = {}
     for configcd, value in values.items():
         existing = (
-            svc.table("config_tenants").select("tenantid")
+            svc.table("config_tenants").select("tenantid,value")
             .eq("tenantid", int(tenantid)).eq("configcd", configcd)
             .maybe_single().execute()
         )
+        before[configcd] = existing.data.get("value") if existing and existing.data else None
         if existing and existing.data:
             svc.table("config_tenants").update({"value": value}).eq("tenantid", int(tenantid)).eq("configcd", configcd).execute()
         else:
             svc.table("config_tenants").insert({
                 "tenantid": int(tenantid), "configcd": configcd, "value": value, "creator": str(user.id),
             }).execute()
+        after[configcd] = value
 
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="whitelists/config", targetid=str(tenantid), before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"result": "success"}

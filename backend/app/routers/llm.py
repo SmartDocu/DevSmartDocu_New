@@ -3,12 +3,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb, get_user
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 from utilsPrj.ai_chain import get_llm_info, build_langchain_llm
+from utilsPrj.audit_log import log_work_action, get_client_ip
 
 router = APIRouter()
 
@@ -471,7 +472,7 @@ class SaveRequest(BaseModel):
 
 
 @router.post("/save")
-def llm_save(body: SaveRequest, token: str = Depends(get_token)):
+def llm_save(body: SaveRequest, request: Request, token: str = Depends(get_token)):
     from datetime import datetime, timezone
     sb = get_sb(token)
     user_id, _ = _get_user_info(sb, token)
@@ -492,7 +493,7 @@ def llm_save(body: SaveRequest, token: str = Depends(get_token)):
     now = datetime.now(timezone.utc).isoformat()
 
     # Check existing
-    existing = sb.schema(SUPABASE_SCHEMA).table(table_name).select("datauid").eq(
+    existing = sb.schema(SUPABASE_SCHEMA).table(table_name).select("*").eq(
         "chapteruid", body.chapteruid
     ).eq("objectnm", body.objectnm).execute().data or []
 
@@ -524,6 +525,16 @@ def llm_save(body: SaveRequest, token: str = Depends(get_token)):
         "modifydts": now,
     }).eq("objectuid", object_uid).execute()
 
+    after = sb.schema(SUPABASE_SCHEMA).table(table_name).select("*").eq(
+        "chapteruid", body.chapteruid
+    ).eq("objectnm", body.objectnm).execute().data or []
+    log_work_action(
+        useruid=user_id, servicecd="Do",
+        actioncd="update" if existing else "create", targettype="llm/save", targetid=object_uid,
+        before=existing[0] if existing else None, after=after[0] if after else None,
+        detail={"objecttypecd": body.objecttypecd},
+        ip=get_client_ip(request),
+    )
     return {"success": True}
 
 
@@ -536,16 +547,28 @@ class DeleteRequest(BaseModel):
 
 
 @router.delete("/delete")
-def llm_delete(body: DeleteRequest, token: str = Depends(get_token)):
+def llm_delete(body: DeleteRequest, request: Request, token: str = Depends(get_token)):
     sb = get_sb(token)
+    user_id = str(get_user(token).id)
     table_name = TABLE_NAME_MAP.get(body.objecttypecd)
     if not table_name:
         raise HTTPException(status_code=400, detail="잘못된 objecttypecd")
+
+    before = sb.schema(SUPABASE_SCHEMA).table(table_name).select("*").eq(
+        "chapteruid", body.chapteruid
+    ).eq("objectnm", body.objectnm).execute().data or []
 
     sb.schema(SUPABASE_SCHEMA).table(table_name).delete().eq(
         "chapteruid", body.chapteruid
     ).eq("objectnm", body.objectnm).execute()
 
+    log_work_action(
+        useruid=user_id, servicecd="Do",
+        actioncd="delete", targettype="llm/delete", targetid=before[0].get("objectuid") if before else None,
+        before=before[0] if before else None,
+        detail={"objecttypecd": body.objecttypecd},
+        ip=get_client_ip(request),
+    )
     return {"success": True}
 
 

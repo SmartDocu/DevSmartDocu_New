@@ -3,11 +3,33 @@ import json
 from datetime import timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
+
+
+# 시크릿(비밀번호/API키/OAuth secret) 절대 감사로그에 남기지 않음 — secret_path 컬럼 제외하고 스냅샷
+_CRED_SAFE_FIELDS = (
+    "credentialuid", "connuid", "apitype", "api_key_name", "api_key_locationcd",
+    "oauth_client_id", "token_endpoint", "authorization_type", "redirect_url",
+    "scope", "grant_type", "is_active", "auth_statuscd", "last_error_message",
+)
+
+
+def _snapshot_connector(sb, connuid: Optional[str]) -> Optional[dict]:
+    if not connuid:
+        return None
+    conn = snapshot_row(sb, "connectors", "connuid", connuid)
+    api_rows = sb.schema(SUPABASE_SCHEMA).table("conn_apis").select("*").eq("connuid", connuid).execute().data or []
+    cred_rows = sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials").select(",".join(_CRED_SAFE_FIELDS)).eq("connuid", connuid).execute().data or []
+    return {
+        "connectors": conn,
+        "conn_apis": api_rows[0] if api_rows else None,
+        "conn_api_credentials": cred_rows[0] if cred_rows else None,
+    }
 
 router = APIRouter()
 
@@ -233,9 +255,11 @@ def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = D
 
 
 @router.post("")
-def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def save_connector(body: ConnectorSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
+    is_new = not body.connuid
+    before = _snapshot_connector(sb, body.connuid)
 
     # ── connectors ──────────────────────────────────────────────────────────
     if body.connuid:
@@ -323,11 +347,18 @@ def save_connector(body: ConnectorSaveRequest, token: str = Depends(get_token), 
         else:
             sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials").insert(cred_payload).execute()
 
+    after = _snapshot_connector(sb, connuid)
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="create" if is_new else "update", targettype="connectors", targetid=connuid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"connuid": connuid}
 
 
 @router.delete("/{connuid}")
-def delete_connector(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def delete_connector(connuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.secrets_cache import delete_secret, invalidate_tenant
 
     sb   = _sb(token)
@@ -339,6 +370,8 @@ def delete_connector(connuid: str, token: str = Depends(get_token), tenantid: Op
     )
     if not exists:
         raise HTTPException(status_code=404, detail="커넥터를 찾을 수 없습니다.")
+
+    before = _snapshot_connector(sb, connuid)
 
     cred_rows = (
         sb.schema(SUPABASE_SCHEMA).table("conn_api_credentials")
@@ -352,6 +385,11 @@ def delete_connector(connuid: str, token: str = Depends(get_token), tenantid: Op
     sb.schema(SUPABASE_SCHEMA).table("conn_apis").delete().eq("connuid", connuid).execute()
     sb.schema(SUPABASE_SCHEMA).table("connectors").delete().eq("connuid", connuid).eq("tenantid", tenantid).execute()
 
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="delete", targettype="connectors", targetid=connuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 

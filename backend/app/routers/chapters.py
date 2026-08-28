@@ -5,13 +5,14 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from backend.app.schemas.auth import MessageResponse
 from backend.app.schemas.docs import ChapterItem, ChapterSaveResponse, ChaptersListResponse
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -54,6 +55,7 @@ def list_chapters(docid: int, token: str = Depends(get_token)):
 
 @router.post("", response_model=ChapterSaveResponse, dependencies=[Depends(require_doc_write)])
 async def save_chapter(
+    request: Request,
     docid: int = Form(...),
     chapternm: str = Form(...),
     chapterno: int = Form(...),
@@ -61,6 +63,7 @@ async def save_chapter(
     chapteruid: Optional[str] = Form(None),
     templatefile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user_id = _get_user_id(token)
     sb = _sb(token)
@@ -91,10 +94,21 @@ async def save_chapter(
     try:
         if existing:
             res = sb.schema(SUPABASE_SCHEMA).table("chapters").update(record).eq("chapteruid", chapteruid).execute()
+            log_work_action(
+                useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+                actioncd="update", targettype="chapters", targetid=res.data[0]["chapteruid"],
+                before=existing, after=res.data[0],
+                ip=get_client_ip(request),
+            )
             return ChapterSaveResponse(result="success", chapteruid=str(res.data[0]["chapteruid"]))
         else:
             record["creator"] = user_id
             res = sb.schema(SUPABASE_SCHEMA).table("chapters").insert(record).execute()
+            log_work_action(
+                useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+                actioncd="create", targettype="chapters", targetid=res.data[0]["chapteruid"], after=res.data[0],
+                ip=get_client_ip(request),
+            )
             return ChapterSaveResponse(result="success", chapteruid=str(res.data[0]["chapteruid"]))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB 저장 실패: {str(e)}")
@@ -103,7 +117,8 @@ async def save_chapter(
 # ─── 챕터 삭제 ───────────────────────────────────────────────────────────────
 
 @router.delete("/{chapteruid}", response_model=MessageResponse, dependencies=[Depends(require_doc_write)])
-def delete_chapter(chapteruid: str, token: str = Depends(get_token)):
+def delete_chapter(chapteruid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user_id = _get_user_id(token)
     sb = _sb(token)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("*").eq("chapteruid", chapteruid).execute().data
@@ -118,6 +133,11 @@ def delete_chapter(chapteruid: str, token: str = Depends(get_token)):
     if not res.data:
         raise HTTPException(status_code=500, detail="챕터 삭제 실패.")
 
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="delete", targettype="chapters", targetid=chapteruid, before=chapter,
+        ip=get_client_ip(request),
+    )
     return MessageResponse(ok=True, message="챕터가 삭제되었습니다.")
 
 
@@ -216,11 +236,20 @@ def get_chapter_template(chapteruid: str, token: str = Depends(get_token)):
 
 
 @router.post("/{chapteruid}/template", dependencies=[Depends(require_doc_write)])
-def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str = Depends(get_token)):
+def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb_user = _sb(token)
     user_id = _get_user_id(token)
     from utilsPrj.supabase_client import get_service_client
     sb_svc = get_service_client()
+
+    def _snapshot_chapter_template():
+        return {
+            "chapter": snapshot_row(sb_svc, "chapters", "chapteruid", chapteruid),
+            "objects": sb_svc.schema(SUPABASE_SCHEMA).table("objects").select("*").eq("chapteruid", chapteruid).execute().data or [],
+            "objectfilters": sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").select("*").eq("chapteruid", chapteruid).execute().data or [],
+        }
+
+    before = _snapshot_chapter_template()
 
     # page-break 정규화
     pagebreak = '<p>&nbsp;</p><div class="page-break" style="page-break-after:always;"><span style="display:none;">&nbsp;</span></div>'
@@ -349,6 +378,12 @@ def save_chapter_template(chapteruid: str, body: TemplateSaveRequest, token: str
                 "updatedts": now_iso,
             }).execute()
 
+    after = _snapshot_chapter_template()
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="chapters/template", targetid=chapteruid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 
@@ -381,10 +416,16 @@ class ObjectFilterMapSaveRequest(BaseModel):
 
 
 @router.post("/objectfiltermap", dependencies=[Depends(require_doc_write)])
-def save_objectfiltermap(body: ObjectFilterMapSaveRequest, token: str = Depends(get_token)):
+def save_objectfiltermap(body: ObjectFilterMapSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     from utilsPrj.supabase_client import get_service_client
     sb_svc = get_service_client()
     user_id = _get_user_id(token)
+
+    before = {
+        "objectfiltermaps": sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").select("*").eq("objectfilteruid", body.objectfilteruid).execute().data or [],
+        "objectfilters": snapshot_row(sb_svc, "objectfilters", "objectfilteruid", body.objectfilteruid),
+    }
+
     # 기존 rows 삭제 후 컬럼당 1줄씩 INSERT
     sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").delete().eq("objectfilteruid", body.objectfilteruid).execute()
     rows = [
@@ -400,6 +441,17 @@ def save_objectfiltermap(body: ObjectFilterMapSaveRequest, token: str = Depends(
     ]
     sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").insert(rows).execute()
     sb_svc.schema(SUPABASE_SCHEMA).table("objectfilters").update({"objectdatauid": body.objectdatauid}).eq("objectfilteruid", body.objectfilteruid).execute()
+
+    after = {
+        "objectfiltermaps": sb_svc.schema(SUPABASE_SCHEMA).table("objectfiltermaps").select("*").eq("objectfilteruid", body.objectfilteruid).execute().data or [],
+        "objectfilters": snapshot_row(sb_svc, "objectfilters", "objectfilteruid", body.objectfilteruid),
+    }
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="chapters/objectfiltermap", targetid=body.objectfilteruid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 

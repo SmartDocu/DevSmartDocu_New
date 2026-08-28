@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, get_client_ip
 
 router = APIRouter()
 
@@ -42,7 +43,7 @@ def get_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)
 
 
 @router.post("", dependencies=[Depends(require_doc_write)])
-def save_sentence(body: SentenceSaveRequest, token: str = Depends(get_token)):
+def save_sentence(body: SentenceSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -50,7 +51,7 @@ def save_sentence(body: SentenceSaveRequest, token: str = Depends(get_token)):
 
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("sentences")
-        .select("datauid")
+        .select("*")
         .eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm)
         .execute().data
     )
@@ -78,15 +79,35 @@ def save_sentence(body: SentenceSaveRequest, token: str = Depends(get_token)):
             "objectsettingyn": True, "modifydts": now, "modifier": user_id,
         }).eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute()
 
+    after = (
+        sb.schema(SUPABASE_SCHEMA).table("sentences").select("*")
+        .eq("chapteruid", body.chapteruid).eq("objectnm", body.objectnm).execute().data
+    )
+    log_work_action(
+        useruid=user_id, servicecd="Do",
+        actioncd="update" if existing else "create", targettype="sentences", targetid=body.objectuid,
+        before=existing[0] if existing else None, after=after[0] if after else None,
+        ip=get_client_ip(request),
+    )
     return {"message": "저장되었습니다."}
 
 
 @router.delete("", dependencies=[Depends(require_doc_write)])
-def delete_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_sentence(chapteruid: str, objectnm: str, request: Request, token: str = Depends(get_token)):
+    user = _get_user(token)
     sb = _sb(token)
+    before = (
+        sb.schema(SUPABASE_SCHEMA).table("sentences").select("*")
+        .eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute().data
+    )
     sb.schema(SUPABASE_SCHEMA).table("sentences").delete().eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
     sb.schema(SUPABASE_SCHEMA).table("objects").update({"objectsettingyn": False}).eq("chapteruid", chapteruid).eq("objectnm", objectnm).execute()
+    log_work_action(
+        useruid=str(user.id), servicecd="Do",
+        actioncd="delete", targettype="sentences", targetid=before[0].get("objectuid") if before else None,
+        before=before[0] if before else None,
+        ip=get_client_ip(request),
+    )
     return {"message": "삭제되었습니다."}
 
 

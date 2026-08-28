@@ -4,12 +4,13 @@ from datetime import timedelta, timezone
 from typing import Optional, Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File, status
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from backend.app.schemas.auth import MessageResponse
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 from backend.app.schemas.docs import (
     DocItem,
     DocSaveResponse,
@@ -339,6 +340,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
 
 @router.post("", response_model=DocSaveResponse, dependencies=[Depends(require_doc_write)])
 async def save_doc(
+    request: Request,
     projectid: int = Form(...),
     docnm: str = Form(...),
     docdesc: Optional[str] = Form(None),
@@ -346,6 +348,7 @@ async def save_doc(
     docgroupid: Optional[int] = Form(None),
     templatefile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
@@ -391,11 +394,22 @@ async def save_doc(
     try:
         if existing:
             sb.schema(SUPABASE_SCHEMA).table("docs").update(record).eq("docid", docid).execute()
+            after = snapshot_row(sb, "docs", "docid", docid)
+            log_work_action(
+                useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+                actioncd="update", targettype="docs", targetid=docid, before=existing, after=after,
+                ip=get_client_ip(request),
+            )
             return DocSaveResponse(result="success", docid=docid)
         else:
             record["creator"] = user_id
             res = sb.schema(SUPABASE_SCHEMA).table("docs").insert(record).execute()
             new_id = res.data[0]["docid"] if res.data else None
+            log_work_action(
+                useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+                actioncd="create", targettype="docs", targetid=new_id, after=res.data[0] if res.data else None,
+                ip=get_client_ip(request),
+            )
             return DocSaveResponse(result="success", docid=new_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail="msg.save.error")
@@ -404,7 +418,8 @@ async def save_doc(
 # ─── 문서 삭제 ───────────────────────────────────────────────────────────────
 
 @router.delete("/{docid}", response_model=MessageResponse, dependencies=[Depends(require_doc_write)])
-def delete_doc(docid: int, token: str = Depends(get_token)):
+def delete_doc(docid: int, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("*").eq("docid", docid).execute().data
@@ -420,10 +435,18 @@ def delete_doc(docid: int, token: str = Depends(get_token)):
     for gd in gendocs:
         sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gd["gendocuid"]).execute()
 
+    docparams = sb.schema(SUPABASE_SCHEMA).table("docparams").select("*").eq("docid", docid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("docparams").delete().eq("docid", docid).execute()
     res = sb.schema(SUPABASE_SCHEMA).table("docs").delete().eq("docid", docid).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="msg.delete.error")
+
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="delete", targettype="docs", targetid=docid,
+        before={"docs": doc, "docparams": docparams, "gendocs": gendocs},
+        ip=get_client_ip(request),
+    )
 
     return MessageResponse(ok=True, message="msg.delete.success")
 
@@ -465,7 +488,8 @@ def list_params(docid: int, token: str = Depends(get_token)):
 
 
 @router.post("/params", dependencies=[Depends(require_doc_write)])
-def save_param(body: ParamSaveRequest, token: str = Depends(get_token)):
+def save_param(body: ParamSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
     payload = {
         "docid": body.docid,
@@ -480,22 +504,39 @@ def save_param(body: ParamSaveRequest, token: str = Depends(get_token)):
         "ordercolnm": body.ordercolnm,
     }
     if body.paramuid:
+        before = snapshot_row(sb, "docparams", "paramuid", body.paramuid)
         res = (
             sb.schema(SUPABASE_SCHEMA).table("docparams")
             .update(payload).eq("paramuid", body.paramuid).execute()
         )
+        actioncd = "update"
     else:
-        payload["creator"] = str(_get_user(token).id)
+        before = None
+        payload["creator"] = str(user.id)
         res = sb.schema(SUPABASE_SCHEMA).table("docparams").insert(payload).execute()
+        actioncd = "create"
     if not res.data:
         raise HTTPException(status_code=500, detail="msg.save.error")
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd=actioncd, targettype="docs/params", targetid=res.data[0].get("paramuid"),
+        before=before, after=res.data[0],
+        ip=get_client_ip(request),
+    )
     return {"ok": True, "param": res.data[0]}
 
 
 @router.delete("/params/{paramuid}", dependencies=[Depends(require_doc_write)])
-def delete_param(paramuid: str, token: str = Depends(get_token)):
+def delete_param(paramuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
+    before = snapshot_row(sb, "docparams", "paramuid", paramuid)
     sb.schema(SUPABASE_SCHEMA).table("docparams").delete().eq("paramuid", paramuid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="delete", targettype="docs/params", targetid=paramuid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 
@@ -643,10 +684,15 @@ class DocParamSaveRequest(BaseModel):
 
 
 @router.post("/{docid}/doc-params", dependencies=[Depends(require_doc_write)])
-def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(get_token)):
+def save_doc_params(docid: int, body: DocParamSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """doc_datas 선택 및 docparamdtls 매핑 저장"""
     sb = _sb(token)
     user_id = str(_get_user(token).id)
+
+    before = {
+        "doc_datas": sb.schema(SUPABASE_SCHEMA).table("doc_datas").select("*").eq("docid", docid).execute().data or [],
+        "docparamdtls": sb.schema(SUPABASE_SCHEMA).table("docparamdtls").select("*").eq("docid", docid).execute().data or [],
+    }
 
     # doc_datas: 전체 교체
     sb.schema(SUPABASE_SCHEMA).table("doc_datas").delete().eq("docid", docid).execute()
@@ -671,6 +717,15 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, token: str = Depends(
             for r in body.records
         ]).execute()
 
+    after = {
+        "doc_datas": sb.schema(SUPABASE_SCHEMA).table("doc_datas").select("*").eq("docid", docid).execute().data or [],
+        "docparamdtls": sb.schema(SUPABASE_SCHEMA).table("docparamdtls").select("*").eq("docid", docid).execute().data or [],
+    }
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="docs/doc-params", targetid=docid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"ok": True}
 
 

@@ -16,8 +16,23 @@ from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_user as _get_user
 from utilsPrj.notifications import create_notification
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
+from utilsPrj.audit_log import log_work_action, get_client_ip
 
 router = APIRouter()
+
+# billing_key/provider_customerid는 결제 자격증명 성격이라 감사로그에 남기지 않음
+_PAYMENT_METHOD_SAFE_FIELDS = (
+    "payment_methoduid,tenantid,accountuid,payment_providercd,gateway_providercd,"
+    "payment_method_type,payment_method_status,is_default,display_nm,"
+    "card_brand,card_last4,expiry_year,expiry_month,createdts"
+)
+
+
+def _snapshot_payment_method(sd, payment_methoduid: Optional[str]) -> Optional[dict]:
+    if not payment_methoduid:
+        return None
+    row = sd.table("payment_methods").select(_PAYMENT_METHOD_SAFE_FIELDS).eq("payment_methoduid", payment_methoduid).maybe_single().execute()
+    return row.data if row else None
 
 PORTONE_API_BASE = "https://api.portone.io"
 WEBHOOK_TOLERANCE_SECONDS = 300  # 리플레이 공격 방지용 타임스탬프 허용 오차 (Standard Webhooks 권장)
@@ -359,6 +374,7 @@ class BillingKeySaveRequest(BaseModel):
 @router.post("/methods/billing-key")
 def save_billing_key(
     body: BillingKeySaveRequest,
+    request: Request,
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -409,17 +425,27 @@ def save_billing_key(
         sd.table("payment_methods").update({"is_default": False}).eq("accountuid", accountuid).execute()
 
     existing = sd.table("payment_methods").select("payment_methoduid").eq("billing_key", body.billing_key_id).execute().data
+    before = _snapshot_payment_method(sd, existing[0]["payment_methoduid"]) if existing else None
     if existing:
         sd.table("payment_methods").update(data).eq("payment_methoduid", existing[0]["payment_methoduid"]).execute()
+        new_methoduid = existing[0]["payment_methoduid"]
     else:
-        sd.table("payment_methods").insert(data).execute()
+        res = sd.table("payment_methods").insert(data).execute()
+        new_methoduid = res.data[0]["payment_methoduid"] if res.data else None
 
+    log_work_action(
+        useruid=user_id, tenantid=tenantid, servicecd="Tenant",
+        actioncd="update" if existing else "create", targettype="payments/methods", targetid=new_methoduid,
+        before=before, after=_snapshot_payment_method(sd, new_methoduid),
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "결제수단이 등록되었습니다."}
 
 
 @router.delete("/methods/{payment_methoduid}")
 def delete_payment_method(
     payment_methoduid: str,
+    request: Request,
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -429,17 +455,24 @@ def delete_payment_method(
 
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
+    before = _snapshot_payment_method(sd, payment_methoduid)
     sd.table("payment_methods").update({
         "payment_method_status": "Deleted",
         "is_default": False,
     }).eq("payment_methoduid", payment_methoduid).eq("tenantid", tenantid).execute()
 
+    log_work_action(
+        useruid=user_id, tenantid=tenantid, servicecd="Tenant",
+        actioncd="delete", targettype="payments/methods", targetid=payment_methoduid, before=before,
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "결제수단이 삭제되었습니다."}
 
 
 @router.post("/methods/{payment_methoduid}/set-default")
 def set_default_payment_method(
     payment_methoduid: str,
+    request: Request,
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
@@ -463,6 +496,12 @@ def set_default_payment_method(
     sd.table("payment_methods").update({"is_default": False}).eq("accountuid", accountuid).execute()
     sd.table("payment_methods").update({"is_default": True}).eq("payment_methoduid", payment_methoduid).execute()
 
+    log_work_action(
+        useruid=user_id, tenantid=tenantid, servicecd="Tenant",
+        actioncd="update", targettype="payments/methods/set-default", targetid=payment_methoduid,
+        after={"is_default": True},
+        ip=get_client_ip(request),
+    )
     return {"result": "success", "message": "기본 결제수단으로 설정되었습니다."}
 
 

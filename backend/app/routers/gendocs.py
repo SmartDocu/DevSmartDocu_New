@@ -8,7 +8,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from dateutil import parser as dp
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -17,6 +17,7 @@ from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
+from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
 
@@ -396,7 +397,7 @@ class GendocCreateRequest(BaseModel):
 
 
 @router.post("", dependencies=[Depends(require_doc_write)])
-def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
+def create_gendoc(body: GendocCreateRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -451,17 +452,23 @@ def create_gendoc(body: GendocCreateRequest, token: str = Depends(get_token)):
         ]
         sb.schema(SUPABASE_SCHEMA).table("genchapters").insert(genchapter_records).execute()
 
+    log_work_action(
+        useruid=user_id, tenantid=body.tenantid, servicecd="Do",
+        actioncd="create", targettype="gendocs", targetid=gendocuid,
+        after={"gendocuid": gendocuid, "docid": body.docid, "gendocnm": body.docnm, "chapter_count": len(chapters)},
+        ip=get_client_ip(request),
+    )
     return {"gendocuid": gendocuid, "message": "생성되었습니다."}
 
 
 # ── Gendoc Delete ───────────────────────────────────────────────────────────────
 
 @router.delete("/{gendocuid}", dependencies=[Depends(require_doc_write)])
-def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def delete_gendoc(gendocuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
     # Remove storage file
-    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl,closeyn").eq("gendocuid", gendocuid).execute().data
+    row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("*").eq("gendocuid", gendocuid).execute().data
     if row and row[0].get("closeyn"):
         raise HTTPException(status_code=400, detail="msg.gendoc.closed.readonly")
     if row and row[0].get("createfileurl"):
@@ -473,16 +480,24 @@ def delete_gendoc(gendocuid: str, token: str = Depends(get_token)):
                 sb.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
             except Exception:
                 pass
+    gendoc_params = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("*").eq("gendocuid", gendocuid).execute().data or []
+    genchapters = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("*").eq("gendocuid", gendocuid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("gendoc_params").delete().eq("gendocuid", gendocuid).execute()
     sb.schema(SUPABASE_SCHEMA).table("genchapters").delete().eq("gendocuid", gendocuid).execute()
     sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gendocuid).execute()
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="delete", targettype="gendocs", targetid=gendocuid,
+        before={"gendocs": row[0] if row else None, "gendoc_params": gendoc_params, "genchapters": genchapters},
+        ip=get_client_ip(request),
+    )
     return {"message": "삭제되었습니다."}
 
 
 # ── Gendoc Close / Open ─────────────────────────────────────────────────────────
 
 @router.post("/{gendocuid}/close", dependencies=[Depends(require_doc_write)])
-def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
+def close_gendoc(gendocuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -495,6 +510,7 @@ def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
         raise HTTPException(status_code=400, detail="msg.gendoc.close.needs.file")
     docid = row[0]["docid"]
 
+    before = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
         "closeyn": True,
         "closeuseruid": user_id,
@@ -509,20 +525,32 @@ def close_gendoc(gendocuid: str, token: str = Depends(get_token)):
         "closedts": now,
     }).execute()
 
+    after = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="gendocs/close", targetid=gendocuid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "마감 처리되었습니다."}
 
 
 @router.post("/{gendocuid}/open", dependencies=[Depends(require_doc_write)])
-def open_gendoc(gendocuid: str, token: str = Depends(get_token)):
-    _get_user(token)
+def open_gendoc(gendocuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
 
+    before = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
         "closeyn": False,
         "closeuseruid": None,
         "closedts": None,
     }).eq("gendocuid", gendocuid).execute()
-
+    after = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="gendocs/open", targetid=gendocuid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "마감 해제되었습니다."}
 
 
@@ -535,8 +563,8 @@ class GendocUpdateRequest(BaseModel):
 
 
 @router.post("/params/update", dependencies=[Depends(require_doc_write)])
-def update_gendoc_params(body: GendocUpdateRequest, token: str = Depends(get_token)):
-    _get_user(token)
+def update_gendoc_params(body: GendocUpdateRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    user = _get_user(token)
     sb = _sb(token)
 
     gendoc_rows = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("closeyn,createfiledts").eq("gendocuid", body.gendocuid).execute().data
@@ -546,7 +574,7 @@ def update_gendoc_params(body: GendocUpdateRequest, token: str = Depends(get_tok
         raise HTTPException(status_code=400, detail="msg.gendoc.file.readonly")
 
     # 저장 전 값과 비교해 실제로 매개변수가 바뀌었는지 판단 — 하위 챕터 재작업 필요 여부 표시에 사용
-    existing_params = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("paramuid,paramvalue").eq("gendocuid", body.gendocuid).execute().data or []
+    existing_params = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("*").eq("gendocuid", body.gendocuid).execute().data or []
     existing_map = {p["paramuid"]: p.get("paramvalue") for p in existing_params}
     params_changed = any(existing_map.get(p.get("paramuid")) != p.get("paramvalue") for p in body.params)
 
@@ -559,6 +587,13 @@ def update_gendoc_params(body: GendocUpdateRequest, token: str = Depends(get_tok
         if genchap_exists:
             sb.schema(SUPABASE_SCHEMA).table("gendocs").update({"paramchangedyn": True}).eq("gendocuid", body.gendocuid).execute()
 
+    after_params = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("*").eq("gendocuid", body.gendocuid).execute().data or []
+    log_work_action(
+        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="gendocs/params", targetid=body.gendocuid,
+        before={"gendocnm": None, "params": existing_params}, after={"gendocnm": body.gendocnm, "params": after_params},
+        ip=get_client_ip(request),
+    )
     return {"message": "파라미터가 변경되었습니다."}
 
 
@@ -701,7 +736,7 @@ class ObjectRewriteRequest(BaseModel):
 
 
 @router.post("/genchapters/{genchapteruid}/objects/{objectuid}/rewrite", dependencies=[Depends(require_doc_write)])
-def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def rewrite_object(genchapteruid: str, objectuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -720,6 +755,8 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
     if is_locked:
         raise HTTPException(status_code=409, detail="이 문서의 해당 챕터가 이미 작성 중입니다.")
 
+    before_genobjects = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", genchapteruid).eq("objectuid", objectuid).execute().data or []
+
     req = FakeRequest(token, user_id, docid, tenantid=ctx["tenantid"], projectid=ctx["projectid"])
 
     try:
@@ -735,6 +772,13 @@ def rewrite_object(genchapteruid: str, objectuid: str, token: str = Depends(get_
 
     _increment_genobjectcount(sb, genchapteruid, objectuid)
 
+    after_genobjects = sb.schema(SUPABASE_SCHEMA).table("genobjects").select("*").eq("genchapteruid", genchapteruid).eq("objectuid", objectuid).execute().data or []
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create", targettype="gendocs/genchapters/objects/rewrite", targetid=objectuid,
+        before=before_genobjects, after=after_genobjects,
+        ip=get_client_ip(request),
+    )
     return {"success": True}
 
 
@@ -755,7 +799,7 @@ def _increment_genobjectcount(sb, genchapteruid: str, objectuid: str):
 # ── Apply Objects to Chapter ─────────────────────────────────────────────────────
 
 @router.post("/genchapters/{genchapteruid}/apply", dependencies=[Depends(require_doc_write)])
-def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
+def apply_chapter_objects(genchapteruid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -789,6 +833,8 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
 
     now = datetime.now(timezone.utc).isoformat()
 
+    before = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
+
     # Update genchapters
     sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
         "gentexttemplate": texttemplate,
@@ -808,6 +854,13 @@ def apply_chapter_objects(genchapteruid: str, token: str = Depends(get_token)):
     except Exception:
         pass
 
+    after = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create", targettype="gendocs/genchapters/apply", targetid=genchapteruid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"success": True, "message": "항목 반영이 완료되었습니다."}
 
 
@@ -933,7 +986,7 @@ class RewriteChapterRequest(BaseModel):
 
 
 @router.post("/genchapters/{genchapteruid}/rewrite", dependencies=[Depends(require_doc_write)])
-def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteChapterRequest(), token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def rewrite_chapter(genchapteruid: str, request: Request, body: RewriteChapterRequest = RewriteChapterRequest(), token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -1035,6 +1088,14 @@ def rewrite_chapter(genchapteruid: str, body: RewriteChapterRequest = RewriteCha
         }, ensure_ascii=False),
     )
 
+    # SQS 비동기 — 실제 작성 완료는 worker/main.py가 처리(여기선 아직 콘텐츠가 없음).
+    # 완료 시점 기록은 후속 작업으로 worker/main.py에도 로깅을 추가해야 한다(TODO).
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create_requested", targettype="gendocs/genchapters/rewrite", targetid=genchapteruid,
+        detail={"genchapterjobuid": genchapterjobuid, "gendocuid": gendocuid, "note": "async: 완료 여부는 genchapters_realtimes.jobstatuscd 참조"},
+        ip=get_client_ip(request),
+    )
     return {"genchapteruid": genchapteruid}
 
 
@@ -1100,8 +1161,10 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
 @router.post("/genchapters/{genchapteruid}/upload", dependencies=[Depends(require_doc_write)])
 async def upload_chapter_file(
     genchapteruid: str,
+    request: Request,
     file: UploadFile = File(...),
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
@@ -1111,6 +1174,7 @@ async def upload_chapter_file(
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     gendocuid = genchap[0]["gendocuid"]
+    before = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
 
     if genchap[0].get("updatefileurl"):
         old_url = genchap[0]["updatefileurl"]
@@ -1136,6 +1200,13 @@ async def upload_chapter_file(
         "updateuserid": user_id,
     }).eq("genchapteruid", genchapteruid).execute()
 
+    after = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="gendocs/genchapters/upload", targetid=genchapteruid,
+        before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"success": True, "message": "업로드되었습니다.", "url": public_url}
 
 
@@ -1144,13 +1215,16 @@ async def upload_chapter_file(
 @router.post("/{gendocuid}/upload", dependencies=[Depends(require_doc_write)])
 async def upload_file(
     gendocuid: str,
+    request: Request,
     file: UploadFile = File(...),
     token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
 ):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
 
+    before = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
     old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("updatefileurl,updatefilenm").eq("gendocuid", gendocuid).execute().data
     if old and old[0].get("updatefileurl"):
         parsed = urlparse(old[0]["updatefileurl"])
@@ -1175,6 +1249,12 @@ async def upload_file(
         "updateuserid": user_id,
     }).eq("gendocuid", gendocuid).execute()
 
+    after = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="update", targettype="gendocs/upload", targetid=gendocuid, before=before, after=after,
+        ip=get_client_ip(request),
+    )
     return {"message": "업로드되었습니다.", "url": public_url}
 
 
@@ -1188,7 +1268,7 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/{gendocuid}/generate", dependencies=[Depends(require_doc_write)])
-def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def generate_doc(gendocuid: str, body: GenerateRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -1291,6 +1371,14 @@ def generate_doc(gendocuid: str, body: GenerateRequest, token: str = Depends(get
         }, ensure_ascii=False),
     )
 
+    # SQS 비동기 — 실제 작성 완료는 worker/main.py가 처리(여기선 아직 콘텐츠가 없음).
+    # 완료 시점 기록은 후속 작업으로 worker/main.py에도 로깅을 추가해야 한다(TODO).
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create_requested", targettype="gendocs/generate", targetid=gendocuid,
+        detail={"gendocjobuid": gendocjobuid, "note": "async: 완료 여부는 gendocs_realtimes.jobstatuscd 참조"},
+        ip=get_client_ip(request),
+    )
     return {"gendocuid": gendocuid}
 
 
@@ -1365,7 +1453,7 @@ class CombineRequest(BaseModel):
 
 
 @router.post("/{gendocuid}/combine", dependencies=[Depends(require_doc_write)])
-def combine_doc(gendocuid: str, body: CombineRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+def combine_doc(gendocuid: str, body: CombineRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
@@ -1462,6 +1550,14 @@ def combine_doc(gendocuid: str, body: CombineRequest, token: str = Depends(get_t
         }, ensure_ascii=False),
     )
 
+    # SQS 비동기 — 실제 병합/업로드 완료는 worker/main.py가 처리(여기선 아직 결과물 없음).
+    # 완료 시점 기록은 후속 작업으로 worker/main.py에도 로깅을 추가해야 한다(TODO).
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
+        actioncd="create_requested", targettype="gendocs/combine", targetid=gendocuid,
+        detail={"gendocjobuid": gendocjobuid, "note": "async: 완료 여부는 gendocs_realtimes.jobstatuscd 참조"},
+        ip=get_client_ip(request),
+    )
     return {"gendocuid": gendocuid}
 
 
