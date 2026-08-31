@@ -3,9 +3,9 @@ run_stats류와 같은 패턴(순수 데이터 입력 → dict 출력)으로 이
 
 pr_module_insight 원본은 SharedContext + 역할 기반 스키마(schema.py, Semantic_Type)에
 의존하지만, 이 프로젝트의 메타데이터 모델(datacols.measureyn)에는 그런 역할 태그가 없다.
-그래서 계산 로직(공식)만 그대로 가져오고, 입력은 execute_query로 이미 조회한 레코드 +
-LLM이 메타정보를 보고 직접 지정하는 컬럼명으로 받는다 — execute_query/run_stats와 동일한
-"자연어로 데이터 조회 → 그 결과를 다음 툴에 전달" 흐름을 그대로 따른다.
+그래서 계산 로직(공식)만 그대로 가져오고, 입력은 execute_query로 이미 조회한 결과의
+참조 키(ref) + LLM이 메타정보를 보고 직접 지정하는 컬럼명으로 받는다 — execute_query/
+run_stats와 동일하게, 데이터 자체는 LLM 손을 거치지 않고 ref로만 다음 툴에 전달된다.
 """
 from __future__ import annotations
 
@@ -16,32 +16,41 @@ import pandas as pd
 from langchain_core.tools import tool
 
 
-def _to_df(data: list) -> pd.DataFrame:
-    return pd.DataFrame(data)
+def _resolve(ref: str) -> tuple[Optional[pd.DataFrame], Optional[dict]]:
+    """ref를 DataFrame으로 바꾼다. 못 찾으면 (None, 에러dict)를 돌려준다."""
+    from d2insight.report.tools.query_tool import resolve_ref
+    df = resolve_ref(ref)
+    if df is None:
+        return None, {"error": f"ref '{ref}'를 찾을 수 없습니다 — execute_query/execute_excel_query가 반환한 ref 값을 그대로 전달하세요."}
+    return df, None
 
 
 @tool
 def run_variance_impact(
-    actual_data: list,
-    compare_data: list,
+    actual_ref: str,
+    compare_ref: str,
     dimension_col: str,
     measure_col: str,
 ) -> dict:
     """차원별 증감 영향도(Impact/HHI/DVI)를 계산합니다 — "어느 차원(항목)이 변화를 주도했는가".
 
-    execute_query로 각각 조회한 "분석기간 {차원}별 {측정값} 합계" 데이터와
-    "비교기간 {차원}별 {측정값} 합계" 데이터를 전달하세요.
+    execute_query로 각각 조회한 "분석기간 {차원}별 {측정값} 합계" 결과의 ref와
+    "비교기간 {차원}별 {측정값} 합계" 결과의 ref를 전달하세요.
 
     Args:
-        actual_data: 분석기간 데이터 (records 형식) — dimension_col, measure_col 포함.
-        compare_data: 비교기간 데이터 (records 형식) — 같은 컬럼 구조.
+        actual_ref: 분석기간 조회 결과의 ref — dimension_col, measure_col 포함.
+        compare_ref: 비교기간 조회 결과의 ref — 같은 컬럼 구조.
         dimension_col: 그룹 기준 차원 컬럼명 (예: 채널, 제품, 지역).
         measure_col: 집계된 측정값 컬럼명 (예: 매출).
     """
-    a = _to_df(actual_data)
-    c = _to_df(compare_data)
+    a, err = _resolve(actual_ref)
+    if err:
+        return err
+    c, err = _resolve(compare_ref)
+    if err:
+        return err
     if dimension_col not in a.columns or measure_col not in a.columns:
-        return {"error": f"actual_data에 '{dimension_col}' 또는 '{measure_col}' 컬럼이 없습니다."}
+        return {"error": f"actual_ref 결과에 '{dimension_col}' 또는 '{measure_col}' 컬럼이 없습니다."}
 
     agg_a = a.groupby(dimension_col)[measure_col].sum().rename("actual")
     agg_c = (c.groupby(dimension_col)[measure_col].sum().rename("compare")
@@ -83,8 +92,8 @@ def run_variance_impact(
 
 @tool
 def run_sales_bridge(
-    actual_data: list,
-    compare_data: list,
+    actual_ref: str,
+    compare_ref: str,
     item_col: str,
     amount_col: str,
     quantity_col: Optional[str] = None,
@@ -96,17 +105,21 @@ def run_sales_bridge(
     전체 증감액과 일치합니다(검산).
 
     Args:
-        actual_data: 분석기간 항목별 데이터 (records) — item_col, amount_col(quantity_col) 포함.
-        compare_data: 비교기간 항목별 데이터 (records) — 같은 컬럼 구조.
+        actual_ref: 분석기간 항목별 조회 결과의 ref — item_col, amount_col(quantity_col) 포함.
+        compare_ref: 비교기간 항목별 조회 결과의 ref — 같은 컬럼 구조.
         item_col: 항목(상품/고객 등) 컬럼명.
         amount_col: 금액 컬럼명.
         quantity_col: 수량 컬럼명 — 지정 시 물량/단가 효과까지 분해. 미지정 시 항목 증감만 계산.
     """
-    a = _to_df(actual_data)
-    c = _to_df(compare_data)
+    a, err = _resolve(actual_ref)
+    if err:
+        return err
+    c, err = _resolve(compare_ref)
+    if err:
+        return err
     cols = [amount_col] + ([quantity_col] if quantity_col else [])
     if item_col not in a.columns or amount_col not in a.columns:
-        return {"error": f"actual_data에 '{item_col}' 또는 '{amount_col}' 컬럼이 없습니다."}
+        return {"error": f"actual_ref 결과에 '{item_col}' 또는 '{amount_col}' 컬럼이 없습니다."}
 
     agg_a = a.groupby(item_col)[cols].sum()
     agg_c = c.groupby(item_col)[cols].sum() if item_col in c.columns else pd.DataFrame(columns=cols)

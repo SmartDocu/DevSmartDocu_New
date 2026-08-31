@@ -31,6 +31,32 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import matplotlib.ticker
 
+# pr_module_insight(단독앱)에서 역이식(2026-08-20) — 폰트 설정은 프로세스당 한 번만
+# 하면 되는데 dataframe_to_chart_image() 안에서 호출마다 반복 계산했었다.
+_FONT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'NanumGothic-Regular.ttf')
+)
+_font_loaded = False
+
+
+def _ensure_font() -> None:
+    global _font_loaded
+    if _font_loaded:
+        return
+    if os.path.exists(_FONT_PATH):
+        fm.fontManager.addfont(_FONT_PATH)
+        font_prop = fm.FontProperties(fname=_FONT_PATH)
+        matplotlib.rcParams['font.family'] = font_prop.get_name()
+    else:
+        _korean_candidates = ['Malgun Gothic', 'AppleGothic', 'NanumGothic', 'NanumBarunGothic']
+        _available = {f.name for f in fm.fontManager.ttflist}
+        for _candidate in _korean_candidates:
+            if _candidate in _available:
+                matplotlib.rcParams['font.family'] = _candidate
+                break
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    _font_loaded = True
+
 
 # ========================================
 # 마크다운 제거
@@ -183,7 +209,7 @@ def detect_visualization_type_with_llm(question: str, llm, log_ctx: dict = None)
 # ========================================
 
 _LINE_KEYWORDS = ['선', 'line', '추이', '변화', '트렌드', '매달', '매주', '라인차트']
-_PIE_KEYWORDS = ['파이', 'pie', '원형', '점유율', '도넛', '도너츠', '원그래프']
+_PIE_KEYWORDS = ['파이', 'pie', '원형', '점유율', '도넛', '도너츠', '원그래프', '구성비', '점유']
 _SCATTER_KEYWORDS = ['산점도', 'scatter', '분포도']
 _HIST_KEYWORDS = ['히스토그램', 'histogram']
 _BOX_KEYWORDS = ['박스플롯', 'boxplot']
@@ -470,8 +496,6 @@ def _prepare_dataframe_for_visualization(df: pd.DataFrame, chart_type: str = Non
             break
 
     if len(time_cols) >= 2:
-        print(f"[INFO] 시간 컬럼 결합: {time_cols}")
-
         def combine_time_parts(row):
             parts = []
             for col in time_cols:
@@ -494,7 +518,6 @@ def _prepare_dataframe_for_visualization(df: pd.DataFrame, chart_type: str = Non
         df = df.drop(columns=time_cols)
         cols = [combined_name] + [c for c in df.columns if c != combined_name]
         df = df[cols]
-        print(f"[OK] 결합 완료: {combined_name}")
 
     if len(df.columns) >= 3:
         last_numeric = pd.api.types.is_numeric_dtype(df.iloc[:, -1])
@@ -539,17 +562,11 @@ def _prepare_dataframe_for_visualization(df: pd.DataFrame, chart_type: str = Non
                 # "카테고리 비교"가 아니라 우연히 3컬럼 조건에 걸린 것이므로 피벗을 취소한다.
                 value_cols = pivoted.columns[1:]
                 fill_ratio = pivoted[value_cols].notna().mean().mean() if len(value_cols) else 1.0
-                if fill_ratio < 0.4:
-                    print(f"[WARN] 피봇 취소 (결과가 희소함, 채움 비율 {fill_ratio:.0%})")
-                else:
+                if fill_ratio >= 0.4:
                     pivoted.columns.name = None
                     df = pivoted
-                    print(f"[OK] 피봇 완료: {df.shape}")
-            except Exception as e:
-                # print(f"[WARN] 피봇 실패: {e}")
+            except Exception:
                 pass
-        else:
-            print("[INFO] 피봇 불필요")
 
     # line 차트인데 이미 wide-format으로 와 있고(피벗 불필요) 방향이 반대인 경우: 라벨 컬럼
     # (0번째)은 시간처럼 안 보이는데, 나머지 값 컬럼들의 "이름" 자체가 시간처럼 보이면
@@ -562,7 +579,6 @@ def _prepare_dataframe_for_visualization(df: pd.DataFrame, chart_type: str = Non
             transposed = df.set_index(label_col).T.reset_index()
             transposed.columns = ['기간'] + entity_names
             df = transposed
-            print("[INFO] line 차트 방향 보정: 엔티티×시간 -> 시간×엔티티 전치")
 
     return df
 
@@ -818,8 +834,26 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             for label in ax.get_xticklabels():
                 label.set_ha('right')
 
+    def _decimals_for_range(vmin: float, vmax: float) -> int:
+        """축 눈금 소수 자리 수 — 값 범위가 작으면(비율·%p 등) 정수 반올림 시 전부 0으로
+        뭉개지므로 자리수를 늘린다."""
+        max_abs = max(abs(vmin), abs(vmax))
+        if max_abs < 1:
+            return 2
+        if max_abs < 10:
+            return 1
+        return 0
+
     def _format_yaxis(ax):
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
+        vmin, vmax = ax.get_ylim()
+        digits = _decimals_for_range(vmin, vmax)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.{digits}f}'))
+
+    def _format_xaxis(ax):
+        """가로 막대(barh)의 값축(x축) 버전 — 비율 등 작은 값이 정수 반올림으로 전부 0이 되는 것을 막는다."""
+        vmin, vmax = ax.get_xlim()
+        digits = _decimals_for_range(vmin, vmax)
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.{digits}f}'))
 
     # 차트 제목 — 예전엔 '비교'/'이중축 차트' 같은 자리표시자 문자열이 그대로 렌더링됐다
     # (2026-08-19, 고객 데모용 보고서 리뷰에서 발견). 호출부가 넘겨준 question(예: "2013년
@@ -832,22 +866,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
         return q if len(q) <= 40 else q[:39] + '…'
 
     try:
-        # 폰트 설정: NanumGothic(static/fonts, d2doc·d2chat·d2insight 공용) → 시스템 한글 폰트 순
-        font_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), '..', 'static', 'fonts', 'NanumGothic-Regular.ttf')
-        )
-        if os.path.exists(font_path):
-            fm.fontManager.addfont(font_path)
-            font_prop = fm.FontProperties(fname=font_path)
-            matplotlib.rcParams['font.family'] = font_prop.get_name()
-        else:
-            _korean_candidates = ['Malgun Gothic', 'AppleGothic', 'NanumGothic', 'NanumBarunGothic']
-            _available = {f.name for f in fm.fontManager.ttflist}
-            for _candidate in _korean_candidates:
-                if _candidate in _available:
-                    matplotlib.rcParams['font.family'] = _candidate
-                    break
-        matplotlib.rcParams['axes.unicode_minus'] = False
+        _ensure_font()
 
         question_lower = question.lower()
         fig = matplotlib.figure.Figure(figsize=(10, 6))
@@ -1012,9 +1031,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                            color=color, linewidth=2)
                     a.set_xticks(x_pos)
                     a.set_xticklabels(labels_display, rotation=45, ha='right')
-                    a.yaxis.set_major_formatter(
-                        matplotlib.ticker.FuncFormatter(lambda x, _: f'{x:,.0f}')
-                    )
+                    _format_yaxis(a)
 
                 elif subplot_type == 'pie':
                     a.pie(values[col], labels=labels, autopct='%1.1f%%',
@@ -1035,15 +1052,11 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                         panel_labels = panel_labels.iloc[::-1].reset_index(drop=True)
                         panel_values = panel_values.iloc[::-1].reset_index(drop=True)
                         a.barh(panel_labels, panel_values, color=color, alpha=0.8)
-                        a.xaxis.set_major_formatter(
-                            matplotlib.ticker.FuncFormatter(lambda x, _: f'{x:,.0f}')
-                        )
+                        _format_xaxis(a)
                     else:
                         a.bar(panel_labels, panel_values, color=color, alpha=0.8)
                         a.tick_params(axis='x', rotation=45)
-                        a.yaxis.set_major_formatter(
-                            matplotlib.ticker.FuncFormatter(lambda x, _: f'{x:,.0f}')
-                        )
+                        _format_yaxis(a)
 
                 a.set_title(col, fontsize=12, fontweight='bold')
                 if subplot_type == 'bar' and orientation == 'h':
@@ -1402,7 +1415,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     h_colors = [bar_colors[i] for i in order]
                     ax.barh(h_labels, h_values.tolist(), color=h_colors)
                     _set_axes(ax, xlabel=col, ylabel=df.columns[0], title=_chart_title('비교'))
-                    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
+                    _format_xaxis(ax)
                 else:
                     ax.bar(labels, values_1d.tolist(), color=bar_colors)
                     _set_axes(ax, xlabel=df.columns[0], ylabel=col, title=_chart_title('비교'), rotate_x=True)
@@ -1422,7 +1435,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     ax.set_yticklabels(h_labels)
                     ax.legend(loc='best')
                     _set_axes(ax, xlabel='값', ylabel=df.columns[0], title=_chart_title('비교'))
-                    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
+                    _format_xaxis(ax)
                 else:
                     x = np.arange(len(labels))
                     width = 0.8 / len(values.columns)

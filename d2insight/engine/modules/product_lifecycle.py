@@ -21,10 +21,10 @@ import numpy as np
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import slice_history_window
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM, ROLE_PERIOD, get_schema
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 
 _STAGE_ORDER = ["도입", "성장", "성숙", "쇠퇴"]
 
@@ -120,31 +120,24 @@ def run(ctx, params, tools) -> ModuleResult:
     by_stage = res["Stage"].value_counts().to_dict()
     stage_str = ", ".join(f"{s} {by_stage.get(s, 0)}개" for s in _STAGE_ORDER if by_stage.get(s))
     decline_n = int(by_stage.get("쇠퇴", 0))
-    summary = (
-        f"{schema.logical_name(amount_col)} 기준 항목 {len(res)}개의 수명주기 — {stage_str}. "
-        f"쇠퇴 단계 {decline_n}개는 관리·정리 검토 대상. "
-        # 판정 구간을 밝힌다 — 같은 항목도 창이 다르면 단계가 달라지므로 근거가 필요하다.
-        f"(판정 구간 {months[0]}~{months[-1]}, {len(months)}개월)" + window_note
-    )
 
     counts = res["Stage"].value_counts().reindex(_STAGE_ORDER).dropna()
-    chart_data = pd.DataFrame({"단계": counts.index, "항목수": counts.values.astype(int)})
+    chart_df = pd.DataFrame({"단계": counts.index, "항목수": counts.values.astype(int)})
 
-    table = pd.DataFrame({
-        "항목": res["Item_Name"].head(int(params.get("top_n") or 20)),
-        "단계": res["Stage"].head(int(params.get("top_n") or 20)),
-        "활동개월": res["Age_Months"].head(int(params.get("top_n") or 20)),
-        "성장률": res["Growth"].head(int(params.get("top_n") or 20)).map(
-            lambda v: f"{v * 100:+.1f}%" if pd.notna(v) else "신규"),
-        "최근매출": res["Recent_Value"].head(int(params.get("top_n") or 20)).map(lambda v: f"{v:,.0f}"),
-    })
+    top_n = int(params.get("top_n") or 20)
+    table = res[["Item_Name", "Stage", "Age_Months", "Growth", "Recent_Value"]].rename(
+        columns={"Item_Name": "항목", "Stage": "단계", "Age_Months": "활동개월",
+                "Growth": "성장률", "Recent_Value": "최근매출"}).head(top_n)
 
-    return ModuleResult(
-        outputs={"lifecycle_stages": res},
-        render=Render(
-            summary=summary,
-            table=table,
-            chart=chart_spec(chart_data, "bar", "제품 수명주기 단계 분포"),
-            key_value={"분류 항목수": len(res), "쇠퇴 단계": f"{decline_n}개"},
+    render = render_from_dataframe(
+        table,
+        purpose="항목별 매출 추이로 수명주기 단계(도입/성장/성숙/쇠퇴)를 분류.",
+        narrative_hint=(
+            f"단계 분포({stage_str})를 밝히고, 쇠퇴 단계 {decline_n}개는 관리·정리 검토 대상임을 "
+            f"짚어라. 판정 구간: {months[0]}~{months[-1]}({len(months)}개월).{window_note}"
         ),
+        params={"기준": schema.logical_name(amount_col)}, label="product_lifecycle", chart_df=chart_df,
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {"분류 항목수": len(res), "쇠퇴 단계": f"{decline_n}개"}
+    return ModuleResult(outputs={"lifecycle_stages": res}, render=render)

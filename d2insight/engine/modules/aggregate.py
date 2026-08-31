@@ -16,14 +16,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import slice_history_window
 from d2insight.engine.schema import ROLE_PERIOD, get_schema
-from d2insight.engine.types import ModuleResult, Render
-
-# 차트 가독성 상한 — 막대는 너무 많으면 라벨이 겹치고, 파이는 조각이 잘게 쪼개진다.
-_BAR_MAX = 12
-_PIE_MAX = 8
+from d2insight.engine.types import ModuleResult
 
 
 def _resolve(ctx, params) -> tuple:
@@ -69,43 +65,27 @@ def run_actual_aggregate(ctx, params, tools) -> ModuleResult:
     panel = _compare_panel(actual_df, compare_df, dimension, measure)
     panel = panel.sort_values("Actual_Value", ascending=False).reset_index(drop=True)
     shown = panel.head(top_n)
-
-    table = pd.DataFrame({
-        schema.logical_name(dimension): shown["Item_Name"],
-        "비교기간": shown["Comparison_Value"].map(lambda v: f"{v:,.0f}"),
-        "분석기간": shown["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "증감": shown["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "증감률": shown["Rate"].map(lambda v: f"{v * 100:+.1f}%"),
-    })
+    shown = shown.rename(columns={"Item_Name": schema.logical_name(dimension)})
 
     total_a = float(panel["Actual_Value"].sum())
     total_v = float(panel["Variance"].sum())
-    top = panel.iloc[0] if len(panel) else None
-    summary = (
-        f"{schema.logical_name(dimension)}별 {measure_name} {total_a:,.0f} "
-        f"({total_v:+,.0f}). 항목 {len(panel):,}개 중 상위 {len(shown)}개 표시"
-        + (f", 1위 {top['Item_Name']} {top['Actual_Value']:,.0f}"
-           f"({top['Rate'] * 100:+.1f}%)." if top is not None else ".")
-    )
-    # 상위 항목이 전부 비교기간 실적 0(=전부 신규 취급)이면 "증가율" 자체가 무의미하다 —
-    # 회전율이 높은 차원(개별 고객 등)에서 원시 2개월 비교의 흔한 함정이다. 조용히 넘기지 않는다.
-    if not shown.empty and (shown["Comparison_Value"] == 0).all():
-        summary += (
-            f" ※ 상위 {len(shown)}개 전부 비교기간 실적이 0으로 잡혀(신규 취급) 증감률이 의미가 없다 — "
-            f"이 차원은 재구매 주기가 길어 원시 2개월 비교로는 대부분 신규·이탈로 분류될 수 있다. "
-            "신규/이탈을 실제로 가르려면 생애주기 기반 분석이 필요하다."
-        )
     dim_name = schema.logical_name(dimension)
-    chart_data = pd.DataFrame({
-        dim_name: shown["Item_Name"].head(_BAR_MAX),
-        measure_name: shown["Actual_Value"].head(_BAR_MAX),
-    })
-    return ModuleResult(render=Render(
-        summary=summary, table=table,
-        chart=chart_spec(chart_data, "bar", f"{dim_name}별 {measure_name}"),
-        key_value={"차원": dim_name, "합계": f"{total_a:,.0f}",
-                   "증감": f"{total_v:+,.0f}"},
-    ))
+
+    hint = (
+        "규모가 큰 항목과 증감이 큰 항목이 다르면 그 차이를 짚어라. 비교기간 대비 분석기간을 "
+        "함께 보여줘라(가능하면 차트도 비교기간·분석기간 두 계열로)."
+    )
+    if not shown.empty and (shown["Comparison_Value"] == 0).all():
+        hint += (" 상위 항목 전부 비교기간 실적이 0(신규 취급)이라 증감률이 의미 없다는 것도 밝혀라"
+                 " — 재구매 주기가 길어 원시 2개월 비교의 함정일 수 있다.")
+
+    render = render_from_dataframe(
+        shown, purpose="차원×항목 실적과 증감을 표·차트로 제시.", narrative_hint=hint,
+        params={"차원": dim_name, "측정값": measure_name}, label="actual_aggregate",
+        cache=params.get("_llm_render_cache"),
+    )
+    render.key_value = {"차원": dim_name, "합계": f"{total_a:,.0f}", "증감": f"{total_v:+,.0f}"}
+    return ModuleResult(render=render)
 
 
 # ── 구성비 ───────────────────────────────────────────────────────────────────
@@ -129,32 +109,19 @@ def run_composition(ctx, params, tools) -> ModuleResult:
 
     top_n = int(params.get("top_n") or 10)
     shown = panel.head(top_n)
-    table = pd.DataFrame({
-        schema.logical_name(dimension): shown["Item_Name"],
-        "분석기간": shown["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "구성비": shown["Share"].map(lambda v: f"{v * 100:.1f}%"),
-        "이전 구성비": shown["Compare_Share"].map(lambda v: f"{v * 100:.1f}%"),
-        "비중 변화": shown["Share_Change"].map(lambda v: f"{v * 100:+.1f}%p"),
-    })
+    dim_name = schema.logical_name(dimension)
+    shown = shown.rename(columns={"Item_Name": dim_name})
 
     top = panel.iloc[0]
-    gain = panel.loc[panel["Share_Change"].idxmax()]
-    summary = (
-        f"{schema.logical_name(dimension)} 구성비 — 1위 {top['Item_Name']} "
-        f"{top['Share'] * 100:.1f}%({top['Share_Change'] * 100:+.1f}%p), "
-        f"비중이 가장 늘어난 항목은 {gain['Item_Name']}({gain['Share_Change'] * 100:+.1f}%p). "
-        f"상위 {len(shown)}개가 전체의 {shown['Share'].sum() * 100:.1f}%."
+    render = render_from_dataframe(
+        shown,
+        purpose="차원 항목별 구성비와 비중 변화를 제시.",
+        narrative_hint="비중이 커진 항목과 줄어든 항목을 짚고, 집중도가 높아졌는지 낮아졌는지 말하라.",
+        params={"차원": dim_name, "측정값": measure_name}, label="composition",
+        cache=params.get("_llm_render_cache"),
     )
-    dim_name = schema.logical_name(dimension)
-    chart_data = pd.DataFrame({
-        dim_name: shown["Item_Name"].head(_PIE_MAX),
-        measure_name: shown["Actual_Value"].head(_PIE_MAX),
-    })
-    return ModuleResult(render=Render(
-        summary=summary, table=table,
-        chart=chart_spec(chart_data, "pie", f"{dim_name} {measure_name} 구성비"),
-        key_value={"1위": str(top["Item_Name"]), "1위 비중": f"{top['Share'] * 100:.1f}%"},
-    ))
+    render.key_value = {"1위": str(top["Item_Name"]), "1위 비중": f"{top['Share'] * 100:.1f}%"}
+    return ModuleResult(render=render)
 
 
 # ── 순위 ─────────────────────────────────────────────────────────────────────
@@ -173,35 +140,24 @@ def run_ranking(ctx, params, tools) -> ModuleResult:
     panel = _compare_panel(actual_df, compare_df, dimension, measure)
     panel = panel.sort_values(sort_col, ascending=(order == "asc")).reset_index(drop=True)
     shown = panel.head(top_n)
-
-    table = pd.DataFrame({
-        "순위": range(1, len(shown) + 1),
-        schema.logical_name(dimension): shown["Item_Name"],
-        "분석기간": shown["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "증감": shown["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "증감률": shown["Rate"].map(lambda v: f"{v * 100:+.1f}%"),
-    })
-
     if not len(shown):
         return ModuleResult(status="failed", error="순위를 낼 항목이 없습니다.")
 
+    dim_name = schema.logical_name(dimension)
+    shown = shown.copy()
+    shown.insert(0, "순위", range(1, len(shown) + 1))
+    shown = shown.rename(columns={"Item_Name": dim_name})
+
     label = "상위" if order == "desc" else "하위"
     basis = measure_name if by == "actual" else f"{measure_name} 증감"
-    names = ", ".join(str(n) for n in shown["Item_Name"].head(3))
-    head = shown.iloc[0]
-    # 하위 순위에서 "1위"라고 하면 오독된다 — 무엇이 첫 줄인지 그대로 말한다.
-    lead = "최상위" if order == "desc" else "최하위"
-    dim_name = schema.logical_name(dimension)
-    summary = (f"{dim_name} {basis} {label} {len(shown)}개: {names} 등. "
-               f"{lead} {head['Item_Name']} {head[sort_col]:+,.0f}.")
-    chart_data = pd.DataFrame({
-        dim_name: shown["Item_Name"].head(_BAR_MAX),
-        basis: shown[sort_col].head(_BAR_MAX),
-    })
-    return ModuleResult(render=Render(
-        summary=summary, table=table,
-        chart=chart_spec(chart_data, "bar", f"{dim_name} {basis} {label}"),
-    ))
+    render = render_from_dataframe(
+        shown,
+        purpose="항목 상/하위 순위를 제시.",
+        narrative_hint="상위권의 규모 차이가 큰지 고른지 짚어라. 순위와 증감 방향이 어긋나면 그 점을 말하라.",
+        params={"차원": dim_name, "기준": basis, "정렬": label}, label="ranking",
+        cache=params.get("_llm_render_cache"),
+    )
+    return ModuleResult(render=render)
 
 
 # ── 추이 (이력 필요) ─────────────────────────────────────────────────────────
@@ -242,41 +198,32 @@ def run_trend(ctx, params, tools) -> ModuleResult:
         sub = history[history[dimension].isin(keep)]
         series = sub.pivot_table(index=period_col, columns=dimension,
                                  values=measure, aggfunc="sum").fillna(0.0).sort_index()
-        # 차트는 서식 적용 전 숫자 값으로 만든다(라인 여러 개 = 상위 항목별 추이).
-        chart_data = series.reset_index().rename(columns={period_col: "기간"})
         table = series.reset_index().rename(columns={period_col: "기간"})
-        for col in series.columns:
-            table[col] = table[col].map(lambda v: f"{v:,.0f}")
     else:
         series = history.groupby(period_col)[measure].sum().sort_index()
         diff = series.diff()
-        chart_data = pd.DataFrame({"기간": series.index, measure_name: series.values})
         table = pd.DataFrame({
             "기간": series.index,
-            measure_name: series.map(lambda v: f"{v:,.0f}").values,
-            # 첫 기간은 비교 대상이 없다. +0으로 적으면 "변화 없음"으로 오독된다.
-            "전기 대비": [f"{v:+,.0f}" if pd.notna(v) else "-" for v in diff],
+            measure_name: series.values,
+            "전기 대비": diff.values,
         })
 
     totals_by_period = history.groupby(period_col)[measure].sum().sort_index()
-    first, last = float(totals_by_period.iloc[0]), float(totals_by_period.iloc[-1])
     peak = totals_by_period.idxmax()
-    direction = "상승" if last > first else ("하락" if last < first else "보합")
-    summary = (
-        f"{measure_name} {len(totals_by_period)}개 기간 추이 — {direction}"
-        f"({totals_by_period.index[0]} {first:,.0f} → {totals_by_period.index[-1]} {last:,.0f}, "
-        f"{(last - first) / first * 100:+.1f}%)." if first else
-        f"{measure_name} {len(totals_by_period)}개 기간 추이."
-    )
-    summary += f" 최고 기간: {peak} ({float(totals_by_period.max()):,.0f})." + window_note
 
-    return ModuleResult(render=Render(
-        summary=summary, table=table,
-        chart=chart_spec(chart_data, "line", f"{measure_name} 기간별 추이"),
-        # 추이는 그림이 본질이고 표는 근거다 — 차트를 표보다 먼저 배치한다.
-        layout=["narrative", "key_value", "chart", "table"],
-        key_value={"기간수": len(totals_by_period), "최고 기간": str(peak)},
-    ))
+    render = render_from_dataframe(
+        table,
+        purpose="측정값의 기간별 추이를 제시.",
+        narrative_hint=(
+            "추이의 방향·변곡점·계절성 여부를 짚어라. 단발 등락과 추세를 구분해 서술하라."
+            + window_note
+        ),
+        params={"측정값": measure_name}, label="trend",
+        cache=params.get("_llm_render_cache"),
+    )
+    render.layout = ["narrative", "key_value", "chart", "table"]
+    render.key_value = {"기간수": len(totals_by_period), "최고 기간": str(peak)}
+    return ModuleResult(render=render)
 
 
 # ── 누계·진척 (이력 필요) ────────────────────────────────────────────────────
@@ -293,28 +240,23 @@ def run_cumulative_progress(ctx, params, tools) -> ModuleResult:
     cumulative = series.cumsum()
     target = params.get("target")
 
-    chart_data = pd.DataFrame({"기간": series.index, "누계": cumulative.values})
-    table = pd.DataFrame({
-        "기간": series.index,
-        measure_name: series.map(lambda v: f"{v:,.0f}").values,
-        "누계": cumulative.map(lambda v: f"{v:,.0f}").values,
-    })
+    table = pd.DataFrame({"기간": series.index, measure_name: series.values, "누계": cumulative.values})
     if target:
-        table["진척률"] = (cumulative / float(target)).map(lambda v: f"{v * 100:.1f}%").values
+        table["진척률(%)"] = (cumulative / float(target) * 100).values
 
     total = float(cumulative.iloc[-1])
-    summary = (f"{measure_name} 누계 {total:,.0f} ({len(series)}개 기간, "
-               f"기간 평균 {total / len(series):,.0f}).")
     key_value = {"누계": f"{total:,.0f}", "기간수": len(series)}
+    hint = "누계 추세와 기간 평균 규모를 짚어라." + window_note
     if target:
         rate = total / float(target)
-        summary += f" 목표 {float(target):,.0f} 대비 진척률 {rate * 100:.1f}%."
         key_value["진척률"] = f"{rate * 100:.1f}%"
-    summary += window_note
+        hint += f" 목표 {float(target):,.0f} 대비 진척률({rate * 100:.1f}%)도 언급하라."
 
-    return ModuleResult(render=Render(
-        summary=summary, table=table,
-        chart=chart_spec(chart_data, "line", f"{measure_name} 기간 누계"),
-        layout=["narrative", "key_value", "chart", "table"],
-        key_value=key_value,
-    ))
+    render = render_from_dataframe(
+        table, purpose="기간 누계와 진척률을 제시.", narrative_hint=hint,
+        params={"측정값": measure_name}, label="cumulative_progress",
+        cache=params.get("_llm_render_cache"),
+    )
+    render.layout = ["narrative", "key_value", "chart", "table"]
+    render.key_value = key_value
+    return ModuleResult(render=render)

@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import slice_history_window
 from d2insight.engine.modules.summary import DERIVED_DISCOUNT_RATE, DERIVED_UNIT_PRICE
 from d2insight.engine.schema import (
@@ -234,40 +234,18 @@ def run(ctx, params, tools) -> ModuleResult:
     alerts = [r for r in rows if r["Level"] == LEVEL_ALERT]
     watches = [r for r in rows if r["Level"] == LEVEL_WATCH]
 
-    if alerts:
-        head = ", ".join(
-            f"{r['Logical_Name']} {r['Direction']}({r['Actual_Display']}, {r['Rate'] * 100:+.1f}%)"
-            for r in alerts
-        )
-        summary = f"KPI {len(rows)}개 중 경보 {len(alerts)}건 — {head}."
-    else:
-        summary = f"KPI {len(rows)}개 모두 평소 범위 내(경보 없음)."
-    if watches:
-        summary += f" 주의 {len(watches)}건: {', '.join(r['Logical_Name'] for r in watches)}."
-    summary += f" 판정 기준: {basis}.{note}"
-
-    # 차트: KPI별 이탈 정도를 부호 있는 막대로. Z가 있으면 Z, 없으면(threshold 툴) 증감률.
-    use_z = tool == "history_z"
-    chart_data = pd.DataFrame({
-        "KPI": [r["Logical_Name"] for r in rows],
-        ("Z 점수" if use_z else "증감률"): [
-            float(r["Z"]) if use_z else float(r["Rate"]) for r in rows
-        ],
-    })
-
     result_df = pd.DataFrame(rows)
-    return ModuleResult(
-        outputs={"kpi_alerts": result_df},
-        render=Render(
-            summary=summary,
-            table=_display_table(rows),
-            chart=chart_spec(chart_data, "bar",
-                             f"KPI {'이탈 정도(Z)' if use_z else '증감률'}"),
-            key_value={
-                "판정 기준": basis,
-                "경보": len(alerts),
-                "주의": len(watches),
-                "판정 불가": len(undecidable),
-            },
+    render = render_from_dataframe(
+        _display_table(rows),
+        purpose="측정값(KPI)이 평소 범위를 벗어났는지 시계열로 판정.",
+        narrative_hint=(
+            f"경보 {len(alerts)}건, 주의 {len(watches)}건을 먼저 밝히고 어느 KPI가 왜(방향·증감률) "
+            f"벗어났는지 짚어라. 판정 기준: {basis}.{note}"
         ),
+        params={"판정 기준": basis}, label="kpi_alert",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {
+        "판정 기준": basis, "경보": len(alerts), "주의": len(watches), "판정 불가": len(undecidable),
+    }
+    return ModuleResult(outputs={"kpi_alerts": result_df}, render=render)

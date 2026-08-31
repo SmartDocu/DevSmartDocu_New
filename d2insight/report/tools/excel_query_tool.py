@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import traceback
 
+import pandas as pd
 from langchain_core.tools import tool
 
 from d2insight.report.classifier import classify_question_and_table
@@ -58,15 +59,21 @@ def create_excel_query_tool(session_id: str, llm):
         반드시 집계 데이터를 요청하세요: "~별 건수/합계/평균" 형태로 질문하세요.
         question에 분석 기간을 반드시 포함하세요.
 
+        반환값의 markdown_table을 본문에 그대로 삽입하세요(행 누락·숫자 오기 방지).
+
+        반환값의 ref는 이 조회 결과를 가리키는 참조 키입니다. create_chart/run_stats/
+        run_variance_impact 등 다음 툴에 데이터를 다시 타이핑해 넘기지 말고, 이 ref 값을
+        그대로 전달하세요.
+
         Args:
             question: 분석하고 싶은 내용을 자연어로 설명. 분석 기간과 집계 방식을 포함할 것.
         """
-        from d2insight.report.tools.query_tool import _data_store
+        from d2insight.report.tools.query_tool import _data_store, _ref_store, _build_markdown_table
 
         try:
             excel_server = get_excel_server()
             if not excel_server.has_datasets(session_id):
-                return {"data": [], "columns": [], "row_count": 0, "error": "등록된 데이터셋이 없습니다."}
+                return {"columns": [], "row_count": 0, "error": "등록된 데이터셋이 없습니다."}
 
             raw = excel_server.execute_natural_language_query(
                 question=question,
@@ -76,9 +83,20 @@ def create_excel_query_tool(session_id: str, llm):
             )
             result = _to_query_tool_shape(raw)
             _data_store.add(question, result)
-            return result
+
+            response = {
+                "columns": result.get("columns", []),
+                "row_count": result.get("row_count", 0),
+                "generated_sql": result.get("generated_sql"),
+            }
+            if result.get("error"):
+                response["error"] = result["error"]
+            if result.get("columns") and result.get("data"):
+                response["markdown_table"] = _build_markdown_table(result["columns"], result["data"])
+                response["ref"] = _ref_store.put(pd.DataFrame(result["data"]))
+            return response
         except Exception as e:
             traceback.print_exc()
-            return {"data": [], "columns": [], "row_count": 0, "error": f"조회 중 오류 발생: {e}"}
+            return {"columns": [], "row_count": 0, "error": f"조회 중 오류 발생: {e}"}
 
     return execute_excel_query

@@ -17,7 +17,7 @@ from __future__ import annotations
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.schema import ROLE_COST, ROLE_INVENTORY, ROLE_ITEM, ROLE_PERIOD, ROLE_SAFETY_STOCK, get_schema
 from d2insight.engine.types import ModuleResult, Render
 
@@ -78,7 +78,7 @@ def run(ctx, params, tools) -> ModuleResult:
         if not cost_col or cost_col not in actual_df.columns:
             return ModuleResult(
                 status="failed",
-                error=(f"안전재고(safety_stock 역할) 정책값이 데이터에 없고, 추정에 필요한 "
+                error=("안전재고(safety_stock 역할) 정책값이 데이터에 없고, 추정에 필요한 "
                        "매출원가(cost 역할)도 없어 안전재고 진단을 할 수 없습니다."),
             )
         target, err = _estimate_target(ctx, item_col, cost_col)
@@ -101,34 +101,28 @@ def run(ctx, params, tools) -> ModuleResult:
     risk_n = len(at_risk)
     total_n = len(merged)
 
-    summary = (
-        f"안전재고 대비 부족 위험 {risk_n}/{total_n}개 항목 — 기준: {source_label}."
-        + estimate_note
-    )
-    if risk_n:
-        worst = at_risk.iloc[0]
-        summary += f" 최대 부족: {worst['Item_Name']} (재고 {worst['Current_Inventory']:,.0f} / 기준 {worst['Safety_Stock_Target']:,.0f}, 부족 {worst['Gap']:+,.0f})."
+    key_value = {"부족 위험 항목수": f"{risk_n}/{total_n}개", "기준": source_label}
+    if not risk_n:
+        return ModuleResult(render=Render(
+            summary=f"안전재고 부족 위험 항목 없음 — 기준: {source_label}." + estimate_note,
+            key_value=key_value,
+        ))
 
     top_n = int(params.get("top_n") or 20)
-    table = None
-    chart = None
-    if risk_n:
-        shown = at_risk.head(top_n)
-        table = pd.DataFrame({
-            "항목": shown["Item_Name"].astype(str),
-            "현재 재고": shown["Current_Inventory"].map(lambda v: f"{v:,.0f}"),
-            "안전재고 기준": shown["Safety_Stock_Target"].map(lambda v: f"{v:,.0f}"),
-            "차이": shown["Gap"].map(lambda v: f"{v:+,.0f}"),
-        })
-        chart_top = at_risk.head(_CHART_MAX)
-        chart = chart_spec(
-            pd.DataFrame({"항목": chart_top["Item_Name"].astype(str),
-                          "차이": chart_top["Gap"].astype(float)}),
-            "bar", "안전재고 대비 부족 항목 Top (차이)")
-
-    return ModuleResult(render=Render(
-        summary=summary,
-        table=table,
-        chart=chart,
-        key_value={"부족 위험 항목수": f"{risk_n}/{total_n}개", "기준": source_label},
-    ))
+    shown = at_risk.head(top_n)
+    table = pd.DataFrame({
+        "항목": shown["Item_Name"].astype(str), "현재 재고": shown["Current_Inventory"],
+        "안전재고 기준": shown["Safety_Stock_Target"], "차이": shown["Gap"],
+    })
+    render = render_from_dataframe(
+        table,
+        purpose="안전재고 대비 현재 재고 부족 위험을 항목별로 진단.",
+        narrative_hint=(
+            f"부족 위험 {risk_n}/{total_n}개 항목, 기준: {source_label}.{estimate_note} "
+            "가장 심각한 항목과 부족 정도를 짚고, 보충 발주가 필요함을 말하라."
+        ),
+        params={"기준": source_label}, label="safety_stock",
+        cache=params.get("_llm_render_cache"),
+    )
+    render.key_value = key_value
+    return ModuleResult(render=render)

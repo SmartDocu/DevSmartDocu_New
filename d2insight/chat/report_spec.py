@@ -90,6 +90,7 @@ def create_spec(
     target_month: Optional[str],
     report_type: Optional[str],
     months_back: Optional[int] = None,
+    scenario_options: Optional[dict] = None,
 ) -> dict:
     return {
         "target_month": target_month,
@@ -100,6 +101,11 @@ def create_spec(
         "bulk_mode": False,
         "entry_asked": False,
         "mode": "gathering",
+        # 옵션 패널 "이대로 작성"에서 확정된 시나리오·스텝(있으면) — 기준월을 나중에
+        # 물어봐서 여러 턴에 걸쳐 진행되는 경우에도 이 값이 spec에 실려 함께 보존되고,
+        # __EXECUTE__ 시점에 run_report_from_spec()이 그대로 꺼내 pipeline_runner에 넘긴다.
+        # 없으면(자유 대화형 보고서) None 그대로 유지.
+        "scenario_options": scenario_options,
     }
 
 

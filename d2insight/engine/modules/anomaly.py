@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import LIFECYCLE_DORMANT, get_item_lifecycle, get_item_variance
 from d2insight.engine.schema import get_schema
 from d2insight.engine.types import ModuleResult, Render
@@ -79,19 +79,6 @@ def _level(score: float, threshold: float) -> str:
     return "정상"
 
 
-def _display_table(df: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame({
-        "차원": df["Dimension_Logical_Name"],
-        "항목": df["Item_Name"],
-        "비교기간": df["Comparison_Value"].map(lambda v: f"{v:,.0f}"),
-        "분석기간": df["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "증감": df["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "증감률": df["Rate"].map(lambda v: f"{v * 100:+.1f}%"),
-        "Z(금액)": df["Z_amount"].map(lambda v: f"{v:+.2f}" if pd.notna(v) else "-"),
-        "Z(증감률)": df["Z_rate"].map(lambda v: f"{v:+.2f}" if pd.notna(v) else "-"),
-        "이탈 축": df["Reason"],
-        "등급": df["Level"],
-    })
 
 
 def run(ctx, params, tools) -> ModuleResult:
@@ -232,35 +219,26 @@ def run(ctx, params, tools) -> ModuleResult:
         .head(top_n)
         .reset_index(drop=True)
     )
-
-    worst = detected.iloc[0]
     dims_hit = detected["Dimension_Logical_Name"].nunique()
-    summary = (
-        f"{measure_name} 기준 {tool} ±{threshold:g} 이탈 항목 {len(detected)}건({dims_hit}개 차원). "
-        f"최대 이탈: {worst['Dimension_Logical_Name']} {worst['Item_Name']} "
-        f"({worst['Variance']:+,.0f}, {worst['Rate'] * 100:+.1f}%, 이탈 축 {worst['Reason']}).{note}"
-    )
 
-    # 차트: 탐지된 이상 항목의 증감액을 부호 있는 막대로 — 어떤 항목이 이상이고 금액 충격이
-    #   얼마인지 한눈에. Z점수·등급 등 통계 상세는 표가 맡는다.
-    chart_data = pd.DataFrame({
-        "항목": detected["Item_Name"].astype(str),
-        "증감액": detected["Variance"].astype(float),
-    })
-
-    return ModuleResult(
-        outputs={"outlier_result": detected},
-        render=Render(
-            summary=summary,
-            table=_display_table(detected),
-            chart=chart_spec(chart_data, "bar", f"{measure_name} {tool} 이상 항목 증감액"),
-            key_value={
-                "측정값": measure_name,
-                "탐지 기준": tool,
-                "임계값": f"±{threshold:g}",
-                "이상 항목": len(detected),
-                "해당 차원": dims_hit,
-                "판정 불가 차원": len(undecidable),
-            },
+    render = render_from_dataframe(
+        detected,
+        purpose="금액·증감률 분포에서 크게 벗어난 이상 항목을 탐지.",
+        narrative_hint=(
+            "금액 영향이 큰 이탈부터 짚고, 어느 축(금액/증감률)에서 벗어났는지 구분해 설명하라. "
+            "이상 항목이 없으면 그 자체가 결과임을 밝히고 임계값을 명시하라."
+            + (f" {note}" if note else "")
         ),
+        params={"측정값": measure_name, "탐지 기준": tool, "임계값": f"±{threshold:g}"},
+        label="anomaly_detection", cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {
+        "측정값": measure_name,
+        "탐지 기준": tool,
+        "임계값": f"±{threshold:g}",
+        "이상 항목": len(detected),
+        "해당 차원": dims_hit,
+        "판정 불가 차원": len(undecidable),
+    }
+
+    return ModuleResult(outputs={"outlier_result": detected}, render=render)

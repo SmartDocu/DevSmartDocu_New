@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import get_pnl_ladder
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_COST, ROLE_OPEX, get_schema
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 
 
 def _item_decompose(ctx, dimension: str, top_n: int) -> tuple[pd.DataFrame | None, str]:
@@ -56,7 +56,7 @@ def _item_decompose(ctx, dimension: str, top_n: int) -> tuple[pd.DataFrame | Non
     display = pd.DataFrame({schema.logical_name(dim_col): detail.index.astype(str)})
     for col in ["매출 효과", "매출원가 효과", "판매관리비 효과", "EBIT 증감"]:
         # .values — display는 RangeIndex, detail은 항목명 인덱스라 그대로 대입하면 어긋난다
-        display[col] = detail[col].map(lambda v: f"{v:+,.0f}").values
+        display[col] = detail[col].values
     return display.reset_index(drop=True), (
         f" {schema.logical_name(dim_col)}별 상위 {len(display)}개(|EBIT 증감| 기준) 상세 표 포함."
     )
@@ -98,9 +98,7 @@ def run(ctx, params, tools) -> ModuleResult:
     )
 
     display = pd.DataFrame({
-        "구분": driver_df["구분"],
-        "효과": driver_df["효과"].map(lambda v: f"{v:+,.0f}"),
-        "EBIT 증감 기여율": driver_df["기여율"].map(lambda v: f"{v:+.1f}%"),
+        "구분": driver_df["구분"], "효과": driver_df["효과"], "EBIT 증감 기여율(%)": driver_df["기여율"],
     })
     key_value = {"영업이익 증감": f"{ebit_variance:+,.0f}", "최대 요인": top["구분"]}
 
@@ -115,16 +113,13 @@ def run(ctx, params, tools) -> ModuleResult:
             for r in rows:
                 key_value[r["구분"]] = f"{r['효과']:+,.0f} ({r['기여율']:+.1f}%)"
 
-    chart_data = pd.DataFrame({
-        "구분": driver_df["구분"].astype(str),
-        "효과": driver_df["효과"].astype(float),
-    })
+    chart_df = pd.DataFrame({"구분": driver_df["구분"].astype(str), "효과": driver_df["효과"].astype(float)})
 
-    return ModuleResult(
-        render=Render(
-            summary=summary,
-            table=display,
-            chart=chart_spec(chart_data, "bar", "영업이익 증감 요인"),
-            key_value=key_value,
-        ),
+    render = render_from_dataframe(
+        display, purpose="영업이익(EBIT) 증감을 매출·매출원가·판매관리비 요인으로 분해.",
+        narrative_hint=summary, params={"기준": "EBIT 요인 분해"}, label="pnl_driver",
+        chart_df=chart_df,
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = key_value
+    return ModuleResult(render=render)

@@ -20,6 +20,7 @@ import re
 
 from d2insight.engine.catalog import get_scenario, get_module_registry, get_step_registry
 from d2insight.engine.datasource import DEFAULT_SOURCE_ID, build_meta_columns
+from d2insight.engine.runner import STEP_SCOPED_LABELS
 from d2insight.engine.schema import Schema
 from d2insight.engine._llm import chat
 
@@ -161,6 +162,38 @@ def _producer_of(label: str) -> str | None:
     return None
 
 
+def _step_query_params(modules: list[dict], registry: dict) -> dict:
+    """스텝의 모듈들이 선언한 dimension/measure를 모아, 그 스텝에 자동 삽입되는 쿼리
+    모듈(period_dataset)이 "이 스텝은 무엇이 필요한지" 알 수 있게 파라미터로 만든다
+    (스텝 단위 쿼리, 2026-08-24) — 보고서 전체가 아니라 이 스텝에 필요한 것만 쿼리한다.
+    """
+    dims: list[str] = []
+    measures: list[str] = []
+    needs_history = False
+    for m in modules:
+        params = m.get("params") or {}
+        val = params.get("dimension")
+        if val and val not in dims:
+            dims.append(val)
+        for val in params.get("dimensions") or []:
+            if val not in dims:
+                dims.append(val)
+        val = params.get("measure")
+        if val and val not in measures:
+            measures.append(val)
+        spec = registry.get(m.get("module_id"))
+        if spec and "history_dataset" in spec.requires:
+            needs_history = True
+    out: dict = {}
+    if dims:
+        out["dimensions"] = dims
+    if measures:
+        out["measures"] = measures
+    if needs_history:
+        out["needs_history"] = True
+    return out
+
+
 def expand_steps(plan: dict) -> tuple[dict, list[str]]:
     """프리셋 스텝(step_id)을 실제 모듈 목록으로 펼친다.
 
@@ -182,13 +215,17 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
                     continue
                 notes.append(f"'{sid}' 스텝이 없어 가장 비슷한 '{near}'로 대체했습니다.")
                 preset = steps[near]
-            expanded.append({
+            entry = {
                 "title": sec.get("title") or preset["title"],
                 "modules": [dict(m) for m in (sec.get("modules") or preset["default_modules"])],
-            })
+            }
         else:
-            expanded.append({"title": sec.get("title") or "무제 스텝",
-                             "modules": [dict(m) for m in (sec.get("modules") or [])]})
+            entry = {"title": sec.get("title") or "무제 스텝",
+                     "modules": [dict(m) for m in (sec.get("modules") or [])]}
+        if sec.get("enabled") is False:
+            entry["enabled"] = False
+            entry["disabled_reason"] = sec.get("disabled_reason")
+        expanded.append(entry)
 
     plan = dict(plan)
     plan["steps"] = expanded
@@ -201,35 +238,63 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
     LLM이 within_contribution만 골라도 total_variance가 없으면 실행되지 않는다. 계획 단계에서
     생산자(measure_summary → period_dataset)를 찾아 **필요한 스텝의 앞쪽**에 넣는다.
     실행 순서는 runner가 위상정렬로 다시 잡으므로, 여기서는 어느 스텝에 실릴지만 정한다.
+
+    STEP_SCOPED_LABELS(actual_dataset 등, 스텝 단위 쿼리 — runner.py 참고)는 "이미 생산됨"
+    판정을 스텝별로 따로 한다 — 스텝마다 자기만의 쿼리 모듈이 자동 삽입되게 하기 위함이다.
+    그 외 이름표(total_variance 등 공용 수치)는 계획 전체에서 한 번만 생산되면 재사용한다
+    (기존 동작 그대로).
     """
     registry = get_module_registry()
     notes: list[str] = []
     expanded = [dict(s, modules=[dict(m) for m in s["modules"]]) for s in plan.get("steps", [])]
 
     produced: set[str] = set()
+    produced_by_step: dict[str, set[str]] = {}
+
+    def _mark_produced(labels, step_key: str) -> None:
+        for lbl in labels:
+            if lbl in STEP_SCOPED_LABELS:
+                produced_by_step.setdefault(step_key, set()).add(lbl)
+            else:
+                produced.add(lbl)
+
+    def _is_produced(label: str, step_key: str) -> bool:
+        if label in STEP_SCOPED_LABELS:
+            return label in produced_by_step.get(step_key, set())
+        return label in produced
+
     for sec in expanded:
+        if sec.get("enabled") is False:
+            continue
+        step_key = sec.get("title") or ""
         for m in sec["modules"]:
             spec = registry.get(m.get("module_id"))
             if spec:
-                produced.update(spec.produces)
+                _mark_produced(spec.produces, step_key)
 
     # 각 스텝을 훑으며 아직 없는 선행 이름표의 생산자를 그 스텝 앞에 삽입한다.
     for sec in expanded:
+        if sec.get("enabled") is False:
+            continue
+        step_key = sec.get("title") or ""
         inserted: list[dict] = []
         for m in list(sec["modules"]):
             spec = registry.get(m.get("module_id"))
             if not spec:
                 continue
             for label in spec.requires:
-                if label in produced:
+                if _is_produced(label, step_key):
                     continue
                 producer = _producer_of(label)
                 if not producer:
                     notes.append(f"'{label}'을 생산하는 모듈이 카탈로그에 없습니다 "
                                  f"({m['module_id']}는 실행되지 못합니다).")
                     continue
-                inserted.append({"module_id": producer})
-                produced.update(registry[producer].produces)
+                entry = {"module_id": producer, "_auto": True}
+                if any(p in STEP_SCOPED_LABELS for p in registry[producer].produces):
+                    entry["params"] = _step_query_params(sec["modules"], registry)
+                inserted.append(entry)
+                _mark_produced(registry[producer].produces, step_key)
                 notes.append(f"{m['module_id']}에 필요한 '{label}'을 위해 {producer}를 자동 추가했습니다.")
         if inserted:
             sec["modules"] = inserted + sec["modules"]
@@ -239,18 +304,24 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
     for _ in range(len(registry)):
         missing_found = False
         for sec in expanded:
+            if sec.get("enabled") is False:
+                continue
+            step_key = sec.get("title") or ""
             for m in list(sec["modules"]):
                 spec = registry.get(m.get("module_id"))
                 if not spec:
                     continue
                 for label in spec.requires:
-                    if label in produced:
+                    if _is_produced(label, step_key):
                         continue
                     producer = _producer_of(label)
                     if not producer:
                         continue
-                    sec["modules"].insert(0, {"module_id": producer})
-                    produced.update(registry[producer].produces)
+                    entry = {"module_id": producer, "_auto": True}
+                    if any(p in STEP_SCOPED_LABELS for p in registry[producer].produces):
+                        entry["params"] = _step_query_params(sec["modules"], registry)
+                    sec["modules"].insert(0, entry)
+                    _mark_produced(registry[producer].produces, step_key)
                     notes.append(f"{m['module_id']}에 필요한 '{label}'을 위해 "
                                  f"{producer}를 자동 추가했습니다.")
                     missing_found = True
@@ -259,7 +330,66 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
 
     plan = dict(plan)
     plan["steps"] = [s for s in expanded if s["modules"]]
+    for s in plan["steps"]:
+        for m in s["modules"]:
+            if m.get("module_id") == "period_dataset":
+                print(f"[DEBUG-resolve_dependencies] step={s.get('title')!r} period_dataset _auto={m.get('_auto')!r}")
     return plan, notes
+
+
+def _resolve_module_params(mid: str, m: dict, spec, schema: Schema,
+                           dims: list[str], measures: list[str], notes: list[str]) -> dict | None:
+    """모듈 하나의 dimension/measure/필수파라미터/툴을 해석한다. 못 살리면 None(제외)."""
+    m = dict(m, module_id=mid)
+    params = dict(m.get("params") or {})
+    for key, pool in (("dimension", dims), ("measure", measures)):
+        val = params.get(key)
+        if not val or val in pool:
+            continue
+        # 역할 이름(item/party/amount 등, schema.py ROLE_*)이면 조용히 물리명으로
+        # 바꾼다 — 오타 교정이 아니라 설계된 경로이므로 근사매칭 note를 남기지 않는다.
+        role_col = schema.column(val)
+        if role_col:
+            params[key] = role_col
+            continue
+        near = suggest(val, pool)
+        if near:
+            notes.append(f"{mid}: {key} '{val}'이 없어 '{near}'로 바꿨습니다.")
+            params[key] = near
+        else:
+            notes.append(f"{mid}: {key} '{val}'이 없어 제거했습니다 "
+                         f"(사용 가능: {', '.join(pool)}).")
+            params.pop(key)
+    # 필수 파라미터 누락 — 실행하면 실패하므로 계획 단계에서 알린다.
+    for key, meta in (spec.params or {}).items():
+        if meta.get("required") and key not in params:
+            notes.append(f"{mid}: 필수 파라미터 '{key}'가 없어 이 모듈을 제외했습니다.")
+            return None
+    m["params"] = params
+
+    available = spec.tools.get("available", [])
+    tools = [t for t in (m.get("tools") or []) if t]
+    if tools and available:
+        fixed = []
+        for t in tools:
+            if t in available:
+                fixed.append(t)
+            else:
+                near = suggest(t, available)
+                notes.append(
+                    f"{mid}: 툴 '{t}'을 쓸 수 없어 "
+                    + (f"'{near}'로 바꿨습니다." if near else "기본 툴로 되돌렸습니다.")
+                )
+                if near:
+                    fixed.append(near)
+        m["tools"] = fixed
+    return m
+
+
+def _build_disabled_step(title: str, raw_modules: list[dict], reasons: list[str]) -> dict:
+    """스텝의 모듈이 전부 실행 불가일 때 버리지 않고 비활성 스텝(enabled=False)으로 남긴다."""
+    reason_text = " / ".join(dict.fromkeys(reasons)) or "필요한 조건을 이 데이터셋에서 찾지 못했습니다."
+    return {"title": title, "modules": raw_modules, "enabled": False, "disabled_reason": reason_text}
 
 
 def validate_plan(plan: dict, schema: Schema) -> tuple[dict, list[str]]:
@@ -274,7 +404,11 @@ def validate_plan(plan: dict, schema: Schema) -> tuple[dict, list[str]]:
 
     out_steps = []
     for sec in plan.get("steps", []):
+        if sec.get("enabled") is False:
+            out_steps.append(sec)
+            continue
         modules = []
+        skip_reasons: list[str] = []
         for m in sec.get("modules", []):
             mid = m.get("module_id")
             if mid not in registry:
@@ -287,58 +421,25 @@ def validate_plan(plan: dict, schema: Schema) -> tuple[dict, list[str]]:
             spec = registry[mid]
             m = dict(m, module_id=mid)
 
-            params = dict(m.get("params") or {})
-            for key, pool in (("dimension", dims), ("measure", measures)):
-                val = params.get(key)
-                if not val or val in pool:
-                    continue
-                # 역할 이름(item/party/amount 등, schema.py ROLE_*)이면 조용히 물리명으로
-                # 바꾼다 — 오타 교정이 아니라 설계된 경로이므로 근사매칭 note를 남기지 않는다.
-                # options.py의 options_to_plan과 같은 우선순위(2026-07-24, G9 — steps.py를
-                # 역할명으로 옮기면서, 이 경로(scenario_plan/auto_plan)도 역할을 몰라 조용히
-                # 깨지지 않게 맞췄다).
-                role_col = schema.column(val)
-                if role_col:
-                    params[key] = role_col
-                    continue
-                near = suggest(val, pool)
-                if near:
-                    notes.append(f"{mid}: {key} '{val}'이 없어 '{near}'로 바꿨습니다.")
-                    params[key] = near
-                else:
-                    notes.append(f"{mid}: {key} '{val}'이 없어 제거했습니다 "
-                                 f"(사용 가능: {', '.join(pool)}).")
-                    params.pop(key)
-            # 필수 파라미터 누락 — 실행하면 실패하므로 계획 단계에서 알린다.
-            for key, meta in (spec.params or {}).items():
-                if meta.get("required") and key not in params:
-                    notes.append(f"{mid}: 필수 파라미터 '{key}'가 없어 이 모듈을 제외했습니다.")
-                    params = None
-                    break
-            if params is None:
+            missing_roles = [r for r in spec.required_roles if not schema.has(r)]
+            if missing_roles:
+                reason = f"필요한 역할 {missing_roles}이(가) 없습니다."
+                notes.append(f"{mid}: {reason} 제외했습니다.")
+                skip_reasons.append(reason)
                 continue
-            m["params"] = params
 
-            available = spec.tools.get("available", [])
-            tools = [t for t in (m.get("tools") or []) if t]
-            if tools and available:
-                fixed = []
-                for t in tools:
-                    if t in available:
-                        fixed.append(t)
-                    else:
-                        near = suggest(t, available)
-                        notes.append(
-                            f"{mid}: 툴 '{t}'을 쓸 수 없어 "
-                            + (f"'{near}'로 바꿨습니다." if near else "기본 툴로 되돌렸습니다.")
-                        )
-                        if near:
-                            fixed.append(near)
-                m["tools"] = fixed
-            modules.append(m)
+            resolved = _resolve_module_params(mid, m, spec, schema, dims, measures, notes)
+            if resolved is not None:
+                modules.append(resolved)
+            else:
+                skip_reasons.append(f"{mid}에 필요한 값을 이 데이터셋에서 찾지 못했습니다.")
 
         if modules:
             out_steps.append(dict(sec, modules=modules))
+        elif sec.get("modules"):
+            out_steps.append(_build_disabled_step(
+                sec.get("title") or "무제 스텝", sec.get("modules"), skip_reasons,
+            ))
         else:
             notes.append(f"스텝 '{sec.get('title')}'은 실행할 모듈이 없어 제외했습니다.")
 
@@ -351,10 +452,7 @@ def validate_plan(plan: dict, schema: Schema) -> tuple[dict, list[str]]:
 
 
 def finalize(plan: dict, schema: Schema) -> tuple[dict, list[str]]:
-    """펼치기 → 검증 → 의존성 보정.
-
-    순서가 중요하다. 프리셋을 펼쳐야 모듈이 보이고, 없는 모듈을 걷어내야 의존성 계산이 어긋나지 않는다.
-    """
+    """펼치기 → 검증 → 의존성 보정."""
     plan, notes1 = expand_steps(plan)
     plan, notes2 = validate_plan(plan, schema)
     plan, notes3 = resolve_dependencies(plan)

@@ -11,14 +11,10 @@ dimension_impact(§12-A)가 "어느 차원이 흔들렸나"를 답한다면, 이
 """
 from __future__ import annotations
 
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import get_item_variance
 from d2insight.engine.schema import get_schema
-from d2insight.engine.types import ModuleResult, Render
-
-import pandas as pd
-
-_CHART_MAX = 12          # 막대 가독성 상한
+from d2insight.engine.types import ModuleResult
 
 _COLUMNS = [
     "Item_Name", "Comparison_Value", "Actual_Value", "Variance",
@@ -26,26 +22,18 @@ _COLUMNS = [
 ]
 
 
-def _display_table(df: pd.DataFrame) -> pd.DataFrame:
-    """표시용 표 — 비율은 퍼센트로 보여야 읽힌다(기여율 1.7433 → +174.3%)."""
-    return pd.DataFrame({
-        "항목": df["Item_Name"],
-        "비교기간": df["Comparison_Value"].map(lambda v: f"{v:,.0f}"),
-        "분석기간": df["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "증감": df["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "증감률": df["Rate"].map(lambda v: f"{v * 100:+.1f}%"),
-        "기여율": df["Contribution_Rate"].map(lambda v: f"{v * 100:+.1f}%"),
-        "신규/단종": df["New_Lost_Flag"],
-        "주요항목": df["Is_Main"].map(lambda v: "O" if v == 1 else ""),
-    })
-
-
 def run(ctx, params, tools) -> ModuleResult:
     dimension = params.get("dimension")
     if not dimension:
-        return ModuleResult(status="failed", error="params.dimension이 필요합니다(차원 미지정).")
+        # 차원을 안 정해줬으면 dimension_impact(§12-A)가 찾은 1위 차원을 그대로 물려받는다
+        # — Shapley 기준(항목 수에 덜 휘둘리는 표준 기여도 분해).
+        stats = ctx.get("dimension_stats")
+        if stats is None or stats.empty:
+            return ModuleResult(status="failed", error="params.dimension이 없고 dimension_stats도 없습니다.")
+        dimension = stats.sort_values("Shapley_Value", ascending=False)["Dimension_Logical_Name"].iloc[0]
 
-    key_measure = get_schema(ctx).key_measure
+    schema = get_schema(ctx)
+    key_measure = schema.key_measure
     measure = params.get("measure")
     if measure and measure != key_measure:
         return ModuleResult(
@@ -76,48 +64,29 @@ def run(ctx, params, tools) -> ModuleResult:
         .reset_index(drop=True)
     )
 
-    table = _display_table(ranked[[c for c in _COLUMNS if c in ranked.columns]])
+    display = ranked[[c for c in _COLUMNS if c in ranked.columns]]
 
     # 상위 항목이 전체 증감을 얼마나 설명하는지 — "몇 개만 보면 되는가"에 대한 답.
     covered = float(ranked["Contribution_Rate"].sum())
-    up = ranked[ranked["Variance"] > 0]
-    down = ranked[ranked["Variance"] < 0]
-    top_up = up.iloc[0] if not up.empty else None
-    top_down = down.iloc[0] if not down.empty else None
-
-    parts = [f"'{dimension}' 차원 상위 {len(ranked)}개 항목이 전체 증감의 {covered * 100:+.1f}%를 설명"]
-    if top_up is not None:
-        parts.append(
-            f"최대 증가 {top_up['Item_Name']} ({top_up['Variance']:+,.0f}, "
-            f"기여 {top_up['Contribution_Rate'] * 100:+.1f}%)"
-        )
-    if top_down is not None:
-        parts.append(
-            f"최대 감소 {top_down['Item_Name']} ({top_down['Variance']:+,.0f}, "
-            f"기여 {top_down['Contribution_Rate'] * 100:+.1f}%)"
-        )
-    summary = " — ".join([parts[0], ", ".join(parts[1:])]) if len(parts) > 1 else parts[0] + "."
-
     new_cnt = int((ranked["New_Lost_Flag"] == "New").sum())
     lost_cnt = int((ranked["New_Lost_Flag"] == "Lost").sum())
 
-    # 차트 — 항목별 증감액(양/음 함께). 증가를 깎은 감소 항목이 한눈에 보인다.
-    chart_data = pd.DataFrame({
-        "항목": ranked["Item_Name"].head(_CHART_MAX),
-        "증감": ranked["Variance"].head(_CHART_MAX),
-    })
-
-    return ModuleResult(
-        outputs={"within_contribution": ranked},
-        render=Render(
-            summary=summary,
-            table=table,
-            chart=chart_spec(chart_data, "bar", f"'{dimension}' 항목별 증감"),
-            key_value={
-                "차원": dimension,
-                "상위 항목수": len(ranked),
-                "상위 누적 기여율": f"{covered * 100:+.1f}%",
-                "상위 내 신규/단종": f"{new_cnt} / {lost_cnt}",
-            },
+    dim_name = schema.logical_name(dimension)
+    render = render_from_dataframe(
+        display,
+        purpose="차원 안에서 어느 항목이 전체 증감을 얼마나 밀었는지 제시.",
+        narrative_hint=(
+            "증가를 이끈 항목과 그것을 깎아먹은 감소 항목을 함께 짚어라. 상위 항목이 전체 증감을 "
+            "얼마나 설명하는지(누적 기여율), 신규·단종 항목이 끼어 있는지도 언급하라."
         ),
+        params={"차원": dim_name, "상위 항목수": len(ranked)},
+        label="within_contribution", cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {
+        "차원": dim_name,
+        "상위 항목수": len(ranked),
+        "상위 누적 기여율": f"{covered * 100:+.1f}%",
+        "상위 내 신규/단종": f"{new_cnt} / {lost_cnt}",
+    }
+
+    return ModuleResult(outputs={"within_contribution": ranked}, render=render)

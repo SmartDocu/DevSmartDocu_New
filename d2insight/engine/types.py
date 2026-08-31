@@ -26,6 +26,8 @@ class Render:
     """
     summary: str                              # 필수 — 결론 전용 (본문 미출력)
     table: Any = None                         # DataFrame 등 (기본 생성)
+    table_note: Optional[str] = None          # 표 캡션(예: "단위: 백만원") — table 바로 위에 출력
+    llm_spec: Optional[dict] = None           # _llm_render가 고른 표열/차트/서술 명세(정기 보고서 캐싱용)
     chart: Any = None                         # 차트 스펙/이미지 (기본 생성)
     key_value: Optional[dict] = None          # 단일 수치/키-값 (선택)
     narrative: Optional[str] = None           # 본문 해설 (해설 단계에서 채움)
@@ -63,3 +65,6 @@ class ModuleSpec:
     model_tier: str = "balanced"                        # 이 모듈 해설을 쓸 LLM 등급
     narrative_hint: str = ""                            # 해설자에게 주는 모듈별 서술 지침(선택)
     layout: list[str] = field(default_factory=lambda: list(DEFAULT_LAYOUT))
+    # dimension/measure 파라미터로 드러나지 않는, 모듈 내부에서만 쓰는 역할(예: party).
+    # 계획 단계에서 이 역할이 schema에 없으면 모듈을 건너뛴다(dimension 파라미터와 같은 원칙).
+    required_roles: list[str] = field(default_factory=list)

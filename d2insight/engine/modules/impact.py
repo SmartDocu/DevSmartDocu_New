@@ -15,40 +15,19 @@
 """
 from __future__ import annotations
 
-import pandas as pd
-
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import get_item_variance
 from d2insight.engine.schema import get_schema
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 from d2insight.engine.pipeline.dataset_builder import build_by_item_summary_dataset
 
 # 툴 → 정렬 기준 컬럼
 _RANK_COLUMN = {"dvi": "DVI", "shapley": "Shapley_Value"}
 
-# 보고서 표에 싣는 컬럼(σ 구간 6개는 anomaly가 쓰는 값이라 총평 표에서는 뺀다)
-_RENDER_COLUMNS = [
-    "Dimension_Logical_Name", "Count", "Impact_Score",
-    "Shapley_Value", "HHI", "Average_Z", "DVI",
-]
-
-
-def _display_table(df: pd.DataFrame) -> pd.DataFrame:
-    """표시용 표 — Shapley는 배분 비율이라 퍼센트가 읽기 쉽다.
-
-    "임팩트"는 절댓값 합(Σ|Δi|)이라 전체 증감액(total_variance)과 스케일이 다르다
-    (§5 정의). 라벨에 그 사실을 박아 total_variance로 오인하지 않게 한다.
-    컬럼 헤더에 "|"(파이프)를 쓰면 마크다운 표 렌더링이 깨지므로(2026-07-21 발견·수정) 쓰지 않는다.
-    """
-    return pd.DataFrame({
-        "차원": df["Dimension_Logical_Name"],
-        "항목수": df["Count"],
-        "임팩트(변동총량, 전체 증감액과 별개 척도)": df["Impact_Score"].map(lambda v: f"{v:,.0f}"),
-        "집중도(HHI)": df["HHI"].map(lambda v: f"{v:.2f}"),
-        "평균Z": df["Average_Z"].map(lambda v: f"{v:.2f}"),
-        "DVI": df["DVI"].map(lambda v: f"{v:,.0f}"),
-        "Shapley": df["Shapley_Value"].map(lambda v: f"{v * 100:.1f}%"),
-    })
+# 표에 후보로 내놓는 컬럼 — DVI/HHI/평균Z 같은 내부 계산용 지표도 포함해 후보로 주고,
+# 실제로 표에 넣을지는 LLM이 고른다(dimension_stats 이름표 자체는 그대로 전체를 남겨
+# anomaly_detection/cross_drilldown이 재계산 없이 계속 쓴다).
+_RENDER_COLUMNS = ["Dimension_Logical_Name", "Count", "Impact_Score", "HHI", "Average_Z", "DVI", "Shapley_Value"]
 
 
 def run(ctx, params, tools) -> ModuleResult:
@@ -82,52 +61,24 @@ def run(ctx, params, tools) -> ModuleResult:
     stats = stats.sort_values(rank_col, ascending=False).reset_index(drop=True)
 
     top = stats.iloc[0]
-    top3 = ", ".join(stats["Dimension_Logical_Name"].head(3).tolist())
     basis = "DVI" if rank_col == "DVI" else "Shapley"
-    summary = (
-        f"{schema.logical_name(measure)} 변화를 주도한 차원은 '{top['Dimension_Logical_Name']}'"
-        f"({basis} 1위 — 임팩트 {top['Impact_Score']:,.0f}, 집중도(HHI) {top['HHI']:.2f}, "
-        f"Shapley {top['Shapley_Value']:.2f}). 상위 3개 차원: {top3}."
-    )
+    display = stats[[c for c in _RENDER_COLUMNS if c in stats.columns]]
 
-    # 임팩트(Σ|Δi|)는 전체 증감액(total_variance)과 스케일이 다른 지표다 — 혼동 방지용 참고 문구.
-    tv = ctx.get("total_variance")
-    if tv:
-        summary += (
-            f" (참고: 임팩트는 항목별 증감의 절댓값 합이라 전체 증감액 {tv['variance']:+,.0f}과 "
-            f"직접 비교되는 수치가 아닙니다 — 항목이 많거나 서로 반대 방향으로 움직인 차원일수록 커집니다.)"
-        )
-
-    # Shapley는 높은데 DVI 상위 3위 밖인 차원 — 항목 다수가 한 방향으로 통째로 움직여
-    # 변동성(Average_Z)이 0에 가까운 경우가 많다(예: 한 차원 전체가 이탈). 놓치기 쉬운 신호라 짚어준다.
-    top3_names = stats["Dimension_Logical_Name"].head(3).tolist()
-    high_shapley = stats.loc[stats["Shapley_Value"].idxmax()]
-    if (high_shapley["Dimension_Logical_Name"] not in top3_names
-            and high_shapley["Shapley_Value"] >= 0.3):
-        reason = ("값 대부분이 같은 방향(예: 전량 이탈)으로 움직여 항목간 변동성(Average_Z)이 낮기 때문"
-                   if high_shapley["Average_Z"] < 0.05 else
-                   "항목 수가 많아 절댓값 합(임팩트)이 자연히 크게 잡히기 때문")
-        summary += (
-            f" 참고: '{high_shapley['Dimension_Logical_Name']}' 차원은 Shapley 기여율이 "
-            f"{high_shapley['Shapley_Value'] * 100:.1f}%로 매우 높지만 {basis} 순위 상위 3위 밖입니다 — {reason}. "
-            f"이 차원은 항목 단위(신규·이탈 등)로 별도로 들여다볼 필요가 있습니다."
-        )
-
-    render_table = _display_table(stats[[c for c in _RENDER_COLUMNS if c in stats.columns]])
-
-    # 차트 — 선택된 순위 기준(DVI 또는 Shapley)으로 차원을 비교한다.
-    chart_data = pd.DataFrame({"차원": stats["Dimension_Logical_Name"], basis: stats[rank_col]})
-
-    return ModuleResult(
-        outputs={"dimension_stats": stats},
-        render=Render(
-            summary=summary,
-            table=render_table,
-            chart=chart_spec(chart_data, "bar", f"차원별 {basis}"),
-            key_value={
-                "순위 기준": basis,
-                "주도 차원": str(top["Dimension_Logical_Name"]),
-                "차원 수": int(len(stats)),
-            },
+    render = render_from_dataframe(
+        display,
+        purpose="어느 차원이 변화를 가장 크게 설명하는지 제시.",
+        narrative_hint=(
+            "1위 차원이 전체 변화의 몇 %를 설명하는지만 짧게 말하라. DVI·HHI·집중도·평균Z 같은 "
+            "내부 지표 용어는 본문에 쓰지 마라 — 구체적으로 어떤 항목이 얼마나 움직였는지는 "
+            "다음 스텝(항목별 증감)이 다룬다."
         ),
+        params={"측정값": schema.logical_name(measure), "순위 기준": basis},
+        label="dimension_impact", cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {
+        "순위 기준": basis,
+        "주도 차원": str(top["Dimension_Logical_Name"]),
+        "차원 수": int(len(stats)),
+    }
+
+    return ModuleResult(outputs={"dimension_stats": stats}, render=render)

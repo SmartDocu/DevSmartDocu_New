@@ -122,9 +122,8 @@ def _module_json(module_id: str, spec) -> dict:
 
     available = spec.tools.get("available") or []
     tools: dict = {"available": available, "default": spec.tools.get("default")}
-    # 선택지가 2개 이상일 때만 effect를 채운다 — 툴이 하나뿐이면 "고를 게 없다"는 뜻이라,
-    # 이름이 우연히 _TOOL_EFFECT 사전에 있어도(예: sales_bridge의 bridge_decompose 단독)
-    # 선택이 있는 것처럼 보이면 안 된다(2026-07-24, 검증 중 발견해 수정).
+    # 선택지가 2개 이상일 때만 effect를 채운다 — 툴이 하나뿐이면 이름이 우연히
+    # _TOOL_EFFECT 사전에 있어도 선택이 있는 것처럼 보이면 안 된다.
     if len(available) > 1:
         effect = {t: _TOOL_EFFECT[t] for t in available if t in _TOOL_EFFECT}
         if effect:

@@ -1246,7 +1246,7 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
 
                     cleanup_thread_client()
                     
-            elif obj == 'write':    # jeff 20260706 1305
+            elif obj == 'write':
                 gen_text_template = supabase.schema(SUPABASE_SCHEMA).table('genchapters').select('gentexttemplate').eq('genchapteruid', gen_chapter_uid).execute().data
                 text_template = gen_text_template[0]['gentexttemplate']
 

@@ -21,6 +21,7 @@ sales_bridge(§13)와 다르다 — 그건 상품/고객 관점의 신규·이�
 """
 from __future__ import annotations
 
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import get_bridge_effects, get_pvm_effects
 from d2insight.engine.types import ModuleResult, Render
 
@@ -56,17 +57,20 @@ def _run_bridge_effect(ctx, params, *, effect_col: str, effect_label: str,
     direction = direction_up if amount >= 0 else direction_down
     top_n = int(params.get("top_n") or 10)
 
-    summary = (
-        f"{effect_label} 효과 {amount:+,.0f} — 두 기간 모두 판매된 기존 항목 기준으로 "
-        f"{direction}된 영향이다. 전체 증감액의 {share:+.1f}%. "
-        "(신규·단종 등 그 외 효과는 별도 — 브리지 분해 참고)"
+    render = render_from_dataframe(
+        _bridge_item_top(item_df, effect_col, top_n),
+        purpose=f"두 기간 모두 판매된 기존 항목 기준 {effect_label} 효과 상위 항목을 제시.",
+        narrative_hint=(
+            f"{effect_label} 효과 합계 {amount:+,.0f}(전체 증감액의 {share:+.1f}%, {direction} 방향)를 "
+            "밝히고, 어느 항목이 그 효과를 가장 크게 냈는지 짚어라. "
+            "신규·단종 등 그 외 효과는 이 표 대상이 아니라는 것도 언급하라."
+        ),
+        params={"효과": effect_label}, label="bridge_item_effect",
+        cache=params.get("_llm_render_cache"),
     )
-    return ModuleResult(render=Render(
-        summary=summary,
-        table=_bridge_item_top(item_df, effect_col, top_n),
-        key_value={f"{effect_label}(전체 증감액 대비)": f"{share:+.1f}%",
-                   effect_label: f"{amount:+,.0f}"},
-    ))
+    render.key_value = {f"{effect_label}(전체 증감액 대비)": f"{share:+.1f}%",
+                        effect_label: f"{amount:+,.0f}"}
+    return ModuleResult(render=render)
 
 
 def _uncovered_note(effects: dict, total_variance: float) -> str:

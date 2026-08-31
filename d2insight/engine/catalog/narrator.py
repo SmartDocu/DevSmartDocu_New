@@ -1,41 +1,38 @@
-"""스텝 해설자 — 스텝의 표·수치를 근거로 본문 해설을 쓴다 (§7.1, 결정 2026-07-14).
+"""스텝 해설자 — 같은 스텝 여러 모듈의 해설을 서로 이어지게 다듬는다 (2026-08-27 재설계).
 
-호출 단위는 **스텝 1회**다. 같은 스텝의 모듈들은 하나의 이야기를 이루므로, 해설자가 그 스텝의
-표를 전부 보고 써야 문단들이 서로 이어진다(모듈별 호출은 서로를 모른 채 따로 논다). 대신 결과는
-모듈별로 나눠 받는다 — 그래야 각 표 옆에 해설을 붙이고 layout(설명 먼저/그림 먼저)을 지킬 수 있다.
+각 모듈이 이제 자기 표·차트·해설을 스스로 LLM으로 만든다(모듈 단위 호출). 이 해설자는 그
+초안을 새로 쓰는 게 아니라 **편집**한다 — 스텝 안 모듈이 2개 이상일 때만 호출되어, 앞
+모듈이 짚은 것을 뒤 모듈이 받아 설명하도록 문단을 자연스럽게 이어 붙인다.
 
-숫자 규율(핵심): 해설자는 **주어진 표·수치에 있는 값만 인용**하고 새 수치·비율을 만들지 않는다.
-계산은 모듈이 이미 끝냈고, 공용 분모(total_variance)로 숫자 일관성을 확보해 두었다. 해설이 없는
-비율을 지어내면 그 일관성이 텍스트에서 무너진다.
-
-LLM에 넘기는 표는 **렌더용 표의 상위 N행**이다. 전 구간 통계는 모듈이 이미 계산해 key_value·summary로
-넘기므로, 원본 수천 행을 넣을 이유가 없다.
+숫자 규율(핵심): 주어진 표·수치에 있는 값만 인용하고 새 수치·비율을 만들지 않는다 — 초안에
+이미 없는 숫자를 추가하지 않는다.
 """
 from __future__ import annotations
 
 import json
 import re
 
-from d2insight.engine.format import table_to_markdown
+from d2insight.engine.format import korean_money_reference, table_to_markdown
 from d2insight.engine._llm import chat
 
 MAX_TABLE_ROWS = 30          # 해설자에게 보여줄 표 최대 행수
 _TIER_RANK = {"none": 0, "fast": 1, "balanced": 2, "quality": 3}
 
-_SYSTEM = """당신은 데이터 분석 보고서의 본문을 쓰는 애널리스트다.
-스텝 하나에 속한 모듈들의 표와 수치를 받아, 모듈마다 해설 문단을 쓴다.
+_SYSTEM = """당신은 데이터 분석 보고서를 편집하는 애널리스트다.
+스텝 하나에 속한 모듈마다 이미 초안 해설(narrative)이 있다. 이 초안들을 하나의 이야기로
+읽히도록 다듬어 다시 쓴다 — 처음부터 새로 쓰는 게 아니다.
 
 규칙
-1. 주어진 표·수치에 있는 숫자만 인용한다. 없는 수치·비율·증감률을 새로 계산하거나 추정하지 않는다.
-2. 숫자는 표에 적힌 값을 **그대로** 옮긴다. '만/억' 단위로 환산하지 않고, 통화 기호나 화폐 단위
-   ('원', '달러' 등)를 임의로 붙이지 않는다. 예: 4,289,818 은 "4,289,818"로 쓴다.
-3. 표를 그대로 읽어 나열하지 말고, 무엇이 두드러지는지·무엇을 뜻하는지 해석한다.
+1. 초안과 표에 있는 숫자만 쓴다. 없는 수치·비율을 새로 계산하거나 추가하지 않는다.
+2. 숫자는 원본 그대로 옮기는 게 기본이다. 억/만 등 한글 단위는 초안에 이미 쓰여 있으면 그대로
+   두고, 새로 쓰려면 반드시 [한글 단위 참고표]의 값을 그대로 옮긴다 — 직접 환산하지 않는다
+   (직접 계산하면 자릿수를 틀린 사례가 있다). 통화기호는 임의로 붙이지 않는다.
+3. 앞 모듈이 짚은 것을 뒤 모듈이 받아 설명하듯 문단을 이어 붙인다 — 각 초안의 핵심 내용은
+   보존하되, 중복되는 도입부·비슷한 표현은 정리한다.
 4. 모듈당 3~6문장. 한국어 평문. 소제목·불릿·마크다운 표를 쓰지 않는다.
-5. 같은 스텝의 다른 모듈 결과와 이어지게 쓴다(앞 모듈이 짚은 것을 뒤 모듈이 받아 설명).
-6. '§' 기호나 스펙 번호를 쓰지 않는다. 모듈 이름(module_id)을 문장에 노출하지 않는다.
-7. 데이터가 뒷받침하지 않는 원인 단정은 피하고, 추정이면 추정임을 밝힌다.
+5. '§' 기호나 스펙 번호, 모듈 이름(module_id)을 문장에 노출하지 않는다.
 
-출력은 JSON 객체 하나. 키는 module_id, 값은 해설 문단 문자열. 그 외 텍스트는 쓰지 않는다."""
+출력은 JSON 객체 하나. 키는 key, 값은 다듬은 해설 문단 문자열. 그 외 텍스트는 쓰지 않는다."""
 
 
 def _pick_grade(items: list[dict]) -> str:
@@ -58,6 +55,7 @@ def _table_text(table) -> str:
     text = table_to_markdown(head)
     if omitted > 0:
         text += f"\n(이하 {omitted:,}행 생략 — 전체 통계는 위 수치 참조)"
+    text += korean_money_reference(head)
     return text
 
 
@@ -76,18 +74,16 @@ def _build_prompt(step_label: str, items: list[dict], ctx) -> str:
         lines.append(f"목적: {it.get('purpose') or '-'}")
         if it.get("params"):
             lines.append("파라미터: " + ", ".join(f"{k}={v}" for k, v in it["params"].items()))
-        if it.get("narrative_hint"):
-            lines.append(f"서술 지침: {it['narrative_hint']}")
         if it.get("key_value"):
             lines.append("핵심 수치: " + ", ".join(f"{k}={v}" for k, v in it["key_value"].items()))
-        if it.get("summary"):
-            lines.append(f"계산 결과 요약: {it['summary']}")
-        lines.append("표:")
+        lines.append("초안 해설:")
+        lines.append(it.get("narrative") or it.get("summary") or "(초안 없음)")
+        lines.append("근거 표:")
         lines.append(_table_text(it.get("table")))
         lines.append("")
     lines.append(
-        "위 각 항목에 대해 해설 문단을 쓰고, **key**를 키로 하는 JSON 객체로만 답하라. "
-        f"키: {[it['key'] for it in items]}"
+        "위 각 항목의 초안 해설을 하나의 이야기로 이어지게 다듬어, **key**를 키로 하는 "
+        f"JSON 객체로만 답하라. 키: {[it['key'] for it in items]}"
     )
     return "\n".join(lines)
 

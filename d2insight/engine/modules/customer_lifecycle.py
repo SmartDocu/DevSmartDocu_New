@@ -12,14 +12,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import (
     LIFECYCLE_CHURN, LIFECYCLE_DORMANT, LIFECYCLE_NEW, LIFECYCLE_RETURN, get_lifecycle_effects,
 )
 from d2insight.engine.schema import ROLE_PARTY, get_schema
-from d2insight.engine.types import ModuleResult, Render
-
-_CHART_MAX = 12
+from d2insight.engine.types import ModuleResult
 
 
 def _party_slice(ctx, stages: list[str]) -> tuple[pd.DataFrame, str, str] | ModuleResult:
@@ -44,41 +42,33 @@ def _party_slice(ctx, stages: list[str]) -> tuple[pd.DataFrame, str, str] | Modu
 
 
 def _render(sub: pd.DataFrame, label: str, stage_title: str, stages: list[str],
-            top_n: int, extra_note: str = "") -> ModuleResult:
+            top_n: int, params: dict, extra_note: str = "") -> ModuleResult:
     counts = {stage: int((sub["Lifecycle"] == stage).sum()) for stage in stages}
     amounts = {stage: float(sub[sub["Lifecycle"] == stage]["Effect"].sum()) for stage in stages}
     total_count = sum(counts.values())
     total_amount = sum(amounts.values())
 
     items = sub.reindex(sub["Effect"].abs().sort_values(ascending=False).index).reset_index(drop=True)
-    breakdown = ", ".join(f"{stage} {counts[stage]:,}건({amounts[stage]:+,.0f})" for stage in stages)
-    summary = (
-        f"{label} {stage_title} {total_count:,}건, 금액효과 {total_amount:+,.0f} — {breakdown}."
-        + extra_note
-    )
-
-    table = None
-    if not items.empty:
-        table = pd.DataFrame({
-            "고객": items["Item_Name"],
-            "생애주기": items["Lifecycle"],
-            "금액효과": items["Effect"].map(lambda v: f"{v:+,.0f}"),
-        }).head(top_n)
-
-    chart = None
-    chart_top = items.head(_CHART_MAX)
-    if not chart_top.empty:
-        chart_data = pd.DataFrame({
-            "고객": chart_top["Item_Name"].astype(str),
-            "금액효과": chart_top["Effect"].astype(float),
-        })
-        chart = chart_spec(chart_data, "bar", f"{label} {stage_title} Top")
+    items = items[["Item_Name", "Lifecycle", "Effect"]].rename(
+        columns={"Item_Name": "고객", "Lifecycle": "생애주기", "Effect": "금액효과"}).head(top_n)
 
     key_value = {
         f"{stage_title} 건수": f"{total_count:,}건",
         f"{stage_title} 금액효과": f"{total_amount:+,.0f}",
     }
-    return ModuleResult(render=Render(summary=summary, table=table, chart=chart, key_value=key_value))
+    render = render_from_dataframe(
+        items,
+        purpose=f"{stage_title} 현황과 개별 고객을 제시.",
+        narrative_hint=(
+            f"{stage_title} {total_count:,}건, 금액효과 {total_amount:+,.0f}을 밝히고, "
+            f"어느 고객이 금액효과를 가장 크게 냈는지 짚어라." + extra_note
+        ),
+        params={"기준": label}, label="customer_lifecycle",
+        empty_summary=f"{label} {stage_title} 대상이 없습니다.",
+        cache=params.get("_llm_render_cache"),
+    )
+    render.key_value = key_value
+    return ModuleResult(render=render)
 
 
 def run_new_customers(ctx, params, tools) -> ModuleResult:
@@ -88,7 +78,7 @@ def run_new_customers(ctx, params, tools) -> ModuleResult:
         return sliced
     sub, _, label = sliced
     top_n = int(params.get("top_n") or 10)
-    return _render(sub, label, "신규 고객", stages, top_n)
+    return _render(sub, label, "신규 고객", stages, top_n, params)
 
 
 def run_lost_customers(ctx, params, tools) -> ModuleResult:
@@ -104,4 +94,4 @@ def run_lost_customers(ctx, params, tools) -> ModuleResult:
     dormant_count = int((merged[(merged["Dimension_Logical_Name"] == party)
                                  & (merged["Lifecycle"] == LIFECYCLE_DORMANT)]).shape[0])
     note = f" 일시미구매(구매 주기에 따른 미등장) {dormant_count:,}건은 이탈로 보지 않음."
-    return _render(sub, label, "이탈 고객", stages, top_n, extra_note=note)
+    return _render(sub, label, "이탈 고객", stages, top_n, params, extra_note=note)

@@ -26,7 +26,7 @@ from d2insight.data_source import meta_loader
 from d2insight.report.registry import get_config
 from d2insight.report.tools import ALL_TOOLS
 from d2insight.report.tools.chart_tool import _chart_store
-from d2insight.report.tools.query_tool import _data_store
+from d2insight.report.tools.query_tool import _data_store, _ref_store
 
 
 # ── SQL 방언 규칙 ──────────────────────────────────────────────────────────────
@@ -462,11 +462,17 @@ def _build_system_prompt(
      차원(예: 주문ID)으로 대체해서 작성해야 하는 경우, **스텝 제목을 실제 분석 내용에
      맞게 바꿔서 출력**하세요(예: "고객별 분석" → "주문별 분석"). 대체한 이유를 본문에
      설명하지 말고, 바뀐 제목과 실제 데이터로 스텝을 완성하세요.
+   - **분석 기간은 차원과 다릅니다 — 대체 대상이 아닙니다.** 위에 명시된 분석 기간에
+     데이터가 없다고 해서 다른 기간(예: 데이터가 있는 과거 연도)의 데이터로 조용히
+     바꿔서 쓰지 마세요. 그 기간엔 데이터가 없다는 뜻이므로, 아래 2번 규칙(데이터
+     없을 때의 종료 규칙)에 따라 해당 스텝은 작성하지 말고 종료하세요.
 {query_block}
-3. 필요시 run_stats / run_trend / run_outlier 툴로 추가 분석하세요.
+3. 필요시 run_stats / run_trend / run_outlier 툴로 추가 분석하세요. 이 툴들은 execute_query/
+   execute_excel_query가 반환한 ref 값을 인자로 받습니다 — 데이터를 손으로 옮기지 마세요.
    - 차원별 증감 영향도(어느 차원이 변화를 주도했는지)가 필요하면 run_variance_impact를 쓰세요.
-     이번기간·비교기간을 각각 execute_query로 조회한 뒤 두 결과를 전달하세요.
+     이번기간·비교기간을 각각 execute_query로 조회한 뒤 두 결과의 ref를 actual_ref/compare_ref로 전달하세요.
    - 매출 증감을 항목별 신규/단종/수량효과/단가효과로 분해하려면 run_sales_bridge를 쓰세요.
+     마찬가지로 이번기간·비교기간 조회 결과의 ref를 actual_ref/compare_ref로 전달하세요.
    - 매출→매출원가→매출총이익→판관비→영업이익 손익 계단이 필요하면 run_pnl_waterfall을 쓰세요
      (각 단계 금액을 execute_query로 미리 집계해서 전달).
 4. 데이터가 있는 모든 주요 스텝에서 create_chart 툴로 시각화하세요. (의무)
@@ -476,13 +482,13 @@ def _build_system_prompt(
 5. 각 스텝은 반드시 다음 순서로 작성하세요.
    a) 스텝 도입 문장 (이 스텝에서 무엇을 분석하는지 1~2문장)
    b) 데이터 테이블 또는 차트
-      - 표는 execute_query가 반환한 markdown_table 값을 **그대로** 삽입하세요. data를
-        보고 표를 손으로 다시 작성하지 마세요 — 행을 빠뜨리거나 숫자를 잘못 옮기는
-        사고를 막기 위함입니다. 특정 정렬(예: 매출액 내림차순)이 필요하면 execute_query
-        호출 시 question에 정렬 기준을 명시하세요.
+      - 표는 execute_query가 반환한 markdown_table 값을 **그대로** 삽입하세요. 손으로
+        다시 작성하지 마세요 — 행을 빠뜨리거나 숫자를 잘못 옮기는 사고를 막기 위함입니다.
+        특정 정렬(예: 매출액 내림차순)이 필요하면 execute_query 호출 시 question에
+        정렬 기준을 명시하세요.
       - 차트는 create_chart가 반환한 markdown_tag를 그대로 삽입하세요.
       - 한 스텝에서 같은 항목을 표와 차트로 같이 보여줄 때는 **반드시 같은 execute_query
-        결과 하나**를 표(markdown_table)와 차트(data)에 함께 쓰세요. 표에는 10개만
+        결과 하나**를 표(markdown_table)와 차트(refs)에 함께 쓰세요. 표에는 10개만
         보여주면서 차트 제목엔 "상위 20개"라고 쓰는 식으로 범위가 어긋나면 안 됩니다.
    c) 설명 텍스트 — **이 부분이 핵심입니다**:
       - 주요 수치를 구체적으로 언급하세요. (예: "X가 Y% 증가했으며, Z는 최고치를 기록했다.")
@@ -521,8 +527,8 @@ def _build_system_prompt(
 - question에 '이중축', '변화율', '점유율+매출' 포함 시 → dual_axis
 
 **두 시점(예: 이번달 vs 지난달)을 비교하는 차트**: execute_query를 시점별로 각각 호출한 뒤,
-각 결과의 레코드(원래 컬럼명 그대로)를 리스트로 이어붙여 create_chart의 data에 전달하세요.
-값을 컬럼명 자리에 넣지 마세요 — create_chart는 컬럼명이 숫자처럼 보이면 에러를 반환합니다.
+각 결과의 ref를 create_chart의 refs 리스트로 함께 전달하세요(예: refs=[ref1, ref2]).
+데이터를 손으로 옮기거나 합칠 필요가 없습니다.
 
 ## 지표 정의 일관성 (중요)
 - 메타정보에 '매출'을 가리킬 수 있는 컬럼이 여러 개 있을 수 있습니다
@@ -963,6 +969,46 @@ class ReportAgent:
             return f"{start} ~ {end} 기간에 해당하는 데이터를 찾지 못했습니다." + (f" ({detail})" if detail else "")
         return None
 
+    def _resolve_meta(self, report_type: str, months_back: int) -> tuple[dict, dict, int]:
+        """config_entry·meta·months_back(설정 override 반영) — plan_only()/generate() 공용."""
+        config_entry = get_config(report_type)
+        if self.has_upload:
+            meta = self._excel_server.get_session_datasets(self._session_id)
+        else:
+            meta_all = meta_loader.all_metadata()
+            view_hints: list[str] = config_entry.get("view_hints", [])
+            if view_hints:
+                meta = {v: meta_all[v] for v in view_hints if v in meta_all} or meta_all
+            else:
+                meta = meta_all
+        months_back = config_entry.get("months_back", months_back)
+        return config_entry, meta, months_back
+
+    def plan_only(
+        self,
+        report_type: str,
+        target_month: str,
+        months_back: int = 1,
+        user_request: str | None = None,
+        factor_context: dict | None = None,
+    ) -> dict:
+        """확인 카드(오른편 패널)용 — 스텝 계획만 만들고 실행하지 않는다.
+
+        generate()의 Phase 0만 떼어낸 것이다 — DB 조회·차트 생성·결론 작성 없이 스텝
+        제목 목록만 LLM 1회 호출로 정한다. 반환된 steps는 그대로 generate()의
+        step_plan_override로 되돌려 넣을 수 있다.
+        """
+        _, meta, months_back = self._resolve_meta(report_type, months_back)
+        date_range = _date_range(target_month, months_back)
+
+        if self.has_upload:
+            skip_reason = self._check_upload_feasibility(report_type, user_request, date_range)
+            if skip_reason:
+                return {"report_title": f"{report_type} 보고서", "steps": [], "skipped_reason": skip_reason}
+
+        steps = self._plan_steps(report_type, user_request, factor_context, date_range, meta)
+        return {"report_title": f"{report_type} 보고서", "steps": steps, "months_back": months_back}
+
     def generate(
         self,
         report_type: str,
@@ -982,18 +1028,7 @@ class ReportAgent:
         step_plan_override: 옵션 패널 "이대로 작성"에서 확정된 시나리오 스텝 title 목록.
         이 값이 주어지면 Phase 0의 LLM 스텝 계획을 건너뛰고 이 title들을 그대로 스텝 계획으로 쓴다.
         """
-        config_entry = get_config(report_type)
-        if self.has_upload:
-            meta = self._excel_server.get_session_datasets(self._session_id)
-        else:
-            meta_all = meta_loader.all_metadata()
-            view_hints: list[str] = config_entry.get("view_hints", [])
-            if view_hints:
-                meta = {v: meta_all[v] for v in view_hints if v in meta_all} or meta_all
-            else:
-                meta = meta_all
-
-        months_back = config_entry.get("months_back", months_back)
+        config_entry, meta, months_back = self._resolve_meta(report_type, months_back)
         date_range = _date_range(target_month, months_back)
         compare_range = _compare_range(target_month, months_back)
 
@@ -1022,6 +1057,7 @@ class ReportAgent:
 
         _chart_store.reset()
         _data_store.reset()
+        _ref_store.reset()
 
         # Phase 0: 스텝 계획 수립 — override가 있으면 LLM 계획을 건너뛴다.
         if step_plan_override:

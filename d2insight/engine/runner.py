@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from d2insight.engine.chart import render_chart_markdown
@@ -85,11 +85,16 @@ def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], lis
         for m in modules:
             spec = catalog.get_module(m["module_id"])
             tools = m.get("tools") or ([spec.tools["default"]] if spec.tools.get("default") else [])
+            params = dict(m.get("params") or {})
+            if m.get("_auto"):
+                params["_auto"] = True
+            if m["module_id"] == "period_dataset":
+                print(f"[DEBUG-expand_plan] step={label!r} period_dataset m._auto={m.get('_auto')!r} params._auto={params.get('_auto')!r}")
             instances.append(ModuleInstance(
                 step_label=label,
                 module_id=m["module_id"],
                 spec=spec,
-                params=m.get("params") or {},
+                params=params,
                 tools=tools,
                 layout=m.get("layout") or list(spec.layout),   # 계획 > 모듈 명세 > 기본값
             ))
@@ -114,15 +119,34 @@ def plan_composition(plan: dict, catalog: Catalog) -> list[dict]:
 
 
 # ── 2. 위상 정렬 (requires 기반) ─────────────────────────────────────────────
+
+# 스텝마다 다시 채워지는 이름표(스텝 단위 쿼리, 2026-08-24) — 전역 1회 생산이 아니라 "같은
+# 스텝 안에서" 유일하면 된다. 그 외 이름표(total_variance 등 공용 수치)는 기존처럼 계획
+# 전체에서 생산자가 하나여야 한다.
+STEP_SCOPED_LABELS = {"actual_dataset", "compare_dataset", "history_dataset", "meta_columns"}
+
+
 def topo_order(instances: list[ModuleInstance]) -> list[ModuleInstance]:
     """requires/produces 이름표로 실행 순서를 계산한다. 의존 없는 것끼리는 plan 순서 유지.
 
-    같은 이름표를 두 인스턴스가 produces 하면(같은 모듈 다중 실행, §3.4-2) 네임스페이스가 필요하며
-    이는 후속 과제다. 지금은 명확한 오류로 surface 한다(조용한 오작동 방지).
+    STEP_SCOPED_LABELS는 스텝마다 별도 생산자(스텝별 쿼리 모듈)를 허용한다 — 소비자는 같은
+    스텝의 생산자에만 연결된다. 그 외 이름표는 같은 이름표를 두 인스턴스가 produces 하면(같은
+    모듈 다중 실행, §3.4-2) 네임스페이스가 필요하며 이는 후속 과제다. 지금은 명확한 오류로
+    surface 한다(조용한 오작동 방지).
     """
     producer: dict[str, int] = {}
+    step_producer: dict[tuple[str, str], int] = {}
     for i, inst in enumerate(instances):
         for lbl in inst.spec.produces:
+            if lbl in STEP_SCOPED_LABELS:
+                key = (inst.step_label, lbl)
+                if key in step_producer:
+                    raise PlanError(
+                        f"스텝 '{inst.step_label}'에서 이름표 '{lbl}'를 두 모듈이 생산합니다 "
+                        f"({instances[step_producer[key]].module_id}, {inst.module_id})."
+                    )
+                step_producer[key] = i
+                continue
             if lbl in producer:
                 raise PlanError(
                     f"이름표 '{lbl}'를 두 모듈이 생산합니다 "
@@ -134,6 +158,11 @@ def topo_order(instances: list[ModuleInstance]) -> list[ModuleInstance]:
     deps: dict[int, set[int]] = {i: set() for i in range(len(instances))}
     for i, inst in enumerate(instances):
         for lbl in inst.spec.requires:
+            if lbl in STEP_SCOPED_LABELS:
+                key = (inst.step_label, lbl)
+                if key in step_producer and step_producer[key] != i:
+                    deps[i].add(step_producer[key])
+                continue
             if lbl in producer and producer[lbl] != i:
                 deps[i].add(producer[lbl])
 
@@ -184,7 +213,8 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
             continue
 
         for lbl, val in result.outputs.items():
-            ctx.put(lbl, val)
+            _ow = lbl in STEP_SCOPED_LABELS
+            ctx.put(lbl, val, overwrite=_ow)
         if result.render is not None:
             ctx.add_summary(inst.ref, result.render.summary)   # 결론 전용(본문에는 안 나감)
             step_renders.setdefault(inst.step_label, []).append((inst, result.render))
@@ -196,21 +226,18 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
 def narrate(step_order: list[str],
             step_renders: dict[str, list[tuple[ModuleInstance, Render]]],
             catalog: Catalog, ctx: SharedContext) -> None:
-    """스텝마다 해설자를 1회 호출해 각 모듈의 narrative를 채운다(제자리 수정).
+    """스텝에 모듈이 2개 이상이면 해설자를 1회 호출해 서로 이어지게 다듬는다(제자리 수정).
 
-    모듈별로 따로 호출하지 않는 이유: 같은 스텝의 모듈들은 하나의 이야기를 이루므로, 해설자가
-    그 스텝의 표를 **전부 보고** 써야 앞뒤가 이어진다. 호출 1회로 문맥과 비용을 함께 잡는다.
+    2026-08-27 재설계 이후 각 모듈이 자기 narrative를 이미 스스로 채워온다(모듈 단위 LLM
+    호출). 모듈이 하나뿐인 스텝은 그 narrative를 그대로 쓰면 되므로 이 단계를 건너뛴다.
+    모듈이 여럿인 스텝만, 그 narrative들이 하나의 이야기로 읽히도록 해설자가 다시 다듬는다
+    (처음부터 새로 쓰는 게 아니라 편집).
 
-    해설 실패는 본문을 죽이지 않는다. 실패를 기록하고 summary로 대체한다(조용히 감추지 않음).
-
-    모듈이 narrative를 이미 스스로 채워왔으면(결론처럼, 2026-07-28 7단계) 이 단계를 건너뛴다 —
-    일반 해설자가 이미 완성된 본문 위에 다시 써서 덮어쓰지 않도록. 지금은 conclusion만 해당.
+    해설 실패는 본문을 죽이지 않는다. 실패를 기록하고 각자의 narrative를 그대로 둔다.
     """
     for label in step_order:
         entries = step_renders.get(label)
-        if not entries:
-            continue
-        if all(render.narrative for _, render in entries):
+        if not entries or len(entries) < 2:
             continue
 
         # 같은 모듈이 파라미터만 달리해 여러 번 실행될 수 있다(§3.4-2). module_id를 키로 쓰면
@@ -232,16 +259,17 @@ def narrate(step_order: list[str],
             "summary": render.summary,
             "key_value": render.key_value,
             "table": render.table,
+            "narrative": render.narrative,  # 모듈이 이미 쓴 해설 — 해설자는 이걸 다듬는다
         } for key, (inst, render) in zip(keys, entries)]
 
         try:
             written = catalog.narrate_step(label, items, ctx) or {}
         except Exception as e:
-            ctx.mark_failed(f"{label} / 해설", f"{type(e).__name__}: {e} (요약문으로 대체)")
+            ctx.mark_failed(f"{label} / 해설", f"{type(e).__name__}: {e} (각 모듈 해설 그대로 사용)")
             written = {}
 
         for key, (_, render) in zip(keys, entries):
-            render.narrative = written.get(key) or render.summary
+            render.narrative = written.get(key) or render.narrative or render.summary
 
 
 # ── 5. 보고서 조립 ───────────────────────────────────────────────────────────
@@ -260,6 +288,8 @@ def _render_block(render: Render, layout: list[str] | None = None) -> list[str]:
         elif block == "key_value" and render.key_value:
             lines.append(" · ".join(f"{k}: {v}" for k, v in render.key_value.items()))
         elif block == "table" and render.table is not None:
+            if render.table_note:
+                lines.append(f"*{render.table_note}*")
             lines.append(table_to_markdown(render.table))   # 서식은 format.py가 통일(해설자와 동일)
         elif block == "chart" and render.chart is not None:
             img = render_chart_markdown(render.chart)        # 스펙 → base64 이미지 마크다운
@@ -269,13 +299,31 @@ def _render_block(render: Render, layout: list[str] | None = None) -> list[str]:
     return [ln for ln in lines if ln]
 
 
+_LEAD_HEADING = "### 핵심 요약"
+
+
+def _extract_lead_summary(narrative: str) -> tuple[str | None, str]:
+    """결론 본문 맨 앞의 "### 핵심 요약" 절만 뽑아낸다. 반환: (요약 텍스트 또는 None, 나머지 본문)."""
+    if not narrative.startswith(_LEAD_HEADING):
+        return None, narrative
+    rest = narrative[len(_LEAD_HEADING):].lstrip("\n")
+    next_idx = rest.find("\n### ")
+    if next_idx == -1:
+        return rest.strip(), ""
+    return rest[:next_idx].strip(), rest[next_idx:].lstrip("\n")
+
+
 def assemble(plan: dict, step_order: list[str],
              step_renders: dict[str, list[tuple[ModuleInstance, Render]]],
              ctx: SharedContext) -> str:
     """스텝을 순서대로 조립한다(§6.2). 결론도 이제 평범한 스텝 하나라 이 루프가 그대로
     처리한다(2026-07-28, 7단계 — 예전엔 conclusion을 별도 인자로 받아 특수 처리했다).
+
+    결론의 "핵심 요약" 절만 따로 뽑아 제목 바로 아래(맨 앞)에도 둔다 — 결론에서는 뺀다
+    (같은 문장이 두 번 나오지 않게).
     """
     md: list[str] = [f"# {clean_title(plan.get('report_title') or '보고서')}"]
+    lead_summary: str | None = None
 
     for label in step_order:
         entries = step_renders.get(label)
@@ -283,15 +331,18 @@ def assemble(plan: dict, step_order: list[str],
             continue                            # 스텝 내 모듈이 전부 실패·생략된 경우
         md.append(f"## {label}")
         for inst, render in entries:
+            if inst.module_id == "conclusion" and render.narrative:
+                lead, rest = _extract_lead_summary(render.narrative)
+                if lead:
+                    lead_summary = lead
+                    render = replace(render, narrative=rest)
             md.extend(_render_block(render, render.layout or inst.layout))
 
-    # 실패·생략 안내 (조용히 감추지 않는다)
-    notes = ctx.notes()
-    if notes:
-        md.append("### 분석 생략 안내")
-        for n in notes:
-            verb = "실패" if n["kind"] == "failed" else "생략"
-            md.append(f"- {n['ref']}: {n['reason']} → {verb}")
+    # 실패·생략 목록은 본문에 별도 나열하지 않는다 — 결론(conclusion.py 규칙 5)이 중요한
+    # 것만 골라 문장으로 이미 밝힌다. ctx.notes() 자체는 지워지지 않고 결론이 계속 읽는다.
+
+    if lead_summary:
+        md.insert(1, f"## 핵심 요약\n\n{lead_summary}")
 
     return "\n\n".join(md)
 

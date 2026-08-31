@@ -546,6 +546,16 @@
 .history-msg-wrapper.turn-clickable { cursor: pointer; border-radius: 8px; }
 .history-msg-wrapper.turn-clickable:hover { background: #f2f5f8; }
 
+/* 보고서(스텝) 선택 표시 — 클릭해 오른쪽 옵션 패널에 띄운 보고서의 말풍선 쌍을 표시한다.
+   대화 중(.msg-row)·이력 보기(.history-msg-wrapper) 양쪽에서 공통으로 쓴다. */
+.msg-row.turn-clickable { cursor: pointer; border-radius: 8px; }
+.msg-row.turn-clickable:hover { background: #f2f5f8; }
+.msg-row.active-report,
+.history-msg-wrapper.active-report {
+  background: #eaf4f6;
+  box-shadow: inset 3px 0 0 #1a7a8a;
+}
+
 .continue-btn {
   display: inline-block;
   margin-top: 4px;
@@ -661,7 +671,7 @@
   padding: 6px 10px;
   text-align: left;
 }
-.report-preview-html th { background: #f0f4f7; font-weight: 600; }
+.report-preview-html th { background: #f0f4f7; color: #1a1a1a; font-weight: 600; }
 .report-preview-html blockquote {
   border-left: 3px solid #1a7a8a;
   margin: 8px 0;

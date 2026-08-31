@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.schema import ROLE_COST, ROLE_INVENTORY, ROLE_ITEM, get_schema
 from d2insight.engine.types import ModuleResult, Render
 
@@ -115,56 +115,47 @@ def run(ctx, params, tools) -> ModuleResult:
         summary += (f" 항목 {len(detail)}개 중 {FLAG_SLOW}({slow_days:g}일 이상) {slow_n}개, "
                     f"{FLAG_DEAD} {dead_n}개.")
 
-    table = pd.DataFrame()
-    chart = None
-    if not detail.empty:
-        shown = detail.head(top_n)
-        table = pd.DataFrame({
-            "항목": shown["Item_Name"].astype(str),
-            "평균재고": shown["Avg_Inventory"].map(lambda v: f"{v:,.0f}"),
-            schema.logical_name(cost_col): shown[cost_col].map(lambda v: f"{v:,.0f}"),
-            "회전율": shown["Turnover"].map(lambda v: f"{v:.2f}회" if pd.notna(v) else "-"),
-            "재고일수": shown["Days"].map(_fmt_days),
-            "구분": shown["Flag"],
-        })
-        # 차트: 재고가 큰 항목의 재고일수 — 길수록 묶여 있는 돈이 많다는 뜻.
-        finite = shown[np.isfinite(shown["Days"])].head(_CHART_MAX)
-        if not finite.empty:
-            chart = chart_spec(
-                pd.DataFrame({"항목": finite["Item_Name"].astype(str),
-                              "재고일수": finite["Days"].astype(float)}),
-                "bar", "항목별 재고일수 (재고 상위)")
+    outputs = {"inventory_metrics": detail if not detail.empty else pd.DataFrame(),
+              "inventory_summary": {"turnover": turnover, "days": days,
+                                    "avg_inventory": avg_inv, "cogs": cogs,
+                                    "begin": inv_begin, "end": inv_end}}
+    key_value = {
+        "회전율": f"{turnover:.2f}회", "재고일수": _fmt_days(days),
+        "평균재고": f"{avg_inv:,.0f}", FLAG_SLOW: f"{slow_n}개",
+    }
+    if detail.empty:
+        return ModuleResult(outputs=outputs, render=Render(summary=summary, key_value=key_value))
 
-    return ModuleResult(
-        outputs={"inventory_metrics": detail if not detail.empty else pd.DataFrame(),
-                 "inventory_summary": {"turnover": turnover, "days": days,
-                                       "avg_inventory": avg_inv, "cogs": cogs,
-                                       "begin": inv_begin, "end": inv_end}},
-        render=Render(
-            summary=summary,
-            table=table,
-            chart=chart,
-            key_value={
-                "회전율": f"{turnover:.2f}회",
-                "재고일수": _fmt_days(days),
-                "평균재고": f"{avg_inv:,.0f}",
-                FLAG_SLOW: f"{slow_n}개",
-            },
+    shown = detail.head(top_n)
+    table = pd.DataFrame({
+        "항목": shown["Item_Name"].astype(str), "평균재고": shown["Avg_Inventory"],
+        schema.logical_name(cost_col): shown[cost_col],
+        "회전율": shown["Turnover"], "재고일수": shown["Days"].replace(np.inf, np.nan),
+        "구분": shown["Flag"],
+    })
+    render = render_from_dataframe(
+        table,
+        purpose="재고회전율·재고일수를 항목별로 제시.",
+        narrative_hint=(
+            summary + f" 재고일수가 긴 항목({FLAG_SLOW}/{FLAG_DEAD})을 처분·폐기 검토 대상으로 지목하라."
         ),
+        params={"기준": schema.logical_name(cost_col)}, label="inventory_turnover",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = key_value
+    return ModuleResult(outputs=outputs, render=render)
 
 
 # ── Dead Stock / Slow Moving 분리 스텝 (2026-07-21, 시나리오 "재고 분석") ─────────
 # 원본 스텝은 회전율과 Dead Stock·Slow Moving이 별도다(스텝 분리 원칙). 새로 계산하지 않고
 # inventory_turnover가 이미 만든 이름표 "inventory_metrics"(항목별 Flag 포함 표)를 필터링만
 # 한다 — requires로 명시하면 이 스텝만 골라 실행해도 inventory_turnover가 자동으로 딸려온다.
-def _flagged_table(detail: pd.DataFrame, flag: str, schema, cost_col: str, top_n: int) -> pd.DataFrame:
-    sub = detail[detail["Flag"] == flag].sort_values("Avg_Inventory", ascending=False).head(top_n)
+def _flagged_table(detail: pd.DataFrame, flag: str, schema, cost_col: str, top_n: int,
+                   sort_col: str = "Avg_Inventory") -> pd.DataFrame:
+    sub = detail[detail["Flag"] == flag].sort_values(sort_col, ascending=False).head(top_n)
     return pd.DataFrame({
-        "항목": sub["Item_Name"].astype(str),
-        "평균재고": sub["Avg_Inventory"].map(lambda v: f"{v:,.0f}"),
-        schema.logical_name(cost_col): sub[cost_col].map(lambda v: f"{v:,.0f}"),
-        "재고일수": sub["Days"].map(_fmt_days),
+        "항목": sub["Item_Name"].astype(str), "평균재고": sub["Avg_Inventory"],
+        schema.logical_name(cost_col): sub[cost_col], "재고일수": sub["Days"].replace(np.inf, np.nan),
     })
 
 
@@ -180,24 +171,22 @@ def run_dead_stock(ctx, params, tools) -> ModuleResult:
     dead = detail[detail["Flag"] == FLAG_DEAD]
     count = len(dead)
     tied_up = float(dead["Avg_Inventory"].sum())
-    summary = (
-        f"미회전(Dead Stock) {count}개 — 묶인 평균재고 {tied_up:,.0f}. "
-        "기간 중 출고(원가 인식)가 전혀 없어 처분·폐기 검토 대상."
+    key_value = {"미회전 항목수": f"{count}개", "묶인 평균재고": f"{tied_up:,.0f}"}
+    if not count:
+        return ModuleResult(render=Render(
+            summary="미회전(Dead Stock) 항목이 없습니다.", key_value=key_value))
+
+    render = render_from_dataframe(
+        _flagged_table(detail, FLAG_DEAD, schema, cost_col, top_n),
+        purpose="기간 중 출고가 전혀 없는 미회전(Dead Stock) 항목을 제시.",
+        narrative_hint=(
+            f"미회전 {count}개, 묶인 평균재고 {tied_up:,.0f}을 밝히고, 처분·폐기 검토 대상임을 짚어라."
+        ),
+        params={"미회전 항목수": count}, label="dead_stock",
+        cache=params.get("_llm_render_cache"),
     )
-
-    table = _flagged_table(detail, FLAG_DEAD, schema, cost_col, top_n) if count else None
-    chart = None
-    if count:
-        top = dead.sort_values("Avg_Inventory", ascending=False).head(_CHART_MAX)
-        chart = chart_spec(
-            pd.DataFrame({"항목": top["Item_Name"].astype(str),
-                          "평균재고": top["Avg_Inventory"].astype(float)}),
-            "bar", "미회전(Dead Stock) 항목 Top (평균재고)")
-
-    return ModuleResult(render=Render(
-        summary=summary, table=table, chart=chart,
-        key_value={"미회전 항목수": f"{count}개", "묶인 평균재고": f"{tied_up:,.0f}"},
-    ))
+    render.key_value = key_value
+    return ModuleResult(render=render)
 
 
 def run_slow_moving(ctx, params, tools) -> ModuleResult:
@@ -213,21 +202,20 @@ def run_slow_moving(ctx, params, tools) -> ModuleResult:
     slow = detail[detail["Flag"] == FLAG_SLOW]
     count = len(slow)
     tied_up = float(slow["Avg_Inventory"].sum())
-    summary = (
-        f"장기체화(Slow Moving, 재고일수 {slow_days_cfg:g}일 이상) {count}개 — "
-        f"묶인 평균재고 {tied_up:,.0f}."
+    key_value = {"장기체화 항목수": f"{count}개", "묶인 평균재고": f"{tied_up:,.0f}"}
+    if not count:
+        return ModuleResult(render=Render(
+            summary="장기체화(Slow Moving) 항목이 없습니다.", key_value=key_value))
+
+    render = render_from_dataframe(
+        _flagged_table(detail, FLAG_SLOW, schema, cost_col, top_n, sort_col="Days"),
+        purpose="재고일수가 긴 장기체화(Slow Moving) 항목을 제시.",
+        narrative_hint=(
+            f"장기체화(재고일수 {slow_days_cfg:g}일 이상) {count}개, 묶인 평균재고 {tied_up:,.0f}을 "
+            "밝히고, 재고일수가 가장 긴 항목을 짚어라."
+        ),
+        params={"장기체화 항목수": count}, label="slow_moving",
+        cache=params.get("_llm_render_cache"),
     )
-
-    table = _flagged_table(detail, FLAG_SLOW, schema, cost_col, top_n) if count else None
-    chart = None
-    if count:
-        top = slow.sort_values("Days", ascending=False).head(_CHART_MAX)
-        chart = chart_spec(
-            pd.DataFrame({"항목": top["Item_Name"].astype(str),
-                          "재고일수": top["Days"].astype(float)}),
-            "bar", "장기체화(Slow Moving) 항목 Top (재고일수)")
-
-    return ModuleResult(render=Render(
-        summary=summary, table=table, chart=chart,
-        key_value={"장기체화 항목수": f"{count}개", "묶인 평균재고": f"{tied_up:,.0f}"},
-    ))
+    render.key_value = key_value
+    return ModuleResult(render=render)

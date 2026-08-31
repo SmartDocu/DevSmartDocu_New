@@ -204,6 +204,143 @@ def build_actual_compare_datasets(
     return actual_df, compare_df
 
 
+# ── 스텝 단위 쿼리 (2026-08-24) ──────────────────────────────────────────────
+
+def query_step_dataset(
+    target_period: str,
+    compare_type: str = "MoM",
+    grain: str = "month",
+    source_id: str | None = None,
+    dimensions: list[str] | None = None,
+    measures: list[str] | None = None,
+    log_ctx: dict | None = None,
+    existing_sql: str | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    """스텝에 필요한 컬럼만 담은 이번 기간/비교 기간 데이터를 LLM이 쓴 SQL로 가져온다.
+
+    SQL은 필터링(날짜 범위, 필요한 컬럼)만 하고 집계는 하지 않는다 — 합계 등은 돌려받은
+    데이터프레임에서 각 모듈이 pandas groupby로 직접 계산한다(예: 모듈1은 dimension='지역'으로,
+    모듈2는 dimension='고객'으로 각자 groupby). 이러면 같은 데이터셋을 여러 모듈이 서로 다른
+    차원으로 나눠 볼 수 있다. FROM/JOIN은 LLM이 직접 쓴다(reference를 힌트로 제공).
+
+    existing_sql: 정기 보고서 재실행 등 이미 확정된 SQL이 있으면 LLM 재호출 없이 그대로
+    쓴다(날짜만 새로 바인딩) — 매번 같은 결과가 보장된다.
+
+    반환: (actual_df, compare_df, generated_sql) — generated_sql은 :start_date/:end_date
+    바인드 파라미터를 쓰는 재사용 가능한 SQL 텍스트다(정기 보고서 캐싱에 그대로 쓸 수 있음).
+    """
+    from d2shared import meta_loader as shared_meta_loader
+    from d2shared.mcp_server import MCPServer
+    from d2shared.config import DEFAULT_LLM_MODEL
+
+    sources, meta = _resolve_sources(source_id)
+
+    dim_rows = meta[(meta["Field_Type"] == "Dim") & (meta["Semantic_Type"] != "period")]
+    measure_rows = meta[meta["Field_Type"] == "Measure"]
+    avail_dims = set(dim_rows["Physical_Name"])
+    avail_measures = set(measure_rows["Physical_Name"])
+
+    use_dims = [d for d in (dimensions or []) if d in avail_dims]
+    use_measures = [m for m in (measures or []) if m in avail_measures] or list(avail_measures)
+    if not use_measures:
+        raise db_meta.DbMetaError("등록된 측정값(금액/수량 등) 컬럼이 없어 집계할 수 없습니다.")
+
+    if existing_sql:
+        a_start, a_end = _actual_range(target_period, grain)
+        c_start, c_end = _compare_range(target_period, compare_type, grain)
+        server = MCPServer(db_connection=shared_meta_loader.get_connection_url())
+        actual_df = server._execute_query(existing_sql, params={"start_date": a_start, "end_date": a_end})
+        compare_df = server._execute_query(existing_sql, params={"start_date": c_start, "end_date": c_end})
+        keep = [c for c in (use_dims + use_measures) if c in actual_df.columns]
+        if keep:
+            actual_df = actual_df[keep]
+            compare_df = compare_df[[c for c in keep if c in compare_df.columns]]
+        print(f"[dataset_builder] 스텝 쿼리(캐시된 SQL 재사용, {target_period}): "
+              f"실적 {len(actual_df):,}행 / 비교 {len(compare_df):,}행")
+        return actual_df, compare_df, existing_sql
+
+    # d2chat/ReportAgent의 query_tool.py와 같은 shape — 소스별 컬럼 목록 + reference(조인 힌트).
+    table_metadata = {
+        src["physical_name"]: {
+            "description": f'{src["schema"]}.{src["physical_name"]}',
+            "reference": src.get("reference"),
+            "default_time_column": src.get("default_time_column"),
+            "columns": {
+                row["Physical_Name"]: {"logical_name": row["Logical_Name"], "data_type": row["Data_Type"]}
+                for _, row in meta[meta["_source_physical"] == src["physical_name"]].iterrows()
+            },
+        }
+        for src in sources
+    }
+    for _src in sources:  # jeff
+        print(f"[DEBUG-dataset_builder] source={_src['physical_name']!r} "  # jeff
+              f"default_time_column={_src.get('default_time_column')!r}")  # jeff
+
+    dims_text = ", ".join(use_dims) if use_dims else "(없음)"
+    question = (
+        f"다음 컬럼을 포함해 조회하세요.\n차원 컬럼: {dims_text}\n측정값 컬럼: {', '.join(use_measures)}\n"
+        "집계는 하지 마세요 — 조회 결과는 이후 pandas가 직접 집계합니다.\n"
+        "날짜 기간이 필요하면 반드시 기준 날짜 컬럼을 이용해 WHERE 절로 기간을 필터링하세요 — "
+        "필터링 없이 전체 데이터를 가져오는 것은 허용되지 않습니다."
+    )
+    extra_rules = (
+        "- 집계 함수(SUM/AVG/COUNT 등)나 GROUP BY를 쓰지 마세요. 집계는 이 결과를 받는 쪽이 "
+        "pandas로 직접 합니다.\n"
+        "- 날짜 조건은 리터럴 날짜값이 아니라 바인드 파라미터로 작성하세요: "
+        "기준 날짜 컬럼 >= :start_date AND 기준 날짜 컬럼 < :end_date\n"
+        "- SELECT에는 위에 명시된 차원·측정값 컬럼만 포함하세요(다른 컬럼 추가 금지). 특히 "
+        "'매출액_한글'처럼 숫자를 조/억/만원 등 한글 단위 문자열로 변환한 파생 컬럼을 "
+        "만들지 마세요 — 통화 단위조차 알 수 없는 원본 숫자이므로 이런 변환 자체가 "
+        "부정확합니다. 원본 숫자 컬럼만 그대로 반환하세요.\n"
+        "- SELECT 컬럼명은 위에 명시된 컬럼명과 정확히 똑같이 쓰세요(별칭을 바꾸지 마세요) — "
+        "호출부가 이 컬럼명을 그대로 참조합니다."
+    )
+
+    url = shared_meta_loader.get_connection_url()
+    if not url:
+        raise RuntimeError("Supabase에서 DB 연결 URL을 가져오지 못했습니다.")
+    server = MCPServer(db_connection=url)
+
+    MAX_RETRIES = 2    # jeff 20260826 개발에서 5회 반복하니 시간이 너무 지체되어 2회로 수정함 --> 운용에서는 5회로 수정하기
+    sql = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        candidate_sql = server.generate_sql_query(
+            question=question, model=DEFAULT_LLM_MODEL, table_metadata=table_metadata,
+            extra_rules=extra_rules, log_ctx=log_ctx,
+        )
+        candidate_sql = server._clean_sql(candidate_sql)
+
+        if ':start_date' in candidate_sql and ':end_date' in candidate_sql:
+            sql = candidate_sql
+            break
+
+        print(f"[dataset_builder] SQL 생성 재시도 {attempt}/{MAX_RETRIES} — "
+              f"날짜 바인드 파라미터(:start_date/:end_date) 누락, 재생성합니다.")
+
+    if sql is None:
+        raise RuntimeError(
+            f"LLM이 {MAX_RETRIES}회 시도에도 날짜 바인드 파라미터(:start_date, :end_date)가 "
+            "포함된 SQL을 생성하지 못했습니다. table_metadata의 default_time_column 설정이나 "
+            "extra_rules를 점검해주세요."
+        )
+
+    a_start, a_end = _actual_range(target_period, grain)
+    c_start, c_end = _compare_range(target_period, compare_type, grain)
+    actual_df = server._execute_query(sql, params={"start_date": a_start, "end_date": a_end})
+    compare_df = server._execute_query(sql, params={"start_date": c_start, "end_date": c_end})
+
+    # 프롬프트로 금지해도 LLM이 파생 컬럼(예: '매출액_한글')을 만들어 끼워넣을 수 있으므로,
+    # 요청한 차원·측정값 컬럼만 남기고 나머지는 코드에서 한 번 더 걸러낸다.
+    keep_cols = [c for c in (use_dims + use_measures) if c in actual_df.columns]
+    if keep_cols:
+        actual_df = actual_df[keep_cols]
+        compare_df = compare_df[[c for c in keep_cols if c in compare_df.columns]]
+
+    print(f"[dataset_builder] 스텝 쿼리({target_period}, dims={use_dims or '-'}): "
+          f"실적 {len(actual_df):,}행 / 비교 {len(compare_df):,}행")
+    return actual_df, compare_df, sql
+
+
 # ── 기간별 이력 패널 (신규/이탈 생애주기 판정·추이 분석용) ────────────────────
 
 def build_history_dataset(

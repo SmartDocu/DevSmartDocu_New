@@ -1,16 +1,16 @@
 """Step Registry (§7) — 판매분석 프리셋 스텝.
 
-각 프리셋 스텝은 표시 제목과 디폴트 모듈 목록을 갖는다. 빈 스텝은 없다(§3.1).
-step_id는 영문 식별자, title은 독자에게 보이는 한글 제목이다(§ 마커 없음).
+각 프리셋 스텝은 표시 제목과 디폴트 모듈 목록을 갖는다. 빈 스텝은 없다.
+step_id는 영문 식별자, title은 독자에게 보이는 한글 제목이다.
 
 차원(dimension)·측정값(measure) 값은 역할 이름(schema.py의 ROLE_*: item/party/amount/
-quantity 등)으로 쓴다 — 데이터소스가 바뀌어도 이 파일이 안 깨진다(2026-07-24, G9).
-다만 아래 두 경우는 역할이 없거나 모호해 물리명을 그대로 둔다:
-  - item_group 역할은 이 데이터소스에서 제품모델/제품중분류/제품대분류 세 컬럼이 공유해
-    schema.column()이 첫 번째 것만 돌려준다(모호) — "제품중분류"는 물리명 그대로.
-  - "지역_국가"/"채널"은 schema.py에 대응 역할 자체가 없다(region/channel 역할 미정의).
-  - dimensions(복수, 리스트) 파라미터는 options.py의 options_to_plan 경로만 역할→물리명
-    변환을 지원한다(planner.py의 validate_plan은 단수만) — 그래서 아직 물리명 그대로 둔다.
+quantity/item_group/region 등)으로 쓴다 — 데이터소스가 바뀌어도 이 파일이 안 깨진다.
+"채널"만 대응 역할이 없어 물리명을 직접 써야 한다.
+
+dimensions(복수, 리스트) 파라미터는 validate_plan의 역할→물리명 자동 변환을 지원하지
+않는다(options.py의 options_to_plan 경로만 지원) — 여러 차원을 한 번에 지정해야 하면
+물리명을 그대로 써야 한다. 차원이 1개뿐이면 단수 dimension(역할명)을 쓰거나(s4_sku),
+파라미터를 생략해 모듈 자체의 기본 역할에 맡긴다(s4_abc).
 """
 from __future__ import annotations
 
@@ -30,15 +30,15 @@ STEP_REGISTRY: dict[str, dict] = {
     "performance_overview": {
         "title": "실적 개요",
         "default_modules": [
-            {"module_id": "actual_aggregate", "params": {"dimension": "제품중분류"}},
-            {"module_id": "actual_aggregate", "params": {"dimension": "지역_국가"}},
+            {"module_id": "actual_aggregate", "params": {"dimension": "item_group"}},
+            {"module_id": "actual_aggregate", "params": {"dimension": "region"}},
         ],
     },
     "variance_cause": {
         "title": "변동 원인 분석",
         "default_modules": [
             {"module_id": "dimension_impact"},
-            {"module_id": "within_contribution", "params": {"dimension": "item"}},
+            {"module_id": "within_contribution"},
             {"module_id": "sales_bridge"},
         ],
     },
@@ -56,7 +56,7 @@ STEP_REGISTRY: dict[str, dict] = {
         ],
     },
 
-    # ── 시나리오 1 "매출 증감 원인 분석" 전용 스텝 (전개 단계 1) ──────────────────
+    # ── 시나리오 1 "매출 증감 원인 분석" 전용 스텝 ──────────────────────────────
     # within_contribution은 싱글턴 이름표를 생산하므로 한 계획에 1회만(원인 순위 스텝).
     # Customer/Region/Top은 리프 모듈(actual_aggregate/ranking)로 두어 다중 실행 충돌을 피한다.
     "s1_period_compare": {
@@ -93,35 +93,35 @@ STEP_REGISTRY: dict[str, dict] = {
     "s1_customer": {
         "title": "고객별 분석",
         "default_modules": [
-            {"module_id": "actual_aggregate", "params": {"dimension": "party"}},
+            {"module_id": "composition", "params": {"dimension": "party"}},
+            {"module_id": "composition", "params": {"dimension": "item_group", "top_n": 10}},
         ],
     },
     "s1_region": {
         "title": "지역별 분석",
         "default_modules": [
-            {"module_id": "actual_aggregate", "params": {"dimension": "지역_국가"}},
+            {"module_id": "actual_aggregate", "params": {"dimension": "region"}},
         ],
     },
     "s1_top_products": {
         "title": "Top 제품",
         "default_modules": [
             {"module_id": "ranking", "params": {"dimension": "item", "by": "actual"}},
+            # 매출 큰 순 정렬에 묻히는 감소 항목을 따로 부각.
+            {"module_id": "ranking", "params": {"dimension": "item", "by": "variance", "order": "asc"}},
         ],
     },
     "s1_cause_ranking": {
         "title": "원인 순위",
         "default_modules": [
             {"module_id": "dimension_impact"},
-            {"module_id": "within_contribution", "params": {"dimension": "item"}},
+            {"module_id": "within_contribution"},
         ],
     },
 
-    # ── 시나리오 2 "KPI Executive Summary" 전용 스텝 (2026-07-24) ───────────────
-    # 원본 스텝: 매출·이익·재고·생산성·품질(KPI 총괄) ↓ 이상 KPI 탐지 ↓ 원인 분석 ↓
-    # 요약 작성 ↓ Action Item. 생산성·품질은 카탈로그에 대응 모듈·역할이 아예 없어
-    # 이번엔 제외(사용자 결정 2026-07-24) — 필요 시 요청 → 신규 모듈 추가로 카탈로그를 넓힌다
-    # (결정기록_2026-07-24_옵션체계.md §3). 요약 작성/Action Item은 다른 시나리오와 같이
-    # conclusion 스텝(scenarios.py에서 맨 뒤에 명시)이 담당하므로 별도 등록하지 않는다.
+    # ── 시나리오 2 "KPI Executive Summary" 전용 스텝 ────────────────────────────
+    # 생산성·품질은 카탈로그에 대응 모듈·역할이 없어 제외. 요약 작성/Action Item은
+    # 다른 시나리오와 같이 conclusion 스텝이 담당하므로 별도 등록하지 않는다.
     "s2_revenue_kpi": {
         "title": "매출 KPI",
         "default_modules": [
@@ -150,13 +150,13 @@ STEP_REGISTRY: dict[str, dict] = {
         "title": "원인 분석",
         "default_modules": [
             {"module_id": "dimension_impact"},
-            {"module_id": "within_contribution", "params": {"dimension": "item"}},
+            {"module_id": "within_contribution"},
         ],
     },
 
     # ── 시나리오 3 "고객 분석" 전용 스텝 ────────────────────────────────────────
-    # 원본 스텝: 신규 고객 ↓ 이탈 고객(별도) — new_lost_detection은 통합 모듈이라 리프
-    # customer_lifecycle의 두 함수로 나눔(2026-07-21, mix_effect 분리와 같은 패턴).
+    # new_lost_detection은 item+party 통합 모듈이라, party만 다루는 customer_lifecycle의
+    # 두 함수(신규/이탈)로 따로 쓴다.
     "s3_new_customer": {
         "title": "신규 고객",
         "default_modules": [
@@ -183,12 +183,11 @@ STEP_REGISTRY: dict[str, dict] = {
     },
 
     # ── 시나리오 4 "제품 분석" 전용 스텝 ────────────────────────────────────────
-    # SKU 스텝(2026-07-21): "제품별 매출"과 합쳐져 있던 것을 분리 — 제품 구성 자체(신규·단종
-    # SKU 수)를 먼저 보여주고, 그다음 매출·판매량 실적을 본다(원본 스텝 순서: SKU→판매량→매출).
     "s4_sku": {
         "title": "제품 구성(SKU 현황)",
         "default_modules": [
-            {"module_id": "new_lost_detection", "params": {"dimensions": ["제품"]}},
+            # dimension(단수, 역할명 "item")을 써서 party(고객)가 같이 나오는 걸 막는다.
+            {"module_id": "new_lost_detection", "params": {"dimension": "item"}},
         ],
     },
     "s4_product_sales": {
@@ -212,7 +211,7 @@ STEP_REGISTRY: dict[str, dict] = {
     "s4_abc": {
         "title": "제품 ABC-XYZ",
         "default_modules": [
-            {"module_id": "abc_classification", "params": {"dimensions": ["제품"]}},
+            {"module_id": "abc_classification"},   # dimensions 생략 → item 역할 자동 사용
         ],
     },
     "s4_lifecycle": {
@@ -228,7 +227,7 @@ STEP_REGISTRY: dict[str, dict] = {
         ],
     },
 
-    # ── 시나리오 5 "손익 분석" 전용 스텝 (2026-07-21) ───────────────────────────
+    # ── 시나리오 5 "손익 분석" 전용 스텝 ─────────────────────────────────────────
     # 5스텝(Revenue~EBIT)이 같은 계산(_shared.get_pnl_ladder)을 공유하는 리프 모듈이라
     # 다중 실행 충돌이 없다. pnl_driver는 그 값들을 다시 묶어 EBIT 증감의 원인을 가른다.
     "s5_revenue": {
@@ -268,7 +267,7 @@ STEP_REGISTRY: dict[str, dict] = {
         ],
     },
 
-    # ── 시나리오 6 "재고 분석" 전용 스텝 (2026-07-21) ───────────────────────────
+    # ── 시나리오 6 "재고 분석" 전용 스텝 ─────────────────────────────────────────
     # 원본 순서: ABC↓회전율↓Dead Stock↓Slow Moving↓Safety Stock↓개선안. Dead/Slow는
     # inventory_turnover가 만든 "inventory_metrics" 이름표를 필터링만 하는 리프 모듈이다.
     "s6_abc": {
@@ -302,7 +301,7 @@ STEP_REGISTRY: dict[str, dict] = {
         ],
     },
 
-    # ── 결론 — 모든 시나리오 공통, 항상 맨 뒤(2026-07-28, 7단계) ───────────────
+    # ── 결론 — 모든 시나리오 공통, 항상 맨 뒤 ───────────────────────────────────
     "conclusion": {
         "title": "결론",
         "default_modules": [

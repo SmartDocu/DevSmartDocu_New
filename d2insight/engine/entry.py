@@ -66,9 +66,7 @@ _SCENARIO_MATCH_SYSTEM = """당신은 보고서 요청 문장을 읽고, 아래 
 def match_scenario(message: str, provider: str | None = None) -> str | None:
     """메시지가 등록된 시나리오(기본세트) 중 하나를 요청하는 것인지 LLM으로 판단한다.
 
-    문자열 부분일치가 아니라 의미 판단이다 — intent_parser의 report_type 분류와 같은 방식
-    (§7.1.2, 2026-07-21 수정: 부분일치가 "판매증감분석" 같은 표현을 못 잡아 auto_plan으로
-    빠지고, 그 경로에서 싱글턴 이름표 중복으로 PlanError가 난 사고의 근본 수정).
+    문자열 부분일치가 아니라 의미 판단이다 — intent_parser의 report_type 분류와 같은 방식.
     어느 것도 아니면 None → 호출부는 auto_plan(자유 계획, 예외 경로)으로 진행한다.
     """
     if not message:
@@ -91,32 +89,21 @@ def match_scenario(message: str, provider: str | None = None) -> str | None:
 
 
 def extract_inline_options(message: str) -> dict | None:
-    """채팅 메시지 안에 붙여넣은 옵션 JSON(steps + global)을 찾아 파싱한다.
+    """채팅 메시지에 붙여넣은 옵션 JSON(steps + global)을 찾아 파싱한다. 있으면 LLM 추출 없이
+    그대로 options_to_plan에 쓴다.
 
-    사용자가 이전 응답의 "적용된 옵션" JSON을 복사해 값만 고쳐 다시 던지는 흐름을 지원한다
-    (2026-07-22). 대화·JSON 두 경로가 같은 형태로 수렴한다는 원칙 그대로 — 여기서 찾은 것은
-    LLM 추출을 거치지 않고 그대로 options_to_plan에 들어간다.
+    받는 형태: steps 배열 그대로, 또는 {"steps":[...], "global":{...}}로 감싼 객체.
+    JSON이 없거나 형태가 다르면 None.
 
-    받는 형태는 둘 다 허용한다:
-      - steps 배열 그대로:  [{"step_id": ..., "modules": [...]}, ...]
-      - 감싼 객체:          {"steps": [...], "global": {...}}
-    JSON이 없거나 형태가 다르면 None — 호출부는 기존 자연어 경로로 진행한다.
-
-    반환: {"steps": [...], "global": {...}, "scenario": str|None, "analytic_uid": str|None,
-    "origin_report": dict|None} — steps 배열 그대로 붙여넣은 경우 나머지는 빈 값(2026-07-24,
-    G2 — global 절을 조용히 버리지 않도록 함께 반환한다. scenario는 2026-07-27, 정기 보고서
-    이름 표시용으로 추가. analytic_uid는 2026-07-28, "정기 보고서로 저장" 시 이 실행의 출처를
-    AnalyticTemplates.AnalyticUID/Analytics.Is_Template에 남기기 위해 추가. origin_report는
-    같은 날, 정기 보고서 등록 시점에 방금 만든 보고서를 전용 세션의 첫 QA로 그대로 남기기
-    위해 추가 — {"answer", "report_path", "fileurl"}. 오른쪽 패널이 보고서 응답에서 이미 받은
-    값을 그대로 실어 보낼 뿐, 서버가 DB를 뒤져 찾지 않는다).
+    반환: {"steps", "global", "scenario", "analytic_uid", "origin_report"}. scenario는 정기
+    보고서 이름 표시용, analytic_uid는 정기 보고서 출처 기록용, origin_report는
+    {"answer","report_path","fileurl"}로 정기 보고서 등록 시 첫 QA로 남긴다.
     """
     if not message or "{" not in message:
         return None
 
     # 객체 형태({"steps":[...], "global":{...}})를 배열 형태보다 먼저 시도한다. 반대 순서면
-    # "[" 탐색이 steps 배열 안쪽만 잘라내 바깥 객체(및 global 절)를 통째로 놓친다 — global을
-    # 버리기만 하던 때는 안 보이던 결함이었다(2026-07-24, G2에서 발견해 함께 수정).
+    # "[" 탐색이 steps 배열 안쪽만 잘라내 바깥 객체(및 global 절)를 통째로 놓친다.
     for opener, closer in (("{", "}"), ("[", "]")):
         start = message.find(opener)
         end = message.rfind(closer)
@@ -160,7 +147,7 @@ def resolve_report_plan(
     compare_type: str | None = None,
     months_back: int | None = None,
     grain: str | None = None,
-    report_type: str = "판매분석",
+    report_type: str = "보고서",
     source_id: str | None = None,
     provider: str | None = None,
     upload_session_id: str | None = None,
@@ -171,7 +158,7 @@ def resolve_report_plan(
     """요청 하나를 실행 가능한 plan으로 해석한다(**실행은 하지 않는다**).
 
     확인 카드(preview_report_plan)와 실제 실행(run_engine_report)이 공유하는 단 하나의
-    해석 로직이다 — 둘이 서로 다른 결과를 낼 수 없도록(2026-07-24, 5단계).
+    해석 로직이다 — 둘이 서로 다른 결과를 낼 수 없도록.
 
     반환: {"plan", "plan_notes", "applied_steps", "scenario",
            "target_month", "compare_type", "months_back", "grain", "source_id"}
@@ -180,13 +167,8 @@ def resolve_report_plan(
     src_id = source_id or DEFAULT_SOURCE_ID
     upload_schema = _upload_schema(upload_session_id, upload_dataset_key)
 
-    # 요청 문장이 등록된 시나리오를 지목하면, 프리셋 기본값 위에 그 문장이 명시적으로 요청한
-    # 옵션(스텝 제외, top_n, 툴 등)만 얹는다(2026-07-22, 채팅 연결 작업). 시나리오를 못 찾으면
-    # 순수 purpose 기반 auto_plan(LLM, 예외 경로). 업로드 데이터면 데이터소스 정의 파일 대신
-    # 업로드 세션의 역할 메타(upload_schema)로 차원·측정 목록을 만든다.
-    # applied_steps: 실제로 options_to_plan에 넘긴 "steps" 그대로 — 사용자에게 그대로 되돌려
-    # 보여줄 수 있는 유일한 JSON이다(§ 표시용·입력용을 다른 형태로 만들지 않는다, 2026-07-22).
-    # 사용자가 요청하지 않은 것(자동 삽입된 선행 모듈 등)은 여기 나타나지 않는다 — 의도된 것이다.
+    # 시나리오가 매칭되면 프리셋 위에 요청한 옵션만 얹고, 못 찾으면 auto_plan(LLM)으로 간다.
+    # applied_steps는 사용자에게 그대로 보여줄 JSON — 자동 삽입된 모듈은 포함하지 않는다.
     applied_steps: list[dict] | None = None
 
     # 메시지에 옵션 JSON을 직접 붙여넣었으면 그것이 곧 사용자의 지정이다 — LLM 추출을 건너뛰고
@@ -200,9 +182,8 @@ def resolve_report_plan(
         inline_steps = inline_options["steps"]
         inline_global = inline_options.get("global") or {}
 
-        # global 절이 명시한 값은 자연어보다 우선한다(2026-07-24, G2) — JSON에 적은 기간·
-        # 비교유형·데이터소스·이력개월·measure를 조용히 버리지 않는다. 명시 안 된 키는 None이라
-        # 기존 값(자연어에서 파싱된 값 또는 기본값)을 그대로 둔다.
+        # global 절이 명시한 값은 자연어보다 우선한다. 명시 안 된 키는 None이라 기존 값을
+        # 그대로 둔다.
         meta_override = global_to_meta({"global": inline_global})
         target_month = meta_override.get("target_month") or target_month
         compare_type = meta_override.get("compare_type") or compare_type
@@ -226,28 +207,29 @@ def resolve_report_plan(
             options = {"scenario": scenario, "steps": merged_steps}
             plan, plan_notes = options_to_plan(options, schema_for_options)
             plan_notes = op_notes + plan_notes
-            applied_steps = merged_steps
+            # 미리보기 = 실제 실행 구성(다른 두 경로와 동일 원칙) — 검증 끝난 plan["steps"] 사용.
+            applied_steps = plan.get("steps")
             print(f"[engine] 시나리오 프리셋 + 편집 연산 사용: '{scenario}' (operations={operations})")
         except Exception as e:
-            # 조용히 삼키지 않는다(2026-07-24, G10) — 서버 로그뿐 아니라 plan_notes에도 남겨
-            # 사용자가 "왜 내 요청이 기본값으로 나왔는지" 말풍선/패널에서 확인할 수 있게 한다.
+            # 실패 사유를 plan_notes에도 남겨 패널에서 확인할 수 있게 한다.
             print(f"[engine] 편집 연산 추출/적용 실패, 프리셋 기본값으로 대체: {e}")
             plan, plan_notes = scenario_plan(scenario, source_id=src_id, schema=upload_schema)
             plan_notes = [
                 f"요청하신 옵션을 반영하지 못해 기본 구성으로 작성했습니다 "
                 f"({type(e).__name__}: {e})."
             ] + plan_notes
+            # 미리보기가 실제 실행과 같은 구성이어야 하므로, 검증까지 마친 plan["steps"]를
+            # applied_steps에도 반영한다.
+            applied_steps = plan.get("steps")
     else:
         plan, plan_notes = auto_plan(message, source_id=src_id, provider=provider, schema=upload_schema)
-        # auto_plan은 steps 형태를 쓰지 않는 별도 경로(예외 경로)라 applied_steps를 만들지 않는다.
+        # 미리보기·이대로 작성이 실제 실행과 같은 구성을 보게 하려면, 검증까지 마친
+        # plan["steps"]를 applied_steps에도 반영해야 한다(시나리오 경로와 동일한 원칙).
+        applied_steps = plan.get("steps")
 
     if applied_steps:
-        # period_dataset 파라미터에 실제 해석된 값을 채운다 — measure는 _resolve_measure가
-        # 이미 이렇게 하고 있는데(options.py), compare_type/months_back/grain은 이 파라미터가
-        # period_dataset 스펙에 선언만 돼 있을 뿐 채워주는 코드가 없어 늘 빈 값(카탈로그 기본값)
-        # 으로 남아 있었다. applied_steps가 곧 실행 로그(AnalyticModules)로 남으므로, 여기서
-        # 채워두지 않으면 "이 실행이 어느 기간·비교방식으로 돌았는지"가 로그 어디에도 남지
-        # 않는다(2026-07-27, 6-2단계 — AnalyticTemplates 저장을 준비하며 발견).
+        # period_dataset 파라미터에 실제 값을 채운다 — applied_steps가 실행 로그로 남으므로
+        # 안 채우면 어느 기간·비교방식으로 돌았는지 로그에 안 남는다.
         resolved_compare_type = compare_type or config.COMPARE_TYPE
         resolved_grain = grain or "month"
         for step in applied_steps:
@@ -260,9 +242,8 @@ def resolve_report_plan(
                         "grain": resolved_grain,
                     }
 
-        # 뿌리 스텝(자료확인·총평)에 locked 플래그를 붙인다 — 오른편 패널이 이동·삭제 불가
-        # 표시를 별도 규칙 없이 그대로 읽게 한다(2026-07-24, 5단계). 잠금 판정은 operations.py
-        # 하나뿐이다.
+        # 뿌리 스텝(자료확인·총평)에 locked 플래그를 붙인다 — 오른편 패널의 이동·삭제 불가
+        # 표시에 쓴다. 잠금 판정 로직은 operations.py 하나뿐이다.
         applied_steps = [dict(s, locked=is_locked_step(s)) for s in applied_steps]
 
     return {
@@ -278,23 +259,24 @@ def preview_report_plan(
     compare_type: str | None = None,
     months_back: int | None = None,
     grain: str | None = None,
-    report_type: str = "판매분석",
+    report_type: str = "보고서",
     source_id: str | None = None,
     provider: str | None = None,
+    upload_session_id: str | None = None,
+    upload_dataset_key: str | None = None,
     matched_scenario=_UNRESOLVED,
     inline_options=_UNRESOLVED_INLINE,
 ) -> dict:
-    """확인 카드(오른편 패널)용 — 계획만 만들고 **실행하지 않는다**(2026-07-24, 5단계).
+    """확인 카드(오른편 패널)용 — 계획만 만들고 **실행하지 않는다**.
 
-    run_plan(DB 조회·스텝별 LLM 서술·결론 LLM)을 타지 않아 run_engine_report보다 훨씬 가볍고
-    빠르다. resolve_report_plan과 같은 해석 로직을 쓰므로, 사용자가 이 미리보기를 보고
-    "이대로 작성"을 누르면 그때 실행되는 것과 **똑같은 구성**이 나온다는 것이 보장된다.
-
-    반환의 "applied_steps"/"global"은 그대로 다시 붙여넣을 수 있는 옵션 JSON 형태다
-    (§ 표시용=입력용 원칙). 업로드 데이터셋 미리보기는 이번 범위 밖(DB 모드만 지원).
+    resolve_report_plan과 같은 해석 로직을 써서, "이대로 작성"을 누르면 실제 실행과
+    **똑같은 구성**이 나온다는 것을 보장한다. 반환의 "applied_steps"/"global"은 그대로
+    다시 붙여넣을 수 있는 옵션 JSON 형태다. upload_session_id/upload_dataset_key를 주면
+    업로드 데이터셋 기준으로 미리보기를 만든다(run_engine_report와 동일한 스키마 사용).
     """
     resolved = resolve_report_plan(
         message, target_month, compare_type, months_back, grain, report_type, source_id, provider,
+        upload_session_id, upload_dataset_key,
         matched_scenario=matched_scenario, inline_options=inline_options,
     )
     return {
@@ -318,7 +300,7 @@ def run_engine_report(
     compare_type: str | None = None,
     months_back: int | None = None,
     grain: str | None = None,
-    report_type: str = "판매분석",
+    report_type: str = "보고서",
     source_id: str | None = None,
     provider: str | None = None,
     user_id: str | None = None,
@@ -330,22 +312,20 @@ def run_engine_report(
 ) -> dict:
     """채팅 요청 하나를 모듈화 엔진으로 실행해 보고서 마크다운을 만든다.
 
-    matched_scenario: 호출부(pipeline_runner)가 라우팅 게이트에서 이미 match_scenario를 한 번
-      돌렸다면 그 결과("시나리오명" 또는 None)를 그대로 넘긴다 — 같은 메시지로 LLM을 두 번
-      부르지 않기 위함. 기본값(_UNRESOLVED)이면 여기서 직접 판단한다(스크립트 등 직접 호출용).
+    matched_scenario: 호출부가 미리 match_scenario를 돌렸다면 그 결과를 그대로 넘겨 LLM을
+      두 번 안 부르게 한다. 기본값(_UNRESOLVED)이면 여기서 직접 판단한다.
 
     반환: {"md_text", "md_filename", "notes", "plan_notes", "applied_steps", "scenario"}
-      - notes: 실행 중 실패·생략된 분석(조용히 감추지 않는다)
-      - plan_notes: 계획기가 요청을 카탈로그에 맞추며 보정한 내역(없는 차원 교정 등)
-      - scenario: 매칭된 시나리오 이름(없으면 None) — 호출부가 Analytics 실행 로그에 그대로 싣는다
-        (2026-07-27, 6-1단계). scenariouid는 아직 못 채운다 — 카탈로그(Scenarios 테이블) DB
-        동기화가 안 돼 있어 이름 문자열만 대응할 UUID가 없다(추후 과제, 이번 6단계 범위 밖).
+      - notes: 실행 중 실패·생략된 분석
+      - plan_notes: 계획기가 요청을 카탈로그에 맞추며 보정한 내역
+      - scenario: 매칭된 시나리오 이름(없으면 None)
     """
     resolved = resolve_report_plan(
         message, target_month, compare_type, months_back, grain, report_type, source_id, provider,
         upload_session_id, upload_dataset_key, matched_scenario, inline_options,
     )
-    plan = resolved["plan"]
+    # 비활성 스텝(enabled=False)은 실행 대상에서 뺀다 — applied_steps에는 그대로 남겨 표시한다.
+    plan = dict(resolved["plan"], steps=[s for s in resolved["plan"]["steps"] if s.get("enabled", True)])
     plan_notes = resolved["plan_notes"]
     applied_steps = resolved["applied_steps"]
     target_month = resolved["target_month"]
@@ -360,7 +340,7 @@ def run_engine_report(
         "compare_type": compare_type or config.COMPARE_TYPE,
         "source_id": src_id,
         "provider": provider,
-        "grain": grain or "month",           # 2026-07-24 3단계 — month(기본)/quarter/year/week
+        "grain": grain or "month",           # month(기본)/quarter/year/week
     }
     if months_back:
         meta["months_back"] = months_back
@@ -376,11 +356,19 @@ def run_engine_report(
     # 로그일 뿐, 사용자에게 보여주는 것과는 별개다 — 그건 위의 applied_steps가 담당한다).
     try:
         print(f"[engine] 보고서 조합 (target_month={target_month}, compare_type={meta['compare_type']}):")
-        print(json.dumps(plan_composition(plan, catalog), ensure_ascii=False, indent=2, default=str))
+        print(json.dumps(plan_composition(plan, catalog), ensure_ascii=False, indent=2, default=str))     # jeff 20260825
     except Exception as _pe:                    # 조합 출력 실패가 보고서 생성을 막지 않게 한다
         print(f"[engine] 조합 출력 생략: {_pe}")
 
     out = run_plan(plan, catalog, ctx)
+
+    # 정기 보고서 SQL 캐싱(Phase 3) — 방금 실행에서 스텝마다 실제로 생성된 SQL을
+    # applied_steps에 반영한다. 이대로 정기 보고서로 등록되면(StepsJson) 다음 회차부터는
+    # 이 SQL이 그대로 실려서 LLM 재호출 없이 재사용된다.
+    if applied_steps:
+        _sync_generated_sql(applied_steps, out["step_renders"])
+        _sync_llm_render_specs(applied_steps, out["step_renders"])
+        _sync_failure_status(applied_steps, out["notes"])
 
     # 파일명 — 옛 보고서와 같은 규칙(안전유형_기준월_타임스탬프.md)이라 저장 경로가 일관된다.
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -396,11 +384,80 @@ def run_engine_report(
     }
 
 
+def _sync_llm_render_specs(applied_steps: list[dict], step_renders: dict) -> None:
+    """실행 중 각 모듈이 고른 표열·차트·서술 명세(render.llm_spec)를 applied_steps에 되돌려
+    쓴다. 정기 보고서로 등록되면 다음 회차부터 이 명세로 LLM 재호출 없이 형식을 재사용한다
+    (SQL 캐싱과 같은 자리 — _sync_generated_sql 참고).
+    """
+    for step_label, entries in step_renders.items():
+        step = next((s for s in applied_steps if s.get("title") == step_label), None)
+        if step is None:
+            continue
+
+        seen: dict[str, int] = {}
+        specs_by_key: dict[str, dict] = {}
+        for inst, render in entries:
+            n = seen.get(inst.module_id, 0) + 1
+            seen[inst.module_id] = n
+            key = inst.module_id if n == 1 else f"{inst.module_id}#{n}"
+            if render.llm_spec:
+                specs_by_key[key] = render.llm_spec
+
+        seen2: dict[str, int] = {}
+        for m in step.get("modules", []):
+            mid = m.get("module_id")
+            n = seen2.get(mid, 0) + 1
+            seen2[mid] = n
+            key = mid if n == 1 else f"{mid}#{n}"
+            spec = specs_by_key.get(key)
+            if spec:
+                m["params"] = {**m.get("params", {}), "_llm_render_cache": spec}
+
+
+def _sync_generated_sql(applied_steps: list[dict], step_renders: dict) -> None:
+    """실행 중 period_dataset이 만든 SQL을 스텝 라벨로 매칭해 applied_steps에 되돌려 쓴다.
+
+    applied_steps의 모듈 dict가 실행에 쓰인 ModuleInstance.params와 같은 객체라는 보장이
+    없으므로(options_to_plan은 파라미터를 복사한다), step_label로 명시적으로 매칭한다.
+    """
+    sql_by_step: dict[str, str] = {}
+    for step_label, entries in step_renders.items():
+        for inst, _render in entries:
+            if inst.module_id == "period_dataset" and inst.params.get("query_sql"):
+                sql_by_step[step_label] = inst.params["query_sql"]
+
+    for step in applied_steps:
+        sql = sql_by_step.get(step.get("title"))
+        if not sql:
+            continue
+        for m in step.get("modules", []):
+            if m.get("module_id") == "period_dataset":
+                m["params"] = {**m.get("params", {}), "query_sql": sql}
+
+
+def _sync_failure_status(applied_steps: list[dict], notes: list[dict]) -> None:
+    """실행 중 실패·생략된 모듈(ctx.notes())을 applied_steps에 되돌려 쓴다.
+
+    보고서 본문에는 실패를 나열하지 않는다(완성된 문서를 지저분하게 만들지 않기 위해 —
+    결론이 문장으로 언급할 수는 있지만 보장되지 않는다). 대신 이 JSON에 실패 사유를 남겨,
+    사용자가 JSON을 열어보면 어느 스텝의 어느 모듈이 왜 빠졌는지 확인할 수 있게 한다.
+    """
+    by_step: dict[str, list[dict]] = {}
+    for note in notes:
+        step_label, _, module_id = note["ref"].partition(" / ")
+        by_step.setdefault(step_label, []).append(
+            {"module_id": module_id, "kind": note["kind"], "reason": note["reason"]}
+        )
+
+    for step in applied_steps:
+        failures = by_step.get(step.get("title"))
+        if failures:
+            step["execution_notes"] = failures
+
+
 def resolve_scheduled_period(period_json: dict, run_date=None) -> dict:
-    """PeriodJson(규칙) + 기준일 → 이번 실행에 쓸 실제 target_month/compare_type/grain/
-    months_back. 정의는 규칙만 갖고 값은 실행 시점에 계산한다(계획 §3 원칙) — 6-3단계, 세션
-    없는 실행 진입점이 정기 보고서를 돌릴 때 쓴다. 기준일 기본값은 오늘(실행일) — 백필·재실행은
-    run_date만 과거로 주면 특별한 코드 없이 같은 함수로 처리된다.
+    """PeriodJson(규칙) + 기준일 → 실제 target_month/compare_type/grain/months_back.
+    기준일 기본값은 오늘 — 백필·재실행은 run_date만 과거로 주면 된다.
     """
     from datetime import date as _date
     from d2insight.engine.pipeline.dataset_builder import shift_period
@@ -438,18 +495,14 @@ def run_scheduled_report(
     global_json: dict,
     period_json: dict,
     run_date=None,
-    report_type: str = "판매분석",
+    report_type: str = "보고서",
     session_id: str | None = None,
     provider: str | None = None,
 ) -> dict:
-    """세션 없는 실행 진입점(6-3단계) — 저장된 정기 보고서 정의를 실제로 실행한다.
+    """세션 없는 실행 진입점 — 저장된 정기 보고서 정의를 실제로 실행한다.
 
-    사람이 없는 실행이라 확인 카드가 없다(§5 원칙) — 저장된 정의는 6-2에서 이미 빈 값 없이
-    저장됐으므로, steps_json을 곧바로 inline_options로 넘긴다(시나리오 재매칭·LLM 편집 연산
-    추출 모두 건너뜀 — matched_scenario=None으로 스킵해 불필요한 LLM 호출도 없다). 이 함수는
-    Supabase 접근을 하지 않는다(entry.py는 엔진 계층, DB/Storage는 호출부의 몫이라는 원칙
-    그대로, 파일 맨 위 docstring 참조) — template 조회·결과 저장·실행 로그 기록은
-    app/chat/scheduled_runner.py가 담당한다.
+    확인 카드 없이 steps_json을 곧바로 inline_options로 넘긴다(재매칭·LLM 편집 연산 추출
+    생략). Supabase 접근은 하지 않는다 — template 조회·결과 저장은 scheduled_runner.py가 한다.
     """
     period = resolve_scheduled_period(period_json, run_date)
     inline_options = {"steps": steps_json, "global": global_json or {}}

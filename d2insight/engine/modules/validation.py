@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM, ROLE_PERIOD, get_schema
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine.pipeline.validator import run_data_validation
@@ -79,13 +80,15 @@ def run(ctx, params, tools) -> ModuleResult:
                           key_value={"검증 결과": "이상 없음", "감지 이슈": 0}),
         )
 
-    patterns = ", ".join(i.get("description", "") for i in issues)
-    summary = f"데이터 검증 — 오류 의심 {count}건: {patterns}. 해석 시 주의 필요.{dim_note}"
-    return ModuleResult(
-        outputs={"validation_result": result},
-        render=Render(
-            summary=summary,
-            table=_issues_table(issues),
-            key_value={"검증 결과": "주의", "감지 이슈": count},
+    render = render_from_dataframe(
+        _issues_table(issues),
+        purpose="분석 전 데이터 신뢰도(오류 패턴)를 점검.",
+        narrative_hint=(
+            f"오류 의심 {count}건이 감지됐다는 것과 각 패턴이 무엇을 뜻하는지 밝혀라 — 다른 분석 "
+            "결과보다 이 데이터 신뢰성 경고를 먼저 읽어야 한다는 것을 분명히 하라." + dim_note
         ),
+        params={"감지 이슈": count}, label="data_validation",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {"검증 결과": "주의", "감지 이슈": count}
+    return ModuleResult(outputs={"validation_result": result}, render=render)

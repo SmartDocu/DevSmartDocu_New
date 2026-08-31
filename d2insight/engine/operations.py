@@ -36,7 +36,7 @@ def is_locked_step(step: dict) -> bool:
     따로 구현되면 언젠가 서로 어긋난다 — 여기 하나만 있어야 한다.
     """
     return any(
-        m.get("module_id") in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS
+        m.get("module_id") in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS and not m.get("_auto")
         for m in step.get("modules", [])
     )
 

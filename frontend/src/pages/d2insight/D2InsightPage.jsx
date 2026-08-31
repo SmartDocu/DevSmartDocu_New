@@ -451,6 +451,19 @@ export default function D2InsightPage() {
     }
   }
 
+  // JSON 편집 저장 시 스키마 기준 재검증(LLM 호출 없음) — 활성/비활성 상태를 다시 계산.
+  const handleValidateSteps = async (steps) => {
+    const { data } = await apiClient.post('/d2insight/report/validate_steps', {
+      steps,
+      scenario: previewData?.scenario,
+      session_id: sessionIdRef.current,
+      user_id: userId,
+      project_id: user?.myprojectid ?? null,
+      account_uid: user?.accountuid ?? null,
+    })
+    return data.applied_steps || steps
+  }
+
   const sendMessage = async (overrideText = null) => {
     const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim()
     if (!text || isLoading) return
@@ -464,18 +477,22 @@ export default function D2InsightPage() {
     try {
       const previewResp = await apiClient.post('/d2insight/report/preview', {
         message: text,
+        session_id: sessionIdRef.current,
         user_id: userId,
         project_id: user?.myprojectid ?? null,
         account_uid: user?.accountuid ?? null,
       })
-      if (previewResp.data?.scenario) {
+      if (previewResp.data?.applied_steps?.length) {
         setPreviewData(previewResp.data)
         setPreviewOriginalMessage(text)
+        const scenarioMsg = previewResp.data.scenario
+          ? `'${previewResp.data.scenario}' 시나리오로 매칭됐어요.`
+          : '보고서 구성을 준비했어요.'
         setMessages((prev) => [
           ...prev,
           {
             role: 'assistant',
-            content: `'${previewResp.data.scenario}' 시나리오로 매칭됐어요. 오른쪽 옵션 패널을 확인하고 '이대로 작성'을 눌러주세요.`,
+            content: `${scenarioMsg} 오른쪽 옵션 패널을 확인하고 '이대로 작성'을 눌러주세요.`,
           },
         ])
         setIsLoading(false)
@@ -1289,6 +1306,7 @@ export default function D2InsightPage() {
           onReorderPreviewSteps={(newSteps) =>
             setPreviewData((prev) => (prev ? { ...prev, applied_steps: newSteps } : prev))
           }
+          onValidateSteps={handleValidateSteps}
         />
       </div>
 
@@ -1333,12 +1351,12 @@ function parseMarkdownWithImages(text) {
   // 해석되지 않게 한다.
   const tildesEscaped = placeholder.replace(/~~|~/g, (m) => (m === '~~' ? '~~' : '\\~'))
   let html = marked.parse(tildesEscaped)
-  images.forEach(({ alt, src }, id) => {
-    html = html.replace(
-      `<img src="CHART_IMG_${id}_PLACEHOLDER" alt="${alt}">`,
-      `<img src="${src}" alt="${alt}" style="max-width:100%;height:auto;display:block;margin:12px 0;" />`
-    )
+  // 플레이스홀더 토큰(영숫자만)만 찾아 src로 바꾼다 — alt에 특수문자가 있으면 marked가
+  // 이스케이프해 <img> 태그 전체를 문자 그대로 재구성한 문자열과 안 맞을 수 있다.
+  images.forEach(({ src }, id) => {
+    html = html.replace(`CHART_IMG_${id}_PLACEHOLDER`, src)
   })
+  html = html.replace(/<img /g, '<img style="max-width:100%;height:auto;display:block;margin:12px 0;" ')
   return html
 }
 
@@ -1351,6 +1369,7 @@ function ReportOptionsPanel({
   onPreviewRegisterSchedule, onRegisterSchedule,
   onPreviewScheduleUpdate, onApplyScheduleUpdate,
   preview, previewGenerating, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
+  onValidateSteps,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
@@ -1375,21 +1394,27 @@ function ReportOptionsPanel({
     setJsonSaveOk(false)
   }, [preview])
 
-  const applyJsonEdit = () => {
+  const applyJsonEdit = async () => {
+    let parsed
     try {
-      const parsed = JSON.parse(jsonText)
+      parsed = JSON.parse(jsonText)
       if (!Array.isArray(parsed)) throw new Error('applied_steps는 배열이어야 해요')
-      onReorderPreviewSteps?.(parsed)
-      setJsonError('')
-      setJsonSaveOk(true)
-      // 저장 성공하면 JSON 창을 접어 아래 스텝 카드에 시선이 가도록 한다.
-      setShowPreviewJson(false)
-      // 성공 문구는 3초 뒤 사라진다 — 짧게만 알리고 자리를 비운다.
-      setTimeout(() => setJsonSaveOk(false), 3000)
     } catch (e) {
       setJsonError('JSON 형식 오류: ' + e.message)
       setJsonSaveOk(false)
+      return
     }
+    setJsonError('')
+    let resolved = parsed
+    try {
+      resolved = (await onValidateSteps?.(parsed)) || parsed
+    } catch {
+      // 재검증 실패해도 로컬 파싱 결과로 반영한다.
+    }
+    onReorderPreviewSteps?.(resolved)
+    setJsonSaveOk(true)
+    setShowPreviewJson(false)
+    setTimeout(() => setJsonSaveOk(false), 3000)
   }
 
   // preview 스텝 드래그 순서 재정렬 — 사용자가 스텝을 위/아래로 드래그하면
@@ -1564,6 +1589,7 @@ function ReportOptionsPanel({
             <div style={{ margin: '4px 0 12px 0', fontSize: 13 }}>
               {(preview.applied_steps || []).map((step, i) => {
                 const isLocked = !!step.locked
+                const isDisabled = step.enabled === false
                 return (
                   <div
                     key={i}
@@ -1575,11 +1601,11 @@ function ReportOptionsPanel({
                     style={{
                       marginBottom: 6,
                       padding: '6px 8px',
-                      background: isLocked ? '#f5f5f5' : (dragIndex === i ? '#fff3cd' : '#fff'),
-                      border: `1px solid ${isLocked ? '#ddd' : '#e0d38a'}`,
+                      background: isDisabled ? '#f0f0f0' : (isLocked ? '#f5f5f5' : (dragIndex === i ? '#fff3cd' : '#fff')),
+                      border: `1px solid ${isDisabled ? '#ccc' : (isLocked ? '#ddd' : '#e0d38a')}`,
                       borderRadius: 4,
                       cursor: isLocked ? 'default' : 'grab',
-                      opacity: dragIndex === i ? 0.6 : 1,
+                      opacity: isDisabled ? 0.6 : (dragIndex === i ? 0.6 : 1),
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1589,13 +1615,25 @@ function ReportOptionsPanel({
                       >
                         {isLocked ? '🔒' : '⋮⋮'}
                       </span>
-                      <strong style={{ color: isLocked ? '#555' : 'inherit' }}>{i + 1}. {step.title}</strong>
+                      <strong style={{ color: isDisabled ? '#999' : (isLocked ? '#555' : 'inherit') }}>
+                        {i + 1}. {step.title}
+                      </strong>
+                      {isDisabled && (
+                        <span style={{ color: '#c62828', fontSize: 11, border: '1px solid #e0a0a0', borderRadius: 3, padding: '0 4px' }}>
+                          작성 불가
+                        </span>
+                      )}
                     </div>
                     {/* 단독앱 방식: module_id는 감추고 purpose만 조용히 보여준다.
                         도구·파라미터는 JSON 원문에서 확인. */}
                     {(step.modules || []).length > 0 && (
                       <div style={{ marginLeft: 22, marginTop: 3, color: '#777', fontSize: 12 }}>
-                        {step.modules.map((m, j) => m.purpose || m.module_id).join(' · ')}
+                        {step.modules.map((m) => m.purpose || m.module_id).join(' · ')}
+                      </div>
+                    )}
+                    {isDisabled && step.disabled_reason && (
+                      <div style={{ marginLeft: 22, marginTop: 3, color: '#c62828', fontSize: 11 }}>
+                        {step.disabled_reason}
                       </div>
                     )}
                   </div>
@@ -1716,20 +1754,33 @@ function ReportOptionsPanel({
                 내용은 노출하지 않는다(JSON 원문 보기로만 확인). step.section은 리네임 전에
                 저장된 이력과의 하위호환을 위해 남겨둔 폴백이다. */}
             <div className="opt-steps">
-              {appliedSteps.map((step, idx) => (
-                <div key={idx} className="opt-step">
-                  <div className="opt-step-header">
-                    <span className="opt-step-title">{idx + 1}. {step.title || step.step || step.section}</span>
-                  </div>
-                  {(step.modules || []).length > 0 && (
-                    <div className="opt-module">
-                      <span className="opt-module-name" style={{ fontWeight: 'normal', color: '#666' }}>
-                        {step.modules.map((m, j) => m.purpose || m.module_id).join(' · ')}
+              {appliedSteps.map((step, idx) => {
+                const isDisabled = step.enabled === false
+                return (
+                  <div key={idx} className="opt-step" style={isDisabled ? { opacity: 0.6 } : undefined}>
+                    <div className="opt-step-header">
+                      <span className="opt-step-title" style={isDisabled ? { color: '#999' } : undefined}>
+                        {idx + 1}. {step.title || step.step || step.section}
                       </span>
+                      {isDisabled && (
+                        <span style={{ color: '#c62828', fontSize: 11, marginLeft: 6, border: '1px solid #e0a0a0', borderRadius: 3, padding: '0 4px' }}>
+                          작성 안 됨
+                        </span>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                    {(step.modules || []).length > 0 && (
+                      <div className="opt-module">
+                        <span className="opt-module-name" style={{ fontWeight: 'normal', color: '#666' }}>
+                          {step.modules.map((m) => m.purpose || m.module_id).join(' · ')}
+                        </span>
+                      </div>
+                    )}
+                    {isDisabled && step.disabled_reason && (
+                      <div style={{ color: '#c62828', fontSize: 11, marginTop: 2 }}>{step.disabled_reason}</div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </>
         ))}

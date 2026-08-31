@@ -21,7 +21,7 @@ from d2insight.engine.datasource import DEFAULT_SOURCE_ID, build_meta_columns, u
 from d2insight.engine.schema import ROLE_PERIOD, Schema
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine.pipeline.dataset_builder import (
-    build_actual_compare_datasets, build_history_dataset,
+    query_step_dataset, build_history_dataset,
     _actual_range, _compare_range,
 )
 
@@ -43,14 +43,24 @@ def run(ctx, params, tools) -> ModuleResult:
     upload_session_id = ctx.meta.get("upload_session_id")
     upload_dataset_key = ctx.meta.get("upload_dataset_key")
     if upload_session_id and upload_dataset_key:
-        return _run_from_upload(target_month, compare_type, upload_session_id, upload_dataset_key, grain)
+        return _run_from_upload(target_month, compare_type, upload_session_id, upload_dataset_key, grain,
+                                auto=bool(params.get("_auto")))
 
     source_id = params.get("source_id") or ctx.meta.get("source_id") or DEFAULT_SOURCE_ID
 
-    # 뿌리 적재 — 실패 시 예외를 그대로 올린다.
-    actual_df, compare_df = build_actual_compare_datasets(
+    # 스텝 단위 쿼리(2026-08-24) — 이 스텝의 모듈들이 선언한 차원/측정값만 LLM이 SQL로 조회
+    # 한다(planner.py의 resolve_dependencies가 모아서 params로 넘겨줌). 뿌리 적재 실패는
+    # 예외를 그대로 올린다.
+    from d2insight import token_tracker
+    actual_df, compare_df, generated_sql = query_step_dataset(
         target_month, compare_type, grain, source_id=source_id,
+        dimensions=params.get("dimensions"), measures=params.get("measures"),
+        log_ctx=token_tracker.get_log_ctx(), existing_sql=params.get("query_sql"),
     )
+    print(f"[period_dataset] 생성 SQL:\n{generated_sql}")
+    # 정기 보고서 SQL 캐싱(Phase 3) — entry.py가 실행 후 이 값을 읽어 applied_steps에
+    # 반영한다(다음 회차부터 LLM 재호출 없이 재사용).
+    params["query_sql"] = generated_sql
 
     meta = build_meta_columns(source_id, available_columns=list(actual_df.columns))
     undeclared = undeclared_columns(meta, list(actual_df.columns))
@@ -62,13 +72,14 @@ def run(ctx, params, tools) -> ModuleResult:
     }
 
     history_note = ""
-    try:
-        history_df = build_history_dataset(target_month, months_back, grain, source_id=source_id)
-        outputs["history_dataset"] = history_df
-        history_rows = len(history_df)
-    except Exception as e:
-        history_rows = 0
-        history_note = f" (이력 적재 실패: {type(e).__name__} — 생애주기·추이 분석 제한됨)"
+    history_rows = 0
+    if params.get("needs_history"):
+        try:
+            history_df = build_history_dataset(target_month, months_back, grain, source_id=source_id)
+            outputs["history_dataset"] = history_df
+            history_rows = len(history_df)
+        except Exception as e:
+            history_note = f" (이력 적재 실패: {type(e).__name__} — 생애주기·추이 분석 제한됨)"
 
     if undeclared:
         # 정의에 없는 컬럼은 역할이 없어 브리지·생애주기 계산에서 빠진다. 조용히 넘기지 않는다.
@@ -86,16 +97,20 @@ def run(ctx, params, tools) -> ModuleResult:
     key_name = schema.logical_name(schema.key_measure)
     grain_label = _GRAIN_LABEL.get(grain, grain)
 
-    info = pd.DataFrame([
+    info_rows = [
         {"항목": "데이터소스", "값": source_id},
         {"항목": "분석기간", "값": f"{a_start} ~ {a_end_incl} (당기)"},
         {"항목": "비교기간", "값": f"{c_start} ~ {c_end_incl} ({compare_type})"},
         {"항목": "분석 레코드수", "값": f"{len(actual_df):,}"},
         {"항목": "비교 레코드수", "값": f"{len(compare_df):,}"},
-        {"항목": "이력 구간", "값": f"최근 {months_back}{grain_label} / {history_rows:,}행"},
+    ]
+    if params.get("needs_history"):
+        info_rows.append({"항목": "이력 구간", "값": f"최근 {months_back}{grain_label} / {history_rows:,}행"})
+    info_rows += [
         {"항목": "차원 수", "값": f"{len(dims)}"},
         {"항목": "측정 수", "값": f"{len(measures)} (핵심: {key_name})"},
-    ])
+    ]
+    info = pd.DataFrame(info_rows)
 
     summary = (
         f"{target_month} 분석 대상 자료 확인 — 분석 {len(actual_df):,}행, "
@@ -103,15 +118,19 @@ def run(ctx, params, tools) -> ModuleResult:
         + history_note
     )
 
+    print(f"[DEBUG-period-run] params._auto={params.get('_auto')!r} -> render {'생략' if params.get('_auto') else '표시'}")  # jeff
     return ModuleResult(
         outputs=outputs,
-        render=Render(summary=summary, table=info,
-                      key_value={"분석행": len(actual_df), "비교행": len(compare_df)}),
+        render=None if params.get("_auto") else Render(
+            summary=summary, table=info,
+            key_value={"분석행": len(actual_df), "비교행": len(compare_df)},
+        ),
     )
 
 
 def _run_from_upload(target_month: str, compare_type: str,
-                     session_id: str, dataset_key: str, grain: str = "month") -> ModuleResult:
+                     session_id: str, dataset_key: str, grain: str = "month",
+                     auto: bool = False) -> ModuleResult:
     """업로드된 데이터셋에서 뿌리 이름표를 만든다 (2026-07-20, 레벨 2).
 
     DB 경로(build_actual_compare_datasets)는 SQL이 기간별로 나눠서 가져오지만, 업로드는
@@ -212,6 +231,7 @@ def _run_from_upload(target_month: str, compare_type: str,
         f"비교({compare_type}) {len(compare_df):,}행, 차원 {len(dims)}개." + note
     )
 
+    print(f"[DEBUG-period-run-upload] auto={auto!r} -> render {'생략' if auto else '표시'}")  # jeff
     return ModuleResult(
         outputs={
             "actual_dataset": actual_df,
@@ -219,6 +239,8 @@ def _run_from_upload(target_month: str, compare_type: str,
             "history_dataset": history_df,
             "meta_columns": meta,
         },
-        render=Render(summary=summary, table=info_table,
-                      key_value={"분석행": len(actual_df), "비교행": len(compare_df)}),
+        render=None if auto else Render(
+            summary=summary, table=info_table,
+            key_value={"분석행": len(actual_df), "비교행": len(compare_df)},
+        ),
     )

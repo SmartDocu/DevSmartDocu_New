@@ -4,10 +4,52 @@ from __future__ import annotations
 import threading
 from typing import Optional
 
+import pandas as pd
 from langchain_core.tools import tool
 
 from d2insight.data_source import meta_loader
 from d2insight.report.sql_generator import SqlGenerator
+
+
+class _RefStore:
+    """조회 결과 DataFrame 원본을 참조 키(ref)로 보관한다.
+
+    execute_query/execute_excel_query가 조회 결과를 LLM에게 텍스트로 전부 주는 대신,
+    여기 저장해두고 짧은 키(DATA_REF_N)만 돌려준다. 이후 create_chart/run_stats/
+    run_variance_impact 같은 툴은 데이터 자체가 아니라 이 ref만 받아서 여기서 원본을
+    직접 갖다 쓴다 — LLM이 조회 결과를 손으로 다시 타이핑해 다음 툴 인자로 옮기다가
+    행을 빠뜨리거나 값을 잘못 옮기는 사고를 구조적으로 막는다(선례: chart_tool.py의
+    _chart_store가 차트 이미지를 CHART_PLACEHOLDER_N 키로 다루는 것과 같은 패턴).
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._data: dict[str, pd.DataFrame] = {}
+        self._counter = 0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._data.clear()
+            self._counter = 0
+
+    def put(self, df: pd.DataFrame) -> str:
+        with self._lock:
+            key = f"DATA_REF_{self._counter}"
+            self._data[key] = df
+            self._counter += 1
+            return key
+
+    def get(self, ref: str) -> Optional[pd.DataFrame]:
+        with self._lock:
+            return self._data.get(ref)
+
+
+_ref_store = _RefStore()
+
+
+def resolve_ref(ref: str) -> Optional[pd.DataFrame]:
+    """참조 키(ref)로 저장된 조회 결과 DataFrame을 가져온다. 없으면 None."""
+    return _ref_store.get(ref)
 
 
 class _DataStore:
@@ -81,10 +123,13 @@ def execute_query(question: str, table_name: Optional[str] = None) -> dict:
     SQL을 직접 작성하지 마세요 — 자연어로 분석 목적을 설명하세요.
     반드시 집계 데이터(GROUP BY + COUNT/SUM/AVG 등)를 요청하세요.
 
-    반환값의 markdown_table을 본문에 그대로 삽입하세요 — data를 보고 표를 손으로 다시
-    작성하지 마세요(행 누락·숫자 오기 방지). 표에 특정 정렬이 필요하면(예: 매출액
-    내림차순) question에 정렬 기준을 명시하세요 — markdown_table은 SQL 결과 순서를
-    그대로 따릅니다.
+    반환값의 markdown_table을 본문에 그대로 삽입하세요(행 누락·숫자 오기 방지). 표에
+    특정 정렬이 필요하면(예: 매출액 내림차순) question에 정렬 기준을 명시하세요 —
+    markdown_table은 SQL 결과 순서를 그대로 따릅니다.
+
+    반환값의 ref는 이 조회 결과를 가리키는 참조 키입니다. create_chart/run_stats/
+    run_variance_impact 등 다음 툴에 데이터를 다시 타이핑해 넘기지 말고, 이 ref 값을
+    그대로 전달하세요.
 
     Args:
         question: 분석하고 싶은 내용을 자연어로 설명. 분석 기간과 집계 방식, 필요하면
@@ -116,6 +161,15 @@ def execute_query(question: str, table_name: Optional[str] = None) -> dict:
         table_metadata=table_metadata,
     )
     _data_store.add(question, result)
+
+    response = {
+        "columns": result.get("columns", []),
+        "row_count": result.get("row_count", 0),
+        "generated_sql": result.get("generated_sql"),
+    }
+    if result.get("error"):
+        response["error"] = result["error"]
     if result.get("columns") and result.get("data"):
-        result["markdown_table"] = _build_markdown_table(result["columns"], result["data"])
-    return result
+        response["markdown_table"] = _build_markdown_table(result["columns"], result["data"])
+        response["ref"] = _ref_store.put(pd.DataFrame(result["data"]))
+    return response

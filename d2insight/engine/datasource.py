@@ -45,6 +45,8 @@ def definition_to_meta_columns(definition: dict, source_label: str = "",
             "Is_Key_Measure": bool(col.get("is_key_measure", False)),
             "Is_Date_for_Analytic": col.get("semantic") == "period",
             "Semantic_Type": col.get("semantic", ""),
+            "Is_Groupable": bool(col.get("is_groupable", True)),
+            "Is_Market_Axis": bool(col.get("is_market_axis", True)),
         })
     if not rows:
         raise DataSourceError(f"데이터소스 '{source_label}' 정의에 사용할 수 있는 컬럼이 없습니다.")

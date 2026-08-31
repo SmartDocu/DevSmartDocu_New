@@ -22,9 +22,9 @@ import numpy as np
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM, ROLE_PERIOD, get_schema
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 from d2insight.engine.pipeline.dataset_builder import shift_period
 
 _DEFAULT_WINDOW = 3      # 창 길이 기본값(기간수). config.ABC_XYZ_WINDOW_MONTHS로 덮어쓸 수 있다.
@@ -197,28 +197,25 @@ def run(ctx, params, tools) -> ModuleResult:
         top_chg = grade_changes.iloc[0]
         change_note = (f" 등급 변동 {len(grade_changes)}건"
                        f"(최대 규모: {top_chg['Item_Name']} {top_chg['Prev_Grade']}→{top_chg['Grade']}).")
-    summary = (
-        f"{schema.logical_name(amount_col)} 기준 항목 {len(classification)}개를 "
-        f"ABC-XYZ로 분류 — {grade_str}.{change_note}"
-    )
-
-    # 차트 — 등급 분포(항목수). 큰데 불안정한 AZ 등이 얼마나 있는지 한눈에.
     counts = classification["Grade"].value_counts().sort_index()
-    chart_data = pd.DataFrame({"등급": counts.index, "항목수": counts.values})
+    chart_df = pd.DataFrame({"등급": counts.index, "항목수": counts.values})
 
-    return ModuleResult(
-        outputs={
-            "abc_xyz_classification": classification,
-            "abc_grade_changes": grade_changes,
-        },
-        render=Render(
-            summary=summary,
-            table=_display_table(classification.head(top_n)),
-            chart=chart_spec(chart_data, "bar", "ABC-XYZ 등급 분포"),
-            key_value={
-                "분류 항목수": len(classification),
-                "등급 종류": len(by_grade),
-                "등급 변동": f"{len(grade_changes)}건",
-            },
+    render = render_from_dataframe(
+        _display_table(classification.head(top_n)),
+        purpose="항목을 규모(ABC)·변동성(XYZ)으로 분류.",
+        narrative_hint=(
+            f"등급 분포({grade_str})를 밝히고, 규모가 크면서 불안정한(AZ 등) 항목이 있으면 짚어라."
+            + change_note
         ),
+        params={"기준": schema.logical_name(amount_col), "분류 항목수": len(classification)},
+        label="abc_classification", chart_df=chart_df,
+        cache=params.get("_llm_render_cache"),
+    )
+    render.key_value = {
+        "분류 항목수": len(classification), "등급 종류": len(by_grade),
+        "등급 변동": f"{len(grade_changes)}건",
+    }
+    return ModuleResult(
+        outputs={"abc_xyz_classification": classification, "abc_grade_changes": grade_changes},
+        render=render,
     )

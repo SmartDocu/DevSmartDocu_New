@@ -32,14 +32,15 @@ def render_chart_markdown(spec: Any) -> Optional[str]:
 
     실패는 조용히 None으로 흘린다(그림 하나 때문에 보고서를 멈추지 않는다).
     """
+
     if not isinstance(spec, dict):
         return None                     # 스펙 계약(dict)이 아니면 조용히 생략
     data = spec.get("data")
     if data is None or getattr(data, "empty", True):
         return None
     try:
-        b64, _ = dataframe_to_chart_image(data, spec.get("title") or "", spec.get("type"))
-    except Exception:
+        b64, _json, err = dataframe_to_chart_image(data, spec.get("title") or "", spec.get("type"))
+    except Exception as e:
         return None
     if not b64:
         return None
@@ -59,7 +60,7 @@ def render_chart_base64(spec: Any) -> Optional[str]:
     if data is None or getattr(data, "empty", True):
         return None
     try:
-        b64, _ = dataframe_to_chart_image(data, spec.get("title") or "", spec.get("type"))
+        b64, _json, _err = dataframe_to_chart_image(data, spec.get("title") or "", spec.get("type"))
     except Exception:
         return None
     return b64 or None

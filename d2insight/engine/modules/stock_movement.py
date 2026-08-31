@@ -16,7 +16,7 @@ from __future__ import annotations
 import pandas as pd
 
 import d2insight.config as config
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.schema import (
     ROLE_INBOUND, ROLE_INVENTORY, ROLE_ITEM, ROLE_OUTBOUND, get_schema,
 )
@@ -98,42 +98,30 @@ def run(ctx, params, tools) -> ModuleResult:
     if not mismatched.empty:
         summary += f" 항목 단위로도 {len(mismatched)}개 항목이 어긋납니다."
 
-    table = pd.DataFrame()
-    if not detail.empty:
-        shown = detail.head(top_n)
-        table = pd.DataFrame({
-            "항목": shown["Item_Name"].astype(str),
-            "기초": shown["Begin"].map(lambda v: f"{v:,.0f}"),
-            "입고": shown[in_col].map(lambda v: f"{v:,.0f}"),
-            "출고": shown[out_col].map(lambda v: f"{v:,.0f}"),
-            "기말": shown[inv_col].map(lambda v: f"{v:,.0f}"),
-            "순증감": shown["Net_Change"].map(lambda v: f"{v:+,.0f}"),
-            "차이": shown["Gap"].map(lambda v: f"{v:+,.0f}" if v else "-"),
-        })
+    outputs = {"stock_flow": flow,
+              "stock_movement_detail": detail if not detail.empty else pd.DataFrame()}
+    key_value = {
+        "기초재고": f"{begin:,.0f}", "입고": f"{inbound:,.0f}", "출고": f"{outbound:,.0f}",
+        "기말재고": f"{end:,.0f}", "정합성": "일치" if reconciled else f"불일치({gap:+,.0f})",
+    }
+    if detail.empty:
+        return ModuleResult(outputs=outputs, render=Render(summary=summary, key_value=key_value))
 
-    # 차트: 순증감이 큰 항목 — 재고가 쌓이는 곳과 빠지는 곳을 부호로 구분해 보여 준다.
-    chart = None
-    if not detail.empty:
-        top = detail.reindex(detail["Net_Change"].abs().sort_values(ascending=False).index)
-        top = top.head(_CHART_MAX)
-        chart = chart_spec(
-            pd.DataFrame({"항목": top["Item_Name"].astype(str),
-                          "순증감": top["Net_Change"].astype(float)}),
-            "bar", "항목별 재고 순증감 (입고−출고)")
-
-    return ModuleResult(
-        outputs={"stock_flow": flow,
-                 "stock_movement_detail": detail if not detail.empty else pd.DataFrame()},
-        render=Render(
-            summary=summary,
-            table=table,
-            chart=chart,
-            key_value={
-                "기초재고": f"{begin:,.0f}",
-                "입고": f"{inbound:,.0f}",
-                "출고": f"{outbound:,.0f}",
-                "기말재고": f"{end:,.0f}",
-                "정합성": "일치" if reconciled else f"불일치({gap:+,.0f})",
-            },
+    shown = detail.head(top_n)
+    table = pd.DataFrame({
+        "항목": shown["Item_Name"].astype(str), "기초": shown["Begin"],
+        "입고": shown[in_col], "출고": shown[out_col], "기말": shown[inv_col],
+        "순증감": shown["Net_Change"], "차이": shown["Gap"],
+    })
+    render = render_from_dataframe(
+        table,
+        purpose="재고 이동(기초·입고·출고·기말) 정합성을 점검.",
+        narrative_hint=(
+            summary + " 정합성이 어긋나면 분석 결론보다 데이터 신뢰성 경고를 먼저 말하고, "
+            "정합하면 재고가 쌓이는 항목과 빠지는 항목을 순증감으로 짚어라."
         ),
+        params={"정합성": key_value["정합성"]}, label="stock_movement",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = key_value
+    return ModuleResult(outputs=outputs, render=render)

@@ -7,15 +7,26 @@ import pandas as pd
 from langchain_core.tools import tool
 
 
+def _resolve(ref: str) -> tuple[Optional[pd.DataFrame], Optional[dict]]:
+    """ref를 DataFrame으로 바꾼다. 못 찾으면 (None, 에러dict)를 돌려준다."""
+    from d2insight.report.tools.query_tool import resolve_ref
+    df = resolve_ref(ref)
+    if df is None:
+        return None, {"error": f"ref '{ref}'를 찾을 수 없습니다 — execute_query/execute_excel_query가 반환한 ref 값을 그대로 전달하세요."}
+    return df, None
+
+
 @tool
-def run_stats(data: list, columns: Optional[list] = None) -> dict:
+def run_stats(ref: str, columns: Optional[list] = None) -> dict:
     """수치 컬럼의 기술통계(mean/std/min/max/사분위수)를 계산합니다.
 
     Args:
-        data: 분석할 데이터 (records 형식). execute_query 결과의 'data' 필드.
+        ref: execute_query/execute_excel_query가 반환한 ref 값.
         columns: 분석할 컬럼명 목록. 미지정 시 모든 수치 컬럼 사용.
     """
-    df = pd.DataFrame(data)
+    df, err = _resolve(ref)
+    if err:
+        return err
     if columns:
         df = df[[c for c in columns if c in df.columns]]
     num = df.select_dtypes(include="number")
@@ -28,15 +39,17 @@ def run_stats(data: list, columns: Optional[list] = None) -> dict:
 
 
 @tool
-def run_trend(data: list, time_col: str, value_col: str) -> dict:
+def run_trend(ref: str, time_col: str, value_col: str) -> dict:
     """시계열 데이터를 일별로 집계하여 추세·피크·합계를 반환합니다.
 
     Args:
-        data: 분석할 데이터 (records 형식).
+        ref: execute_query/execute_excel_query가 반환한 ref 값.
         time_col: 날짜/시간 컬럼명.
         value_col: 집계할 수치 컬럼명.
     """
-    df = pd.DataFrame(data)
+    df, err = _resolve(ref)
+    if err:
+        return err
     if time_col not in df.columns:
         return {"error": f"시간 컬럼 '{time_col}'이 없습니다."}
     if value_col not in df.columns:
@@ -62,16 +75,18 @@ def run_trend(data: list, time_col: str, value_col: str) -> dict:
 
 
 @tool
-def run_outlier(data: list, column: str, method: str = "iqr", sigma: float = 3.0) -> dict:
+def run_outlier(ref: str, column: str, method: str = "iqr", sigma: float = 3.0) -> dict:
     """IQR 또는 z-score 기반으로 이상치를 감지합니다.
 
     Args:
-        data: 분석할 데이터 (records 형식).
+        ref: execute_query/execute_excel_query가 반환한 ref 값.
         column: 이상치를 탐지할 수치 컬럼명.
         method: iqr (기본) | zscore
         sigma: zscore 방식일 때 사용할 표준편차 배수 (기본 3.0). 예: 사용자가 "±5σ" 요청 시 5.0 전달.
     """
-    df = pd.DataFrame(data)
+    df, err = _resolve(ref)
+    if err:
+        return err
     if column not in df.columns:
         return {"error": f"컬럼 '{column}'이 없습니다."}
 

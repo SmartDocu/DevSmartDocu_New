@@ -8,14 +8,6 @@ def render_preview_table(table_header_json, table_data_json, data):
     반환값: HTML 문자열
     """
 
-    # def safe_px(value, default=14):
-    #     """값이 숫자가 아니거나 리스트/None이면 기본값 사용"""
-    #     try:
-    #         return f"{float(value)}px"
-    #     except (TypeError, ValueError):
-    #         return f"{default}px"
-
-    # jeff 202602021140 수정
     def safe_size(value, default="14px"):
         """폰트 사이즈를 그대로 반환 (pt, px 등 단위 포함)"""
         try:
@@ -52,13 +44,13 @@ def render_preview_table(table_header_json, table_data_json, data):
 
         th["style"] = (
             # f"font-size: {safe_px(header_conf.get('fontsize', 14))};"
-            f"font-size: {safe_size(header_conf.get('fontsize', '14px'))};"    # jeff 202602021140 추가
+            f"font-size: {safe_size(header_conf.get('fontsize', '14px'))};"
             f"font-weight: {header_conf.get('fontweight', 'normal')};"
             f"text-align: {header_conf.get('align', 'center')};"
             f"background-color: {header_conf.get('bgcolor', '#f0f0f0')};"
             f"color: {header_conf.get('color', '#000000')};"
             f"padding: 4px 8px;"
-            f"border: 1px solid #000000;"    # jeff 202602021140 추가
+            f"border: 1px solid #000000;" 
         )
 
         tr_head.append(th)
@@ -77,13 +69,13 @@ def render_preview_table(table_header_json, table_data_json, data):
 
             td["style"] = (
                 # f"font-size: {safe_px(conf.get('fontsize', 14))};"
-                f"font-size: {safe_size(conf.get('fontsize', 14))};"    # jeff 202602021140 추가
+                f"font-size: {safe_size(conf.get('fontsize', 14))};" 
                 f"font-weight: {conf.get('fontweight', 'normal')};"
                 f"text-align: {conf.get('align', 'center')};"
                 f"color: {conf.get('color', '#000000')};"
                 f"background-color: {conf.get('bgcolor', '#ffffff')};"
                 f"padding: 2px 6px;"
-                f"border: 1px solid #000000;"    # jeff 202602021140 추가
+                f"border: 1px solid #000000;"
             )
 
             tr.append(td)

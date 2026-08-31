@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import get_pnl_ladder
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 
 STEP_GROSS_MARGIN = "매출총이익"
 STEP_EBIT = "영업이익"
@@ -27,14 +27,10 @@ STEP_EBIT = "영업이익"
 
 def _display_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({
-        "구분": df["Step"],
-        "비교기간": df["Comparison_Value"].map(lambda v: f"{v:,.0f}"),
-        "분석기간": df["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "증감": df["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "증감률": df["Rate"].map(lambda v: f"{v * 100:+.1f}%"),
-        "매출 대비": df["Actual_Margin"].map(lambda v: f"{v * 100:.1f}%"),
-        "전기 대비 %p": (df["Actual_Margin"] - df["Comparison_Margin"]).map(
-            lambda v: f"{v * 100:+.2f}%p"),
+        "구분": df["Step"], "비교기간": df["Comparison_Value"], "분석기간": df["Actual_Value"],
+        "증감": df["Variance"], "증감률(%)": df["Rate"] * 100,
+        "매출 대비(%)": df["Actual_Margin"] * 100,
+        "전기 대비(%p)": (df["Actual_Margin"] - df["Comparison_Margin"]) * 100,
     })
 
 
@@ -63,12 +59,6 @@ def run(ctx, params, tools) -> ModuleResult:
         + note
     )
 
-    # 차트: 손익 단계별 증감액을 부호 있는 막대로 — 어느 단계에서 이익이 깎였는지 한눈에.
-    chart_data = pd.DataFrame({
-        "구분": pnl_df["Step"].astype(str),
-        "증감": pnl_df["Variance"].astype(float),
-    })
-
     key_value = {
         "매출": f"{rev['Actual_Value']:,.0f}",
         STEP_GROSS_MARGIN: f"{steps[STEP_GROSS_MARGIN]['Actual_Value']:,.0f}",
@@ -78,12 +68,10 @@ def run(ctx, params, tools) -> ModuleResult:
         key_value[STEP_EBIT] = f"{steps[STEP_EBIT]['Actual_Value']:,.0f}"
         key_value["영업이익률"] = f"{steps[STEP_EBIT]['Actual_Margin'] * 100:.1f}%"
 
-    return ModuleResult(
-        outputs={"pnl_steps": pnl_df},
-        render=Render(
-            summary=summary,
-            table=_display_table(pnl_df),
-            chart=chart_spec(chart_data, "bar", "손익 단계별 증감"),
-            key_value=key_value,
-        ),
+    render = render_from_dataframe(
+        _display_table(pnl_df), purpose="손익 계단(매출→매출총이익→영업이익)을 한눈에 제시.",
+        narrative_hint=summary, params={"기준": "손익 계단"}, label="pnl_summary",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = key_value
+    return ModuleResult(outputs={"pnl_steps": pnl_df}, render=render)

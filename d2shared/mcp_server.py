@@ -265,6 +265,11 @@ DB 정보:
                 project_id=_project_id, tenant_id=_tenant_id,
                 user_uid=_user_uid, account_uid=_account_uid, service_code=_svc_code,
             )
+            # service_code에 따라 get_llm_info가 model을 문자열이 아니라
+            # {"fast":.., "balanced":.., "quality":..} 딕셔너리로 돌려줄 수 있다
+            # (d2insight.engine._llm.chat()이 이미 이 경우를 처리하는 것과 같은 패턴).
+            if isinstance(model, dict):
+                model = model.get("balanced") or next(iter(model.values()))
             if log_ctx is not None:
                 log_ctx["is_customeraikey"] = _is_customeraikey
                 if not log_ctx.get("account_uid"):

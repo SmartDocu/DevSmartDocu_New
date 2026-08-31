@@ -124,6 +124,22 @@ def _answer_data_question(
     return _answer_from_data(user_message, rows, llm)
 
 
+def _upload_engine_target(session_id: str | None) -> str | None:
+    """엔진 core(매출) 데이터셋 키를 고른다. 세션에 amount 역할 데이터셋이 정확히 1개일 때만."""
+    if not session_id:
+        return None
+    from d2insight.report.excel_registry import get_excel_server
+    from d2insight.engine.schema import ROLE_AMOUNT, Schema
+
+    datasets = get_excel_server().session_datasets.get(session_id) or {}
+    candidates = []
+    for key, entry in datasets.items():
+        engine_meta = entry.get("engine_meta")
+        if engine_meta and Schema(engine_meta["meta_columns"]).column(ROLE_AMOUNT):
+            candidates.append(key)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def run_report_from_spec(spec: dict, user_id: str | None = None,
                          project_id=None, tenant_id=None, account_uid=None,
                          session_id: str | None = None) -> dict:
@@ -235,46 +251,115 @@ def run_tool(
 
     try:
         if tool == "report":
-            from d2insight.report.agent import ReportAgent
             from d2insight.db.insight_storage import get_project_info
 
-            report_type = intent.get("report_type") or "판매분석"
+            report_type = intent.get("report_type") or "보고서"
             user_request = intent.get("original_message")
 
             _tenant_id = tenant_id
             _project_id = project_id
             if user_id and (_project_id is None or _tenant_id is None):
                 _tenant_id, _project_id = get_project_info(user_id)
-            agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id,
-                                user_uid=user_id or user_uid, account_uid=account_uid,
-                                session_id=session_id)
-            # 옵션 패널 "이대로 작성"에서 확정된 시나리오 스텝 목록 — 있으면 이 title들을
-            # step plan으로 강제(LLM 자유 계획 대신). 없으면 기존대로 LLM이 목차 결정.
+
+            # engine이 항상 먼저 계산한다(결정론적, LLM 호출 훨씬 적음) — 시나리오 매칭이든
+            # 자유 형식 요청(auto_plan)이든 모두 이 경로를 탄다. ReportAgent(LLM 툴 호출 루프)는
+            # DB 소스가 없거나 engine 실행이 예외를 던질 때의 폴백으로만 쓰인다(아래 참고).
+            from d2insight.engine.entry import extract_inline_options, match_scenario, run_engine_report
+
             scenario_options = intent.get("scenario_options") or {}
-            step_plan_override = None
+            inline_options = None
             if scenario_options.get("applied_steps"):
-                step_plan_override = [
-                    s.get("title") for s in scenario_options["applied_steps"] if s.get("title")
-                ]
-                # 카탈로그 시나리오는 전부 마지막 스텝 title이 "결론"이다(engine/catalog/scenarios.py
-                # — 7개 시나리오 전부 확인됨). ReportAgent.generate()는 목차와 별개로 항상 자기가
-                # 전용 결론 단계를 하나 더 붙이므로(agent.py), "결론"을 목차에도 그대로 두면 일반
-                # 데이터 스텝으로 한 번 더 실행돼 결론이 두 번 나온다(2026-08-19 확인). ReportAgent는
-                # title 문자열만 쓰고 카탈로그의 모듈/purpose 구조 자체는 안 쓰므로, 여기서 빼도
-                # 실제 결론 내용은 ReportAgent의 전용 결론 단계가 그대로 만들어 정확히 하나만 남는다.
-                step_plan_override = [t for t in step_plan_override if t != "결론"]
-            report_result = agent.generate(
-                report_type, target_month, months_back,
-                user_request=user_request,
-                step_plan_override=step_plan_override,
-            )
+                # 확정된 스텝 그대로 실행 — 재매칭 없이 미리보기와 정확히 같은 구성으로 돈다.
+                inline_options = {
+                    "steps": scenario_options["applied_steps"],
+                    "scenario": scenario_options.get("scenario"),
+                }
+                matched_scenario = scenario_options.get("scenario")
+            else:
+                # 대화·JSON 두 경로가 같은 형태로 수렴한다는 원칙(engine/entry.py) — 메시지에
+                # "적용된 옵션" JSON을 직접 붙여넣은 경우도 여기서 잡는다.
+                inline_options = extract_inline_options(user_request or "")
+                matched_scenario = match_scenario(user_request)
 
-            if report_result.get("skipped_reason"):
-                result["answer"] = report_result["skipped_reason"]
-                return result
+            # 시나리오 매칭 여부·인라인 옵션 유무와 무관하게 항상 engine을 먼저 시도한다
+            # (매칭 안 되면 resolve_report_plan 내부에서 auto_plan으로 자연히 넘어간다).
+            # DB 소스가 없거나(DbMetaError) engine 실행이 예외를 던지면 아래에서 ReportAgent로
+            # 폴백한다 — engine이 유일한 정상 경로이고 ReportAgent는 폴백 전용이다.
+            md_text = md_filename = ""
+            raw_applied_steps = None
 
-            md_text = report_result.get("md_text", "")
-            md_filename = report_result.get("md_filename", "")
+            # 데이터 소스(DB/업로드)와 실행 방식(engine/ReportAgent)은 서로 독립이다 — 업로드
+            # 데이터라도 시나리오에 매칭되면 engine이 돈다. 업로드된 파일이 있고, 그중 매출
+            # 역할이 확인되는 파일이 정확히 1개면 그 파일을 engine에 core 데이터셋으로 넘긴다.
+            from d2insight.report.excel_registry import get_excel_server
+            has_upload = bool(session_id and get_excel_server().has_datasets(session_id))
+            upload_dataset_key = _upload_engine_target(session_id) if has_upload else None
+            use_engine = not has_upload or bool(upload_dataset_key)
+
+            # DB 모드일 때만 등록된 DB 소스가 어느 것인지(source_id) 알아야 한다 — 없으면 실행이
+            # 안 되므로 미리 찾아둔다. 업로드 모드(매출 역할 확인됨)는 DB 소스 없이도 진행한다.
+            source_id = None
+            if use_engine and not upload_dataset_key:
+                from d2insight.engine.pipeline.db_meta import DbMetaError, resolve_source_cluster
+                try:
+                    source_id = "+".join(c["datauid"] for c in resolve_source_cluster(_project_id))
+                except DbMetaError as _dbe:
+                    print(f"[engine] DB 마스터데이터 없음, ReportAgent로 폴백: {_dbe}")
+                    use_engine = False
+
+            if use_engine:
+                try:
+                    eng = run_engine_report(
+                        message=user_request or report_type,
+                        target_month=target_month,
+                        report_type=matched_scenario or report_type,
+                        source_id=source_id,
+                        user_id=user_id,
+                        session_id=session_id,
+                        upload_session_id=session_id if upload_dataset_key else None,
+                        upload_dataset_key=upload_dataset_key,
+                        matched_scenario=matched_scenario,
+                        inline_options=inline_options,
+                    )
+                    md_text = eng.get("md_text", "")
+                    md_filename = eng.get("md_filename", "")
+                    raw_applied_steps = eng.get("applied_steps")
+                    report_type = eng.get("scenario") or report_type
+                except Exception as _ee:
+                    # 조용히 삼키지 않고 원인은 로그로 남긴 뒤, 자유 계획(ReportAgent)으로
+                    # 안전하게 폴백한다 — 사용자 요청 자체는 실패시키지 않는다.
+                    print(f"[engine] 보고서 생성 실패, ReportAgent로 폴백: {type(_ee).__name__}: {_ee}")
+
+                    use_engine = False
+
+            if not use_engine:
+                from d2insight.report.agent import ReportAgent
+                agent = ReportAgent(project_id=_project_id, tenant_id=_tenant_id,
+                                    user_uid=user_id or user_uid, account_uid=account_uid,
+                                    session_id=session_id)
+                # 옵션 패널 "이대로 작성"에서 확정된 시나리오 스텝 목록 — 있으면 이 title들을
+                # step plan으로 강제(LLM 자유 계획 대신). 없으면 기존대로 LLM이 목차 결정.
+                step_plan_override = None
+                if scenario_options.get("applied_steps"):
+                    step_plan_override = [
+                        s.get("title") for s in scenario_options["applied_steps"] if s.get("title")
+                    ]
+                    # ReportAgent가 결론 단계를 항상 별도로 붙이므로 목차에서 "결론"을 빼지 않으면
+                    # 결론이 두 번 나온다.
+                    step_plan_override = [t for t in step_plan_override if t != "결론"]
+                report_result = agent.generate(
+                    report_type, target_month, months_back,
+                    user_request=user_request,
+                    step_plan_override=step_plan_override,
+                )
+
+                if report_result.get("skipped_reason"):
+                    result["answer"] = report_result["skipped_reason"]
+                    return result
+
+                md_text = report_result.get("md_text", "")
+                md_filename = report_result.get("md_filename", "")
+                raw_applied_steps = report_result.get("applied_steps")
 
             brief = ""
             if md_text:
@@ -296,20 +381,22 @@ def run_tool(
                 answer += brief
             result["answer"] = answer
             result["report_path"] = md_filename
-            # 옵션 패널 "이대로 작성"으로 확정된 스텝이 있으면 그걸 그대로 되돌려준다 — 오른쪽
-            # 패널이 작성 전(preview)·후에 똑같은 제목/모듈/purpose를 보여줘야 하기 때문이다
-            # (ReportAgent.generate()가 만드는 report_result["applied_steps"]는 실행 중 실제로
-            # 호출한 도구(execute_query/create_chart 등)의 원시 트레이스라 형태가 다르고, 사용자에게
-            # 노출하기엔 너무 상세하다). 이 값은 _session.append_qa로 그대로 저장되므로 이력·즐겨찾기·
-            # 공유에서 다시 볼 때도 동일하게 보인다. scenario_options가 없는(=preview 매칭 안 된) 자유
-            # 대화형 보고서만 기존처럼 agent의 실행 트레이스를 그대로 쓴다.
-            result["applied_steps"] = scenario_options.get("applied_steps") or report_result.get("applied_steps")
+            # engine 경로는 raw_applied_steps가 실제로 실행된 스텝·모듈 구성 그 자체이고,
+            # 스텝 단위 쿼리 캐싱(Phase 3)을 위해 실행 중 채워진 query_sql도 여기에만 있으므로
+            # 이쪽을 우선한다. ReportAgent 경로(자유 계획, 매칭 안 된 요청)의 raw_applied_steps는
+            # 실행 중 호출한 도구의 원시 트레이스라 형태가 다르고 사용자에게 노출하기엔 너무
+            # 상세하므로, 그 경우엔 옵션 패널 "이대로 작성"으로 확정된 스텝을 대신 쓴다. 이 값은
+            # _session.append_qa로 그대로 저장되므로 이력·즐겨찾기·공유에서 다시 볼 때도
+            # 동일하게 보인다.
+            result["applied_steps"] = (
+                raw_applied_steps if use_engine else scenario_options.get("applied_steps")
+            ) or raw_applied_steps or scenario_options.get("applied_steps")
 
             try:
                 from d2insight.db.insight_storage import record_analytics
                 result["analytic_uid"] = record_analytics(
                     _tenant_id, _project_id, report_type,
-                    report_result.get("applied_steps"), creator=user_id,
+                    raw_applied_steps, creator=user_id,
                 )
             except Exception as _e:
                 # print(f"[analytics] 실행 로그 기록 실패(무시하고 진행): {_e}")

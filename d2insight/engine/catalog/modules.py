@@ -95,21 +95,27 @@ def _spec(module_id, **kw) -> ModuleSpec:
 _AGGREGATE = [
     _spec(
         "period_dataset",
-        purpose="분석기간·비교기간·최근구간 원천과 컬럼 메타를 적재(§1 분석대상자료확인).",
+        purpose="분석기간·비교기간·최근구간 원천과 컬럼 메타를 적재.",
         kind="aggregate",
         requires=[],
         produces=["actual_dataset", "compare_dataset", "history_dataset", "meta_columns"],
         params={
-            # enum: dataset_builder.compare_shift가 인식하는 값은 이 세 개뿐이다. LLM이
-            # 임의 문자열("month_over_month" 등)을 지어내면 qoq/yoy 매칭에 실패해 조용히
-            # MoM으로 빠진다(2026-07-28 실사용 테스트에서 발견) — chat_options._catalog_digest가
-            # 이 목록을 LLM에게 보여줘 애초에 못 지어내게 막는다.
+            # enum: dataset_builder.compare_shift가 인식하는 값은 이 세 개뿐이다. LLM이 임의
+            # 문자열을 지어내면 조용히 MoM으로 빠지므로, chat_options._catalog_digest가 이
+            # 목록을 LLM에게 보여줘 못 지어내게 막는다.
             "compare_type": {"type": "str", "required": False, "default": None,
                               "enum": ["MoM", "QoQ", "YoY"]},
             "months_back":  {"type": "int", "required": False, "default": 3},
-            # 기간 단위(2026-07-24 3단계): month(기본)/quarter/year/week.
+            # 기간 단위: month(기본)/quarter/year/week.
             "grain":        {"type": "str", "required": False, "default": None,
                               "enum": ["month", "quarter", "year", "week"]},
+            # 스텝 단위 쿼리(2026-08-24) — resolve_dependencies가 같은 스텝의 다른 모듈들
+            # 파라미터를 모아 자동으로 채운다(사용자가 직접 지정하는 값이 아니다).
+            "dimensions":    {"type": "list", "required": False, "default": None},
+            "measures":      {"type": "list", "required": False, "default": None},
+            "needs_history": {"type": "bool", "required": False, "default": False},
+            # 정기 보고서 SQL 캐싱(Phase 3) — 있으면 LLM 재생성 없이 이 SQL을 그대로 재사용.
+            "query_sql":     {"type": "str", "required": False, "default": None},
         },
         tools={},                       # 순수 로드
         model_tier="none",
@@ -217,7 +223,7 @@ _AGGREGATE = [
 _ANALYSIS = [
     _spec(
         "measure_summary",
-        purpose="전체 매출 증감 총평(규모/율/수량/ASP/할인율) (§11).",
+        purpose="전체 매출 증감 총평(규모/율/수량/ASP/할인율).",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=["measure_summary", "total_variance"],
@@ -230,7 +236,7 @@ _ANALYSIS = [
     ),
     _spec(
         "dimension_impact",
-        purpose="어느 차원이 변화를 주도했는지 DVI/Shapley 순위로 제시(§12-A).",
+        purpose="어느 차원이 변화를 가장 크게 설명하는지 제시.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=["dimension_stats"],
@@ -238,21 +244,24 @@ _ANALYSIS = [
             "measure":    {"type": "str", "required": False, "default": None},
             "dimensions": {"type": "list", "required": False, "default": None},
         },
-        tools={"available": ["shapley", "dvi"], "default": "dvi"},
+        # shapley 기본 — dvi는 항목 수 적은 차원(예: 관리용 구분)이 과대평가되기 쉽다.
+        tools={"available": ["shapley", "dvi"], "default": "shapley"},
         model_tier="balanced",
         narrative_hint=(
-            "상위 차원이 왜 상위인지 임팩트(총 흔들림)·HHI(소수 항목 집중)·Z(편차)로 갈라 설명하라. "
-            "항목 수가 많은 차원은 지표가 부풀 수 있음을 감안해 해석하라."
+            "1위 차원이 전체 변화의 몇 %를 설명하는지만 짧게 말하라. DVI·HHI·집중도·평균Z 같은 "
+            "내부 지표 용어는 본문에 쓰지 마라 — 구체적으로 어떤 항목이 얼마나 움직였는지는 "
+            "다음 스텝(항목별 증감)이 다룬다."
         ),
     ),
     _spec(
         "within_contribution",
-        purpose="항목 증감액/전체 증감액 기준 차원 내 기여도 상위 제시(§12-B).",
+        purpose="항목 증감액/전체 증감액 기준 차원 내 기여도 상위 제시.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset", "total_variance"],
         produces=["within_contribution"],
         params={
-            "dimension": {"type": "str", "required": True},
+            # required=False — 안 주면 dimension_impact의 Shapley 1위 차원으로 자동 대체(contribution.py).
+            "dimension": {"type": "str", "required": False, "default": None},
             "measure":   {"type": "str", "required": False, "default": None},
             "top_n":     {"type": "int", "required": False, "default": 20},
         },
@@ -265,11 +274,9 @@ _ANALYSIS = [
     ),
     _spec(
         "anomaly_detection",
-        # §14 개정(2026-07-14): 전 차원·전체 항목 대상, 금액·증감률 두 축으로 판정.
-        # dimension_stats를 더 이상 requires로 받지 않는다(2026-07-24 4단계) — measure별로
-        # 다른 결과가 필요해, dimension_impact가 만든 (특정 measure에 고정된) 싱글턴에 기대지
-        # 않고 이 모듈이 요청받은 measure로 직접 통계를 계산한다.
-        purpose="금액·증감률 분포에서 크게 벗어난 이상 항목을 탐지(§14).",
+        # 전 차원·전체 항목 대상, 금액·증감률 두 축으로 판정. dimension_impact가 만든 특정
+        # measure 고정 싱글턴에 기대지 않고, 요청받은 measure로 직접 통계를 계산한다.
+        purpose="금액·증감률 분포에서 크게 벗어난 이상 항목을 탐지.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=["outlier_result"],
@@ -279,8 +286,7 @@ _ANALYSIS = [
             "dimension":  {"type": "str", "required": False, "default": None},
             "dimensions": {"type": "list", "required": False, "default": None},
             "top_n":      {"type": "int", "required": False, "default": 10},
-            # 일시미구매(구매 주기상 미등장) 고객을 이상징후에서 제외할지 — anomaly.py가 읽는데
-            # 선언이 빠져 있어 옵션 JSON 지정 시 OptionsError가 났던 갭(2026-07-23 발견·수정).
+            # 일시미구매(구매 주기상 미등장) 고객을 이상징후에서 제외할지.
             "exclude_dormant": {"type": "bool", "required": False, "default": True},
         },
         tools={"available": ["z_score", "iqr", "mad", "attainment"], "default": "z_score"},
@@ -293,7 +299,7 @@ _ANALYSIS = [
     ),
     _spec(
         "new_lost_detection",
-        purpose="신규·이탈 항목의 건수와 금액 효과를 제시(§6).",
+        purpose="신규·이탈 항목의 건수와 금액 효과를 제시.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=["new_lost_items", "count_summary"],
@@ -318,6 +324,7 @@ _ANALYSIS = [
         produces=[],                        # new_lost_detection과 같은 계산(_shared.get_lifecycle_effects) 공유
         params={"top_n": {"type": "int", "required": False, "default": 10}},
         tools={},
+        required_roles=["party"],
         model_tier="balanced",
         narrative_hint="진성신규와 복귀를 구분해 몇 명이 얼마만큼 유입됐는지 말하라. 이탈은 다른 스텝의 몫이다.",
     ),
@@ -329,6 +336,7 @@ _ANALYSIS = [
         produces=[],
         params={"top_n": {"type": "int", "required": False, "default": 10}},
         tools={},
+        required_roles=["party"],
         model_tier="balanced",
         narrative_hint=(
             "진성이탈 고객 수와 손실 금액을 말하라. 일시미구매(구매 주기상 미등장)는 이탈이 "
@@ -337,8 +345,8 @@ _ANALYSIS = [
     ),
     _spec(
         "sales_bridge",
-        # §13 개정(2026-07-14): 상품·고객 두 관점의 가법 분해(각 관점 합계 = 전체 증감액).
-        purpose="증감을 수량/정가ASP/할인/신규/이탈 효과로 분해(§13).",
+        # 상품·고객 두 관점의 가법 분해(각 관점 합계 = 전체 증감액).
+        purpose="증감을 수량/정가ASP/할인/신규/이탈 효과로 분해.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset", "total_variance"],
         produces=["bridge_effects"],
@@ -352,7 +360,7 @@ _ANALYSIS = [
     ),
     _spec(
         "cross_drilldown",
-        purpose="이상 항목이 어느 하위 항목에서 비롯됐는지 교차 분석(§15).",
+        purpose="이상 항목이 어느 하위 항목에서 비롯됐는지 교차 분석.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset", "outlier_result", "dimension_stats"],
         produces=["drilldown_result"],
@@ -452,8 +460,8 @@ _ANALYSIS = [
             "판관비가 없어 영업이익을 못 냈으면 그 사실을 분명히 하라."
         ),
     ),
-    # 손익 계단 5스텝 공통 옵션(2026-07-23 추가): dimension을 지정하면 그 단계 금액을 차원별
-    # 상세 표로 분해해 덧붙인다(예: 제품별 매출원가). 미지정 시 총계 요약만(기존 동작).
+    # 손익 계단 5스텝 공통 옵션: dimension을 지정하면 그 단계 금액을 차원별 상세 표로 분해해
+    # 덧붙인다(예: 제품별 매출원가). 미지정 시 총계 요약만.
     _spec(
         "revenue_step",
         purpose="손익 계단의 매출(Revenue) 단계 — 시나리오 '손익 분석'의 첫 스텝.",
@@ -530,7 +538,7 @@ _ANALYSIS = [
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=[],                        # revenue_step~ebit_step과 같은 계산(get_pnl_ladder)을 공유
-        # dimension 지정 시(2026-07-23) 항목별 ΔEBIT 분해 표(매출/원가/판관비 효과) 추가.
+        # dimension 지정 시 항목별 ΔEBIT 분해 표(매출/원가/판관비 효과) 추가.
         params={
             "dimension": {"type": "str", "required": False, "default": None},
             "top_n":     {"type": "int", "required": False, "default": 10},
@@ -620,13 +628,12 @@ _ANALYSIS = [
         "volume_effect",
         purpose="순수 물량(Volume) 효과 — 믹스·단가를 제외한 판매량 자체의 증감분.",
         kind="analysis",
-        requires=["actual_dataset", "compare_dataset", "total_variance"],  # 비중은 total_variance 기준(2026-07-21)
+        requires=["actual_dataset", "compare_dataset", "total_variance"],  # 비중은 total_variance 기준
+        required_roles=["quantity"],
         produces=[],                        # 계산은 _shared.get_pvm_effects/get_bridge_effects 캐시(내부 파생물)
         params={
             "top_n": {"type": "int", "required": False, "default": 10},   # bridge 툴일 때만 항목표에 쓰임
-            # dimension은 상품(item) 기준 고정이라 모듈이 실제로 읽지는 않는다(§13) — 옵션 JSON이
-            # 그 사실을 명시하려고 넘겨도 검증에서 걸리지 않도록 선언만 해둔다.
-            "dimension": {"type": "str", "required": False, "default": "item"},
+            # dimension 없음 — 실제로 안 읽는 파라미터라 뺐다(있으면 품목 없는 데이터셋에서 스텝째로 빠짐).
         },
         tools={"available": ["pvm", "bridge_decompose"], "default": "bridge_decompose"},
         # tools={"available": ["pvm", "bridge_decompose"], "default": "pvm"},
@@ -641,10 +648,10 @@ _ANALYSIS = [
         purpose="단가(Price) 효과 — 물량 변화를 제외한 항목별 판매 단가 변화분.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset", "total_variance"],
+        required_roles=["quantity"],
         produces=[],
         params={
             "top_n": {"type": "int", "required": False, "default": 10},
-            "dimension": {"type": "str", "required": False, "default": "item"},
         },
         tools={"available": ["pvm", "bridge_decompose"], "default": "bridge_decompose"},
         # tools={"available": ["pvm", "bridge_decompose"], "default": "pvm"},
@@ -673,10 +680,9 @@ _ANALYSIS = [
         "conclusion",
         purpose="모든 스텝의 집계 결과를 바탕으로 최종 경영 인사이트(결론)를 작성.",
         kind="analysis",
-        # 어떤 조합의 스텝이 앞에 오든(제외·추가·순서변경) 실행 가능해야 하므로 requires를
-        # 선언하지 않는다 — 실제로 무엇을 읽을지는 build_conclusion이 ctx에서 있는 대로
-        # 골라 쓴다(2026-07-28, 7단계). "항상 맨 뒤"는 operations._TAIL_MODULE_IDS 잠금으로
-        # 보장한다(requires 기반 순서 강제가 아니라 스텝 배치 자체를 고정).
+        # 어떤 조합의 스텝이 앞에 오든 실행 가능해야 하므로 requires를 선언하지 않는다 —
+        # build_conclusion이 ctx에서 있는 대로 골라 쓴다. "항상 맨 뒤"는
+        # operations._TAIL_MODULE_IDS 잠금으로 보장한다.
         requires=[],
         produces=[],
         params={},

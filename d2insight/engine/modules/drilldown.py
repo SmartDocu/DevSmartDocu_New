@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.chart import chart_spec
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_QUANTITY, get_schema
+from d2insight.engine.modules._llm_render import render_from_dataframe
+from d2insight.engine.schema import ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_PERIOD, ROLE_QUANTITY, get_schema
 from d2insight.engine.types import ModuleResult, Render
 
 MIN_CROSS_GROUPS = 2      # 이보다 적게 쪼개지면 설명력이 없다고 본다
@@ -51,19 +51,6 @@ def _effects(row: pd.Series, amount: str, quantity: str | None,
         candidates.append(("할인", -(da - dc)))
     factor = max(candidates, key=lambda kv: abs(kv[1]))[0]
     return factor, qty_effect, asp_effect
-
-
-def _display_table(df: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame({
-        "이상 항목": df["Outlier"],
-        "교차 차원": df["Cross_Dimension"],
-        "하위 항목": df["Cross_Item"],
-        "비교기간": df["Comparison_Value"].map(lambda v: f"{v:,.0f}"),
-        "분석기간": df["Actual_Value"].map(lambda v: f"{v:,.0f}"),
-        "증감": df["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "항목 내 비중": df["Share"].map(lambda v: f"{v * 100:+.1f}%"),
-        "주요인": df["Factor"],
-    })
 
 
 def run(ctx, params, tools) -> ModuleResult:
@@ -107,8 +94,13 @@ def run(ctx, params, tools) -> ModuleResult:
         actual_rows = actual_df[actual_df[dim] == item]
         compare_rows = compare_df[compare_df[dim] == item]
 
-        candidates = ([d for d in (requested_subs or []) if d in actual_df.columns]
-                      or [d for d in dvi_order if d != dim and d in actual_df.columns])
+        # candidates = ([d for d in (requested_subs or []) if d in actual_df.columns]
+        #               or [d for d in dvi_order if d != dim and d in actual_df.columns])
+
+        period_col = schema.column(ROLE_PERIOD)
+        exclude = {dim, period_col}
+        candidates = ([d for d in (requested_subs or []) if d in actual_df.columns and d not in exclude]
+                    or [d for d in dvi_order if d not in exclude and d in actual_df.columns])
 
         # 실제로 쪼개지는 차원을 고른다 — 그룹이 1개면 정보가 없다(부모 차원·상수 차원).
         panel = None
@@ -158,34 +150,18 @@ def run(ctx, params, tools) -> ModuleResult:
     result = pd.DataFrame(rows)
     note = f" 교차 불가: {', '.join(skipped)}." if skipped else ""
 
-    # 차트: 금액 영향이 가장 큰 이상 항목 1건이 교차 차원의 어떤 하위 항목에서 왔는지 분해.
-    #   이상 항목마다 교차 차원·하위 그룹이 달라 한 차트에 섞지 않고 최대 영향 항목에 집중한다.
-    #   result는 §14 이상 항목 순(금액 큰 순)으로 쌓이므로 첫 그룹이 최대 영향 항목이다.
-    top_outlier = result["Outlier"].iloc[0]
-    top_group = result[result["Outlier"] == top_outlier]
-    chart_data = pd.DataFrame({
-        "하위 항목": top_group["Cross_Item"].astype(str),
-        "증감": top_group["Variance"].astype(float),
-    })
-    chart = chart_spec(chart_data, "bar", f"'{top_outlier}' 증감의 하위 분해")
-
-    parts = []
-    for outlier, grp in result.groupby("Outlier", sort=False):
-        top = grp.iloc[0]
-        parts.append(
-            f"{outlier} → {top['Cross_Item']}({top['Cross_Dimension']}) "
-            f"{top['Variance']:+,.0f}, 해당 항목 증감의 {top['Share'] * 100:.0f}% ({top['Factor']} 요인)"
-        )
-    summary = (f"이상 항목 {result['Outlier'].nunique()}건을 교차 분석. "
-               + " / ".join(parts[:3]) + "." + note)
-
-    return ModuleResult(
-        outputs={"drilldown_result": result},
-        render=Render(
-            summary=summary,
-            table=_display_table(result),
-            chart=chart,
-            key_value={"교차 분석 대상": result["Outlier"].nunique(),
-                       "교차 차원": ", ".join(sorted(result["Cross_Dimension"].unique()))},
+    display = result[["Outlier", "Cross_Dimension", "Cross_Item", "Comparison_Value",
+                      "Actual_Value", "Variance", "Share", "Factor"]]
+    render = render_from_dataframe(
+        display,
+        purpose="이상 항목을 다른 차원으로 쪼개 원인을 찾는다.",
+        narrative_hint=(
+            "이상 항목마다 어느 하위 항목이 그 변화를 얼마나 설명하는지(비중), 주요인(수량/ASP/할인/"
+            "신규유입/이탈)이 무엇인지 짚어라." + note
         ),
+        params={"이상 항목 수": result["Outlier"].nunique()}, label="cross_drilldown",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {"교차 분석 대상": result["Outlier"].nunique(),
+                        "교차 차원": ", ".join(sorted(result["Cross_Dimension"].unique()))}
+    return ModuleResult(outputs={"drilldown_result": result}, render=render)

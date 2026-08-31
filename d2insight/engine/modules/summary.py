@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import pandas as pd
 
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_QUANTITY, get_schema
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 
 DERIVED_UNIT_PRICE = "단가"
 DERIVED_DISCOUNT_RATE = "할인율"
@@ -129,33 +130,20 @@ def run(ctx, params, tools) -> ModuleResult:
         "rate": float(key["Rate"]),
     }
 
-    parts = [
-        f"{schema.logical_name(key_measure)} {total_variance['actual_value']:,.0f} "
-        f"(전기 대비 {total_variance['variance']:+,.0f}, {_fmt_pct(total_variance['rate'])})"
-    ]
-    for _, r in summary_df.iterrows():
-        name = r["Physical_Name"]
-        if name == key_measure:
-            continue
-        if name in ratio_rows:
-            parts.append(f"{r['Logical_Name']} {r['Actual_Value'] * 100:.2f}% "
-                         f"({r['Variance'] * 100:+.2f}%p)")
-        else:
-            parts.append(f"{r['Logical_Name']} {_fmt_pct(float(r['Rate']))}")
-
-    direction = "증가" if total_variance["variance"] >= 0 else "감소"
-    summary = f"{direction} — " + ", ".join(parts) + "."
-
-    return ModuleResult(
-        outputs={"measure_summary": summary_df, "total_variance": total_variance},
-        render=Render(
-            summary=summary,
-            table=_display_table(summary_df, ratio_rows),
-            key_value={
-                "실적": f"{total_variance['actual_value']:,.0f}",
-                "비교": f"{total_variance['compare_value']:,.0f}",
-                "증감액": f"{total_variance['variance']:+,.0f}",
-                "증감률": _fmt_pct(total_variance["rate"]),
-            },
+    render = render_from_dataframe(
+        _display_table(summary_df, ratio_rows),
+        purpose="측정값 전체 증감 총평과 파생 지표(단가·할인율)를 제시.",
+        narrative_hint=(
+            f"핵심 측정값({schema.logical_name(key_measure)})의 증감을 먼저 말하고, 단가·할인율 같은 "
+            "파생 지표가 있으면 그 변화도 짚어라."
         ),
+        params={"핵심 측정값": schema.logical_name(key_measure)}, label="measure_summary",
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = {
+        "실적": f"{total_variance['actual_value']:,.0f}",
+        "비교": f"{total_variance['compare_value']:,.0f}",
+        "증감액": f"{total_variance['variance']:+,.0f}",
+        "증감률": _fmt_pct(total_variance["rate"]),
+    }
+    return ModuleResult(outputs={"measure_summary": summary_df, "total_variance": total_variance}, render=render)

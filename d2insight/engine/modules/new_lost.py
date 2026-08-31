@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.chart import chart_spec
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import (
     LIFECYCLE_CHURN, LIFECYCLE_DORMANT, LIFECYCLE_KEEP, LIFECYCLE_NEW, LIFECYCLE_RETURN,
     get_item_variance, get_lifecycle_effects,
 )
 from d2insight.engine.schema import ROLE_ITEM, ROLE_PARTY, get_schema
-from d2insight.engine.types import ModuleResult, Render
+from d2insight.engine.types import ModuleResult
 
 # 표에 싣는 생애주기 순서 (유지는 건수만 참고용)
 _STAGES = [LIFECYCLE_NEW, LIFECYCLE_RETURN, LIFECYCLE_CHURN, LIFECYCLE_DORMANT]
@@ -40,11 +40,11 @@ def _display_table(df: pd.DataFrame, name_of) -> pd.DataFrame:
     # 차원 표시명은 데이터 정의(Logical_Name)에서 온다 → 구매분석이면 '품목·공급사'로 찍힌다.
     out = pd.DataFrame({"차원": df["Dimension_Logical_Name"].map(name_of)})
     for stage in _STAGES:
-        out[f"{stage} 건수"] = df[f"{stage}_Count"].map(lambda v: f"{int(v):,}")
-        out[f"{stage} 금액"] = df[f"{stage}_Amount"].map(lambda v: f"{v:+,.0f}")
-    out["유입 합계"] = df["Inflow_Amount"].map(lambda v: f"{v:+,.0f}")
-    out["유출 합계"] = df["Outflow_Amount"].map(lambda v: f"{v:+,.0f}")
-    out["순효과"] = df["Net_Amount"].map(lambda v: f"{v:+,.0f}")
+        out[f"{stage} 건수"] = df[f"{stage}_Count"]
+        out[f"{stage} 금액"] = df[f"{stage}_Amount"]
+    out["유입 합계"] = df["Inflow_Amount"]
+    out["유출 합계"] = df["Outflow_Amount"]
+    out["순효과"] = df["Net_Amount"]
     return out
 
 
@@ -109,20 +109,8 @@ def run(ctx, params, tools) -> ModuleResult:
     items = items.reindex(items["Effect"].abs().sort_values(ascending=False).index).reset_index(drop=True)
     top_n = int(params.get("top_n") or 10)
 
-    parts = []
-    for _, r in counts.iterrows():
-        parts.append(
-            f"{schema.logical_name(r['Dimension_Logical_Name'])} "
-            f"진성신규 {int(r[f'{LIFECYCLE_NEW}_Count']):,}건"
-            f"({r[f'{LIFECYCLE_NEW}_Amount']:+,.0f}) / 진성이탈 "
-            f"{int(r[f'{LIFECYCLE_CHURN}_Count']):,}건({r[f'{LIFECYCLE_CHURN}_Amount']:+,.0f})"
-        )
     dormant_total = int(counts[f"{LIFECYCLE_DORMANT}_Count"].sum())
     net_total = float(counts["Net_Amount"].sum())
-    summary = (
-        f"신규·이탈 순효과 {net_total:+,.0f} — " + ", ".join(parts) +
-        f". 일시미구매(구매 주기에 따른 미등장) {dormant_total:,}건은 이탈로 보지 않음."
-    )
 
     key_value = {
         "신규·이탈 순효과": f"{net_total:+,.0f}",
@@ -135,20 +123,19 @@ def run(ctx, params, tools) -> ModuleResult:
             f"({top['Lifecycle']} {top['Effect']:+,.0f})"
         )
 
-    # 차트: 진성신규·복귀·이탈 개별 항목 Top을 금액 효과로(부호 있는 단일 막대).
-    #   신규·복귀는 +, 진성이탈은 -로 나와 "누가 유입/유출을 이끌었나"가 한눈에 보인다.
-    #   차원별 총량은 표가 맡으므로 차트는 개별 드라이버에 집중한다. 차원 금액 규모가
-    #   1,000배까지 벌어져(상품 vs 고객) 차원별 그룹 막대는 작은 쪽이 안 보이는 문제도 피한다.
-    chart_top = items.head(_CHART_MAX)
-    chart_data = pd.DataFrame({
-        "항목": chart_top["Item_Name"].astype(str),
-        "금액효과": chart_top["Effect"].astype(float),
-    })
+    chart_top = items.head(_CHART_MAX)[["Item_Name", "Effect"]].rename(
+        columns={"Item_Name": "항목", "Effect": "금액효과"})
 
-    return ModuleResult(
-        outputs={"count_summary": counts, "new_lost_items": items.head(top_n)},
-        render=Render(summary=summary,
-                      table=_display_table(counts, schema.logical_name),
-                      chart=chart_spec(chart_data, "bar", "신규·이탈 개별 항목 Top (금액 효과)"),
-                      key_value=key_value),
+    render = render_from_dataframe(
+        _display_table(counts, schema.logical_name),
+        purpose="신규·이탈 현황(건수·금액)을 차원별로 제시.",
+        narrative_hint=(
+            f"순효과 {net_total:+,.0f}을 먼저 말하고, 어느 차원에서 신규·이탈이 두드러졌는지 짚어라. "
+            f"일시미구매(구매 주기에 따른 미등장) {dormant_total:,}건은 이탈이 아니라는 것도 밝혀라."
+        ),
+        params={"대상 차원": target_dims}, label="new_lost_detection",
+        chart_df=chart_top if not chart_top.empty else None,
+        cache=params.get("_llm_render_cache"),
     )
+    render.key_value = key_value
+    return ModuleResult(outputs={"count_summary": counts, "new_lost_items": items.head(top_n)}, render=render)

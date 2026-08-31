@@ -1,8 +1,8 @@
 """옵션 JSON ↔ 엔진 plan 변환 — 대화·UI 어느 경로로 온 옵션이든 이 통로 하나로 수렴한다.
 
-옵션이 실제로 보고서에 반영되는지 검증하는 게 목적이라, planner.finalize처럼 근사 매칭으로
-조용히 고치지 않는다 — 알 수 없는 module_id·param·tool·dimension은 즉시 OptionsError를 올린다.
-(2026-07-22, Volume/Price/Customer 4스텝 옵션 검증 작업)
+알 수 없는 module_id·param명·tool은 카탈로그와 어긋난 것이라 즉시 OptionsError를 올린다.
+dimension/measure만 예외다 — 데이터셋에 없을 수 있는 정상적인 경우라, 그 모듈만 건너뛴다
+(planner.finalize의 근사 매칭과 같은 원칙).
 """
 from __future__ import annotations
 
@@ -10,11 +10,21 @@ import json
 
 from d2insight.engine.catalog.modules import get_module_registry
 from d2insight.engine.planner import finalize
-from d2insight.engine.schema import Schema
+from d2insight.engine.schema import ROLE_ITEM, Schema
 
 
 class OptionsError(Exception):
     """옵션 JSON이 카탈로그와 맞지 않을 때 — 조용히 보정하지 않고 여기서 즉시 실패한다."""
+
+
+def _build_disabled_step(title: str, raw_modules: list[dict], reasons: list[str], schema: Schema) -> dict:
+    """스텝의 모듈이 전부 실행 불가일 때 버리지 않고 비활성 스텝(enabled=False)으로 남긴다."""
+    reason_text = " / ".join(dict.fromkeys(reasons)) or "필요한 조건을 이 데이터셋에서 찾지 못했습니다."
+    if any((m.get("params") or {}).get("dimension") == ROLE_ITEM for m in raw_modules):
+        alts = schema.item_fallback_columns()
+        if alts:
+            reason_text += f" (가능한 대안: {', '.join(alts)})"
+    return {"title": title, "modules": raw_modules, "enabled": False, "disabled_reason": reason_text}
 
 
 def load_options(path: str) -> dict:
@@ -103,6 +113,28 @@ def _resolve_measure(module_id: str, params: dict, spec, schema: Schema,
     return params
 
 
+def _build_entry(module_id: str, params: dict, tool: str | None, spec, title: str,
+                 auto: bool = False) -> dict:
+    """resolved params + tool 검증 → plan에 들어갈 module entry 하나. 툴 오류는 그대로 올린다
+    (dimension/measure와 달리 카탈로그와 어긋난 것이라 즉시 실패 대상, 기존 규칙과 동일).
+
+    auto: 입력 모듈에 이미 "_auto"(자동 삽입 표시)가 있으면 그대로 이어받는다 — 안 그러면
+    미리보기→"이대로 작성" 왕복에서 이 표시가 사라진다(2026-08-26 확인).
+    """
+    entry = {"module_id": module_id, "params": params}
+    if auto:
+        entry["_auto"] = True
+    if tool:
+        available = spec.tools.get("available") or []
+        if tool not in available:
+            raise OptionsError(
+                f"스텝 '{title}' 모듈 '{module_id}': 툴 '{tool}'을 쓸 수 없습니다. "
+                f"사용 가능: {available or '(없음)'}"
+            )
+        entry["tools"] = [tool]
+    return entry
+
+
 def options_to_plan(options: dict, schema: Schema,
                     global_measure: str | None = None) -> tuple[dict, list[str]]:
     """옵션 JSON → 엔진 plan dict.
@@ -128,9 +160,11 @@ def options_to_plan(options: dict, schema: Schema,
     for step in options.get("steps", []):
         step_id = step.get("step_id", "?")
         title = step.get("title") or step_id
+        raw_modules = step.get("modules", [])
         modules_out = []
+        skip_reasons: list[str] = []
 
-        for m in step.get("modules", []):
+        for m in raw_modules:
             module_id = m.get("module_id")
 
             spec = registry.get(module_id)
@@ -151,23 +185,34 @@ def options_to_plan(options: dict, schema: Schema,
             if missing:
                 raise OptionsError(f"스텝 '{title}' 모듈 '{module_id}': 필수 param 누락 {missing}")
 
-            params = _resolve_dimension(module_id, raw_params, schema)
-            params = _resolve_measure(module_id, params, spec, schema, global_measure)
-            entry = {"module_id": module_id, "params": params}
+            # dimension/measure는 module_id·param명과 달리 "이 데이터셋에 그 항목이 있는지"
+            # 문제다 — 같은 스텝 구성이라도 데이터셋이 바뀌면(예: 미리보기 이후 다른 데이터셋으로
+            # 실행) 얼마든지 없을 수 있는 정상적인 상황이라, 이 경우만 모듈을 건너뛴다(스텝
+            # 전체를 죽이지 않음). module_id·param명·툴 오류는 카탈로그와 어긋난 것이라 여전히
+            # 즉시 실패한다.
+            missing_roles = [r for r in spec.required_roles if not schema.has(r)]
+            if missing_roles:
+                reason = f"필요한 역할 {missing_roles}이(가) 데이터셋에 없습니다."
+                notes.append(f"스텝 '{title}' 모듈 '{module_id}'을 건너뛰었습니다: {reason}")
+                skip_reasons.append(reason)
+                continue
 
             tool = m.get("tool")
-            if tool:
-                available = spec.tools.get("available") or []
-                if tool not in available:
-                    raise OptionsError(
-                        f"스텝 '{title}' 모듈 '{module_id}': 툴 '{tool}'을 쓸 수 없습니다. "
-                        f"사용 가능: {available or '(없음)'}"
-                    )
-                entry["tools"] = [tool]
+            auto = bool(m.get("_auto"))
 
-            modules_out.append(entry)
+            try:
+                params = _resolve_dimension(module_id, raw_params, schema)
+                params = _resolve_measure(module_id, params, spec, schema, global_measure)
+            except OptionsError as e:
+                notes.append(f"스텝 '{title}' 모듈 '{module_id}'을 건너뛰었습니다: {e}")
+                skip_reasons.append(str(e))
+                continue
 
-        if not modules_out:          # modules가 애초에 빈 배열이었던 경우 — 빈 스텝은 만들지 않는다
+            modules_out.append(_build_entry(module_id, params, tool, spec, title, auto=auto))
+
+        if not modules_out:
+            if raw_modules:
+                steps.append(_build_disabled_step(title, raw_modules, skip_reasons, schema))
             continue
         steps.append({"title": title, "modules": modules_out})
 

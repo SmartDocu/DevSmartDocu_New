@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import get_pnl_ladder
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_COST, ROLE_OPEX, get_schema
 from d2insight.engine.types import ModuleResult, Render
@@ -73,10 +74,8 @@ def _maybe_breakdown(ctx, params, step_name: str) -> tuple[pd.DataFrame | None, 
 
     display = pd.DataFrame({
         schema.logical_name(dim_col): merged.index.astype(str),
-        "비교기간": merged["Comparison"].map(lambda v: f"{v:,.0f}"),
-        "당기": merged["Actual"].map(lambda v: f"{v:,.0f}"),
-        "증감": merged["Variance"].map(lambda v: f"{v:+,.0f}"),
-        "증감률": merged["Rate"].map(lambda v: f"{v * 100:+.1f}%"),
+        "비교기간": merged["Comparison"], "당기": merged["Actual"], "증감": merged["Variance"],
+        "증감률(%)": merged["Rate"] * 100,
     }).reset_index(drop=True)
     return display, f" {schema.logical_name(dim_col)}별 상위 {len(display)}개(|증감| 기준) 상세 표 포함."
 
@@ -117,11 +116,18 @@ def _run_step(ctx, params, step_name: str, *, profit_like: bool, cost_like: bool
     if err:
         return ModuleResult(status="failed", error=err)
     table, note = _maybe_breakdown(ctx, params, step_name)
-    return ModuleResult(render=Render(
-        summary=_summary_line(step, profit_like=profit_like, cost_like=cost_like) + note,
-        table=table,
-        key_value=extra_kv(step),
-    ))
+    base_summary = _summary_line(step, profit_like=profit_like, cost_like=cost_like) + note
+
+    if table is None:
+        return ModuleResult(render=Render(summary=base_summary, key_value=extra_kv(step)))
+
+    render = render_from_dataframe(
+        table, purpose=f"{step_name} 단계를 차원별로 분해해 제시.", narrative_hint=base_summary,
+        params={"단계": step_name}, label="pnl_step",
+        cache=params.get("_llm_render_cache"),
+    )
+    render.key_value = extra_kv(step)
+    return ModuleResult(render=render)
 
 
 def run_revenue(ctx, params, tools) -> ModuleResult:

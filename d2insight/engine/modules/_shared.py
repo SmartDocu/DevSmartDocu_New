@@ -18,8 +18,8 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.schema import (
-    ROLE_AMOUNT, ROLE_COST, ROLE_DISCOUNT, ROLE_ITEM, ROLE_OPEX, ROLE_PARTY, ROLE_PERIOD,
-    ROLE_QUANTITY, get_schema,
+    ROLE_AMOUNT, ROLE_COST, ROLE_DISCOUNT, ROLE_ITEM, ROLE_ITEM_GROUP, ROLE_OPEX, ROLE_PARTY,
+    ROLE_PERIOD, ROLE_QUANTITY, get_schema,
 )
 from d2insight.engine.pipeline.dataset_builder import build_by_item_dataset
 
@@ -87,7 +87,9 @@ def get_item_variance(ctx, measure: str | None = None) -> pd.DataFrame:
         byitem = build_by_item_dataset(
             actual_df, compare_df,
             measure=resolved_measure,
-            dimensions=[d for d in schema.dimensions if d in actual_df.columns],
+            # causal_dimensions — 인과분석(원인 순위·이상징후·기여도·교차분석) 공용 파생물이라
+            # 관리용 구분(법인·부서 등)은 뺀다. 현황 서술 모듈은 이 함수를 안 쓴다.
+            dimensions=[d for d in schema.causal_dimensions if d in actual_df.columns],
         )
         if byitem.empty:
             return byitem
@@ -300,11 +302,19 @@ def _bridge_lifecycle_map(ctx, dim: str) -> dict[str, str] | None:
     return dict(zip(sub["Item_Name"], sub["Lifecycle"])) if not sub.empty else None
 
 
+_UNCLASSIFIED = "(미분류)"
+
+
 def _bridge_panel(actual_df: pd.DataFrame, compare_df: pd.DataFrame,
                    dim: str, cols: list[str]) -> pd.DataFrame:
-    """차원 항목별 두 기간 측정값 대조표."""
-    a = actual_df.groupby(dim)[cols].sum()
-    c = compare_df.groupby(dim)[cols].sum()
+    """차원 항목별 두 기간 측정값 대조표.
+
+    groupby는 기본적으로 결측값(NaN) 행을 그룹에서 통째로 뺀다 — dim 컬럼에 빈 값이 섞여
+    있으면 그 행의 금액이 어느 항목에도 안 잡혀, 항목별 합계가 전체 증감액에 못 미치는
+    검산 실패로 이어진다(2026-08-26 확인). 빈 값도 "(미분류)"로 잡아 반영한다.
+    """
+    a = actual_df.groupby(actual_df[dim].fillna(_UNCLASSIFIED))[cols].sum()
+    c = compare_df.groupby(compare_df[dim].fillna(_UNCLASSIFIED))[cols].sum()
     return a.join(c, how="outer", lsuffix="_a", rsuffix="_c").fillna(0.0)
 
 
@@ -397,9 +407,12 @@ def get_bridge_effects(ctx) -> dict:
         lifecycle_available = get_item_lifecycle(ctx) is not None
         measure_cols = [c for c in (amount, quantity, discount) if c]
 
+        # 품목(item) 역할이 없으면 상위 분류(item_group, 예: 브랜드)로 대신한다 — 물량/단가
+        # 분해가 "품목 없음"만으로 통째로 안 되는 것을 막는다(2026-08-26).
+        item_dim = schema.column(ROLE_ITEM) or schema.column(ROLE_ITEM_GROUP)
+
         views: dict[str, list[dict]] = {}
-        for role, split in ((ROLE_ITEM, True), (ROLE_PARTY, False)):
-            dim = schema.column(role)
+        for dim, split in ((item_dim, True), (schema.column(ROLE_PARTY), False)):
             if not dim or dim not in actual_df.columns:
                 continue
             views[f"{schema.logical_name(dim)} 관점"] = _bridge_decompose(
@@ -422,7 +435,6 @@ def get_bridge_effects(ctx) -> dict:
             raise ValueError("브리지 분해 검산 실패: " + "; ".join(mismatch))
 
         item_effects = None
-        item_dim = schema.column(ROLE_ITEM)
         if item_dim and quantity and item_dim in actual_df.columns:
             panel = _bridge_panel(actual_df, compare_df, item_dim, measure_cols)
             a_col, c_col = f"{amount}_a", f"{amount}_c"

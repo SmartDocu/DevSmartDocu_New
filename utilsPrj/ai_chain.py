@@ -5,6 +5,7 @@ import os
 import sys
 import re
 import json
+import threading
 import warnings
 
 import random
@@ -93,19 +94,22 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
             kwargs["temperature"] = 0
         return ChatOpenAI(**kwargs)
     # ===================================================================
-    # TEMP: 로컬 Llama(Together.ai) 테스트용 — 품질 비교 테스트 종료로 주석처리 (2026-08-20)
-    # 재활성화 시 이 블록의 주석만 해제하면 된다.
+    # TEMP: 로컬 Together.ai 모델(Llama/DeepSeek 등) 품질 비교 테스트용 — 테스트 종료로
+    # 주석처리 (2026-08-20). 재활성화 시 이 블록의 주석만 해제하면 된다.
     # if vendor_name == "Llama":
-    #     # Together.ai(https://api.together.ai) — OpenAI 호환 API로 Llama 3.3 70B를
-    #     # 양자화 없는 정식 버전으로 서빙. ChatOpenAI에 base_url만 바꿔서 그대로 재사용한다
-    #     # (2026-08-19, 로컬 Llama 테스트용 — 새 패키지 설치 불필요.
-    #     #  aimlapi 결제 문제 → Groq(Llama 미제공) → Together.ai로 최종 교체).
+    #     # Together.ai(https://api.together.ai) — OpenAI 호환 API. "Llama" 벤더명이지만
+    #     # Together.ai 카탈로그의 아무 모델이나 model 인자로 넘기면 그대로 서빙된다
+    #     # (2026-08-20, DeepSeek-V4-Pro 등 다른 Together.ai 모델 비교 테스트도 이 분기로 재사용).
     #     from langchain_openai import ChatOpenAI
     #     kwargs = dict(
     #         model=model, api_key=api_key, max_tokens=8192,
     #         base_url="https://api.together.xyz/v1",
     #     )
     #     if not skip_temperature:
+    #         # temperature=0(결정적 디코딩)에서 Llama 3.3 70B가 같은 구절을 끝없이 반복하는
+    #         # 디코딩 루프에 빠지는 게 확인돼(2026-08-20) 0.2로 완화 테스트를 해봤으나 개선되지
+    #         # 않았다. DeepSeek-V4-Pro 등 다른 모델 비교 테스트에서는 다른 벤더와 동일하게
+    #         # 0(결정적 디코딩)으로 되돌린다 — 숫자 위주 보고서라 일관성이 더 중요하다.
     #         kwargs["temperature"] = 0
     #     return ChatOpenAI(**kwargs)
     # ===================================================================
@@ -123,6 +127,18 @@ _GRADE_MODEL_COLUMNS = {
     "balanced": "llmmodelnm_smart",
     "quality": "llmmodelnm_expert",
 }
+
+# get_llm_info() 결과 캐시 — (project_id, tenant_id, user_uid, service_code, account_uid)로
+# 키를 잡는다. supabase는 호출부가 넘기지 않는 한 항상 get_service_client()(서비스 역할)라
+# 캐시 키에서 뺀다. llmkeys.py의 save_llmkey/delete_llmkey가 clear_llm_info_cache()로 비운다.
+_llm_info_cache: dict[tuple, tuple] = {}
+_llm_info_cache_lock = threading.Lock()
+
+
+def clear_llm_info_cache() -> None:
+    """llmapikeys 저장/삭제 시 호출 — 다음 get_llm_info() 호출부터 새 설정을 반영한다."""
+    with _llm_info_cache_lock:
+        _llm_info_cache.clear()
 
 
 def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, service_code=None, account_uid=None):
@@ -144,23 +160,32 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
     가져온다(agent.py처럼 세션 하나에서 등급을 바꿔가며 여러 번 쓰는 곳이 등급마다 구독/키
     조회를 반복하지 않도록). 반환 튜플 자리 수는 그대로 5개다 — "Do"/"Ch"/그 밖의 기존
     호출부는 손댈 필요 없이 지금처럼 model을 문자열로 받는다.
+
+    결과는 캐시된다(같은 조회조건은 Supabase 재조회·복호화 없이 즉시 반환). supabase를
+    직접 넘긴 호출(기본 서비스 클라이언트가 아닌 경우)은 캐시를 타지 않는다.
     """
+    cache_key = (project_id, tenant_id, user_uid, service_code, account_uid)
+    use_cache = supabase is None
+    if use_cache:
+        with _llm_info_cache_lock:
+            cached = _llm_info_cache.get(cache_key)
+        if cached is not None:
+            return cached
     # ===================================================================
-    # TEMP: 로컬 Llama(Together.ai) 테스트용 하드코딩 오버라이드 — 품질 비교 테스트
-    # 종료로 주석처리, 원래 Supabase 조회 로직으로 복원 (2026-08-20)
-    # 재활성화 시 아래 블록의 주석만 해제하면 된다.
-    # d2insight("In")·d2chat("Ch")에만 적용 — d2doc("Do")는 그대로 Supabase 조회를 탄다.
-    # (2026-08-20: aimlapi 결제 미반영 → Groq(Llama 미제공) → Together.ai로 최종 교체)
+    # TEMP: 로컬 Together.ai 모델(Llama/DeepSeek) 품질 비교 테스트용 하드코딩 오버라이드 —
+    # 테스트 종료로 주석처리, 원래 Supabase 조회 로직으로 복원 (2026-08-20)
+    # 재활성화 시 아래 블록의 주석만 해제하면 된다. 모델 교체는 _TEST_MODEL_NAME 한 줄만
+    # 바꾸면 된다. d2insight("In")·d2chat("Ch")에만 적용 — d2doc("Do")는 그대로 Supabase 조회.
     # _LLAMA_TEST_MODE = True
+    # _TEST_MODEL_NAME = "deepseek-ai/DeepSeek-V4-Pro-0813"
     # if _LLAMA_TEST_MODE and service_code in ("In", "Ch"):
-    #     _llama_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-    #     _llama_api_key = os.getenv("LLAMA_API_KEY")  # .env: LLAMA_API_KEY (평문 하드코딩 금지)
+    #     _test_api_key = os.getenv("LLAMA_API_KEY")  # .env: LLAMA_API_KEY (Together.ai 키, 평문 하드코딩 금지)
     #     if service_code == "In":
     #         return (
-    #             {grade: _llama_model for grade in _GRADE_MODEL_COLUMNS},
-    #             _llama_api_key, "Llama", True, account_uid,
+    #             {grade: _TEST_MODEL_NAME for grade in _GRADE_MODEL_COLUMNS},
+    #             _test_api_key, "Llama", True, account_uid,
     #         )
-    #     return (_llama_model, _llama_api_key, "Llama", True, account_uid)
+    #     return (_TEST_MODEL_NAME, _test_api_key, "Llama", True, account_uid)
     # ===================================================================
 
     import random as _random
@@ -286,8 +311,10 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
                 "LLM 설정을 찾을 수 없습니다. "
                 "projects 또는 llmapikeys 테이블에 llmmodelnm/encapikey를 설정하세요."
             )
-
+    
+    # print(f"jeff 0001 encode: {enc_api_key}")    # jeff 20260827 key
     dec_api_key = decrypt_value(enc_api_key)
+    # print(f"jeff 0001 encode: {enc_api_key} \ntdecode: {dec_api_key}")    # jeff 20260827 key
     # vendor 조회는 항상 모델명 문자열 하나가 필요하다 — multi_grade면 dict에서 하나 뽑아온다.
     # 세 등급은 같은 벤더(예: 전부 Anthropic)라는 전제이므로 어느 등급 값이든 상관없다.
     if multi_grade:
@@ -303,7 +330,11 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
         supabase, "llmmodels", "select", {}, {"llmmodelnm": vendor_lookup_model}, "llmvendornm"
     )[0]["llmvendornm"]
 
-    return llm_model, dec_api_key, vendor_name, is_customeraikey, account_uid
+    result = (llm_model, dec_api_key, vendor_name, is_customeraikey, account_uid)
+    if use_cache:
+        with _llm_info_cache_lock:
+            _llm_info_cache[cache_key] = result
+    return result
 
 
 def calculate_capability_indices(data, spec_lower=None, spec_upper=None):

@@ -147,6 +147,9 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       footer={null}
       destroyOnClose
       width={560}
+      closable={!submitting}
+      maskClosable={!submitting}
+      keyboard={!submitting}
     >
       <Alert
         type="warning"

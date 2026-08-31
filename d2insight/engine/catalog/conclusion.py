@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.format import table_to_markdown
+from d2insight.engine.format import korean_money_reference, table_to_markdown
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine._llm import chat
 
@@ -28,7 +28,9 @@ _BASE_RULES = """당신은 경영진 보고서의 결론을 쓰는 애널리스�
 1. 주어진 사실표·요약에 있는 숫자만 인용한다. **새 수치·비율을 계산하거나 추정하지 않는다.**
    - 표에 없는 합계·비율을 만들지 마라. "두 항목 합계 -77,210", "전체 감소의 36%", "손실의 33%"처럼
      직접 더하거나 나눈 값은 금지다. 개별 값을 그대로 나열하라.
-   - 단위 환산(만/억)이나 통화 기호를 임의로 붙이지 않고, 적힌 그대로 옮긴다.
+   - 단위 환산(만/억)은 기본적으로 하지 않는다. 쓰고 싶으면 반드시 [한글 단위 참고표]의 값을
+     그대로 옮기고 직접 환산하지 마라(직접 계산하면 자릿수를 틀린 사례가 있다). 통화기호는
+     임의로 붙이지 않는다.
 2. **이상징후라고 부를 수 있는 것은 [이상징후] 표에 있는 항목뿐이다.** 다른 표(기여도·순위 등)의
    항목에 "이상 판정", "z-score 기준 이상" 같은 표현을 붙이지 마라. 감소가 크다는 사실만 말하라.
 3. 인과를 단정하지 마라. 데이터가 보여주는 것과 추정을 구분해 쓴다(추정이면 추정이라고 밝힌다).
@@ -41,58 +43,45 @@ _BASE_RULES = """당신은 경영진 보고서의 결론을 쓰는 애널리스�
    "주의"라고 표시된 캐치(예: 무의미한 비교, 척도 차이, 카디널리티 효과)가 있으면 절대 무시하지
    말고 핵심 성장/감소 요인이나 Action Item에 반드시 반영하라.** 표를 단순 나열하지 말고, 그
    신호가 "그래서 무엇을 봐야 하는가"로 이어지게 써라.
-10. **"종합 해석"은 성장/감소 요인을 다시 나열하지 마라.** 그 요인들을 종합했을 때 이번 기간의
+10. **종합 판단은 성장/감소 요인을 다시 나열하지 마라.** 그 요인들을 종합했을 때 이번 기간의
     변화가 어떤 **성격**인지(예: 물량이 이끈 건강한 성장인지, 신규 유입·할인에 기댄 성장인지,
     구조적 약화가 겉으로만 가려진 것인지) 하나의 평가로 판정하라. 근거 없이 낙관하거나
     비관하지 말고, 왜 그렇게 판단하는지 위 사실에 연결해 밝혀라.
-11. **"향후 전망"은 감시 리스트가 아니라 예측이다.** 이미 계산된 추이(trend)·생애주기·구성비
+11. **전망은 감시 리스트가 아니라 예측이다.** 이미 계산된 추이(trend)·생애주기·구성비
     변화 신호를 근거로 "다음 기간엔 이렇게 될 가능성이 있다"를 써라. 반드시 추정임을 명시하는
     완전한 문장으로 쓰고(예: "이 추세가 이어지면 다음 분기 매출은 추가로 감소할 가능성이 높다"),
     물결표(~)로 문장을 줄여 쓰지 마라 — 본문에 물결표가 두 번 나오면 마크다운이 그 사이를
-    취소선으로 잘못 해석한다(2026-07-27 발견). 근거가 된 사실을 함께 인용하라. 새 수치를
+    취소선으로 잘못 해석한다. 근거가 된 사실을 함께 인용하라. 새 수치를
     계산해 전망을 뒷받침하지 마라(규칙 1과 동일).
+12. **맨 처음 "### 핵심 요약"은 숫자 나열이 아니라 3줄로 "무엇이 일어났고 무엇을 봐야 하는가"를
+    압축한다.** 새 사실을 만들지 말고, 가장 중요한 3가지만 골라 짧게 쓴다.
+    예: "전체 +2.8% 성장했으나 성장의 질은 카카오 한 채널에 편중. 브랜드 6곳은 감소 지속.
+    카카오페이 단독 급락(-14.3%)은 다른 채널과 다른 패턴이라 별도 점검 필요."
+13. **모니터링 권장 항목은 막연한 지켜보기가 아니라, 다음 기간에 확인할 구체적 질문으로
+    쓴다.** "OO 추세를 지켜본다" 대신 "OO가 다음 기간에도 재현되는지 확인 필요"처럼, 검증
+    가능한 질문 형태로 1~2개를 짚어라.
+14. **"### 결론" 본문은 소제목으로 쪼개지 말고 하나로 이어지는 서술형 문단으로 쓴다.**
+    핵심 수치·항목명은 **볼드**로 강조한다. 순서는 성장 요인(구체 항목·금액) → 감소 요인
+    (구체 항목·금액) → 종합 판단(규칙 10) → 전망(규칙 11) → 다음 기간 확인할 점(규칙 13) →
+    확대/방어해야 할 실행 방향(Action Item)이되, 각 앞에 소제목을 달지 말고 문단을 나눠
+    자연스럽게 이어 써라.
 
-출력은 아래 소제목을 **그대로** 쓴 마크다운 본문이다. 제목(#)을 새로 만들지 말고, 다른 텍스트를
-덧붙이지 않는다."""
-
-# 시나리오마다 실행된 모듈이 다르므로, 그 모듈이 실제로 계획에 있었을 때만 해당 소제목을 요구한다.
-# 없는데도 고정 소제목을 요구하면 "해당 분석 없음"만 반복되는 빈 항목이 생긴다(2026-07-21 수정).
-# "종합 해석"/"향후 전망"은 2026-07-21 추가 — 이전엔 사실 재나열(Top3)과 감시 리스트(모니터링
-# 항목)만 있고, 그걸 하나의 평가·예측으로 묶는 자리가 없어 결론이 "빈약하다"는 지적을 받음.
-_ALWAYS_STEPS = ["### 핵심 성장 요인 Top 3", "### 핵심 감소 요인 Top 3", "### 종합 해석"]
-_CONDITIONAL_STEPS = {
-    "new_lost_detection": ["### 신규·복귀 효과", "### 이탈·단종 영향"],
-    "anomaly_detection":  ["### 즉시 확인이 필요한 이상징후"],
-}
-_TAIL_STEPS = """### 향후 전망
-### 향후 모니터링 권장 항목
-### 경영진 Action Item
-- 확대해야 할 영역:
-- 방어해야 할 영역:
-- 원인 추가 확인이 필요한 영역:"""
-
-
-def _module_in_plan(ctx, module_id: str) -> bool:
-    """이 모듈이 실행 계획에 있었는지(성공/실패/생략 무관) — ref가 'step / module_id' 형식이다."""
-    suffix = f" / {module_id}"
-    return any(s["ref"].endswith(suffix) for s in ctx.all_summaries()) \
-        or any(n["ref"].endswith(suffix) for n in ctx.notes())
+출력은 "### 핵심 요약"과 "### 결론" 두 소제목만 그대로 쓴 마크다운 본문이다. 그 외 소제목을
+새로 만들지 말고, 다른 텍스트를 덧붙이지 않는다."""
 
 
 def _build_system(ctx) -> str:
-    """실행된 모듈 구성에 맞춰 소제목을 동적으로 구성한다(§6.2와 무관 — 프롬프트 구성일 뿐)."""
-    steps = list(_ALWAYS_STEPS)
-    for module_id, titles in _CONDITIONAL_STEPS.items():
-        if _module_in_plan(ctx, module_id):
-            steps.extend(titles)
-    return _BASE_RULES + "\n\n" + "\n".join(steps) + "\n" + _TAIL_STEPS
+    """결론 프롬프트 — 소제목은 "핵심 요약"/"결론" 둘뿐이고, 나머지는 규칙(§14)이 정한 순서로
+    한 본문 안에서 문단으로 다룬다.
+    """
+    return _BASE_RULES
 
 
 def _table_block(title: str, df, cols: list[str] | None = None) -> list[str]:
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return []
     view = df[[c for c in (cols or df.columns) if c in df.columns]].head(MAX_ROWS)
-    return [f"[{title}]", table_to_markdown(view), ""]
+    return [f"[{title}]", table_to_markdown(view) + korean_money_reference(view), ""]
 
 
 def _grouped_table_block(title: str, df, group_col: str, cols: list[str] | None = None) -> list[str]:
@@ -107,7 +96,8 @@ def _grouped_table_block(title: str, df, group_col: str, cols: list[str] | None 
         return []
     top_per_group = df.groupby(group_col, sort=False).head(1).head(MAX_ROWS)
     view = top_per_group[[c for c in (cols or df.columns) if c in top_per_group.columns]]
-    return [f"[{title} — 이상 항목별 최대 설명 하위 그룹]", table_to_markdown(view), ""]
+    return [f"[{title} — 이상 항목별 최대 설명 하위 그룹]",
+           table_to_markdown(view) + korean_money_reference(view), ""]
 
 
 def _facts(ctx) -> str:

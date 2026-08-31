@@ -59,7 +59,12 @@ def _value_fn_factory(curr: pd.DataFrame, prev: pd.DataFrame,
             return abs(total_curr - total_prev)
         g_curr = curr.groupby(list(S))[measure].sum() if not curr.empty else pd.Series(dtype=float)
         g_prev = prev.groupby(list(S))[measure].sum() if not prev.empty else pd.Series(dtype=float)
-        return float(g_curr.subtract(g_prev, fill_value=0.0).abs().sum())
+        # 그룹 키 타입이 섞여 있으면(문자열·숫자·NaN 등) 두 인덱스를 정렬해서 합치려는 pandas
+        # 기본 동작이 실패해 RuntimeWarning을 낸다 — 정렬 없이 합쳐도 합계 결과는 같으므로
+        # sort=False로 명시해서 애초에 정렬을 시도하지 않게 한다.
+        idx = g_curr.index.union(g_prev.index, sort=False)
+        diff = g_curr.reindex(idx, fill_value=0.0) - g_prev.reindex(idx, fill_value=0.0)
+        return float(diff.abs().sum())
 
     return v
 

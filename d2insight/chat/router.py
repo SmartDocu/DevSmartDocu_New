@@ -13,7 +13,7 @@ import pandas as pd
 from requests import exceptions as requests_exceptions
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app.dependencies import get_token, get_user as _get_user, require_insight_read, require_insight_write
 from d2insight.chat.intent_parser import parse_intent
@@ -427,6 +427,11 @@ async def upload_dataset(
     llm = _get_llm(project_id=resolved_project_id, tenant_id=tenant_id, user_uid=user_id, account_uid=account_uid)
     excel_server = get_excel_server()
 
+    # engine 역할 추론(resolve_upload_meta_columns → d2insight.engine._llm.chat)이 어느
+    # 프로젝트/테넌트 소속인지 알아야 그 소속의 LLM 키를 찾는다 — /chat과 동일하게 여기서도
+    # 표시해둔다.
+    token_tracker.set_log_ctx(log_ctx)
+
     previews = []
     for filename, ext, content in file_entries:
         try:
@@ -454,6 +459,14 @@ async def upload_dataset(
                 log_ctx=log_ctx,
             )
             previews.append(_dataset_preview(key, df, filename, metadata))
+
+            from d2insight.engine.upload_meta import resolve_upload_meta_columns
+            meta_columns, info = resolve_upload_meta_columns(df, dataset_name=key)
+            excel_server.session_datasets[sid][key]["engine_meta"] = {
+                "meta_columns": meta_columns, "info": info,
+            }
+
+    token_tracker.set_log_ctx(None)
 
     if not previews:
         raise HTTPException(status_code=400, detail="유효한 데이터가 없는 파일입니다.")
@@ -592,7 +605,7 @@ def _register_schedule_for_qa(
 
     intent = parse_intent(qa.get("question") or "", project_id=resolved_project_id,
                           tenant_id=tenant_id, user_uid=user_id)
-    report_type = intent.get("report_type") or "판매분석"
+    report_type = intent.get("report_type") or "보고서"
     months_back = intent.get("months_back") or 3
 
     cron = _sched_mod.compose_cron("month", day_of_month, None, hour, minute)
@@ -956,13 +969,50 @@ def get_catalog() -> dict:
     }
 
 
-# ── 보고서 preview (단독앱 202608061005의 preview_report_plan/match_scenario 방식) ──
+# ── 보고서 preview (engine.entry의 match_scenario/preview_report_plan 직접 호출) ──
+# 2026-08-20까지는 이 로직을 로컬로 재구현해서 썼는데, 그러면 entry.py가 이미 제공하는
+# extract_operations/apply_operations(사용자가 문장으로 "OO는 빼줘/top 5개만" 같은 편집을
+# 지시하는 기능)와 inline_options(옵션 JSON 붙여넣기)가 반영되지 않았다. entry.py를 그대로
+# 호출하도록 바꿔 이 기능들이 자동으로 살아나게 한다(단독앱 pr_module_insight/app/chat/
+# router.py의 /report/preview와 동일한 패턴).
 
 class ReportPreviewRequest(BaseModel):
     message: str
+    session_id: str | None = None
     user_id: str | None = None
     project_id: int | None = None
     account_uid: str | None = None
+
+
+def _resolve_report_project(user_id: str | None, project_id: int | None) -> tuple[int | None, int | None]:
+    """user_id로 tenant_id/project_id를 채운다. 반환: (tenant_id, resolved_project_id)."""
+    tenant_id: int | None = None
+    resolved_project_id = project_id
+    if user_id:
+        try:
+            tenant_id, pid = storage.get_project_info(user_id)
+            if resolved_project_id is None:
+                resolved_project_id = pid
+        except Exception:
+            pass
+    return tenant_id, resolved_project_id
+
+
+def _resolve_report_source(session_id: str | None, resolved_project_id: int | None) -> tuple[str | None, str | None]:
+    """세션의 업로드/DB 데이터소스를 판별한다. 반환: (upload_dataset_key, source_id)."""
+    from d2insight.chat.pipeline_runner import _upload_engine_target
+
+    has_upload = bool(session_id and get_excel_server().has_datasets(session_id))
+    upload_dataset_key = _upload_engine_target(session_id) if has_upload else None
+    if upload_dataset_key:
+        return upload_dataset_key, None
+
+    from d2insight.engine.pipeline.db_meta import DbMetaError, resolve_source_cluster
+    try:
+        source_id = "+".join(c["datauid"] for c in resolve_source_cluster(resolved_project_id))
+    except DbMetaError:
+        return None, None
+    return None, source_id
 
 
 @router.post("/report/preview", dependencies=[Depends(require_insight_write)])
@@ -972,95 +1022,110 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
     프론트 옵션 패널이 이 응답으로 preview 표시 → "이대로 작성" 버튼 클릭 시 /chat 실행.
     """
     _check_owner(token, req.user_id)
-    from d2insight.engine.catalog.scenarios import SCENARIO_REGISTRY
-    from d2insight.engine.catalog.steps import STEP_REGISTRY
     from d2insight.engine.catalog.modules import MODULE_REGISTRY
-    from langchain_core.messages import SystemMessage, HumanMessage
-    from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+    from d2insight.engine.catalog.scenarios import SCENARIO_REGISTRY
+    from d2insight.engine.entry import extract_inline_options, match_scenario, preview_report_plan
 
-    tenant_id: int | None = None
-    resolved_project_id = req.project_id
-    if req.user_id:
-        try:
-            tenant_id, pid = storage.get_project_info(req.user_id)
-            if resolved_project_id is None:
-                resolved_project_id = pid
-        except Exception:
-            pass
+    tenant_id, resolved_project_id = _resolve_report_project(req.user_id, req.project_id)
 
-    # LLM 시나리오 매칭 (단독앱 entry.py::match_scenario 방식).
-    # 매칭 실패 시 None 반환 → 프론트가 이걸 보고 preview flow가 아닌 /chat 직접 호출로 폴백.
-    scenario_names = list(SCENARIO_REGISTRY.keys())
-    matched: str | None = None
-    try:
-        models, api_key, vendor, _, _ = get_llm_info(
-            project_id=resolved_project_id, tenant_id=tenant_id,
-            user_uid=req.user_id, account_uid=req.account_uid, service_code="In",
-        )
-        llm = build_langchain_llm(vendor, api_key, models["fast"])
-        system = (
-            "당신은 보고서 요청 문장을 읽고, 아래 등록된 시나리오 중 어느 것을 요청하는 것인지 "
-            "의미로 판단한다. 표현이 등록된 이름과 글자 그대로 같지 않아도(예: '판매증감분석'은 "
-            "'매출 증감 원인 분석'을 뜻함) 뜻이 같으면 매칭한 것으로 본다.\n\n"
-            "요청이 등록된 시나리오 중 하나에 해당하면 그 이름을 정확히 그대로(다른 글자·설명 추가 없이) "
-            "한 줄로 출력하라. 어느 것에도 해당하지 않으면 '없음'이라고만 출력하라."
-        )
-        prompt = (
-            f"[등록된 시나리오 목록]\n{json.dumps(scenario_names, ensure_ascii=False)}\n\n"
-            f"[요청 문장]\n{req.message}"
-        )
-        resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
-        text = resp.content if isinstance(resp.content, str) else str(resp.content)
-        picked = text.strip().strip('"').strip()
-        if picked in scenario_names:
-            matched = picked
-    except Exception:
-        pass
+    # entry.py 안의 _llm.py::chat()은 project_id/tenant_id를 인자로 안 받고 이 log_ctx를
+    # 읽어 프로젝트/테넌트별 LLM을 고른다(/chat 엔드포인트와 동일 패턴) — 빠뜨리면 시나리오
+    # 매칭·편집연산 추출이 테넌트 설정을 무시하고 기본 LLM으로 돈다.
+    token_tracker.set_log_ctx({
+        "qauid": None,
+        "servicecd": "In",
+        "tenant_id": tenant_id,
+        "project_id": resolved_project_id,
+        "session_uid": None,
+        "creator": req.user_id,
+        "account_uid": req.account_uid,
+    })
 
-    # 매칭 실패 → 시나리오·스텝 비운 채 반환 (프론트가 이 응답 보고 /chat 직접 호출).
-    if matched is None:
+    inline_options = extract_inline_options(req.message)
+    matched = match_scenario(req.message)
+
+    upload_dataset_key, source_id = _resolve_report_source(req.session_id, resolved_project_id)
+    if not upload_dataset_key and source_id is None:
         return {"scenario": None, "report_title": "", "applied_steps": []}
 
-    # 시나리오 → 스텝 → 모듈 트리 조립.
-    scenario_def = SCENARIO_REGISTRY.get(matched, {})
-    applied_steps = []
-    for step_entry in scenario_def.get("steps", []):
-        sid = step_entry.get("step_id")
-        sdef = STEP_REGISTRY.get(sid, {})
-        modules = []
-        for m in sdef.get("default_modules", []):
-            mid = m["module_id"]
-            mdef = MODULE_REGISTRY.get(mid)  # ModuleSpec(dataclass) — dict 아님, 속성으로 접근
-            default_tool = (mdef.tools or {}).get("default") if mdef else None
-            picked_tool = (m.get("tools") or [default_tool])[0] if (m.get("tools") or default_tool) else None
-            modules.append({
-                "module_id": mid,
-                "purpose": mdef.purpose if mdef else "",
-                "tool": picked_tool,
-                "params": m.get("params") or {},
-            })
-        applied_steps.append({
-            "step_id": sid,
-            "title": sdef.get("title", sid),
-            "modules": modules,
-        })
-
-    # 뿌리(자료확인·총평)/꼬리(결론) 스텝에 locked 플래그 부착 — 오른편 옵션 패널이
-    # 순서 이동 불가 표시를 별도 규칙 없이 그대로 읽는다. 단독앱
-    # pr_module_insight_202608061005/src/engine/operations.py::is_locked_step 규칙과 동일.
-    _ROOT_MODULE_IDS = {"period_dataset", "measure_summary"}
-    _TAIL_MODULE_IDS = {"conclusion"}
-    for s in applied_steps:
-        s["locked"] = any(
-            m.get("module_id") in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS
-            for m in s.get("modules", [])
+    # target_month는 이 트리 조립(스텝·모듈 구성) 자체엔 반영되지 않는다(실행 시점에
+    # run_engine_report가 실제 값으로 다시 받음) — 여기선 필수 인자라 오늘 날짜로 채운다.
+    today = datetime.now()
+    try:
+        result = preview_report_plan(
+            message=req.message,
+            target_month=f"{today.year:04d}-{today.month:02d}",
+            # matched가 없으면(JSON만 있는 경우) report_type을 아예 안 넘긴다 — 굳이 임의의
+            # 시나리오 이름으로 채우지 않아도 preview_report_plan() 자체에 중립적인 기본값이
+            # 있다(entry.py). matched가 있으면 그 이름을 그대로 report_type으로도 쓴다.
+            **({"report_type": matched} if matched else {}),
+            source_id=source_id,
+            upload_session_id=req.session_id if upload_dataset_key else None,
+            upload_dataset_key=upload_dataset_key,
+            matched_scenario=matched,
+            inline_options=inline_options,
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"옵션 미리보기 실패: {type(e).__name__}: {e}")
 
+    applied_steps = result.get("applied_steps") or []
+    for step in applied_steps:
+        for m in step.get("modules", []):
+            mdef = MODULE_REGISTRY.get(m.get("module_id"))
+            if mdef is not None:
+                m["purpose"] = mdef.purpose
+
+    scenario = result.get("scenario") or matched
     return {
-        "scenario": matched,
-        "report_title": scenario_def.get("report_title", ""),
+        "scenario": scenario,
+        "report_title": SCENARIO_REGISTRY.get(scenario, {}).get("report_title", ""),
         "applied_steps": applied_steps,
     }
+
+
+class ValidateStepsRequest(BaseModel):
+    steps: list[dict]
+    scenario: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+    project_id: int | None = None
+    account_uid: str | None = None
+    global_: dict = Field(default_factory=dict, alias="global")
+
+
+@router.post("/report/validate_steps", dependencies=[Depends(require_insight_write)])
+def validate_steps(req: ValidateStepsRequest, token: str = Depends(get_token)) -> dict:
+    """스텝 JSON을 스키마 기준으로 재검증(LLM 호출 없음). 미리보기 JSON 편집 저장 시 사용."""
+    _check_owner(token, req.user_id)
+    from d2insight.engine.catalog.modules import MODULE_REGISTRY
+    from d2insight.engine.entry import _upload_schema
+    from d2insight.engine.options import OptionsError, global_to_meta, options_to_plan
+    from d2insight.engine.planner import PlannerError, data_digest
+
+    _, resolved_project_id = _resolve_report_project(req.user_id, req.project_id)
+    upload_dataset_key, source_id = _resolve_report_source(req.session_id, resolved_project_id)
+    if not upload_dataset_key and source_id is None:
+        return {"applied_steps": req.steps}
+
+    upload_schema = _upload_schema(req.session_id if upload_dataset_key else None, upload_dataset_key)
+    schema, _ = data_digest(source_id, schema=upload_schema)
+    meta = global_to_meta({"global": req.global_})
+
+    try:
+        plan, notes = options_to_plan(
+            {"scenario": req.scenario, "steps": req.steps}, schema, global_measure=meta.get("measure"),
+        )
+    except (PlannerError, OptionsError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    applied_steps = plan.get("steps") or []
+    for step in applied_steps:
+        for m in step.get("modules", []):
+            mdef = MODULE_REGISTRY.get(m.get("module_id"))
+            if mdef is not None:
+                m["purpose"] = mdef.purpose
+
+    return {"applied_steps": applied_steps, "notes": notes}
 
 
 # ── 기타 ─────────────────────────────────────────────────────────

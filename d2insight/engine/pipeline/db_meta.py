@@ -23,6 +23,7 @@ _DISCOUNT_HINTS = ("할인", "discount", "에누리")
 _ITEM_GROUP_HINTS = ("카테고리", "분류", "category", "대분류", "중분류", "class")
 _ITEM_HINTS = ("제품", "상품", "품목", "product", "item", "모델", "model")
 _PARTY_HINTS = ("고객", "거래처", "공급", "customer", "party", "account", "협력사", "구매처")
+_REGION_HINTS = ("지역", "국가", "권역", "대륙", "region", "territory", "country", "continent", "area")
 
 _MEASURE_TYPES = ("currency", "number", "float", "int", "decimal", "money")
 _DATE_TYPES = ("date", "datetime", "timestamp")
@@ -63,6 +64,8 @@ def _dimension_role(colnm: str, logical: str, aliases: list[str]) -> str:
         return "item"
     if _match_hint(probe, _PARTY_HINTS):
         return "party"
+    if _match_hint(probe, _REGION_HINTS):
+        return "region"
     return ""
 
 

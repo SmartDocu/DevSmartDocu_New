@@ -20,6 +20,7 @@
     item        무엇을      판매: 상품     / 구매: 품목     / 생산: 제품
     party       누구와      판매: 고객     / 구매: 공급사   / 생산: 설비·라인
     item_group  무엇의 상위 분류 (대분류·모델 등)
+    region      어디서      지역·국가·권역 등 지리적 구분
     period      이력 패널의 기간 컬럼
 
 손익·재고 역할은 **대부분의 데이터소스에 없다.** 없으면 해당 모듈이 명시적으로 실패하고(§11 Step 2),
@@ -27,7 +28,7 @@
 
 보고서에 찍히는 이름은 `logical_name(col)`로 가져온다 → 구매분석이면 자동으로 "구매액·공급사"가 된다.
 
-역할이 없는 컬럼도 정상이다(채널·지역 등). 분석 차원으로는 쓰이되 역할 기반 계산에는 쓰이지 않는다.
+역할이 없는 컬럼도 정상이다(채널 등). 분석 차원으로는 쓰이되 역할 기반 계산에는 쓰이지 않는다.
 모듈은 필요한 역할이 없으면 **명시적으로 생략**한다(예: quantity 없으면 Sales Bridge 생략, 방침 §13).
 조용히 0으로 처리하지 않는다.
 """
@@ -54,6 +55,7 @@ ROLE_SAFETY_STOCK = "safety_stock"  # 항목별 안전재고 목표치(회사 �
 ROLE_ITEM = "item"              # 무엇을 (상품·품목·제품)
 ROLE_PARTY = "party"            # 누구와 (고객·공급사·설비)
 ROLE_ITEM_GROUP = "item_group"  # 무엇의 상위 분류
+ROLE_REGION = "region"          # 어디서 (지역·국가·권역)
 ROLE_PERIOD = "period"          # 이력 패널의 기간 컬럼
 
 
@@ -70,11 +72,25 @@ class Schema:
     # ── 기본 구성 ────────────────────────────────────────────────────────────
     @property
     def dimensions(self) -> list[str]:
-        """분석에 쓰는 차원. 기간(period) 컬럼은 이력 축이지 분석 차원이 아니므로 제외한다."""
+        """분석에 쓰는 차원. 기간(period) 컬럼과, 값이 거의 다 달라 묶어 비교할 수 없는
+        컬럼(Is_Groupable=False)은 제외한다."""
         dims = self._meta[self._meta["Field_Type"] == "Dim"]
         if "Semantic_Type" in dims.columns:
             dims = dims[dims["Semantic_Type"] != ROLE_PERIOD]
+        if "Is_Groupable" in dims.columns:
+            dims = dims[dims["Is_Groupable"] != False]  # noqa: E712
         return dims["Physical_Name"].tolist()
+
+    @property
+    def causal_dimensions(self) -> list[str]:
+        """dimensions 중 실제 판매 축(브랜드·지역·채널 등)만 — 법인·부서 같은 관리/회계용
+        구분은 매출 변화의 "원인"으로 보기엔 부적절해 인과분석(dimension_impact 등)에서 뺀다.
+        현황 서술(actual_aggregate 등)은 이 필터 없이 dimensions를 그대로 쓴다."""
+        dims = self.dimensions
+        if "Is_Market_Axis" not in self._meta.columns:
+            return dims
+        admin = set(self._meta.loc[self._meta["Is_Market_Axis"] == False, "Physical_Name"])  # noqa: E712
+        return [d for d in dims if d not in admin]
 
     @property
     def measures(self) -> list[str]:
@@ -106,6 +122,15 @@ class Schema:
 
     def has(self, role: str) -> bool:
         return self.column(role) is not None
+
+    def item_fallback_columns(self) -> list[str]:
+        """품목(item)이 없을 때 대신 쓸 후보(item_group/party/region) 중 실제로 있는 것 전부."""
+        cols: list[str] = []
+        for role in (ROLE_ITEM_GROUP, ROLE_PARTY, ROLE_REGION):
+            col = self.column(role)
+            if col and col not in cols:
+                cols.append(col)
+        return cols
 
     # ── 표시명 ───────────────────────────────────────────────────────────────
     def logical_name(self, physical: str) -> str:

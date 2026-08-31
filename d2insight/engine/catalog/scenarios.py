@@ -44,6 +44,8 @@ SCENARIO_REGISTRY: dict[str, dict] = {
             {"step_id": "s1_region"},            # Region
             {"step_id": "s1_top_products"},      # Top Products
             {"step_id": "s1_cause_ranking"},     # 원인 Ranking
+            {"step_id": "anomaly"},              # 이상징후
+            {"step_id": "cross_drill"},          # 교차 드릴다운
             {"step_id": "conclusion"},
         ],
     },
