@@ -62,6 +62,7 @@ const OrgPaymentManagePage = lazy(() => import('@/pages/org/OrgPaymentManagePage
 const OrgBillingHistoryPage = lazy(() => import('@/pages/org/OrgBillingHistoryPage'))
 const OrgWhitelistManagePage = lazy(() => import('@/pages/org/OrgWhitelistManagePage'))
 const AdminUserRolePage = lazy(() => import('@/pages/admin/AdminUserRolePage'))
+const AdminBillingRecoveryPage = lazy(() => import('@/pages/admin/AdminBillingRecoveryPage'))
 const AdminProductsPage = lazy(() => import('@/pages/admin/AdminProductsPage'))
 const AdminSamplePromptPage = lazy(() => import('@/pages/admin/AdminSamplePromptPage'))
 const AdminHelpsPage = lazy(() => import('@/pages/admin/AdminHelpsPage'))
@@ -204,6 +205,7 @@ export const router = createBrowserRouter([
 
       // admin/ (roleid=7 전용)
       { path: 'admin/user-role', element: <AdminUserRolePage /> },
+      { path: 'admin/billing-recovery', element: <AdminBillingRecoveryPage /> },
       { path: 'admin/products', element: <AdminProductsPage /> },
       { path: 'admin/sample-prompts', element: <AdminSamplePromptPage /> },
       { path: 'admin/helps', element: <AdminHelpsPage /> },

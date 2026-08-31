@@ -2120,15 +2120,63 @@ def _calc_prorated_amount(full_price: float, today: date, next_billing_dt: date)
     return max(0, min(prorated, round(full_price)))
 
 
-def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1, override_amount: Optional[float] = None) -> dict:
+def _issue_invoice_for_purchase(
+    svc, user_id: str, tenantid, accountuid: str, paymentuid: Optional[str],
+    productcd: str, item_type: str, desc: str, quantity: int, price: float,
+) -> None:
+    """1회성 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 건에 대해 invoices/invoice_items 1건씩 발급한다.
+    정기 자동 재청구(payments.py의 _process_account_billing_cycle)만 invoice를 남기고 이 경로들은
+    payments 행만 남기던 것을 2026-08-31에 통일함 — 결제 게이트(_require_payment_and_charge)
+    한 곳에서만 호출하므로 호출부마다 중복 구현할 필요 없다.
+
+    tax-inclusive 총액(price)에서 부가세를 역산한다 — config_price.unit_price/unit_tax가 정확히
+    price의 90%/10%로 등록돼 있는 것과 동일한 비율([[payment_schema_cleanup]] 참고)이라
+    subtotal_amount = round(price*0.9), tax_amount = 나머지로 맞춰 반올림 오차 없이 합이 price와
+    정확히 일치하게 한다. 일할 계산(override_amount)이 적용된 금액이 들어와도 이 비율은 그대로 유지된다.
+    """
+    today_iso = date.today().isoformat()
+    subtotal_amount = round(price * 0.9)
+    tax_amount = price - subtotal_amount
+
+    invoice_no_rows = (
+        svc.table("invoices").select("invoice_number").eq("tenantid", int(tenantid))
+        .order("invoice_number", desc=True).limit(1).execute().data or []
+    )
+    next_invoice_number = (invoice_no_rows[0]["invoice_number"] + 1) if invoice_no_rows else 1
+
+    inv_resp = svc.table("invoices").insert({
+        "tenantid": int(tenantid), "accountuid": accountuid, "invoice_number": next_invoice_number,
+        "invoice_status": "Paid",
+        "billing_period_from": today_iso, "billing_period_to": today_iso,
+        "invoice_date": today_iso, "due_date": today_iso,
+        "currencycd": "KRW", "subtotal_amount": subtotal_amount, "tax_amount": tax_amount,
+        "discount_amount": 0, "total_amount": price, "paid_amount": price,
+        "creator": user_id,
+    }).execute()
+    invoiceuid = inv_resp.data[0]["invoiceuid"]
+
+    svc.table("invoice_items").insert({
+        "tenantid": int(tenantid), "invoiceuid": invoiceuid, "productcd": productcd,
+        "item_type": item_type, "desc": desc, "quantity": quantity,
+        "regular_price": subtotal_amount, "price": subtotal_amount,
+        "regular_amount": price, "amount": price,
+        "creator": user_id,
+    }).execute()
+
+    if paymentuid:
+        svc.table("payments").update({"invoiceuid": invoiceuid}).eq("paymentuid", paymentuid).execute()
+
+
+def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1, override_amount: Optional[float] = None, item_type: str = "Subscription") -> dict:
     """
     실제 상품 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 공통 결제 게이트.
-    가격 조회 → 계정 기본 결제수단 확인 → 그 결제수단으로 실제 청구까지 수행한다.
+    가격 조회 → 계정 기본 결제수단 확인 → 그 결제수단으로 실제 청구 → 성공 시 invoice 1건 발급까지 수행한다.
     가격 미등록/결제수단 없음/청구 실패 시 적절한 HTTPException을 던진다.
     성공 시 execute_charge()의 반환값(paymentuid 포함)을 그대로 돌려준다.
     quantity: 단가 상품을 N개 단위로 한 번에 청구할 때(예: Add User 수량 구매) 사용 — 단가 × quantity가 청구된다.
     override_amount: 계산된 금액(예: 통합 결제일 기준 일할 계산액)을 그대로 청구하고 싶을 때 사용 —
       지정하면 unit_price × quantity 대신 이 금액을 청구한다(가격 미등록 여부 확인용으로 unit_price 조회는 그대로 수행).
+    item_type: invoice_items.item_type — codes(codegroupcd='item_type') 값(Subscription/AddOn/Credit/Adjustment) 중 호출부가 지정.
     """
     from backend.app.routers.payments import execute_charge
 
@@ -2151,6 +2199,11 @@ def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, pr
     charge_result = execute_charge(svc, user_id, int(tenantid), method_row.data, price, order_name, productcd=productcd, quantity=quantity)
     if not charge_result["success"]:
         raise HTTPException(status_code=400, detail=charge_result["message"])
+
+    _issue_invoice_for_purchase(
+        svc, user_id, tenantid, accountuid, charge_result.get("paymentuid"),
+        productcd, item_type, order_name, quantity, price,
+    )
     return charge_result
 
 
@@ -2230,17 +2283,21 @@ def change_tenant_subscription(
         raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
     product = prod_row.data
 
-    # 새 플랜의 인원 제한(products.users)보다 현재 활성 사용자가 많으면 변경 차단
+    # 새 플랜으로 바뀐 뒤의 정원(플랜 기본 인원 + 이미 보유 중인 Add User 부가상품 인원)보다
+    # 현재 활성 사용자가 많으면 변경 자체를 차단한다. products.users(플랜 기본값)만 보면
+    # Add User를 별도로 구매해둔 계정은 실제로는 정원이 남는데도 잘못 차단될 수 있어
+    # _calc_addon_users()로 넘어오는 부가상품 인원까지 합산해서 판단한다.
     if product.get("users") is not None:
+        new_total_users = product["users"] + _calc_addon_users(svc, accountuid, body.servicecd)
         active_user_count = len(
             svc.table("serviceusers").select("useruid")
             .eq("accountuid", accountuid).eq("servicecd", body.servicecd).eq("tenantid", int(tenantid))
             .eq("useyn", True).execute().data or []
         )
-        if active_user_count > product["users"]:
+        if active_user_count > new_total_users:
             raise HTTPException(
                 status_code=400,
-                detail=f"현재 활성 사용자가 {active_user_count}명으로 변경하려는 플랜의 인원 제한({product['users']}명)을 초과합니다. 먼저 사용자를 비활성화해주세요.",
+                detail=f"현재 활성 사용자가 {active_user_count}명으로 변경하려는 플랜의 정원({new_total_users}명)을 초과합니다. 먼저 사용자를 비활성화해주세요.",
             )
 
     cur_row = svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", body.servicecd).maybe_single().execute()
@@ -2709,6 +2766,7 @@ def purchase_tenant_manage_other_subscription(
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
         product.get("productnm") or product["productcd"], quantity=quantity, override_amount=charge_amount,
+        item_type="AddOn",
     )
 
     # 결제는 이미 성공했으므로, 이 아래(상품 지급) 단계에서 무엇이 실패하든
@@ -3006,6 +3064,7 @@ def update_tenant_manage_other_subscription_quantity(
             charge_result = _require_payment_and_charge(
                 svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
                 product.get("productnm") or product["productcd"], quantity=charge_qty, override_amount=charge_amount,
+                item_type="AddOn",
             )
             if not account_billing:
                 _bootstrap_account_billing(svc, accountuid, tenantid, user_id, today)
@@ -3059,13 +3118,30 @@ def update_tenant_manage_other_subscription_quantity(
     if pending + decrease_qty > quantity:
         raise HTTPException(status_code=400, detail="현재 보유 수량보다 많이 줄일 수 없습니다.")
 
-    svcrow = svc.table("accountservices").select("billingday").eq(
+    svcrow = svc.table("accountservices").select("billingday,included_users,add_users").eq(
         "accountuid", accountuid
     ).eq("servicecd", product["servicecd"]).maybe_single().execute()
-    billingday = (svcrow.data or {}).get("billingday") if svcrow else None
+    accsvc = svcrow.data if svcrow else None
+    billingday = (accsvc or {}).get("billingday")
     apply_dt = _next_billing_date(billingday, date.today()) if billingday else date.today()
 
     new_pending = pending + decrease_qty
+
+    # 이 감소(pending 포함, 아직 적용 안 된 것까지)가 나중에 실제 적용됐을 때의 정원을 미리 계산해
+    # 현재 활성 인원과 비교한다 — 실현 불가능한 감소를 예약해두지 않도록 요청 시점에 바로 막는다.
+    if accsvc:
+        future_removed_users = (product.get("users") or 0) * new_pending
+        future_add_users = max((accsvc.get("add_users") or 0) - future_removed_users, 0)
+        future_total_users = (accsvc.get("included_users") or 0) + future_add_users
+        active_cnt = svc.table("serviceusers").select("useruid", count="exact").eq(
+            "accountuid", accountuid
+        ).eq("servicecd", product["servicecd"]).eq("useyn", True).execute()
+        active_count = active_cnt.count or 0
+        if active_count > future_total_users:
+            raise HTTPException(
+                status_code=400,
+                detail=f"현재 활성 인원이 {active_count}명이라, 정원을 {future_total_users}명으로 줄일 수 없습니다. 먼저 사용자를 비활성화해주세요.",
+            )
     svc.table("subscription_features").update({
         "pending_decrease_qty": new_pending,
         "pending_decrease_applydt": apply_dt.isoformat(),
@@ -3234,6 +3310,7 @@ def _purchase_credit_subscription(svc, user_id: str, tenantid: str, accountuid: 
     # 등록된 결제수단으로 상품 가격만큼 실제(테스트 채널 기준) 청구 후에만 크레딧을 지급한다.
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, productcd, product.get("billingtermcd"), product.get("productnm") or productcd,
+        item_type="Credit",
     )
 
     # 결제는 이미 성공했으므로, 이 아래(크레딧 지급) 단계에서 무엇이 실패하든

@@ -295,6 +295,33 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
         return str(raw)
 
 
+@router.get("/billing-status")
+def get_billing_status(
+    token: str = Depends(get_token),
+    header_tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """내 계정의 정기결제 상태(account_billing) 조회 — PastDue/Suspended일 때
+    결제수단 화면에 배너 + '지금 재시도' 버튼을 보여주기 위한 용도.
+    account_billing에 등록 안 된 계정(예: 무료 플랜만 쓰는 계정)은 billing_status=None으로 반환."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    tenantid = _require_tenant_manager_tenantid(user_id, header_tenantid)
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+    accountuid = _resolve_tenant_accountuid(sd, tenantid, user_id)
+    if not accountuid:
+        return {"billing_status": None}
+
+    ab_row = sd.table("account_billing").select(
+        "billing_status,failure_count,first_failure_dt,grace_until_dt,next_billing_dt"
+    ).eq("accountuid", accountuid).maybe_single().execute()
+    ab = ab_row.data if ab_row else None
+    if not ab:
+        return {"billing_status": None}
+    return ab
+
+
 @router.get("/history")
 def list_payment_history(
     start_date: Optional[str] = None,
@@ -747,12 +774,17 @@ def _get_price_row_krw(sd, productcd: str, billingtermcd: Optional[str]) -> Opti
 
 def _collect_billing_items(sd, accountuid: str) -> list[dict]:
     """계정의 이번 사이클 청구 대상(유료 서비스 플랜 + User/Feature 부가상품)을 모은다.
-    Free 플랜과 가격 미등록 상품은 제외한다. Credit(크레딧) 상품은 정기결제 대상이 아니라 제외한다."""
+    Free 플랜과 가격 미등록 상품은 제외한다. Credit(크레딧) 상품은 정기결제 대상이 아니라 제외한다.
+    Suspended도 포함하는 이유: retry_billing_now()로 정지된 계정을 수동 재시도할 때, 정지 시
+    accountservices.servicestatus가 전부 Suspended로 바뀌어 있어서 Active/PastDue만 보면 청구
+    대상이 0건이 되어 total_amount<=0 분기(무료 처리)로 잘못 빠진다 — 그러면 청구 없이
+    account_billing.billing_status만 Active로 리셋되고 accountservices/subscriptions는 영원히
+    Suspended로 남는 불일치가 생긴다(2026-08-31 발견·수정)."""
     items = []
 
     svc_rows = (
         sd.table("accountservices").select("servicecd,productcd,subscriptionuid")
-        .eq("accountuid", accountuid).in_("servicestatus", ["Active", "PastDue"]).execute().data or []
+        .eq("accountuid", accountuid).in_("servicestatus", ["Active", "PastDue", "Suspended"]).execute().data or []
     )
     for row in svc_rows:
         prod_row = sd.table("products").select("productnm,plancd,billingtermcd,credit").eq(
@@ -923,9 +955,13 @@ def _process_account_billing_cycle(sd, ab: dict, today: date) -> dict:
     invoiceuid = inv_resp.data[0]["invoiceuid"]
 
     for i in items:
+        # codes(codegroupcd='item_type')엔 "Recurring"이 없다(Subscription/AddOn/Credit/Adjustment만
+        # 등록됨) — _collect_billing_items()의 kind(service/addon)를 그대로 매핑한다(2026-08-31 수정,
+        # 이전엔 등록 안 된 값이 그대로 들어가고 있었음. FK 없는 컨벤션이라 에러는 안 났지만 의미상 오류).
+        item_type = "Subscription" if i["kind"] == "service" else "AddOn"
         sd.table("invoice_items").insert({
             "tenantid": tenantid, "invoiceuid": invoiceuid, "productcd": i["productcd"],
-            "item_type": "Recurring", "desc": i["productnm"], "quantity": i["quantity"],
+            "item_type": item_type, "desc": i["productnm"], "quantity": i["quantity"],
             "regular_price": i["unit_price"], "price": i["unit_price"],
             "regular_amount": i["amount"], "amount": i["amount"],
             "creator": notify_useruid,
@@ -959,15 +995,19 @@ def _process_account_billing_cycle(sd, ab: dict, today: date) -> dict:
         "next_billing_dt": next_dt.isoformat(), "last_billed_dt": today.isoformat(),
         "billing_status": "Active", "failure_count": 0, "first_failure_dt": None, "grace_until_dt": None,
     }).eq("accountuid", accountuid).execute()
-    # 유예기간 중 회복된 경우 PastDue였던 서비스를 Active로 복귀 — subscriptions.subscription_status도 같이 되돌린다.
+    # 유예기간 중(PastDue) 또는 정지 후(Suspended, 수동/재시도 청구로만 도달) 회복된 경우
+    # 서비스를 Active로 복귀 — subscriptions.subscription_status도 같이 되돌린다.
+    # Suspended도 포함하는 이유: run_billing_cycle의 due_rows 조회는 billing_status='Suspended'
+    # 계정을 영구히 건너뛰므로(자동 재시도 없음), 아래 retry_billing_now()를 통한 수동/자동 재시도
+    # 성공 시에만 Suspended 계정이 여기 도달한다 — 그 경우도 반드시 Active로 풀어줘야 한다.
     recovered = (
         sd.table("accountservices").select("subscriptionuid")
-        .eq("accountuid", accountuid).eq("servicestatus", "PastDue")
+        .eq("accountuid", accountuid).in_("servicestatus", ["PastDue", "Suspended"])
         .execute().data or []
     )
     sd.table("accountservices").update({"servicestatus": "Active"}).eq(
         "accountuid", accountuid
-    ).eq("servicestatus", "PastDue").execute()
+    ).in_("servicestatus", ["PastDue", "Suspended"]).execute()
     recovered_sub_ids = [r["subscriptionuid"] for r in recovered if r.get("subscriptionuid")]
     if recovered_sub_ids:
         sd.table("subscriptions").update({"subscription_status": "Paid"}).in_(
@@ -975,6 +1015,53 @@ def _process_account_billing_cycle(sd, ab: dict, today: date) -> dict:
         ).execute()
 
     return {"result": "charged", "amount": total_amount, "invoiceuid": invoiceuid}
+
+
+def _retry_billing_now(sd, accountuid: str) -> dict:
+    """PastDue/Suspended 계정의 정기결제를 지금 즉시 1회 재시도한다.
+
+    run_billing_cycle()의 due_rows 조회가 billing_status='Suspended' 계정을 영구히 건너뛰므로
+    (한 번 정지되면 카드를 바꿔도 자동으로는 절대 안 풀림 — 2026-08-27 설계 당시부터 있던 알려진
+    한계), 정지된 계정을 다시 활성화할 유일한 경로가 이 함수다. 테넌트 매니저의 "지금 재시도"
+    버튼(payments.py의 POST /payments/retry-billing)과 관리자 화면의 수동 복구
+    (admin.py의 POST /admin/billing/accounts/{accountuid}/retry) 둘 다 이 함수를 공유한다."""
+    ab_row = sd.table("account_billing").select("*").eq("accountuid", accountuid).maybe_single().execute()
+    ab = ab_row.data if ab_row else None
+    if not ab:
+        raise HTTPException(status_code=404, detail="정기결제 대상 계정이 아닙니다.")
+    if ab.get("billing_status") not in ("PastDue", "Suspended"):
+        raise HTTPException(status_code=400, detail="현재 결제 실패 상태가 아니라 재시도할 필요가 없습니다.")
+
+    today = datetime.now(timezone.utc).date()
+    return _process_account_billing_cycle(sd, ab, today)
+
+
+@router.post("/retry-billing")
+def retry_billing(
+    request: Request,
+    token: str = Depends(get_token),
+    header_tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """결제 실패(PastDue/Suspended)로 막힌 내 계정의 정기결제를 결제수단 갱신 후 직접 재시도한다.
+    테넌트 매니저 전용 — org/payment-manage, upgrade/payment-manage 화면의 "지금 재시도" 버튼이 호출."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    tenantid = _require_tenant_manager_tenantid(user_id, header_tenantid)
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+    accountuid = _resolve_tenant_accountuid(sd, tenantid, user_id)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    result = _retry_billing_now(sd, accountuid)
+    log_work_action(
+        useruid=user_id, tenantid=tenantid, servicecd="Tenant",
+        actioncd="update", targettype="payments/retry-billing", targetid=accountuid,
+        detail=result,
+        ip=get_client_ip(request),
+    )
+    return result
 
 
 @router.post("/run-billing-cycle")

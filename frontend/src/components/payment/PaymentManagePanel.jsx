@@ -10,6 +10,8 @@ import {
   useDeletePaymentMethod,
   useSetDefaultPaymentMethod,
   useChargePaymentMethod,
+  useBillingStatus,
+  useRetryBilling,
 } from '@/hooks/usePayments'
 
 function getErrorMessage(err, fallback) {
@@ -31,6 +33,15 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
   const { data: config = {} } = usePaymentConfig()
   const { data: methodsData = {}, isLoading } = usePaymentMethods()
   const methods = methodsData.methods || []
+
+  const { data: billingStatus = {} } = useBillingStatus()
+  const retryMutation = useRetryBilling()
+  const handleRetryBilling = () => {
+    retryMutation.mutate(undefined, {
+      onSuccess: () => { message.success(t('msg.billing.retry.success')) },
+      onError: (err) => { message.error(getErrorMessage(err, t('msg.billing.retry.error'))) },
+    })
+  }
 
   const { data: statusCodes = [] } = useMenuCodes('payment_method_status')
   const statusLabel = (cd) => {
@@ -160,6 +171,28 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
           <div>{pageTitle}</div>
         </div>
       </div>
+
+      {(billingStatus.billing_status === 'PastDue' || billingStatus.billing_status === 'Suspended') && (
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
+          border: '1px solid #ffccc7', background: '#fff2f0', borderRadius: 6,
+          padding: '12px 16px', marginBottom: 16,
+        }}>
+          <div style={{ color: '#cf1322' }}>
+            {billingStatus.billing_status === 'PastDue'
+              ? t('inf.billing.pastdue_notice').replace('{date}', billingStatus.grace_until_dt || '')
+              : t('inf.billing.suspended_notice')}
+          </div>
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={retryMutation.isPending}
+            onClick={handleRetryBilling}
+          >
+            {t('btn.retry_billing')}
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
         {/* 좌측(7): 등록된 결제수단 목록 */}

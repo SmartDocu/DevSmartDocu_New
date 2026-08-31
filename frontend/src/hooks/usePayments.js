@@ -19,6 +19,24 @@ export function usePaymentMethods() {
   })
 }
 
+export function useBillingStatus() {
+  return useQuery({
+    queryKey: ['billing-status'],
+    queryFn: () => apiClient.get('/payments/billing-status').then((r) => r.data),
+  })
+}
+
+export function useRetryBilling() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post('/payments/retry-billing').then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['billing-status'] })
+      qc.invalidateQueries({ queryKey: ['payment-history'] })
+    },
+  })
+}
+
 export function usePaymentHistory(startDate, endDate) {
   return useQuery({
     queryKey: ['payment-history', startDate, endDate],

@@ -952,3 +952,59 @@ def list_admin_product_price_history(productcd: str, token: str = Depends(get_to
         .execute().data or []
     )
     return {"history": rows}
+
+
+# ══════════════════════════════════════════════════════
+#  BILLING RECOVERY (결제 실패로 PastDue/Suspended된 계정 조회 + 수동 재청구)
+#
+#  run_billing_cycle()(payments.py)의 due_rows 조회가 billing_status='Suspended' 계정을
+#  영구히 건너뛰므로, 카드를 갱신해도 자동으로는 절대 안 풀린다(2026-08-27 설계 당시부터의
+#  알려진 한계, 2026-08-31에 관리자 화면으로 보완). 테넌트 매니저 자가 재시도(POST
+#  /payments/retry-billing)와 별개로, 관리자가 직접 조회해서 대신 재시도해줄 수 있게 한다.
+# ══════════════════════════════════════════════════════
+
+@router.get("/billing-recovery")
+def list_billing_recovery_accounts(token: str = Depends(get_token)):
+    """PastDue/Suspended 상태인 account_billing 행 전체를 테넌트명과 함께 반환."""
+    _require_admin(token)
+    sb = _sb_service()
+    sd = sb.schema(SUPABASE_SCHEMA)
+
+    rows = (
+        sd.table("account_billing").select("*")
+        .in_("billing_status", ["PastDue", "Suspended"])
+        .order("billing_status").order("first_failure_dt")
+        .execute().data or []
+    )
+    if rows:
+        tenantids = list({r["tenantid"] for r in rows if r.get("tenantid")})
+        t_rows = sd.table("tenants").select("tenantid,tenantnm").in_("tenantid", tenantids).execute().data or []
+        tenant_map = {t["tenantid"]: t["tenantnm"] for t in t_rows}
+        for r in rows:
+            r["tenantnm"] = tenant_map.get(r.get("tenantid"), "")
+
+    return {"accounts": rows}
+
+
+@router.post("/billing-recovery/{accountuid}/retry")
+def retry_billing_recovery(accountuid: str, request: Request, token: str = Depends(get_token)):
+    """관리자가 PastDue/Suspended 계정의 정기결제를 지금 즉시 재시도한다.
+    실제 청구/복구 로직은 payments.py의 _retry_billing_now()를 그대로 재사용한다
+    (테넌트 매니저 자가 재시도 엔드포인트와 동일한 함수)."""
+    from backend.app.routers.payments import _retry_billing_now
+
+    admin = _require_admin(token)
+    sb = _sb_service()
+    sd = sb.schema(SUPABASE_SCHEMA)
+
+    before = snapshot_row(sb, "account_billing", "accountuid", accountuid)
+    result = _retry_billing_now(sd, accountuid)
+    after = snapshot_row(sb, "account_billing", "accountuid", accountuid)
+
+    log_admin_action(
+        useruid=str(admin.id), roleid=7, actioncd="update",
+        targettype="account_billing", targetid=accountuid, before=before, after=after,
+        detail=result,
+        ip=get_client_ip(request),
+    )
+    return result
