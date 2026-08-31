@@ -1301,12 +1301,15 @@ def upgrade_plan(
     if not issystemtenant and product.get("plancd") in ("Fr", "Pr"):
         raise HTTPException(status_code=400, detail="Free/Pro 플랜은 선택할 수 없습니다.")
 
-    # [과거_sub] 조회 — accountuid & servicecd 기반 최신 Paid subscription
+    # [과거_sub] 조회 — accountuid & servicecd 기반 최신 subscription. subscription_status는 이제
+    # 정기 청구 실패 시 PastDue/Suspended로도 바뀌므로(payments.py의 _handle_billing_failure 참고),
+    # "Paid"로 필터하면 결제 실패 중인 계정이 플랜을 다시 바꾸려 할 때 여기서 404로 막혀버린다 —
+    # 상태와 무관하게 이 서비스의 가장 최근 구독 행을 찾는다.
     past_rows = svc.table("subscriptions").select(
         "subscriptionuid,productcd,plancd"
-    ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).eq(
-        "subscription_status", "Paid"
-    ).order("createdts", desc=True).limit(1).execute().data or []
+    ).eq("accountuid", accountuid).eq("servicecd", body.servicecd).order(
+        "createdts", desc=True
+    ).limit(1).execute().data or []
     if not past_rows:
         raise HTTPException(status_code=404, detail="기존 구독 정보를 찾을 수 없습니다.")
     past_sub = past_rows[0]

@@ -810,10 +810,29 @@ def _handle_billing_failure(sd, ab: dict, today: date, notify_useruid: str, mess
     t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
     payment_url = _payment_manage_url(((t_row.data if t_row else None) or {}).get("issystemtenant", True))
 
-    if today.isoformat() > grace_until:
-        sd.table("accountservices").update({"servicestatus": "Suspended"}).eq(
-            "accountuid", accountuid
-        ).in_("servicestatus", ["Active", "PastDue"]).execute()
+    # accountservices.servicestatus를 바꾸는 것과 동시에, 그 서비스가 참조 중인 subscriptions 행의
+    # subscription_status도 같이 맞춘다 — 안 그러면 결제가 계속 실패해도 subscription_status는
+    # 최초 가입 때 세팅된 "Paid"로 영원히 남아 실제 청구 상태와 어긋난다.
+    suspend_now = today.isoformat() > grace_until
+    new_status = "Suspended" if suspend_now else "PastDue"
+    target_statuses = ["Active", "PastDue"] if suspend_now else ["Active"]
+
+    affected = (
+        sd.table("accountservices").select("subscriptionuid")
+        .eq("accountuid", accountuid).in_("servicestatus", target_statuses)
+        .execute().data or []
+    )
+    sub_ids = [r["subscriptionuid"] for r in affected if r.get("subscriptionuid")]
+
+    sd.table("accountservices").update({"servicestatus": new_status}).eq(
+        "accountuid", accountuid
+    ).in_("servicestatus", target_statuses).execute()
+    if sub_ids:
+        sd.table("subscriptions").update({"subscription_status": new_status}).in_(
+            "subscriptionuid", sub_ids
+        ).execute()
+
+    if suspend_now:
         sd.table("account_billing").update({
             "billing_status": "Suspended", "failure_count": failure_count,
             "first_failure_dt": first_failure_dt, "grace_until_dt": grace_until,
@@ -827,9 +846,6 @@ def _handle_billing_failure(sd, ab: dict, today: date, notify_useruid: str, mess
         )
         return {"result": "suspended", "message": message}
 
-    sd.table("accountservices").update({"servicestatus": "PastDue"}).eq(
-        "accountuid", accountuid
-    ).eq("servicestatus", "Active").execute()
     sd.table("account_billing").update({
         "billing_status": "PastDue", "failure_count": failure_count,
         "first_failure_dt": first_failure_dt, "grace_until_dt": grace_until,
@@ -943,10 +959,20 @@ def _process_account_billing_cycle(sd, ab: dict, today: date) -> dict:
         "next_billing_dt": next_dt.isoformat(), "last_billed_dt": today.isoformat(),
         "billing_status": "Active", "failure_count": 0, "first_failure_dt": None, "grace_until_dt": None,
     }).eq("accountuid", accountuid).execute()
-    # 유예기간 중 회복된 경우 PastDue였던 서비스를 Active로 복귀
+    # 유예기간 중 회복된 경우 PastDue였던 서비스를 Active로 복귀 — subscriptions.subscription_status도 같이 되돌린다.
+    recovered = (
+        sd.table("accountservices").select("subscriptionuid")
+        .eq("accountuid", accountuid).eq("servicestatus", "PastDue")
+        .execute().data or []
+    )
     sd.table("accountservices").update({"servicestatus": "Active"}).eq(
         "accountuid", accountuid
     ).eq("servicestatus", "PastDue").execute()
+    recovered_sub_ids = [r["subscriptionuid"] for r in recovered if r.get("subscriptionuid")]
+    if recovered_sub_ids:
+        sd.table("subscriptions").update({"subscription_status": "Paid"}).in_(
+            "subscriptionuid", recovered_sub_ids
+        ).execute()
 
     return {"result": "charged", "amount": total_amount, "invoiceuid": invoiceuid}
 
