@@ -15,7 +15,7 @@ from requests import exceptions as requests_exceptions
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_user as _get_user
+from backend.app.dependencies import get_token, get_user as _get_user, require_insight_read, require_insight_write
 from d2insight.chat.intent_parser import parse_intent
 from d2insight.chat.pipeline_runner import run_tool, run_report_from_spec
 from d2insight.chat import session as _session
@@ -156,7 +156,7 @@ class ChatResponse(BaseModel):
 
 # ── 채팅 ─────────────────────────────────────────────────────────
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_insight_write)])
 def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResponse:
     _check_owner(token, req.user_id)
     token_tracker.reset()
@@ -385,7 +385,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
 
 # ── 데이터셋 업로드: 엑셀/CSV 업로드, API 연결 (세션의 report 생성이 이 데이터를 사용) ──
 
-@router.post("/upload-dataset")
+@router.post("/upload-dataset", dependencies=[Depends(require_insight_write)])
 async def upload_dataset(
     files: List[UploadFile] = File(...),
     session_id: Optional[str] = Form(None),
@@ -461,7 +461,7 @@ async def upload_dataset(
     return {"status": "success", "session_id": sid, "datasets": previews}
 
 
-@router.post("/upload-dataset-url")
+@router.post("/upload-dataset-url", dependencies=[Depends(require_insight_write)])
 def upload_dataset_url(body: ApiDatasetRequest, token: str = Depends(get_token)):
     _check_owner(token, body.user_id)
     try:
@@ -515,7 +515,7 @@ def upload_dataset_url(body: ApiDatasetRequest, token: str = Depends(get_token))
 
 # ── 이어가기 ─────────────────────────────────────────────────────
 
-@router.post("/session/inject")
+@router.post("/session/inject", dependencies=[Depends(require_insight_write)])
 def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     """과거 Q&A를 현재(또는 새) 세션에 이어붙인다."""
     _check_owner(token, body.user_id)
@@ -631,7 +631,7 @@ def _register_schedule_for_qa(
     return {"ok": True, "template_uid": templateuid, "session_id": dedicated_sid, "template_nm": template_nm}
 
 
-@router.post("/schedule/register-preview")
+@router.post("/schedule/register-preview", dependencies=[Depends(require_insight_write)])
 def preview_register_schedule(body: ScheduleRegisterRequest, token: str = Depends(get_token)):
     """정기 보고서 등록 전 확인 문구(중복 등록 여부 + 다음 실행 예정일시)를 반환한다."""
     _check_owner(token, body.user_id)
@@ -641,7 +641,7 @@ def preview_register_schedule(body: ScheduleRegisterRequest, token: str = Depend
     return {"message": message}
 
 
-@router.post("/schedule/register")
+@router.post("/schedule/register", dependencies=[Depends(require_insight_write)])
 def register_schedule(body: ScheduleRegisterRequest, token: str = Depends(get_token)):
     """지정한 보고서(qauid) 하나를 정기 보고서로 등록한다(오른쪽 패널의 버튼 경로)."""
     _check_owner(token, body.user_id)
@@ -650,13 +650,13 @@ def register_schedule(body: ScheduleRegisterRequest, token: str = Depends(get_to
     )
 
 
-@router.get("/schedule/{session_id}/turns")
+@router.get("/schedule/{session_id}/turns", dependencies=[Depends(require_insight_read)])
 def get_schedule_turns(session_id: str, token: str = Depends(get_token)):
     """정기 보고서 세션의 실행 턴 목록(회차별, 최근순) 반환 — 사이드바가 펼쳐서 보여준다."""
     return storage.get_schedule_turns(session_id)
 
 
-@router.delete("/schedule/turn/{qauid}/{user_id}")
+@router.delete("/schedule/turn/{qauid}/{user_id}", dependencies=[Depends(require_insight_write)])
 def delete_schedule_turn(qauid: str, user_id: str, token: str = Depends(get_token)):
     """정기 보고서 회차 하나를 하드 삭제한다 — 되돌릴 수 없다(프런트에서 확인 후 호출)."""
     _check_owner(token, user_id)
@@ -664,7 +664,7 @@ def delete_schedule_turn(qauid: str, user_id: str, token: str = Depends(get_toke
     return {"ok": True}
 
 
-@router.get("/schedule/{session_id}/settings")
+@router.get("/schedule/{session_id}/settings", dependencies=[Depends(require_insight_read)])
 def get_schedule_settings(session_id: str, token: str = Depends(get_token)):
     """등록된 정기 보고서의 현재 요일/일자/시간 설정 반환 — 수정 폼 초기값으로 쓴다."""
     template = storage.get_active_template_by_session(session_id)
@@ -675,7 +675,7 @@ def get_schedule_settings(session_id: str, token: str = Depends(get_token)):
     return settings
 
 
-@router.post("/schedule/{session_id}/update-preview")
+@router.post("/schedule/{session_id}/update-preview", dependencies=[Depends(require_insight_write)])
 def preview_schedule_update(session_id: str, body: ScheduleUpdateRequest, token: str = Depends(get_token)):
     """일정 변경 전 확인 문구(효력발생일 안내)를 반환한다."""
     _check_owner(token, body.user_id)
@@ -695,7 +695,7 @@ def preview_schedule_update(session_id: str, body: ScheduleUpdateRequest, token:
     }
 
 
-@router.post("/schedule/{session_id}/update")
+@router.post("/schedule/{session_id}/update", dependencies=[Depends(require_insight_write)])
 def apply_schedule_update(session_id: str, body: ScheduleUpdateRequest, token: str = Depends(get_token)):
     """확인된 일정 변경을 실제로 적용한다(즉시 실행은 하지 않음 — 본프로젝트 Schedule 트리거 몫)."""
     _check_owner(token, body.user_id)
@@ -716,7 +716,7 @@ def apply_schedule_update(session_id: str, body: ScheduleUpdateRequest, token: s
     }
 
 
-@router.post("/schedule/{session_id}/share")
+@router.post("/schedule/{session_id}/share", dependencies=[Depends(require_insight_write)])
 def share_schedule(session_id: str, body: ScheduleShareRequest, token: str = Depends(get_token)):
     """정기 보고서 세션을 같은 project 내 다른 사용자에게 공유한다."""
     _check_owner(token, body.user_id)
@@ -725,7 +725,7 @@ def share_schedule(session_id: str, body: ScheduleShareRequest, token: str = Dep
     return {"ok": True, "share_uid": share_uid}
 
 
-@router.delete("/schedule/share/{share_uid}/{user_id}")
+@router.delete("/schedule/share/{share_uid}/{user_id}", dependencies=[Depends(require_insight_write)])
 def unshare_schedule(share_uid: str, user_id: str, token: str = Depends(get_token)):
     """공유를 종료한다(공유자·수신자 모두 호출 가능 — 세션 전체 공유라 소유자 제한을 두지 않는다)."""
     _check_owner(token, user_id)
@@ -733,7 +733,7 @@ def unshare_schedule(share_uid: str, user_id: str, token: str = Depends(get_toke
     return {"ok": True}
 
 
-@router.get("/schedule/shares/sent/{user_id}")
+@router.get("/schedule/shares/sent/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_schedule_shares_sent(user_id: str, token: str = Depends(get_token)):
     """내가 공유한 정기 보고서 목록(활성만) 반환."""
     _check_owner(token, user_id)
@@ -741,7 +741,7 @@ def get_schedule_shares_sent(user_id: str, token: str = Depends(get_token)):
     return storage.get_schedule_shares_sent(user_id, offsetminutes)
 
 
-@router.get("/schedule/shares/received/{user_id}")
+@router.get("/schedule/shares/received/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_schedule_shares_received(user_id: str, token: str = Depends(get_token)):
     """같은 project에서 내가 받은 정기 보고서 공유 목록(활성만) 반환."""
     _check_owner(token, user_id)
@@ -750,7 +750,7 @@ def get_schedule_shares_received(user_id: str, token: str = Depends(get_token)):
     return storage.get_schedule_shares_received(project_id, user_id, offsetminutes)
 
 
-@router.delete("/schedule/shares/received/{share_uid}/{user_id}")
+@router.delete("/schedule/shares/received/{share_uid}/{user_id}", dependencies=[Depends(require_insight_write)])
 def delete_schedule_share_received(share_uid: str, user_id: str, token: str = Depends(get_token)):
     """공유받은 목록에서 제거한다 — 세션 전체 공유라 실제로는 공유 자체를 종료한다."""
     _check_owner(token, user_id)
@@ -758,7 +758,7 @@ def delete_schedule_share_received(share_uid: str, user_id: str, token: str = De
     return {"ok": True}
 
 
-@router.get("/schedule/shares/{share_uid}/turns")
+@router.get("/schedule/shares/{share_uid}/turns", dependencies=[Depends(require_insight_read)])
 def get_schedule_share_turns(share_uid: str, token: str = Depends(get_token)):
     """공유받은 정기 보고서의 회차 목록 — 공유 종료 시점 이후 회차는 제외한다."""
     share = storage.get_schedule_share(share_uid)
@@ -777,7 +777,7 @@ def run_scheduled(body: ScheduledRunRequest):
 
 # ── 초기 로딩 통합 (bootstrap) ────────────────────────────────────
 
-@router.get("/bootstrap/{user_id}")
+@router.get("/bootstrap/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_bootstrap(user_id: str, token: str = Depends(get_token)):
     """사이드바 초기 로딩에 필요한 데이터를 한 번에 반환.
 
@@ -800,7 +800,7 @@ def get_bootstrap(user_id: str, token: str = Depends(get_token)):
 
 # ── 히스토리 ─────────────────────────────────────────────────────
 
-@router.get("/history/{user_id}")
+@router.get("/history/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_history(user_id: str, token: str = Depends(get_token)):
     """날짜별로 그룹화된 세션 목록 반환."""
     _check_owner(token, user_id)
@@ -808,7 +808,7 @@ def get_history(user_id: str, token: str = Depends(get_token)):
     return storage.get_history_by_date(user_id, offsetminutes)
 
 
-@router.get("/history/{user_id}/{session_id}")
+@router.get("/history/{user_id}/{session_id}", dependencies=[Depends(require_insight_read)])
 def get_session_messages(user_id: str, session_id: str, token: str = Depends(get_token)):
     """세션의 Q&A 메시지 목록 반환.
 
@@ -823,7 +823,7 @@ def get_session_messages(user_id: str, session_id: str, token: str = Depends(get
     return {"session_id": session_id, "messages": messages}
 
 
-@router.delete("/history/{user_id}/{session_id}")
+@router.delete("/history/{user_id}/{session_id}", dependencies=[Depends(require_insight_write)])
 def delete_session(user_id: str, session_id: str, token: str = Depends(get_token)):
     _check_owner(token, user_id)
     storage.delete_session(session_id, user_id)
@@ -832,14 +832,14 @@ def delete_session(user_id: str, session_id: str, token: str = Depends(get_token
 
 # ── 즐겨찾기 ─────────────────────────────────────────────────────
 
-@router.get("/favorites/{user_id}")
+@router.get("/favorites/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_favorites(user_id: str, token: str = Depends(get_token)):
     _check_owner(token, user_id)
     offsetminutes = storage.get_offsetminutes(user_id)
     return storage.get_favorites(user_id, offsetminutes)
 
 
-@router.post("/favorite/qa")
+@router.post("/favorite/qa", dependencies=[Depends(require_insight_write)])
 def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
     _check_owner(token, body.user_id)
     ok = storage.add_favorite_qa(body.qauid, body.user_id)
@@ -848,7 +848,7 @@ def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
     return {"ok": True}
 
 
-@router.delete("/favorite/qa/{user_id}/{qauid}")
+@router.delete("/favorite/qa/{user_id}/{qauid}", dependencies=[Depends(require_insight_write)])
 def remove_favorite_qa(user_id: str, qauid: str, token: str = Depends(get_token)):
     _check_owner(token, user_id)
     storage.remove_favorite_qa(qauid, user_id)
@@ -857,7 +857,7 @@ def remove_favorite_qa(user_id: str, qauid: str, token: str = Depends(get_token)
 
 # ── 폴더 ─────────────────────────────────────────────────────────
 
-@router.get("/folders/{user_id}")
+@router.get("/folders/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_folders(user_id: str, token: str = Depends(get_token)):
     """폴더 목록 반환. 폴더가 없으면 샘플 폴더를 자동 생성한다."""
     _check_owner(token, user_id)
@@ -868,7 +868,7 @@ def get_folders(user_id: str, token: str = Depends(get_token)):
 
 # ── 공유 ─────────────────────────────────────────────────────────
 
-@router.post("/share")
+@router.post("/share", dependencies=[Depends(require_insight_write)])
 def share_qa(body: ShareRequest, token: str = Depends(get_token)):
     """QA를 같은 tenant의 모든 사용자와 공유한다."""
     _check_owner(token, body.user_id)
@@ -878,28 +878,28 @@ def share_qa(body: ShareRequest, token: str = Depends(get_token)):
     return {"ok": True}
 
 
-@router.get("/shares/sent/{user_id}")
+@router.get("/shares/sent/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_shares_sent(user_id: str, token: str = Depends(get_token)):
     _check_owner(token, user_id)
     offsetminutes = storage.get_offsetminutes(user_id)
     return storage.get_shares_sent(user_id, offsetminutes)
 
 
-@router.delete("/shares/sent/{share_qauid}/{user_id}")
+@router.delete("/shares/sent/{share_qauid}/{user_id}", dependencies=[Depends(require_insight_write)])
 def delete_share_sent(share_qauid: str, user_id: str, token: str = Depends(get_token)):
     _check_owner(token, user_id)
     storage.delete_share_sent(share_qauid, user_id)
     return {"ok": True}
 
 
-@router.delete("/shares/received/{share_qauid}/{user_id}")
+@router.delete("/shares/received/{share_qauid}/{user_id}", dependencies=[Depends(require_insight_write)])
 def delete_share_received(share_qauid: str, user_id: str, token: str = Depends(get_token)):
     _check_owner(token, user_id)
     storage.delete_share_received(share_qauid, user_id)
     return {"ok": True}
 
 
-@router.get("/shares/received/{user_id}")
+@router.get("/shares/received/{user_id}", dependencies=[Depends(require_insight_read)])
 def get_shares_received(user_id: str, token: str = Depends(get_token)):
     """같은 project에서 내가 만들지 않은 공유 보고서 목록 반환."""
     _check_owner(token, user_id)
@@ -908,7 +908,7 @@ def get_shares_received(user_id: str, token: str = Depends(get_token)):
     return storage.get_shares_received(project_id, user_id, offsetminutes)
 
 
-@router.get("/shares/{share_qauid}")
+@router.get("/shares/{share_qauid}", dependencies=[Depends(require_insight_read)])
 def get_share_detail(share_qauid: str, token: str = Depends(get_token)):
     """공유된 QA 내용 조회 (로그인한 사용자면 누구나 조회 가능 — 공유 링크 특성상 소유자 검증 없음)."""
     _get_user(token)
@@ -965,7 +965,7 @@ class ReportPreviewRequest(BaseModel):
     account_uid: str | None = None
 
 
-@router.post("/report/preview")
+@router.post("/report/preview", dependencies=[Depends(require_insight_write)])
 def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -> dict:
     """보고서 요청 문장 → 시나리오 매칭 + 스텝·모듈·툴 트리 반환(실행 X).
 

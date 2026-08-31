@@ -11,7 +11,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_chat_read, require_chat_write
 from d2chat.mcp_core.service import mcp_service
 from d2chat.questions import get_questions
 from d2chat.history import supabase_storage as storage
@@ -69,7 +69,7 @@ class ShareRequest(BaseModel):
 
 # ── 질문/답변 (세션 없으면 첫 전송 시 자동 생성) ─────────────────
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[Depends(require_chat_write)])
 def ask_question(body: QuestionRequest, token: str = Depends(get_token)):
     question = body.question.strip()
     if not question:
@@ -190,7 +190,7 @@ def _dataset_preview(key: str, df: pd.DataFrame, filename: str, metadata: dict) 
     }
 
 
-@router.post("/upload-dataset")
+@router.post("/upload-dataset", dependencies=[Depends(require_chat_write)])
 async def upload_dataset(
     files: List[UploadFile] = File(...),
     session_id: Optional[str] = Form(None),
@@ -266,7 +266,7 @@ async def upload_dataset(
     return response
 
 
-@router.post("/upload-dataset-url")
+@router.post("/upload-dataset-url", dependencies=[Depends(require_chat_write)])
 def upload_dataset_url(body: ApiDatasetRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     user_id = str(user.id)
@@ -321,7 +321,7 @@ def upload_dataset_url(body: ApiDatasetRequest, token: str = Depends(get_token))
 
 # ── 이어하기 ─────────────────────────────────────────────────────
 
-@router.post("/session/inject")
+@router.post("/session/inject", dependencies=[Depends(require_chat_write)])
 def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     user_id = str(user.id)
@@ -370,7 +370,7 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
 
 # ── 초기 로딩 통합 (bootstrap) ────────────────────────────────────
 
-@router.get("/bootstrap")
+@router.get("/bootstrap", dependencies=[Depends(require_chat_read)])
 def get_bootstrap(token: str = Depends(get_token)):
     """사이드바 초기 로딩에 필요한 데이터를 한 번에 반환.
 
@@ -391,7 +391,7 @@ def get_bootstrap(token: str = Depends(get_token)):
 
 # ── 히스토리 ─────────────────────────────────────────────────────
 
-@router.get("/history")
+@router.get("/history", dependencies=[Depends(require_chat_read)])
 def get_history(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -399,7 +399,7 @@ def get_history(token: str = Depends(get_token)):
     return storage.get_history_by_date(sb, str(user.id), offsetminutes)
 
 
-@router.get("/history/{session_id}")
+@router.get("/history/{session_id}", dependencies=[Depends(require_chat_read)])
 def get_session(session_id: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -410,7 +410,7 @@ def get_session(session_id: str, token: str = Depends(get_token)):
     return data
 
 
-@router.delete("/history/{session_id}")
+@router.delete("/history/{session_id}", dependencies=[Depends(require_chat_write)])
 def delete_session(session_id: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -420,7 +420,7 @@ def delete_session(session_id: str, token: str = Depends(get_token)):
 
 # ── 즐겨찾기 (Q&A 단위) ──────────────────────────────────────────
 
-@router.get("/favorites")
+@router.get("/favorites", dependencies=[Depends(require_chat_read)])
 def get_favorites(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -428,7 +428,7 @@ def get_favorites(token: str = Depends(get_token)):
     return storage.get_favorites(sb, str(user.id), offsetminutes)
 
 
-@router.post("/favorite/qa")
+@router.post("/favorite/qa", dependencies=[Depends(require_chat_write)])
 def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -436,7 +436,7 @@ def add_favorite_qa(body: FavoriteQARequest, token: str = Depends(get_token)):
     return {"ok": True}
 
 
-@router.delete("/favorite/qa/{qauid}")
+@router.delete("/favorite/qa/{qauid}", dependencies=[Depends(require_chat_write)])
 def remove_favorite_qa(qauid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -446,7 +446,7 @@ def remove_favorite_qa(qauid: str, token: str = Depends(get_token)):
 
 # ── 공유 ─────────────────────────────────────────────────────────
 
-@router.post("/share")
+@router.post("/share", dependencies=[Depends(require_chat_write)])
 def share_session(body: ShareRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -463,7 +463,7 @@ def share_session(body: ShareRequest, token: str = Depends(get_token)):
     return {"ok": True, "share_uid": share_uid}
 
 
-@router.get("/shares/sent")
+@router.get("/shares/sent", dependencies=[Depends(require_chat_read)])
 def get_shares_sent(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -471,7 +471,7 @@ def get_shares_sent(token: str = Depends(get_token)):
     return storage.get_shares_sent(sb, str(user.id), offsetminutes)
 
 
-@router.delete("/shares/sent/{share_uid}")
+@router.delete("/shares/sent/{share_uid}", dependencies=[Depends(require_chat_write)])
 def delete_share(share_uid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -479,7 +479,7 @@ def delete_share(share_uid: str, token: str = Depends(get_token)):
     return {"ok": True}
 
 
-@router.get("/shares/received")
+@router.get("/shares/received", dependencies=[Depends(require_chat_read)])
 def get_shares_received(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -487,7 +487,7 @@ def get_shares_received(token: str = Depends(get_token)):
     return storage.get_shares_received(sb, str(user.id), offsetminutes)
 
 
-@router.delete("/shares/received/{share_uid}")
+@router.delete("/shares/received/{share_uid}", dependencies=[Depends(require_chat_write)])
 def delete_share_received(share_uid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -495,7 +495,7 @@ def delete_share_received(share_uid: str, token: str = Depends(get_token)):
     return {"ok": True}
 
 
-@router.get("/snapshots/{share_uid}")
+@router.get("/snapshots/{share_uid}", dependencies=[Depends(require_chat_read)])
 def get_snapshot(share_uid: str, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -508,7 +508,7 @@ def get_snapshot(share_uid: str, token: str = Depends(get_token)):
 
 # ── 공유 대상 사용자 목록 ─────────────────────────────────────────
 
-@router.get("/users/same-tenant")
+@router.get("/users/same-tenant", dependencies=[Depends(require_chat_read)])
 def get_users_same_tenant(token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -526,7 +526,7 @@ def get_questions_api():
     return {"questions": get_questions()}
 
 
-@router.get("/info")
+@router.get("/info", dependencies=[Depends(require_chat_read)])
 def get_data_info(token: str = Depends(get_token)):
     try:
         return mcp_service.get_data_info()

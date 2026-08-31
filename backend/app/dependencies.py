@@ -60,32 +60,33 @@ def get_tenantid(x_tenant_id: Optional[str] = Header(None)) -> Optional[str]:
     return x_tenant_id
 
 
-def require_doc_read(
-    token: str = Depends(get_token),
-    tenantid: Optional[str] = Depends(get_tenantid),
-) -> None:
-    """accountservices.servicestatus('Do' 서비스) 기준 문서 읽기 권한 확인 — 불허 시 403."""
-    from utilsPrj.service_status import get_service_permission
+def _require_service_permission(servicecd: str, need: str):
+    """accountservices.servicestatus(servicecd) 기준 읽기/쓰기 권한 확인 dependency를 생성한다.
 
-    sb = get_sb(token)
-    user = get_user(token)
-    perm = get_service_permission(sb, tenantid, str(user.id), "Do")
-    if not perm["can_read"]:
-        raise HTTPException(status_code=403, detail="msg.service.read.forbidden")
+    청구 실패로 PastDue/Suspended가 되면 utilsPrj/service_status.py의 get_service_permission()이
+    can_read/can_write를 False로 판정 — 불허 시 403(msg.service.{need}.forbidden, 서비스 공통 키).
+    """
+    def _dep(
+        token: str = Depends(get_token),
+        tenantid: Optional[str] = Depends(get_tenantid),
+    ) -> None:
+        from utilsPrj.service_status import get_service_permission
+
+        sb = get_sb(token)
+        user = get_user(token)
+        perm = get_service_permission(sb, tenantid, str(user.id), servicecd)
+        if not perm[f"can_{need}"]:
+            raise HTTPException(status_code=403, detail=f"msg.service.{need}.forbidden")
+
+    return _dep
 
 
-def require_doc_write(
-    token: str = Depends(get_token),
-    tenantid: Optional[str] = Depends(get_tenantid),
-) -> None:
-    """accountservices.servicestatus('Do' 서비스) 기준 문서 쓰기 권한 확인 — 불허 시 403."""
-    from utilsPrj.service_status import get_service_permission
-
-    sb = get_sb(token)
-    user = get_user(token)
-    perm = get_service_permission(sb, tenantid, str(user.id), "Do")
-    if not perm["can_write"]:
-        raise HTTPException(status_code=403, detail="msg.service.write.forbidden")
+require_doc_read = _require_service_permission("Do", "read")
+require_doc_write = _require_service_permission("Do", "write")
+require_chat_read = _require_service_permission("Ch", "read")
+require_chat_write = _require_service_permission("Ch", "write")
+require_insight_read = _require_service_permission("In", "read")
+require_insight_write = _require_service_permission("In", "write")
 
 
 def get_supabase(token: str = Depends(get_token)):
