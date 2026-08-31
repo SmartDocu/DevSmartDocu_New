@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb, get_user
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
-from utilsPrj.ai_chain import get_llm_info, build_langchain_llm
+from utilsPrj.ai_chain import get_llm_info, get_llm_clients
 from utilsPrj.audit_log import log_work_action, get_client_ip
 
 router = APIRouter()
@@ -77,11 +77,19 @@ def _get_user_info(sb, token: str) -> tuple[str, dict]:
 
 
 def _get_llm_model(projectid, tenantid, user_id=None):
-    """get_llm_info()로 LLM 설정을 조회해 (llm, is_customeraikey, account_uid)를 반환한다."""
-    llm_model, dec_key, vendor_name, is_customeraikey, account_uid = get_llm_info(
+    """LLM 객체(캐시 재사용)와 (is_customeraikey, account_uid)를 반환한다.
+
+    앱 진입 시(apps.py::warm_llm) 이미 인증·캐싱된 LLM이 있으면 그걸 그대로 쓰고,
+    없으면 여기서 처음 인증한다 — 어느 쪽이든 get_llm_clients()가 캐시를 보장한다.
+    """
+    # get_llm_info()는 자체 캐시(_llm_info_cache)가 있어 재조회 비용이 없다 — is_customeraikey/
+    # account_uid(로그용)만 얻는다.
+    _, _, _, is_customeraikey, account_uid = get_llm_info(
         project_id=projectid, tenant_id=tenantid, user_uid=user_id, service_code="Do",
     )
-    llm = build_langchain_llm(vendor_name, dec_key, llm_model)
+    llm = get_llm_clients(
+        project_id=projectid, tenant_id=tenantid, user_uid=user_id, service_code="Do",
+    )
     return llm, is_customeraikey, account_uid
 
 

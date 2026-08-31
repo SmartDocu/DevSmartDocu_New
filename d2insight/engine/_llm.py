@@ -35,7 +35,7 @@ def chat(
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
     from d2insight import token_tracker
-    from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+    from utilsPrj.ai_chain import get_llm_clients, get_llm_info
 
     log_ctx = token_tracker.get_log_ctx() or {}
     project_id = log_ctx.get("project_id")
@@ -43,13 +43,22 @@ def chat(
     user_uid = log_ctx.get("creator")
     account_uid = log_ctx.get("account_uid")
 
+    # get_llm_info()는 _llm_info_cache로 이미 캐시되어 있어(Supabase 재조회 없음) 여기서
+    # 또 불러도 비용이 없다 — 로그용 vendor/model_id만 얻는다.
     # service_code="In"이면 models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
-    models, api_key, vendor, _, _ = get_llm_info(
+    models, _, vendor, _, _ = get_llm_info(
         project_id=project_id, tenant_id=tenant_id,
         user_uid=user_uid, account_uid=account_uid, service_code="In",
     )
     model_id = models[grade] if isinstance(models, dict) else models
-    llm = build_langchain_llm(vendor, api_key, model_id)
+
+    # (project/tenant/user/account) 조합당 인증·LLM 객체 생성을 한 번만 한다 — 모듈이 몇
+    # 개든, 보고서를 몇 번 만들든, 세션 안에서 d2insight를 나갔다 다시 들어와도 재사용된다.
+    clients = get_llm_clients(
+        project_id=project_id, tenant_id=tenant_id,
+        user_uid=user_uid, account_uid=account_uid, service_code="In",
+    )
+    llm = clients[grade]
 
     lc_messages = []
     if system:

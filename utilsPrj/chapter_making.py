@@ -256,10 +256,16 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
     else:
         gencontenttypecd = "O"
 
-    _llm_model_nm, _dec_api_key, _vendor_name, is_customeraikey, account_uid = get_llm_info(
+    # get_llm_info()는 ai_chain._llm_info_cache로 이미 캐시되어(Supabase 재조회 없음) 여기서
+    # 불러도 비용이 없다 — is_customeraikey/account_uid(로그용)만 얻는다.
+    _, _, _, is_customeraikey, account_uid = get_llm_info(
         project_id=project_id, tenant_id=tenant_id, user_uid=user_id, service_code="Do",
     )
-    llm = build_langchain_llm(_vendor_name, _dec_api_key, _llm_model_nm)
+    # LLM 객체는 (project/tenant/user) 조합당 한 번만 만들고 재사용한다 — AI 오브젝트마다
+    # (병렬 처리 시 동시에도) 매번 새로 인증·생성하지 않는다.
+    llm = get_llm_clients(
+        project_id=project_id, tenant_id=tenant_id, user_uid=user_id, service_code="Do",
+    )
     total_tokens = {"input_tokens": 0, "output_tokens": 0}
 
     try:

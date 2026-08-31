@@ -134,15 +134,76 @@ _GRADE_MODEL_COLUMNS = {
 _llm_info_cache: dict[tuple, tuple] = {}
 _llm_info_cache_lock = threading.Lock()
 
+# 빌드된 LangChain LLM 객체 캐시 — get_llm_clients() 전용. _llm_info_cache는 Supabase
+# 재조회만 막아줄 뿐 LLM 객체(ChatAnthropic 등)는 호출부가 매번 새로 만들었다(d2doc/d2insight
+# 둘 다 "항목/모듈 하나당 인증 한 번씩" 문제의 원인). 이 캐시는 그 위에 한 겹 더 얹어 같은
+# (project/tenant/user/service/account) 조합이면 인증·객체 생성을 통째로 한 번만 한다.
+_llm_client_cache: dict[tuple, object] = {}
+_llm_client_cache_lock = threading.Lock()
+
 
 def clear_llm_info_cache() -> None:
-    """llmapikeys 저장/삭제 시 호출 — 다음 get_llm_info() 호출부터 새 설정을 반영한다."""
+    """llmapikeys 저장/삭제 시 호출 — 다음 get_llm_info()/get_llm_clients() 호출부터 새 설정을 반영한다."""
     with _llm_info_cache_lock:
         _llm_info_cache.clear()
+    with _llm_client_cache_lock:
+        _llm_client_cache.clear()
+
+
+def get_llm_clients(supabase=None, project_id=None, tenant_id=None, user_uid=None, service_code=None, account_uid=None):
+    """get_llm_info() + build_langchain_llm()을 합쳐, **빌드된 LLM 객체**를 캐싱해서 반환한다.
+
+    service_code="In"(d2insight)이면 {"fast": llm, "balanced": llm, "quality": llm} dict를,
+    그 외(d2doc="Do", d2chat="Ch")는 LLM 객체 하나를 반환한다.
+
+    같은 (project_id, tenant_id, user_uid, service_code, account_uid) 조합이면 이후 호출은
+    캐시를 즉시 반환한다 — 인증(Supabase 조회+복호화)과 LLM 객체 생성이 그 조합당 한 번만
+    일어난다. 캐시 채우는 구간까지 락을 잡아서, 스레드풀로 항목을 병렬 처리하는 호출부
+    (예: d2doc의 process_ai_objects_parallel)에서 여러 스레드가 동시에 캐시 미스를 봐도
+    실제 인증은 한 번만 일어난다(락 없이 "확인→없으면 생성" 패턴은 경쟁 상태로 중복 인증됨).
+    """
+    cache_key = (project_id, tenant_id, user_uid, service_code, account_uid)
+    with _llm_client_cache_lock:
+        cached = _llm_client_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        models, api_key, vendor, _, _ = get_llm_info(
+            supabase, project_id=project_id, tenant_id=tenant_id,
+            user_uid=user_uid, account_uid=account_uid, service_code=service_code,
+        )
+        if isinstance(models, dict):
+            result = {grade: build_langchain_llm(vendor, api_key, mid) for grade, mid in models.items()}
+        else:
+            result = build_langchain_llm(vendor, api_key, models)
+        _llm_client_cache[cache_key] = result
+        return result
 
 
 def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, service_code=None, account_uid=None):
     """Supabase에서 LLM 설정을 조회해 (model, dec_api_key, vendor_name, is_customeraikey, account_uid) 반환.
+    캐시 확인부터 실제 조회·저장까지 락을 계속 쥔다 — 그래야 스레드 여러 개가 같은 조합으로
+    거의 동시에 호출해도(d2doc의 process_ai_objects_parallel 등) 딱 하나만 실제로 조회하고
+    나머지는 그 결과를 기다렸다가 받는다. "확인→(없으면)조회→저장" 사이에 락을 놓으면 여러
+    스레드가 동시에 "캐시에 없네"를 보고 각자 조회해버리는 경쟁 상태가 생긴다(2026-08-31
+    실측으로 확인). 기다리는 구간은 인증(조회+복호화)뿐이고, 그 이후 실제 LLM 호출은 각
+    스레드가 그대로 병렬로 진행한다. 실제 조회 로직은 `_fetch_llm_info()` 참고.
+    """
+    cache_key = (project_id, tenant_id, user_uid, service_code, account_uid)
+    if supabase is not None:
+        # 호출부가 supabase를 직접 넘기면(기본 서비스 클라이언트가 아닌 경우) 캐시를 타지 않는다.
+        return _fetch_llm_info(supabase, project_id, tenant_id, user_uid, service_code, account_uid)
+
+    with _llm_info_cache_lock:
+        cached = _llm_info_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        result = _fetch_llm_info(get_service_client(), project_id, tenant_id, user_uid, service_code, account_uid)
+        _llm_info_cache[cache_key] = result
+        return result
+
+
+def _fetch_llm_info(supabase, project_id, tenant_id, user_uid, service_code, account_uid):
+    """실제 Supabase 조회·복호화 로직(캐시/락 없음) — get_llm_info()가 락을 쥔 채로 호출한다.
 
     supabase 미전달 시 서비스 역할 클라이언트를 자동 사용.
     service_code: 앱 구분 ("Do"=d2doc, "Ch"=d2chat, "In"=d2insight)
@@ -161,16 +222,8 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
     조회를 반복하지 않도록). 반환 튜플 자리 수는 그대로 5개다 — "Do"/"Ch"/그 밖의 기존
     호출부는 손댈 필요 없이 지금처럼 model을 문자열로 받는다.
 
-    결과는 캐시된다(같은 조회조건은 Supabase 재조회·복호화 없이 즉시 반환). supabase를
-    직접 넘긴 호출(기본 서비스 클라이언트가 아닌 경우)은 캐시를 타지 않는다.
+    캐싱은 하지 않는다(호출부 get_llm_info()가 락을 쥔 채로 담당) — 이 함수는 순수 조회만.
     """
-    cache_key = (project_id, tenant_id, user_uid, service_code, account_uid)
-    use_cache = supabase is None
-    if use_cache:
-        with _llm_info_cache_lock:
-            cached = _llm_info_cache.get(cache_key)
-        if cached is not None:
-            return cached
     # ===================================================================
     # TEMP: 로컬 Together.ai 모델(Llama/DeepSeek) 품질 비교 테스트용 하드코딩 오버라이드 —
     # 테스트 종료로 주석처리, 원래 Supabase 조회 로직으로 복원 (2026-08-20)
@@ -312,7 +365,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
                 "projects 또는 llmapikeys 테이블에 llmmodelnm/encapikey를 설정하세요."
             )
     
-    # print(f"jeff 0001 encode: {enc_api_key}")    # jeff 20260827 key
+    print(f"jeff 0001 encode: {enc_api_key}")    # jeff 20260827 key
     dec_api_key = decrypt_value(enc_api_key)
     # print(f"jeff 0001 encode: {enc_api_key} \ntdecode: {dec_api_key}")    # jeff 20260827 key
     # vendor 조회는 항상 모델명 문자열 하나가 필요하다 — multi_grade면 dict에서 하나 뽑아온다.
@@ -330,11 +383,7 @@ def get_llm_info(supabase=None, project_id=None, tenant_id=None, user_uid=None, 
         supabase, "llmmodels", "select", {}, {"llmmodelnm": vendor_lookup_model}, "llmvendornm"
     )[0]["llmvendornm"]
 
-    result = (llm_model, dec_api_key, vendor_name, is_customeraikey, account_uid)
-    if use_cache:
-        with _llm_info_cache_lock:
-            _llm_info_cache[cache_key] = result
-    return result
+    return (llm_model, dec_api_key, vendor_name, is_customeraikey, account_uid)
 
 
 def calculate_capability_indices(data, spec_lower=None, spec_upper=None):
