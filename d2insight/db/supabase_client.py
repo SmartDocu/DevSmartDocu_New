@@ -9,7 +9,7 @@ from backend.app.config import settings
 
 _client: Client | None = None
 
-_BUCKET = "sdoc"
+_BUCKET = "d2doc"
 _REPORT_PREFIX = "insight_report"
 
 
@@ -30,7 +30,7 @@ def table(name: str):
 def upload_report(folder_en: str, file_path: str | Path) -> str:
     """보고서 파일을 Supabase Storage에 업로드하고 Public URL을 반환한다.
 
-    경로: sdoc/insight_report/{folder_en}/{filename}
+    경로: d2doc/insight_report/{folder_en}/{filename}
     """
     file_path = Path(file_path)
     storage_key = f"{_REPORT_PREFIX}/{folder_en}/{file_path.name}"
