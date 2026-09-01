@@ -16,6 +16,10 @@ from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbuck
 from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
+from utilsPrj.private_storage import (
+    resolve_user_accountuid, build_private_path, upload_private_file,
+    delete_private_file, is_private_path, resolve_display_url,
+)
 
 router = APIRouter()
 
@@ -79,27 +83,23 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
         return str(raw)
 
 
-def _save_iconfile(sb, file: UploadFile, folder: str, existing_url: Optional[str] = None) -> tuple:
-    """아이콘 파일을 Supabase Storage에 업로드하고 (파일명, URL)을 반환."""
+def _save_tenant_icon(sb_service, file: UploadFile, accountuid: str, existing_url: Optional[str] = None) -> tuple:
+    """기업 아이콘을 private storage(Users/{accountuid}/Master/tenant-icon/...)에 업로드하고 (파일명, 경로)를 반환."""
     if existing_url:
-        try:
-            parsed = urlparse(existing_url)
-            prefix = "/storage/v1/object/public/sdoc/"
-            if prefix in parsed.path:
-                path_to_delete = parsed.path.split(prefix)[-1]
-                sb.storage.from_("sdoc").remove([path_to_delete])
-        except Exception:
-            pass
+        if is_private_path(existing_url):
+            delete_private_file(sb_service, existing_url)
+        else:
+            try:
+                parsed = urlparse(existing_url)
+                prefix = "/storage/v1/object/public/d2doc/"
+                if prefix in parsed.path:
+                    sb_service.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
+            except Exception:
+                pass
     ext = os.path.splitext(file.filename)[1]
-    uuid_name = f"{uuid.uuid4()}{ext}"
-    storage_path = f"{folder}/{uuid_name}"
-    sb.storage.from_("sdoc").upload(
-        storage_path,
-        file.file.read(),
-        {"content-type": file.content_type},
-    )
-    public_url = sb.storage.from_("sdoc").get_public_url(storage_path).split("?")[0]
-    return file.filename, public_url
+    storage_path = build_private_path(accountuid, "Master", "tenant-icon", f"{uuid.uuid4()}{ext}")
+    upload_private_file(sb_service, storage_path, file.file.read(), file.content_type)
+    return file.filename, storage_path
 
 
 # ══════════════════════════════════════════════════════
@@ -411,6 +411,7 @@ def list_tenants(token: str = Depends(get_token)):
         acc_rows = svc.table("accounts").select("tenantid, encemail, enctelno").in_("tenantid", tenantids).execute().data or []
         account_map = {a["tenantid"]: a for a in acc_rows}
 
+    svc_client = get_service_client()
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
         nm, _ = get_usernm_email(sb, row.get("creator"))
@@ -418,6 +419,7 @@ def list_tenants(token: str = Depends(get_token)):
         acc = account_map.get(row.get("tenantid"))
         row["decemail"] = _decrypt(acc.get("encemail")) if acc else ""
         row["dectelno"] = _decrypt(acc.get("enctelno")) if acc else ""
+        row["iconfileurl"] = resolve_display_url(svc_client, row.get("iconfileurl"))
 
     langs = sb.schema(SUPABASE_SCHEMA).table("languages").select("languagecd, languagenm").eq("useyn", True).order("languagenm").execute().data or []
     timezones = [r["timezone"] for r in (sb.schema(SUPABASE_SCHEMA).table("timezones").select("*").eq("useyn", True).execute().data or [])]
@@ -497,13 +499,18 @@ async def save_tenant(
     if tenantid:
         existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
         if existing:
+            svc_root = get_service_client()
+            # 아이콘 업로드 전에 accounts row 존재를 보장해야 accountuid를 해석할 수 있다
+            _save_tenant_contact(int(tenantid), email, telno, str(user.id))
             if iconfile and iconfile.filename:
                 existing_url = existing[0].get("iconfileurl")
-                icon_nm, icon_url = _save_iconfile(sb, iconfile, f"iconfiles/tenants/{tenantid}", existing_url)
+                accountuid = resolve_user_accountuid(svc_root, int(tenantid), str(user.id))
+                if not accountuid:
+                    raise HTTPException(status_code=400, detail="msg.required.account")
+                icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid, existing_url)
                 tenant_data["iconfilenm"] = icon_nm
                 tenant_data["iconfileurl"] = icon_url
             sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
-            _save_tenant_contact(int(tenantid), email, telno, str(user.id))
             after = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
             log_work_action(
                 useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
@@ -516,13 +523,18 @@ async def save_tenant(
     resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert({**tenant_data, "disptenantnm": tenantnm}).execute()
     new_tenantid = resp.data[0]["tenantid"] if resp.data else None
     if new_tenantid:
+        svc_root = get_service_client()
+        # 아이콘 업로드 전에 accounts row 존재를 보장해야 accountuid를 해석할 수 있다
+        _save_tenant_contact(int(new_tenantid), email, telno, str(user.id))
         if iconfile and iconfile.filename:
-            icon_nm, icon_url = _save_iconfile(sb, iconfile, f"iconfiles/tenants/{new_tenantid}")
+            accountuid = resolve_user_accountuid(svc_root, int(new_tenantid), str(user.id))
+            if not accountuid:
+                raise HTTPException(status_code=400, detail="msg.required.account")
+            icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid)
             sb.schema(SUPABASE_SCHEMA).table("tenants").update({
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
-        _save_tenant_contact(int(new_tenantid), email, telno, str(user.id))
         _save_default_tenant_configs(int(new_tenantid), str(user.id))
     after = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", new_tenantid).execute().data if new_tenantid else []
     log_work_action(
@@ -2512,7 +2524,7 @@ def get_tenant_manage_basic_info(token: str = Depends(get_token), tenantid: Opti
 
     return {
         "iconfilenm": tenant.get("iconfilenm"),
-        "iconfileurl": tenant.get("iconfileurl"),
+        "iconfileurl": resolve_display_url(get_service_client(), tenant.get("iconfileurl")),
         "disptenantnm": tenant.get("disptenantnm"),
         "languagecd": tenant.get("languagecd"),
         "timezone": tenant.get("timezone"),
@@ -2556,9 +2568,11 @@ async def save_tenant_manage_basic_info(
     if timezone:
         tenant_payload["timezone"] = timezone
     if iconfile and iconfile.filename:
+        if not accountuid:
+            raise HTTPException(status_code=400, detail="msg.required.account")
         existing = svc.table("tenants").select("iconfileurl").eq("tenantid", int(tenantid)).maybe_single().execute()
         existing_url = existing.data.get("iconfileurl") if existing and existing.data else None
-        icon_nm, icon_url = _save_iconfile(svc_root, iconfile, f"iconfiles/tenants/{tenantid}", existing_url)
+        icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid, existing_url)
         tenant_payload["iconfilenm"] = icon_nm
         tenant_payload["iconfileurl"] = icon_url
     if tenant_payload:

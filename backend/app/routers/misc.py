@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
@@ -233,9 +232,9 @@ def save_qna_answer(body: QnaAnswerRequest, token: str = Depends(get_token)):
 @router.get("/follow")
 def get_follow_links():
     sb = _sb_svc()
-    excel_url = sb.storage.from_("sdoc").get_public_url("follow/APQR_Excel.xlsx")
-    pdf_url = sb.storage.from_("sdoc").get_public_url("follow/Follow.pdf")
-    content_url = sb.storage.from_("sdoc").get_public_url("follow/Follow_Content.txt")
+    excel_url = sb.storage.from_("d2doc").get_public_url("follow/APQR_Excel.xlsx")
+    pdf_url = sb.storage.from_("d2doc").get_public_url("follow/Follow.pdf")
+    content_url = sb.storage.from_("d2doc").get_public_url("follow/Follow_Content.txt")
     return {"excel_url": excel_url, "pdf_url": pdf_url, "content_url": content_url}
 
 
@@ -266,31 +265,6 @@ def hide_popup(body: HidePopupRequest, token: str = Depends(get_token)):
 # ══════════════════════════════════════════════════════
 #  기업 등록 요청 (TenantRequest)
 # ══════════════════════════════════════════════════════
-
-def _save_iconfile(sb, file: UploadFile, folder: str, existing_url: Optional[str] = None) -> tuple[str, str]:
-    """아이콘 파일을 Supabase Storage에 업로드하고 (파일명, URL)을 반환."""
-    if existing_url:
-        try:
-            parsed = urlparse(existing_url)
-            prefix = "/storage/v1/object/public/sdoc/"
-            if prefix in parsed.path:
-                path_to_delete = parsed.path.split(prefix)[-1]
-                sb.storage.from_("sdoc").remove([path_to_delete])
-        except Exception:
-            pass
-    ext = os.path.splitext(file.filename)[1]
-    uuid_name = f"{uuid.uuid4()}{ext}"
-    storage_path = f"{folder}/{uuid_name}"
-    sb.storage.from_("sdoc").upload(
-        storage_path,
-        file.file.read(),
-        {"content-type": file.content_type},
-    )
-    public_url = sb.storage.from_("sdoc").get_public_url(storage_path).split("?")[0]
-    return file.filename, public_url
-
-
-
 
 # ══════════════════════════════════════════════════════
 #  Contact (문의 메일 발송)  — 로그인 불필요

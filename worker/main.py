@@ -276,17 +276,17 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
             if old and old[0].get("createfileurl"):
                 parsed = urlparse(old[0]["createfileurl"])
-                prefix = "/storage/v1/object/public/sdoc/"
+                prefix = "/storage/v1/object/public/d2doc/"
                 if prefix in parsed.path:
-                    sb_svc.storage.from_("sdoc").remove([parsed.path.split(prefix)[-1]])
+                    sb_svc.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
         except Exception:
             pass
 
         buf = io.BytesIO()
         comp_doc.save(buf)
         buf.seek(0)
-        sb_svc.storage.from_("sdoc").upload(path, buf.read(), {"cacheControl": "3600", "upsert": "true"})
-        public_url = sb_svc.storage.from_("sdoc").get_public_url(path)
+        sb_svc.storage.from_("d2doc").upload(path, buf.read(), {"cacheControl": "3600", "upsert": "true"})
+        public_url = sb_svc.storage.from_("d2doc").get_public_url(path)
 
         sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
             "createfileurl": public_url,

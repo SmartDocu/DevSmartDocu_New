@@ -13,6 +13,7 @@ from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from utilsPrj.credit_helper import upsert_ba_creditbucket
+from utilsPrj.private_storage import resolve_display_url
 from backend.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -394,7 +395,7 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
                 if t_info:
                     ctx.tenantnm = t_info.get("tenantnm")
                     ctx.disptenantnm = t_info.get("disptenantnm") or t_info.get("tenantnm")
-                    ctx.tenanticonurl = t_info.get("iconfileurl")
+                    ctx.tenanticonurl = resolve_display_url(supabase, t_info.get("iconfileurl"))
 
     except Exception:
         pass
@@ -1552,7 +1553,7 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
         "tenantid": str(body.tenantid),
         "tenantnm": tenantnm,
         "disptenantnm": (tenant_data.get("disptenantnm") or tenantnm) if tenant_data else "",
-        "tenanticonurl": tenant_data.get("iconfileurl") if tenant_data else None,
+        "tenanticonurl": resolve_display_url(sd, tenant_data.get("iconfileurl")) if tenant_data else None,
         "accountuid": accountuid,
         "accountstatus": accountstatus,
         "tenantmanager": tenantmanager,

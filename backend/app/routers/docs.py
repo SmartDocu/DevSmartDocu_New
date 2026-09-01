@@ -9,8 +9,12 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
 from backend.app.schemas.auth import MessageResponse
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
+from utilsPrj.private_storage import (
+    resolve_user_accountuid, build_private_path, upload_private_file,
+    delete_private_file, is_private_path, resolve_display_url,
+)
 from backend.app.schemas.docs import (
     DocItem,
     DocSaveResponse,
@@ -215,6 +219,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
         editbuttonyn = "Y" if (is_manager and tenant_write_ok[tenantid]) else "N"
 
         dgid = details.get("docgroupid")
+        basetemplateurl = resolve_display_url(get_service_client(), details.get("basetemplateurl"))
         result_list.append({
             "docid": docid,
             "docnm": details.get("docnm", ""),
@@ -223,7 +228,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
             "projectnm": project.get("projectnm", ""),
             "tenantnm": tenant_map.get(tenantid, ""),
             "basetemplatenm": details.get("basetemplatenm"),
-            "basetemplateurl": details.get("basetemplateurl"),
+            "basetemplateurl": basetemplateurl,
             "createdts": _fmt_dt(details.get("createdts"), offsetminutes),
             "editbuttonyn": editbuttonyn,
             "docgroupid": dgid,
@@ -379,20 +384,31 @@ async def save_doc(
 
     record: dict = {"projectid": projectid, "docnm": docnm, "docdesc": docdesc, "docgroupid": docgroupid}
 
+    # 템플릿 파일은 private 버킷(d2doc-private, Users/{accountuid}/Doc/{docid}/source/...)에 저장한다.
+    # 신규 문서는 docid가 INSERT 이후에야 확정되므로, 파일 내용만 먼저 읽어두고
+    # 실제 업로드는 docid가 정해진 뒤(update 시점 or insert 직후)에 수행한다.
+    template_content: Optional[bytes] = None
+    template_ext = ""
     if templatefile and templatefile.filename:
-        # 기존 파일 삭제
-        if existing and existing.get("basetemplateurl"):
-            _delete_storage_file(sb, existing["basetemplateurl"])
+        template_ext = os.path.splitext(templatefile.filename)[1]
+        template_content = await templatefile.read()
 
-        ext = os.path.splitext(templatefile.filename)[1]
-        path = f"template/basetemplate/{uuid.uuid4()}{ext}"
-        content = await templatefile.read()
-        sb.storage.from_("sdoc").upload(path, content, {"content-type": templatefile.content_type})
-        record["basetemplatenm"] = templatefile.filename
-        record["basetemplateurl"] = sb.storage.from_("sdoc").get_public_url(path).split("?")[0]
+    def _upload_template(target_docid: int, old_url: Optional[str]) -> str:
+        if old_url:
+            _delete_storage_file(sb, old_url)
+        accountuid = resolve_user_accountuid(get_service_client(), int(tenantid), user_id) if tenantid else None
+        if not accountuid:
+            raise HTTPException(status_code=400, detail="msg.required.tenantid")
+        path = build_private_path(accountuid, "Doc", str(target_docid), "source", f"{uuid.uuid4()}{template_ext}")
+        upload_private_file(get_service_client(), path, template_content, templatefile.content_type)
+        return path
 
     try:
         if existing:
+            if template_content is not None:
+                record["basetemplatenm"] = templatefile.filename
+                record["basetemplateurl"] = _upload_template(docid, existing.get("basetemplateurl"))
+
             sb.schema(SUPABASE_SCHEMA).table("docs").update(record).eq("docid", docid).execute()
             after = snapshot_row(sb, "docs", "docid", docid)
             log_work_action(
@@ -405,12 +421,22 @@ async def save_doc(
             record["creator"] = user_id
             res = sb.schema(SUPABASE_SCHEMA).table("docs").insert(record).execute()
             new_id = res.data[0]["docid"] if res.data else None
+
+            if template_content is not None and new_id:
+                sb.schema(SUPABASE_SCHEMA).table("docs").update({
+                    "basetemplatenm": templatefile.filename,
+                    "basetemplateurl": _upload_template(new_id, None),
+                }).eq("docid", new_id).execute()
+
+            after = snapshot_row(sb, "docs", "docid", new_id) if new_id else (res.data[0] if res.data else None)
             log_work_action(
                 useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Do",
-                actioncd="create", targettype="docs", targetid=new_id, after=res.data[0] if res.data else None,
+                actioncd="create", targettype="docs", targetid=new_id, after=after,
                 ip=get_client_ip(request),
             )
             return DocSaveResponse(result="success", docid=new_id)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="msg.save.error")
 
@@ -732,11 +758,14 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, request: Request, tok
 # ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
 def _delete_storage_file(sb, url: str):
+    if is_private_path(url):
+        delete_private_file(get_service_client(), url)
+        return
     try:
         parsed = urlparse(url)
-        prefix = "/storage/v1/object/public/sdoc/"
+        prefix = "/storage/v1/object/public/d2doc/"
         if prefix in parsed.path:
             path = parsed.path.split(prefix)[-1]
-            sb.storage.from_("sdoc").remove([path])
+            sb.storage.from_("d2doc").remove([path])
     except Exception:
         pass

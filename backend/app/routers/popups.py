@@ -207,13 +207,13 @@ def upload_popup_image(popupid: int, file: UploadFile = File(...), token: str = 
         raise HTTPException(status_code=400, detail="이미지 용량은 5MB를 초과할 수 없습니다.")
 
     ext = os.path.splitext(file.filename)[1]
-    storage_path = f"iconfiles/popup/{popupid}/{uuid.uuid4()}{ext}"
+    storage_path = f"D2Doc/popup/{popupid}/{uuid.uuid4()}{ext}"
     try:
-        sb.storage.from_("sdoc").upload(storage_path, content, {"content-type": file.content_type})
+        sb.storage.from_("d2doc").upload(storage_path, content, {"content-type": file.content_type})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"이미지 업로드 실패: {str(e)}")
 
-    public_url = sb.storage.from_("sdoc").get_public_url(storage_path).split("?")[0]
+    public_url = sb.storage.from_("d2doc").get_public_url(storage_path).split("?")[0]
     return {"url": public_url}
 
 

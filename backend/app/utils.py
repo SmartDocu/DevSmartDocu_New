@@ -31,9 +31,9 @@ def get_tenantid(sb, user_id: str) -> Optional[str]:
 def delete_storage_file(sb, url: str):
     try:
         parsed = urlparse(url)
-        prefix = "/storage/v1/object/public/sdoc/"
+        prefix = "/storage/v1/object/public/d2doc/"
         if prefix in parsed.path:
             path = parsed.path.split(prefix)[-1]
-            sb.storage.from_("sdoc").remove([path])
+            sb.storage.from_("d2doc").remove([path])
     except Exception:
         pass

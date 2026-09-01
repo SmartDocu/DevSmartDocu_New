@@ -111,11 +111,11 @@ def _delete_storage(sb, url: str):
     if not url:
         return
     parsed = urlparse(url)
-    prefix = "/storage/v1/object/public/sdoc/"
+    prefix = "/storage/v1/object/public/d2doc/"
     if prefix in parsed.path:
         path = parsed.path.split(prefix)[-1]
         try:
-            sb.storage.from_("sdoc").remove([path])
+            sb.storage.from_("d2doc").remove([path])
         except Exception:
             pass
 
@@ -767,8 +767,8 @@ async def save_ex_data(
         ext = os.path.splitext(excelfile.filename)[1]
         fname = f"{uuid.uuid4()}{ext}"
         path = f"source/ex/{tenantid or 'common'}/{fname}"
-        sb.storage.from_("sdoc").upload(path, content, {"content-type": excelfile.content_type})
-        public_url = sb.storage.from_("sdoc").get_public_url(path).split("?")[0]
+        sb.storage.from_("d2doc").upload(path, content, {"content-type": excelfile.content_type})
+        public_url = sb.storage.from_("d2doc").get_public_url(path).split("?")[0]
         record["excelurl"] = public_url
         record["excelnm"] = excelfile.filename
 

@@ -602,17 +602,20 @@ def set_headerfooter(supabase, genchapteruid, result_doc):
     # 문서 템플릿 구하기
     basetemplateurl = supabase.schema(SUPABASE_SCHEMA).table('docs').select('basetemplateurl').eq('docid', docid).execute().data[0]['basetemplateurl']
 
+    from utilsPrj.private_storage import resolve_template_bytes
+
     templateyn = False
+    template_bytes = None
     # 챕터 템플릿이 있으면 해당 사항 / 그 외 기본 템플릿
     if chaptertemplate_url:
-        response = requests.get(chaptertemplate_url)
+        template_bytes = resolve_template_bytes(supabase, chaptertemplate_url)
         templateyn = True
     elif basetemplateurl:
-        response = requests.get(basetemplateurl)
+        template_bytes = resolve_template_bytes(supabase, basetemplateurl)
         templateyn = True
-    
+
     if templateyn:
-        template_doc = docx.Document(BytesIO(response.content))
+        template_doc = docx.Document(BytesIO(template_bytes))
         # 섹션별로 접근
         section = template_doc.sections[0]
         header = section.header.paragraphs[0].text
@@ -746,11 +749,12 @@ def set_headerfooter_merge(supabase, genchapteruid, result_doc, index, previous_
         result_section.footer.is_linked_to_previous = False
 
     # 템플릿 가져오기
+    from utilsPrj.private_storage import resolve_template_bytes
     template_url = chaptertemplate_url or basetemplateurl
 
     if template_url:
-        response = requests.get(template_url)
-        template_doc = docx.Document(BytesIO(response.content))
+        template_bytes = resolve_template_bytes(supabase, template_url)
+        template_doc = docx.Document(BytesIO(template_bytes))
         template_section = template_doc.sections[0]
         # 머리글/바닥글 복사
         if template_section.header.paragraphs:
@@ -833,12 +837,13 @@ def set_headerfooter_merge_safe(supabase, genchapteruid, result_doc, index):
     basetemplateurl = supabase.schema(SUPABASE_SCHEMA).table('docs').select('basetemplateurl').eq('docid', docid).execute().data[0]['basetemplateurl']
 
     # 챕터 템플릿이 있으면 해당 사항 / 그 외 기본 템플릿
+    from utilsPrj.private_storage import resolve_template_bytes
     if chaptertemplate_url:
-        response = requests.get(chaptertemplate_url)
+        template_bytes = resolve_template_bytes(supabase, chaptertemplate_url)
     else:
-        response = requests.get(basetemplateurl)
-    
-    template_doc = docx.Document(BytesIO(response.content))
+        template_bytes = resolve_template_bytes(supabase, basetemplateurl)
+
+    template_doc = docx.Document(BytesIO(template_bytes))
     
     # 템플릿에서 머리글/바닥글 텍스트 추출
     header_text = ""
