@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import json
 
+from d2insight.engine.catalog.module_key import (
+    ModuleKeyError, check_required, to_execution_entry,
+)
 from d2insight.engine.catalog.modules import get_module_registry
 from d2insight.engine.planner import finalize
 from d2insight.engine.schema import ROLE_ITEM, Schema
@@ -114,14 +117,20 @@ def _resolve_measure(module_id: str, params: dict, spec, schema: Schema,
 
 
 def _build_entry(module_id: str, params: dict, tool: str | None, spec, title: str,
-                 auto: bool = False) -> dict:
+                 auto: bool = False, assembly: dict | None = None) -> dict:
     """resolved params + tool 검증 → plan에 들어갈 module entry 하나. 툴 오류는 그대로 올린다
     (dimension/measure와 달리 카탈로그와 어긋난 것이라 즉시 실패 대상, 기존 규칙과 동일).
 
     auto: 입력 모듈에 이미 "_auto"(자동 삽입 표시)가 있으면 그대로 이어받는다 — 안 그러면
     미리보기→"이대로 작성" 왕복에서 이 표시가 사라진다(2026-08-26 확인).
+
+    assembly: {measure, module_name, sub_name}. 실행에는 안 쓰이지만 그대로 실어 보낸다 —
+    이 entry가 곧 applied_steps가 되어 오른쪽 패널에 뜨고, 거기서 모듈을 이름으로 지목해
+    편집한다(2026-09-01 카탈로그 재구조화).
     """
     entry = {"module_id": module_id, "params": params}
+    if assembly:
+        entry.update(assembly)
     if auto:
         entry["_auto"] = True
     if tool:
@@ -164,13 +173,25 @@ def options_to_plan(options: dict, schema: Schema,
         modules_out = []
         skip_reasons: list[str] = []
 
-        for m in raw_modules:
-            module_id = m.get("module_id")
+        for raw_m in raw_modules:
+            # 조립 표현({measure, module_name, sub_name}) → 실행 표현(module_id + params).
+            # 옛 형태(module_id 문자열 + params.dimension)도 여기서 흡수한다.
+            try:
+                reason = check_required(raw_m)
+            except ModuleKeyError as e:
+                raise OptionsError(f"스텝 '{title}': 모듈을 읽지 못했습니다 — {e}")
+            if reason:
+                notes.append(f"스텝 '{title}': {reason} 이 모듈을 건너뛰었습니다.")
+                skip_reasons.append(reason)
+                continue
+            m = to_execution_entry(raw_m)
+            module_id = m["module_id"]
+            assembly = {k: m.get(k) for k in ("measure", "module_name", "sub_name")}
 
             spec = registry.get(module_id)
             if spec is None:
                 raise OptionsError(
-                    f"스텝 '{title}': 알 수 없는 module_id '{module_id}'. "
+                    f"스텝 '{title}': 알 수 없는 모듈 '{module_id}'. "
                     f"등록된 모듈: {sorted(registry)}"
                 )
 
@@ -208,13 +229,25 @@ def options_to_plan(options: dict, schema: Schema,
                 skip_reasons.append(str(e))
                 continue
 
-            modules_out.append(_build_entry(module_id, params, tool, spec, title, auto=auto))
+            modules_out.append(
+                _build_entry(module_id, params, tool, spec, title, auto=auto, assembly=assembly)
+            )
 
+        # step_id를 그대로 실어 보낸다 — applied_steps가 곧 오른쪽 패널의 스텝 카드이고,
+        # 팝업이 "어느 스텝을 고칠지"를 이 값으로 지목한다(2026-09-01). 없으면 카드를 눌러도
+        # 서버가 스텝을 찾지 못한다.
+        sid = step.get("step_id")
         if not modules_out:
             if raw_modules:
-                steps.append(_build_disabled_step(title, raw_modules, skip_reasons, schema))
+                out = _build_disabled_step(title, raw_modules, skip_reasons, schema)
+                if sid:
+                    out["step_id"] = sid
+                steps.append(out)
             continue
-        steps.append({"title": title, "modules": modules_out})
+        out = {"title": title, "modules": modules_out}
+        if sid:
+            out["step_id"] = sid
+        steps.append(out)
 
     plan = {
         "report_title": options.get("report_title") or options.get("scenario") or "보고서",

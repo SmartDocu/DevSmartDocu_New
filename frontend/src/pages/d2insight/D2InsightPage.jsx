@@ -464,6 +464,34 @@ export default function D2InsightPage() {
     return data.applied_steps || steps
   }
 
+  // 스텝 카드 팝업 — 스텝 하나를 사람이 읽는 말로 풀어 보여준다(JSON 대신).
+  const handleDescribeStep = async (step) => {
+    const { data } = await apiClient.post('/d2insight/report/describe_step', {
+      step,
+      user_id: userId,
+      project_id: user?.myprojectid ?? null,
+      account_uid: user?.accountuid ?? null,
+    })
+    return data.modules || []
+  }
+
+  // 팝업 '보내기' — 자연어 지시를 편집 연산으로 옮겨 그 스텝에 적용한다.
+  // 스텝 하나만 고치지만 steps 전체를 주고받는다 — 모듈을 다 빼면 스텝이 사라지고,
+  // 싱글턴 이름표가 다른 스텝과 부딪히는지도 전체를 봐야 알 수 있다(백엔드 주석 참고).
+  const handleEditStep = async (stepId, instruction) => {
+    const { data } = await apiClient.post('/d2insight/report/edit_step', {
+      steps: previewData?.applied_steps || [],
+      step_id: stepId,
+      instruction,
+      scenario: previewData?.scenario,
+      session_id: sessionIdRef.current,
+      user_id: userId,
+      project_id: user?.myprojectid ?? null,
+      account_uid: user?.accountuid ?? null,
+    })
+    return data
+  }
+
   const sendMessage = async (overrideText = null) => {
     const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim()
     if (!text || isLoading) return
@@ -1307,6 +1335,8 @@ export default function D2InsightPage() {
             setPreviewData((prev) => (prev ? { ...prev, applied_steps: newSteps } : prev))
           }
           onValidateSteps={handleValidateSteps}
+          onDescribeStep={handleDescribeStep}
+          onEditStep={handleEditStep}
         />
       </div>
 
@@ -1361,6 +1391,148 @@ function parseMarkdownWithImages(text) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// 스텝 카드 팝업 — 스텝 하나를 자연어로 고친다 (2026-09-01)
+//
+// JSON 편집(위의 "JSON 원문 보기")과 같은 일을 하는 다른 통로다. JSON이 익숙하지 않은
+// 사용자를 위해 모듈을 카드로 풀어 보여주고, 고칠 내용을 문장으로 받는다.
+// 값 설명은 백엔드가 LLM으로 만든다 — 역할·파라미터·툴 용어 사전을 두면 카탈로그가 늘 때마다
+// 같이 늘려야 해서 너무 넓어진다(2026-09-01 결정).
+//
+// readOnly면 아래 입력창 영역만 빼고 내용만 보여준다 — 이미 만들어진 보고서의 스텝이다.
+// 고칠 수 있게 두면 화면의 구성과 실제 문서 내용이 어긋난다.
+//
+// 서버는 무상태다. '보내기'는 결과를 미리 보여줄 뿐이고, '저장'을 눌러야 바깥 preview에
+// 반영된다. 취소하면 통째로 버린다.
+// ─────────────────────────────────────────────────────────────────
+function StepEditPopup({ step, readOnly = false, onDescribeStep, onEditStep, onSave, onClose }) {
+  const [modules, setModules] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
+  const [instruction, setInstruction] = useState('')
+  // 주고받은 내용을 쌓지 않는다 — 결과는 위 카드에 그대로 보이므로 이력은 중복이다.
+  // 알려야 할 것이 있을 때만(못 알아들었거나 규칙에 걸렸을 때) 한 줄 띄운다.
+  const [message, setMessage] = useState(null)
+  const [draftSteps, setDraftSteps] = useState(null)  // 저장 전까지의 편집 결과
+  const [stepRemoved, setStepRemoved] = useState(false)
+
+  const stepId = step?.step_id
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setModules([])
+    setMessage(null)
+    setDraftSteps(null)
+    setStepRemoved(false)
+    setInstruction('')
+    Promise.resolve(onDescribeStep?.(step))
+      .then((list) => { if (!cancelled) setModules(list || []) })
+      .catch(() => { if (!cancelled) setModules([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+    // 부모가 key로 스텝마다 새로 마운트하므로 한 번만 부르면 된다. 지난 보고서의 스텝은
+    // step_id가 없을 수 있어(옛 저장분) step_id를 의존성으로 쓰지 않는다.
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const send = async () => {
+    const text = instruction.trim()
+    if (!text || sending) return
+    setSending(true)
+    setMessage(null)
+    try {
+      const data = await onEditStep?.(stepId, text)
+      if (!data) return
+      if (data.message) {
+        // 아무것도 안 바뀐 경우 — 못 알아들었거나 규칙에 걸렸다. 입력은 그대로 두어
+        // 사용자가 고쳐서 다시 보낼 수 있게 한다.
+        setMessage(data.message)
+        return
+      }
+      setInstruction('')
+      setDraftSteps(data.steps || null)
+      setModules(data.modules || [])
+      setStepRemoved(!!data.step_removed)
+      if ((data.notes || []).length) setMessage(data.notes.join(' '))
+    } catch (e) {
+      setMessage('수정 중 오류가 났습니다: ' + (e?.response?.data?.detail || e.message))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="step-popup-backdrop">
+      <div className="step-popup">
+        <div className="step-popup-head">
+          <strong>{step?.title}</strong>
+          <button type="button" className="step-popup-x" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="step-popup-body">
+          {loading && <div className="step-popup-hint">불러오는 중…</div>}
+
+          {!loading && stepRemoved && (
+            <div className="step-popup-warn">
+              이 스텝은 분석이 모두 빠져 사라집니다. 저장하면 보고서에서 제외됩니다.
+            </div>
+          )}
+
+          {!loading && !stepRemoved && modules.length === 0 && (
+            <div className="step-popup-hint">표시할 분석이 없습니다.</div>
+          )}
+
+          {!loading && !stepRemoved && modules.map((m, i) => (
+            <div key={m.module || i} className="step-popup-card">
+              <div className="step-popup-card-title">{m.title || m.module}</div>
+              {m.what && <div className="step-popup-card-what">{m.what}</div>}
+              {(m.values || []).length > 0 && (
+                <ul className="step-popup-card-values">
+                  {m.values.map((v, k) => <li key={k}>{v}</li>)}
+                </ul>
+              )}
+            </div>
+          ))}
+
+        </div>
+
+        {!readOnly && (
+        <div className="step-popup-foot">
+          {message && <div className="step-popup-msg">{message}</div>}
+          <textarea
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+            }}
+            placeholder="고칠 내용을 적어주세요. 예: 제품별 말고 브랜드별로 / 상위 5개만 / 추이도 같이"
+            rows={2}
+            disabled={sending}
+          />
+          <div className="step-popup-btns">
+            <button type="button" className="step-popup-send" onClick={send} disabled={sending || !instruction.trim()}>
+              {sending ? '수정 중…' : '보내기'}
+            </button>
+            <span style={{ flex: 1 }} />
+            <button
+              type="button"
+              className="step-popup-save"
+              onClick={() => { onSave?.(draftSteps); onClose?.() }}
+              disabled={sending || !draftSteps}
+            >
+              저장
+            </button>
+            <button type="button" className="step-popup-cancel" onClick={onClose} disabled={sending}>
+              취소
+            </button>
+          </div>
+        </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // 우측 옵션 패널 — 보고서가 어떤 모듈/툴/파라미터로 만들어졌는지 표시(읽기 전용)
 // ─────────────────────────────────────────────────────────────────
 function ReportOptionsPanel({
@@ -1369,13 +1541,18 @@ function ReportOptionsPanel({
   onPreviewRegisterSchedule, onRegisterSchedule,
   onPreviewScheduleUpdate, onApplyScheduleUpdate,
   preview, previewGenerating, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
-  onValidateSteps,
+  onValidateSteps, onDescribeStep, onEditStep,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
   const [showJson, setShowJson] = useState(false)
   const [showPreviewJson, setShowPreviewJson] = useState(false)
   const [dragIndex, setDragIndex] = useState(null)
+  // 팝업으로 보고 있는 스텝. 편집은 **작성 전(preview)에서만** 된다 — 이미 만들어진
+  // 보고서의 스텝을 고치면 화면의 구성과 실제 문서 내용이 어긋나기 때문이다.
+  // 지난 보고서 카드는 viewingStep으로 열려 내용만 읽는다.
+  const [editingStep, setEditingStep] = useState(null)
+  const [viewingStep, setViewingStep] = useState(null)
 
   // preview 모드의 JSON 편집 buffer — textarea에서 사용자가 편집하는 중간 문자열.
   // "JSON 저장" 눌러야 부모 previewData.applied_steps에 반영된다 (그 전까지 카드는 안 바뀜).
@@ -1531,6 +1708,29 @@ function ReportOptionsPanel({
 
   return (
     <aside className="options-panel">
+      {/* 스텝 카드 팝업 — 옵션 패널 위에 겹쳐 뜬다(패널이 position:relative). 저장하면
+          편집 결과가 부모의 previewData.applied_steps에 반영되고, 아래 카드가 그대로
+          다시 그려진다. JSON 편집 저장과 같은 통로다. */}
+      {editingStep && (
+        <StepEditPopup
+          key={editingStep.step_id}
+          step={editingStep}
+          onDescribeStep={onDescribeStep}
+          onEditStep={onEditStep}
+          onSave={(steps) => { if (steps) onReorderPreviewSteps?.(steps) }}
+          onClose={() => setEditingStep(null)}
+        />
+      )}
+      {/* 지난 보고서의 스텝 — 내용만 본다 */}
+      {viewingStep && (
+        <StepEditPopup
+          key={`view-${viewingStep.title}`}
+          step={viewingStep}
+          readOnly
+          onDescribeStep={onDescribeStep}
+          onClose={() => setViewingStep(null)}
+        />
+      )}
       <div className="options-panel-header">
         <span className="options-panel-title">
           {preview ? '작성 전 확인 (preview)' : '적용된 옵션'}
@@ -1598,13 +1798,17 @@ function ReportOptionsPanel({
                     onDragOver={handleStepDragOver(i)}
                     onDrop={handleStepDrop(i)}
                     onDragEnd={handleStepDragEnd}
+                    // 카드를 누르면 그 스텝을 자연어로 고치는 팝업이 뜬다. 드래그(순서 변경)와
+                    // 겹치지 않는다 — 드래그는 onDragStart로 따로 잡힌다.
+                    onClick={() => step.step_id && setEditingStep(step)}
+                    title={step.step_id ? '눌러서 이 스텝 수정' : undefined}
                     style={{
                       marginBottom: 6,
                       padding: '6px 8px',
                       background: isDisabled ? '#f0f0f0' : (isLocked ? '#f5f5f5' : (dragIndex === i ? '#fff3cd' : '#fff')),
                       border: `1px solid ${isDisabled ? '#ccc' : (isLocked ? '#ddd' : '#e0d38a')}`,
                       borderRadius: 4,
-                      cursor: isLocked ? 'default' : 'grab',
+                      cursor: step.step_id ? 'pointer' : (isLocked ? 'default' : 'grab'),
                       opacity: isDisabled ? 0.6 : (dragIndex === i ? 0.6 : 1),
                     }}
                   >
@@ -1757,7 +1961,13 @@ function ReportOptionsPanel({
               {appliedSteps.map((step, idx) => {
                 const isDisabled = step.enabled === false
                 return (
-                  <div key={idx} className="opt-step" style={isDisabled ? { opacity: 0.6 } : undefined}>
+                  <div
+                    key={idx}
+                    className="opt-step opt-step-clickable"
+                    onClick={() => setViewingStep(step)}
+                    title="눌러서 이 스텝 내용 보기"
+                    style={isDisabled ? { opacity: 0.6 } : undefined}
+                  >
                     <div className="opt-step-header">
                       <span className="opt-step-title" style={isDisabled ? { color: '#999' } : undefined}>
                         {idx + 1}. {step.title || step.step || step.section}

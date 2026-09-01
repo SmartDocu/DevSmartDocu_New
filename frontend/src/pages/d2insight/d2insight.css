@@ -267,7 +267,211 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 스텝 카드 팝업이 이 패널 위에 겹쳐 뜬다 — 기준점 */
+  position: relative;
 }
+
+/* ── 스텝 카드 팝업 (2026-09-01) ───────────────────────────────── */
+/* 배경막을 덮지 않는다 — 팝업이 떠 있는 동안에도 오른쪽 스텝 카드를 계속 누를 수 있어야
+   다른 스텝으로 바로 갈아탈 수 있다(카드를 누르면 부모가 key를 바꿔 팝업이 통째로
+   다시 그려진다). 그래서 클릭이 뒤로 통과하게 두고, 팝업 자신만 클릭을 받는다. */
+.step-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* 오른쪽 옵션 패널(300px) 왼편에 띄운다 — 스텝 카드와 나란히 보이되 겹치지 않게. */
+.step-popup {
+  pointer-events: auto;
+  position: fixed;
+  right: 352px;
+  top: 50%;
+  width: min(400px, calc(100vw - 380px));
+  max-height: 78vh;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(16, 32, 48, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: step-popup-rise 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+  transform: translateY(-50%);
+}
+@keyframes step-popup-rise {
+  from { transform: translateY(-50%) translateX(8px); opacity: 0; }
+  to   { transform: translateY(-50%) translateX(0); opacity: 1; }
+}
+
+
+.step-popup-head {
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #f4f8fd 0%, #eaf1fa 100%);
+  border-bottom: 1px solid #d5e3f4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.step-popup-head strong {
+  font-size: 14px;
+  color: #1b344f;
+  letter-spacing: -0.2px;
+  line-height: 1.35;
+}
+.step-popup-x {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #7a8a9a;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.step-popup-x:hover { background: #dde8f4; color: #33475b; }
+
+.step-popup-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: #f7f9fb;
+}
+.step-popup-hint {
+  color: #8a97a3;
+  font-size: 12px;
+  padding: 14px 2px;
+  text-align: center;
+}
+.step-popup-warn {
+  color: #b3261e;
+  font-size: 12px;
+  line-height: 1.55;
+  background: #fdeeec;
+  border: 1px solid #f3c9c4;
+  border-left: 3px solid #d9534f;
+  border-radius: 6px;
+  padding: 9px 10px;
+  margin-bottom: 10px;
+}
+
+/* 모듈 하나 = 카드 하나 */
+.step-popup-card {
+  border: 1px solid #e3e9ef;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 9px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(20, 40, 60, 0.05);
+}
+.step-popup-card-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #1b344f;
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.step-popup-card-title::before {
+  content: '';
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: #4a90d9;
+  flex-shrink: 0;
+}
+.step-popup-card-what {
+  font-size: 12px;
+  color: #5a6b7a;
+  line-height: 1.6;
+}
+.step-popup-card-values {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.step-popup-card-values li {
+  font-size: 11.5px;
+  color: #40607d;
+  background: #eef4fb;
+  border: 1px solid #dce8f5;
+  border-radius: 11px;
+  padding: 2px 9px;
+  line-height: 1.6;
+}
+
+/* 알림 한 줄 — 못 알아들었거나 규칙에 걸렸을 때만 뜬다. 이력을 쌓지 않는다. */
+.step-popup-msg {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #8a5a00;
+  background: #fff8e6;
+  border: 1px solid #f0dfae;
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+
+.step-popup-foot {
+  border-top: 1px solid #e3e9ef;
+  padding: 10px;
+  background: #fff;
+}
+.step-popup-foot textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 8px 10px;
+  border: 1px solid #d3dce5;
+  border-radius: 7px;
+  font-family: inherit;
+  color: #24384a;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.step-popup-foot textarea:focus {
+  outline: none;
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.14);
+}
+.step-popup-foot textarea::placeholder { color: #a5b2be; }
+
+.step-popup-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.step-popup-btns button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter 0.12s, background 0.12s;
+}
+.step-popup-btns button:disabled { opacity: 0.45; cursor: default; }
+.step-popup-btns button:not(:disabled):hover { filter: brightness(0.94); }
+
+.step-popup-send { background: #1976d2; color: #fff; }
+.step-popup-save { background: #2e7d32; color: #fff; }
+.step-popup-cancel { background: #fff; color: #5a6b7a; border-color: #d3dce5; }
+
+/* 지난 보고서의 스텝 카드 — 눌러서 내용을 볼 수 있다 */
+.opt-step-clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+.opt-step-clickable:hover { background: #eef4fb; }
 
 .options-panel-header {
   padding: 12px 14px;

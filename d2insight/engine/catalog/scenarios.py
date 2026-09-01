@@ -31,19 +31,19 @@ SCENARIO_REGISTRY: dict[str, dict] = {
     # 원본은 9스텝(기간비교/Variance/Volume/Price/Mix/Customer/Region/Top Products/원인Ranking)
     # 이나, Mix는 뺀 8스텝이 기본 프리셋이다(2026-07-24 결정). Volume·Price의 기본 계산
     # (bridge_decompose)과 Mix(PVM 고정)가 서로 다른 회계 체계라 나란히 두면 검산이 안 맞는다.
-    # Mix는 카탈로그(STEP_REGISTRY의 s1_mix)에는 그대로 있어 옵션으로 추가할 수 있다.
+    # Mix는 카탈로그(STEP_REGISTRY의 mix)에는 그대로 있어 옵션으로 추가할 수 있다.
     # 근거: 시나리오_스텝_정의.md ※ / 결정기록_2026-07-24_옵션체계.md §1.
     "매출 증감 원인 분석": {
         "report_title": "매출 증감 원인 분석 보고서",
         "steps": [
-            {"step_id": "s1_period_compare"},    # 기간비교
-            {"step_id": "s1_revenue_variance"},  # Variance
-            {"step_id": "s1_volume"},            # Volume
-            {"step_id": "s1_price"},             # Price
-            {"step_id": "s1_customer"},          # Customer
-            {"step_id": "s1_region"},            # Region
-            {"step_id": "s1_top_products"},      # Top Products
-            {"step_id": "s1_cause_ranking"},     # 원인 Ranking
+            {"step_id": "period_compare"},       # 기간비교
+            {"step_id": "revenue_overview"},     # Variance
+            {"step_id": "volume"},               # Volume
+            {"step_id": "price"},                # Price
+            {"step_id": "customer_analysis"},    # Customer
+            {"step_id": "region_analysis"},      # Region
+            {"step_id": "top_products"},         # Top Products
+            {"step_id": "cause_ranking"},        # 원인 Ranking
             {"step_id": "anomaly"},              # 이상징후
             {"step_id": "cross_drill"},          # 교차 드릴다운
             {"step_id": "conclusion"},
@@ -56,11 +56,11 @@ SCENARIO_REGISTRY: dict[str, dict] = {
     "KPI Executive Summary": {
         "report_title": "KPI Executive Summary 보고서",
         "steps": [
-            {"step_id": "s2_revenue_kpi"},     # 매출 KPI
-            {"step_id": "s2_profit_kpi"},      # 이익 KPI
-            {"step_id": "s2_inventory_kpi"},   # 재고 KPI
-            {"step_id": "s2_kpi_alert"},       # 이상 KPI 탐지
-            {"step_id": "s2_kpi_cause"},       # 원인 분석
+            {"step_id": "revenue_kpi"},      # 매출 KPI
+            {"step_id": "profit_kpi"},       # 이익 KPI
+            {"step_id": "inventory_kpi"},    # 재고 KPI
+            {"step_id": "kpi_alert"},        # 이상 KPI 탐지
+            {"step_id": "cause_analysis"},   # 원인 분석
             {"step_id": "conclusion"},
         ],
     },
@@ -69,10 +69,10 @@ SCENARIO_REGISTRY: dict[str, dict] = {
         "report_title": "고객 분석 보고서",
         "steps": [
             # 원본 순서: 신규 고객 ↓ 이탈 고객 ↓ VIP ↓ 매출 기여도 ↓ 구매주기 ↓ 추천 Action
-            {"step_id": "s3_new_customer"},          # 신규 고객
-            {"step_id": "s3_lost_customer"},         # 이탈 고객
-            {"step_id": "s3_vip"},                   # VIP
-            {"step_id": "s3_customer_contribution"}, # 매출 기여도
+            {"step_id": "new_customer"},           # 신규 고객
+            {"step_id": "lost_customer"},          # 이탈 고객
+            {"step_id": "vip_customer"},           # VIP
+            {"step_id": "customer_contribution"},  # 매출 기여도
             # 구매주기 스텝은 order_date grain(3군)에서 추가
             {"step_id": "conclusion"},
         ],
@@ -82,13 +82,13 @@ SCENARIO_REGISTRY: dict[str, dict] = {
         "report_title": "제품 분석 보고서",
         "steps": [
             # 원본 순서: SKU ↓ 판매량 ↓ 매출 ↓ 이익 ↓ ABC ↓ Life Cycle ↓ 문제 제품 추천
-            {"step_id": "s4_sku"},             # SKU (2026-07-21 신설 — 제품 구성 신규·단종)
-            {"step_id": "s4_product_qty"},     # 판매량
-            {"step_id": "s4_product_sales"},   # 매출
-            {"step_id": "s4_profit"},          # 이익 (2026-07-21 신설 — pnl_summary 재사용)
-            {"step_id": "s4_abc"},             # ABC
-            {"step_id": "s4_lifecycle"},       # Life Cycle
-            {"step_id": "s4_problem"},         # 문제 제품
+            {"step_id": "sku_status"},       # SKU (2026-07-21 신설 — 제품 구성 신규·단종)
+            {"step_id": "product_qty"},      # 판매량
+            {"step_id": "product_sales"},    # 매출
+            {"step_id": "profit"},           # 이익 (2026-07-21 신설 — pnl_summary 재사용)
+            {"step_id": "item_abc"},         # ABC
+            {"step_id": "item_lifecycle"},   # Life Cycle
+            {"step_id": "item_anomaly"},     # 문제 제품
             {"step_id": "conclusion"},
         ],
     },
@@ -96,12 +96,12 @@ SCENARIO_REGISTRY: dict[str, dict] = {
     "손익 분석": {
         "report_title": "손익 분석 보고서",
         "steps": [
-            {"step_id": "s5_revenue"},        # Revenue
-            {"step_id": "s5_cogs"},           # COGS
-            {"step_id": "s5_gross_margin"},   # Gross Margin
-            {"step_id": "s5_opex"},           # OPEX
-            {"step_id": "s5_ebit"},           # EBIT
-            {"step_id": "s5_cause"},          # 원인 분석
+            {"step_id": "pnl_revenue"},       # Revenue
+            {"step_id": "pnl_cogs"},          # COGS
+            {"step_id": "pnl_gross_margin"},  # Gross Margin
+            {"step_id": "pnl_opex"},          # OPEX
+            {"step_id": "pnl_ebit"},          # EBIT
+            {"step_id": "pnl_cause"},         # 원인 분석
             {"step_id": "conclusion"},
         ],
     },
@@ -110,11 +110,11 @@ SCENARIO_REGISTRY: dict[str, dict] = {
         "report_title": "재고 분석 보고서",
         "steps": [
             # 원본 순서: ABC ↓ 회전율 ↓ Dead Stock ↓ Slow Moving ↓ Safety Stock ↓ 개선안
-            {"step_id": "s6_abc"},            # ABC
-            {"step_id": "s6_turnover"},       # 회전율
-            {"step_id": "s6_dead_stock"},     # Dead Stock
-            {"step_id": "s6_slow_moving"},    # Slow Moving
-            {"step_id": "s6_safety_stock"},   # Safety Stock
+            {"step_id": "inventory_abc"},   # ABC
+            {"step_id": "turnover"},        # 회전율
+            {"step_id": "dead_stock"},      # Dead Stock
+            {"step_id": "slow_moving"},     # Slow Moving
+            {"step_id": "safety_stock"},    # Safety Stock
             {"step_id": "conclusion"},
         ],
     },

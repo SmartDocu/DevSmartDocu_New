@@ -356,7 +356,7 @@ def run_engine_report(
     # 로그일 뿐, 사용자에게 보여주는 것과는 별개다 — 그건 위의 applied_steps가 담당한다).
     try:
         print(f"[engine] 보고서 조합 (target_month={target_month}, compare_type={meta['compare_type']}):")
-        print(json.dumps(plan_composition(plan, catalog), ensure_ascii=False, indent=2, default=str))     # jeff 20260825
+        # print(json.dumps(plan_composition(plan, catalog), ensure_ascii=False, indent=2, default=str))     # jeff 20260825
     except Exception as _pe:                    # 조합 출력 실패가 보고서 생성을 막지 않게 한다
         print(f"[engine] 조합 출력 생략: {_pe}")
 

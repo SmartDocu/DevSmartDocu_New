@@ -948,6 +948,7 @@ def _module_spec_to_dict(spec) -> dict:
     """
     return {
         "module_id": spec.module_id,
+        "module_name": spec.module_id,      # module_id == module_name (레지스트리 키)
         "purpose": spec.purpose,
         "kind": spec.kind,
         "requires": list(spec.requires),
@@ -957,6 +958,10 @@ def _module_spec_to_dict(spec) -> dict:
         "model_tier": spec.model_tier,
         "narrative_hint": spec.narrative_hint,
         "layout": list(spec.layout),
+        # 조립 필드 — 팝업이 "이 모듈이 무엇을 바꿀 수 있는지" 보여줄 때 쓴다.
+        "sub_name_pool": spec.sub_name_pool,
+        "sub_name_required": spec.sub_name_required,
+        "accepts_measure": spec.accepts_measure,
     }
 
 
@@ -973,6 +978,18 @@ def get_catalog() -> dict:
         "modules": {mid: _module_spec_to_dict(spec) for mid, spec in MODULE_REGISTRY.items()},
         "tools": TOOL_REGISTRY,
     }
+
+
+@router.get("/catalog/matrix")
+def get_catalog_matrix() -> dict:
+    """조립 매트릭스 — 스텝×모듈, 모듈×툴.
+
+    스텝×모듈은 **주제(topic)가 맞는지**만 본다. 실제로 실행 가능한지(선행 데이터·역할
+    유무)는 계획 단계가 따로 검사한다 — 그건 데이터소스와 계획 전체에 따라 달라져서
+    카탈로그 고유 속성이 아니다.
+    """
+    from d2insight.engine.catalog.matrix import module_tool_matrix, step_module_matrix
+    return {"step_module": step_module_matrix(), "module_tool": module_tool_matrix()}
 
 
 # ── 보고서 preview (engine.entry의 match_scenario/preview_report_plan 직접 호출) ──
@@ -1132,6 +1149,112 @@ def validate_steps(req: ValidateStepsRequest, token: str = Depends(get_token)) -
                 m["purpose"] = mdef.purpose
 
     return {"applied_steps": applied_steps, "notes": notes}
+
+
+# ── 스텝 카드 팝업 (2026-09-01) ──────────────────────────────────
+# 오른쪽 패널의 스텝 카드를 누르면 이 두 엔드포인트를 쓴다.
+#   describe_step : 그 스텝의 모듈을 사람이 읽는 말로 풀어 보여준다
+#   edit_step     : 자연어 지시를 편집 연산으로 옮겨 그 스텝에 적용한다
+#
+# 둘 다 **무상태**다 — 프론트가 현재 steps 전체를 매번 실어 보내고 결과를 받아 든다.
+# 팝업에서 "보내기"를 여러 번 눌러도 서버가 기억할 것이 없고, "저장"을 눌러야 비로소
+# 바깥 미리보기에 반영된다.
+
+class DescribeStepRequest(BaseModel):
+    step: dict
+    user_id: str | None = None
+    project_id: int | None = None
+    account_uid: str | None = None
+
+
+@router.post("/report/describe_step", dependencies=[Depends(require_insight_write)])
+def describe_step_api(req: DescribeStepRequest, token: str = Depends(get_token)) -> dict:
+    """스텝 하나 → 모듈별 설명(제목/기능/주어진 값). JSON을 모르는 사용자에게 보여줄 것."""
+    _check_owner(token, req.user_id)
+    from d2insight.engine.chat_options import describe_step
+
+    tenant_id, resolved_project_id = _resolve_report_project(req.user_id, req.project_id)
+    token_tracker.set_log_ctx({
+        "qauid": None, "servicecd": "In", "tenant_id": tenant_id,
+        "project_id": resolved_project_id, "session_uid": None,
+        "creator": req.user_id, "account_uid": req.account_uid,
+    })
+    return {"modules": describe_step(req.step)}
+
+
+class EditStepRequest(BaseModel):
+    steps: list[dict]          # 현재 미리보기의 스텝 전체
+    step_id: str               # 그중 고칠 스텝
+    instruction: str           # 사용자가 팝업에 적은 문장
+    scenario: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+    project_id: int | None = None
+    account_uid: str | None = None
+
+
+@router.post("/report/edit_step", dependencies=[Depends(require_insight_write)])
+def edit_step_api(req: EditStepRequest, token: str = Depends(get_token)) -> dict:
+    """자연어 지시 → 편집 연산 → 그 스텝에 적용. 적용된 steps 전체와 새 설명을 돌려준다.
+
+    스텝 하나만 고치지만 steps 전체를 받고 돌려준다 — 모듈을 빼서 스텝이 통째로 사라지거나
+    (remove_module), 싱글턴 이름표가 다른 스텝과 부딪히는지 보려면 전체가 필요하다.
+    """
+    _check_owner(token, req.user_id)
+    from d2insight.engine.chat_options import describe_step, extract_module_operations
+    from d2insight.engine.entry import _upload_schema
+    from d2insight.engine.operations import OperationError, apply_operations
+    from d2insight.engine.planner import data_digest
+
+    step = next((s for s in req.steps if s.get("step_id") == req.step_id), None)
+    if step is None:
+        raise HTTPException(status_code=400, detail=f"'{req.step_id}' 스텝을 찾을 수 없습니다.")
+
+    tenant_id, resolved_project_id = _resolve_report_project(req.user_id, req.project_id)
+    token_tracker.set_log_ctx({
+        "qauid": None, "servicecd": "In", "tenant_id": tenant_id,
+        "project_id": resolved_project_id, "session_uid": None,
+        "creator": req.user_id, "account_uid": req.account_uid,
+    })
+
+    # 이 데이터에 실제로 있는 차원·측정값을 LLM에게 보여준다 — 없는 것을 지어내지 않게.
+    # 스키마를 못 구해도 편집 자체는 진행한다(역할 이름만으로도 대개 맞는다).
+    schema = None
+    try:
+        upload_key, source_id = _resolve_report_source(req.session_id, resolved_project_id)
+        if upload_key or source_id is not None:
+            upload_schema = _upload_schema(req.session_id if upload_key else None, upload_key)
+            schema, _ = data_digest(source_id, schema=upload_schema)
+    except Exception as e:
+        print(f"[edit_step] 스키마 조회 생략: {type(e).__name__}: {e}")
+
+    operations = extract_module_operations(req.instruction, step, schema=schema)
+    if not operations:
+        return {
+            "steps": req.steps, "operations": [], "notes": [],
+            "modules": describe_step(step),
+            "message": "고칠 내용을 알아듣지 못했습니다. 다르게 말씀해 주세요.",
+        }
+
+    try:
+        new_steps, notes = apply_operations(req.steps, operations)
+    except OperationError as e:
+        # 조용히 일부만 적용하지 않는다 — 원래 steps를 그대로 돌려주고 사유를 알린다.
+        return {
+            "steps": req.steps, "operations": operations, "notes": [],
+            "modules": describe_step(step), "message": str(e),
+        }
+
+    new_step = next((s for s in new_steps if s.get("step_id") == req.step_id), None)
+    return {
+        "steps": new_steps,
+        "operations": operations,
+        "notes": notes,
+        # 스텝이 통째로 사라졌으면(모듈을 다 뺀 경우) 설명할 것이 없다.
+        "modules": describe_step(new_step) if new_step else [],
+        "step_removed": new_step is None,
+        "message": None,
+    }
 
 
 # ── 기타 ─────────────────────────────────────────────────────────

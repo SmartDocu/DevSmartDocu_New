@@ -19,6 +19,9 @@ import json
 import re
 
 from d2insight.engine.catalog import get_scenario, get_module_registry, get_step_registry
+from d2insight.engine.catalog.module_key import (
+    ModuleKeyError, check_required, label as module_label, to_execution_entry,
+)
 from d2insight.engine.datasource import DEFAULT_SOURCE_ID, build_meta_columns
 from d2insight.engine.runner import STEP_SCOPED_LABELS
 from d2insight.engine.schema import Schema
@@ -31,21 +34,35 @@ class PlannerError(Exception):
 
 # ── 카탈로그 → LLM에 보여줄 명세 ────────────────────────────────────────────
 def catalog_digest() -> str:
-    """LLM 계획기가 보는 카탈로그. purpose가 선택 근거다(§4.1)."""
-    lines = ["[모듈]"]
+    """LLM 계획기가 보는 카탈로그. purpose가 선택 근거다(§4.1).
+
+    모듈 항목은 조립 표현({measure, module_name, sub_name})으로 보여준다 — sub_name·measure를
+    받는 모듈인지, sub_name이 필수인지까지 알려줘야 LLM이 올바른 조합을 만든다.
+    """
+    lines = ["[모듈] — module_name과, 그 모듈이 받는 조립 필드"]
     for mid, spec in get_module_registry().items():
+        # sub_name/measure는 조립 필드로 올라갔으므로 params 목록에서 뺀다 — LLM에게 같은
+        # 것을 두 자리에 넣으라고 보여주면 안 된다.
         params = ", ".join(
-            f"{k}{'*' if v.get('required') else ''}" for k, v in (spec.params or {}).items()
+            f"{k}{'*' if v.get('required') else ''}"
+            for k, v in (spec.params or {}).items()
+            if k not in ("dimension", "dimensions", "measure")
         ) or "-"
         tools = "/".join(spec.tools.get("available", [])) or "-"
+        fields = []
+        if spec.sub_name_pool:
+            fields.append("sub_name*" if spec.sub_name_required else "sub_name")
+        if spec.accepts_measure:
+            fields.append("measure")
         lines.append(
             f"- {mid} ({spec.kind}): {spec.purpose}\n"
-            f"    params: {params}   tools: {tools}   requires: {spec.requires or '없음'}"
+            f"    조립 필드: {', '.join(fields) or '없음'}   params: {params}   "
+            f"tools: {tools}   requires: {spec.requires or '없음'}"
         )
     lines.append("")
     lines.append("[스텝 프리셋] — 그대로 써도 되고, 직접 제목을 지어 모듈을 담아도 된다")
     for sid, sec in get_step_registry().items():
-        mods = ", ".join(m["module_id"] for m in sec["default_modules"])
+        mods = ", ".join(module_label(m) for m in sec["default_modules"])
         lines.append(f"- {sid}: \"{sec['title']}\" ({mods})")
     return "\n".join(lines)
 
@@ -68,14 +85,23 @@ def data_digest(source_id: str = DEFAULT_SOURCE_ID, schema: Schema | None = None
 _SYSTEM = """당신은 데이터 분석 보고서의 구성을 짜는 설계자다.
 사용자 요청을 읽고, 카탈로그의 모듈을 조합해 보고서 계획(JSON)을 만든다.
 
+모듈 하나는 **세 필드의 조합**이다.
+
+  module_name  어떻게 분석하는가 (카탈로그의 모듈 이름)
+  sub_name     무엇별로 보는가 (제품·고객·지역·브랜드 등) — 받는 모듈만
+  measure      무엇을 분석하는가 (금액·수량 등) — 받는 모듈만
+
 규칙
 1. 모듈은 **purpose를 근거로** 고른다. 요청과 무관한 모듈을 습관적으로 넣지 마라.
-2. 카탈로그에 없는 module_id·step_id·tool을 지어내지 마라.
-3. params의 dimension/measure는 반드시 [분석 가능한 차원/측정] 목록에 있는 이름을 쓴다.
-4. 스텝은 하나의 이야기를 이루도록 묶는다. 빈 스텝은 만들지 않는다.
-5. 선행 데이터(requires)는 시스템이 자동으로 채워 넣으니, 뿌리 모듈까지 일일이 넣지 않아도 된다.
-6. 같은 모듈을 파라미터만 바꿔 여러 번 넣어도 된다(예: 차원별 실적집계).
-7. 보고서는 보통 3~6개 스텝이면 충분하다. 요청이 좁으면 더 적게 짜라.
+2. 카탈로그에 없는 module_name·step_id·tool을 지어내지 마라.
+3. sub_name은 [분석 가능한 차원], measure는 [분석 가능한 측정] 목록에 있는 이름만 쓴다.
+4. "조립 필드"에 없는 필드는 그 모듈에 넣지 마라. sub_name*는 반드시 지정해야 한다.
+   sub_name을 안 쓰는 모듈(별표 없고 목록에도 없음)은 알아서 대상을 고른다.
+5. 스텝은 하나의 이야기를 이루도록 묶는다. 빈 스텝은 만들지 않는다.
+6. 선행 데이터(requires)는 시스템이 자동으로 채워 넣으니, 뿌리 모듈까지 일일이 넣지 않아도 된다.
+7. **한 스텝 안에서 같은 조합을 두 번 쓰지 마라.** 차원별로 여러 개를 보고 싶으면 sub_name을
+   다르게 해서 넣는다(예: sub_name="item_group" 하나와 sub_name="region" 하나).
+8. 보고서는 보통 3~6개 스텝이면 충분하다. 요청이 좁으면 더 적게 짜라.
 
 출력은 JSON 객체 하나뿐이다. 다른 텍스트를 덧붙이지 마라.
 
@@ -84,7 +110,7 @@ _SYSTEM = """당신은 데이터 분석 보고서의 구성을 짜는 설계자�
   "steps": [
     {"step_id": "프리셋 id"},
     {"title": "직접 지은 제목", "modules": [
-      {"module_id": "...", "params": {"dimension": "..."}, "tools": ["..."]}
+      {"module_name": "...", "sub_name": "...", "measure": "...", "tools": ["..."]}
     ]}
   ]
 }"""
@@ -199,6 +225,10 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
 
     검증·의존성 계산은 모듈을 봐야 하므로, 무엇보다 먼저 펼쳐야 한다.
     존재하지 않는 step_id는 최근접 프리셋으로 추천 대체한다(§8).
+
+    여기서 조립 표현({measure, module_name, sub_name})을 실행 표현(module_id + params)으로
+    펼친다(2026-09-01 카탈로그 재구조화). 조립 필드는 지우지 않고 함께 남기므로, 이 뒤의
+    검증·의존성 보정·실행은 예전과 똑같이 module_id/params만 보면 된다.
     """
     steps = get_step_registry()
     notes: list[str] = []
@@ -215,13 +245,14 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
                     continue
                 notes.append(f"'{sid}' 스텝이 없어 가장 비슷한 '{near}'로 대체했습니다.")
                 preset = steps[near]
-            entry = {
-                "title": sec.get("title") or preset["title"],
-                "modules": [dict(m) for m in (sec.get("modules") or preset["default_modules"])],
-            }
+            raw_modules = sec.get("modules") or preset["default_modules"]
+            entry = {"title": sec.get("title") or preset["title"], "step_id": sid,
+                     "modules": _expand_modules(raw_modules, notes)}
         else:
             entry = {"title": sec.get("title") or "무제 스텝",
-                     "modules": [dict(m) for m in (sec.get("modules") or [])]}
+                     "modules": _expand_modules(sec.get("modules") or [], notes)}
+            if sec.get("step_id"):
+                entry["step_id"] = sec["step_id"]
         if sec.get("enabled") is False:
             entry["enabled"] = False
             entry["disabled_reason"] = sec.get("disabled_reason")
@@ -230,6 +261,26 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
     plan = dict(plan)
     plan["steps"] = expanded
     return plan, notes
+
+
+def _expand_modules(raw_modules: list[dict], notes: list[str]) -> list[dict]:
+    """모듈 항목을 조립 표현 → 실행 표현으로 펼친다. 옛 형태(module_id 문자열)도 흡수한다.
+
+    필수 sub_name이 빠진 모듈은 조용히 넘기지 않고 여기서 제외하고 note를 남긴다 — 그대로
+    두면 실행 도중 필수 파라미터 누락으로 터진다.
+    """
+    out: list[dict] = []
+    for m in raw_modules:
+        try:
+            reason = check_required(m)
+        except ModuleKeyError as e:
+            notes.append(f"모듈을 읽지 못해 제외했습니다: {e}")
+            continue
+        if reason:
+            notes.append(f"{reason} 이 모듈을 제외했습니다.")
+            continue
+        out.append(to_execution_entry(m))
+    return out
 
 
 def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
@@ -290,7 +341,8 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
                     notes.append(f"'{label}'을 생산하는 모듈이 카탈로그에 없습니다 "
                                  f"({m['module_id']}는 실행되지 못합니다).")
                     continue
-                entry = {"module_id": producer, "_auto": True}
+                entry = {"module_id": producer, "module_name": producer,
+                         "measure": None, "sub_name": None, "_auto": True}
                 if any(p in STEP_SCOPED_LABELS for p in registry[producer].produces):
                     entry["params"] = _step_query_params(sec["modules"], registry)
                 inserted.append(entry)
@@ -317,7 +369,8 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
                     producer = _producer_of(label)
                     if not producer:
                         continue
-                    entry = {"module_id": producer, "_auto": True}
+                    entry = {"module_id": producer, "module_name": producer,
+                         "measure": None, "sub_name": None, "_auto": True}
                     if any(p in STEP_SCOPED_LABELS for p in registry[producer].produces):
                         entry["params"] = _step_query_params(sec["modules"], registry)
                     sec["modules"].insert(0, entry)

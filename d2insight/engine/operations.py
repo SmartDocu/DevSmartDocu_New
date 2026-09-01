@@ -1,16 +1,26 @@
 """편집 연산 — 대화·UI 어느 통로로 온 요청이든 이 형태로 수렴해 스텝 목록에 적용한다
 (2단계, 2026-07-24).
 
-연산 6종: add / remove / move / reorder / set_param / set_tool.
+연산 10종.
+
+  스텝 단위 (방을 넣고 뺀다)   : add / remove / move / reorder
+  모듈 단위 (방 안의 가구를 바꾼다): add_module / remove_module / set_sub_name /
+                                    set_measure / set_param / set_tool
+
 UI(드래그·체크·슬라이더)는 이 연산을 직접 만들고, 채팅 문장은 LLM이 이 연산으로 번역한다
 (chat_options.extract_operations). 적용 로직은 이 파일 하나뿐이라 어느 통로로 와도 결과가
 같다는 것을 보장한다 — 대화로 고치다 UI로 넘어가도, 혹은 그 반대도 이어진다.
+
+모듈 단위 4종은 스텝 카드 팝업을 위해 늘렸다(2026-09-01). 팝업에서 자연어로 지시하는 것이
+대부분 이쪽이다 — "제품별 말고 브랜드별로"(set_sub_name), "수량 기준으로"(set_measure),
+"추이도 같이"(add_module), "구성비는 빼줘"(remove_module).
 
 조용히 무시하지 않는다 — 적용할 수 없는 연산(잠긴 스텝 이동, 이름표 충돌 등)은 즉시
 OperationError를 올린다. 호출부(entry.py)가 이를 잡아 사용자에게 알린다.
 """
 from __future__ import annotations
 
+from d2insight.engine.catalog.module_key import normalize, to_key
 from d2insight.engine.catalog.modules import get_module_registry
 from d2insight.engine.catalog.steps import get_step_registry
 
@@ -28,6 +38,14 @@ class OperationError(Exception):
     """편집 연산을 스텝 목록에 적용할 수 없을 때."""
 
 
+def _module_name(m: dict) -> str:
+    """모듈 항목에서 module_name을 꺼낸다. 조립 표현·실행 표현·옛 문자열 형태를 모두 받는다."""
+    try:
+        return normalize(m)["module_name"]
+    except Exception:
+        return ""
+
+
 def is_locked_step(step: dict) -> bool:
     """뿌리 스텝(맨 앞)이거나 결론(맨 뒤)이면 True — 이동·삭제 불가 표시.
 
@@ -36,14 +54,14 @@ def is_locked_step(step: dict) -> bool:
     따로 구현되면 언젠가 서로 어긋난다 — 여기 하나만 있어야 한다.
     """
     return any(
-        m.get("module_id") in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS and not m.get("_auto")
+        _module_name(m) in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS and not m.get("_auto")
         for m in step.get("modules", [])
     )
 
 
 def _is_tail_locked(step: dict) -> bool:
     """결론처럼 "맨 뒤에" 고정인 스텝인지 — reorder/add의 삽입 위치 계산에만 쓴다."""
-    return any(m.get("module_id") in _TAIL_MODULE_IDS for m in step.get("modules", []))
+    return any(_module_name(m) in _TAIL_MODULE_IDS for m in step.get("modules", []))
 
 
 def _find_index(steps: list[dict], step_id: str) -> int:
@@ -60,7 +78,7 @@ def _producer_labels(steps: list[dict], registry: dict) -> set[str]:
     labels: set[str] = set()
     for s in steps:
         for m in s.get("modules", []):
-            spec = registry.get(m.get("module_id"))
+            spec = registry.get(_module_name(m))
             if spec:
                 labels.update(spec.produces)
     return labels
@@ -69,25 +87,97 @@ def _producer_labels(steps: list[dict], registry: dict) -> set[str]:
 def _default_step_entry(step_id: str, step_registry: dict, modules: dict) -> dict:
     """카탈로그 프리셋 → steps[] 항목(스펙 기본값 위에 프리셋 값을 얹은 실제 적용값).
 
-    chat_options.default_steps_for_scenario와 같은 원칙 — 빈 채로 두지 않는다.
+    chat_options.module_entry_from_preset과 **같은 함수**를 쓴다 — 두 경로가 프리셋을 서로
+    다르게 펼치면 대화로 만든 구성과 UI로 만든 구성이 어긋난다.
     """
+    from d2insight.engine.chat_options import module_entry_from_preset
+
     preset = step_registry.get(step_id)
     if preset is None:
         raise OperationError(
             f"'{step_id}'은 카탈로그에 없는 스텝입니다. 등록된 스텝: {sorted(step_registry)}"
         )
-    modules_out = []
-    for m in preset["default_modules"]:
-        mid = m["module_id"]
-        spec = modules[mid]
-        params = {name: field.get("default") for name, field in spec.params.items()}
-        params.update(m.get("params") or {})
-        entry: dict = {"module_id": mid, "params": params}
-        tool = m.get("tools", [None])[0] if m.get("tools") else spec.tools.get("default")
-        if tool:
-            entry["tool"] = tool
-        modules_out.append(entry)
+    modules_out = [module_entry_from_preset(m, modules) for m in preset["default_modules"]]
     return {"step_id": step_id, "title": preset["title"], "modules": modules_out}
+
+
+def _find_module(step: dict, ref: str) -> dict:
+    """스텝 안에서 모듈 하나를 지목한다.
+
+    ref는 조합 키("actual_aggregate@region")가 원칙이다. 한 스텝에 같은 module_name이
+    sub_name만 다르게 여러 개 있을 수 있어, 이름만으로는 어느 것인지 정해지지 않는다
+    (예전에는 첫 번째가 조용히 잡혔다 — 2026-09-01 재구조화로 고친 자리).
+
+    이름만 준 경우에도 그 이름이 스텝 안에서 유일하면 받아준다. 여럿이면 어느 것인지
+    되묻는 대신 후보를 보여주고 실패시킨다 — 엉뚱한 모듈을 고치는 것보다 낫다.
+    """
+    modules = step.get("modules", [])
+    keys = [to_key(normalize(m)) for m in modules]
+    if ref in keys:
+        return modules[keys.index(ref)]
+
+    hits = [m for m in modules if _module_name(m) == ref]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise OperationError(
+            f"스텝 '{step.get('title')}'에 '{ref}' 모듈이 여러 개 있습니다. "
+            f"어느 것인지 정확히 지정하세요: {[k for k in keys if k.startswith(ref)]}"
+        )
+    raise OperationError(
+        f"스텝 '{step.get('title')}'에 모듈 '{ref}'이 없습니다. 현재 모듈: {keys}"
+    )
+
+
+def _module_ref(op: dict) -> str:
+    """연산이 가리키는 모듈. 새 키("module")를 우선하고 옛 키("module_id")도 받는다."""
+    ref = op.get("module") or op.get("module_id")
+    if not ref:
+        raise OperationError(f"연산에 대상 모듈이 없습니다: {op}")
+    return ref
+
+
+def _combo_keys(step: dict) -> list[str]:
+    return [to_key(normalize(m)) for m in step.get("modules", [])]
+
+
+def _assert_no_duplicate(step: dict, key: str, exclude: dict | None = None) -> None:
+    """한 스텝 안에서 같은 조합이 두 번 생기지 않게 막는다.
+
+    조합이 겹치면 그 스텝에서 모듈을 지목할 수 없게 되고(어느 쪽인지 알 수 없다), 같은
+    분석이 두 번 실려 보고서에도 중복으로 나온다 — 재구조화로 없앤 상태를 되돌리는 셈이다.
+    """
+    for m in step.get("modules", []):
+        if m is exclude:
+            continue
+        if to_key(normalize(m)) == key:
+            raise OperationError(
+                f"스텝 '{step.get('title')}'에 '{key}'이(가) 이미 있습니다. "
+                "같은 분석을 두 번 넣을 수는 없습니다."
+            )
+
+
+def _module_entry_for(module_name: str, sub_name, measure, registry: dict) -> dict:
+    """카탈로그에서 모듈 하나를 꺼내 steps[] 항목으로 만든다(조립 표현 + params 기본값)."""
+    from d2insight.engine.chat_options import module_entry_from_preset
+
+    spec = registry.get(module_name)
+    if spec is None:
+        raise OperationError(
+            f"'{module_name}'은 카탈로그에 없는 모듈입니다. 등록된 모듈: {sorted(registry)}"
+        )
+    if sub_name and not spec.sub_name_pool:
+        raise OperationError(
+            f"모듈 '{module_name}'은 분석 대상을 따로 고르지 않습니다(sub_name 지정 불가)."
+        )
+    if spec.sub_name_required and not sub_name:
+        raise OperationError(f"모듈 '{module_name}'은 분석 대상(sub_name)을 지정해야 합니다.")
+    if measure and not spec.accepts_measure:
+        raise OperationError(
+            f"모듈 '{module_name}'은 기준 값(measure)을 따로 고르지 않습니다."
+        )
+    ref = {"module_name": module_name, "sub_name": sub_name or None, "measure": measure or None}
+    return module_entry_from_preset(ref, registry)
 
 
 def _insert_at(steps: list[dict], entry: dict, position: dict) -> tuple[list[dict], str | None]:
@@ -179,7 +269,7 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
             # 싱글턴 이름표 사전 검사(G5) — 실행 도중 PlanError로 죽기 전에 여기서 막는다.
             new_labels: set[str] = set()
             for m in entry["modules"]:
-                spec = registry.get(m["module_id"])
+                spec = registry.get(_module_name(m))
                 if spec:
                     new_labels.update(spec.produces)
             clash = new_labels & _producer_labels(steps, registry)
@@ -209,12 +299,19 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
 
         elif kind == "set_param":
             idx = _find_index(steps, op["step_id"])
-            mid = op["module_id"]
-            module_entry = next((m for m in steps[idx]["modules"] if m["module_id"] == mid), None)
-            if module_entry is None:
-                raise OperationError(f"스텝 '{op['step_id']}'에 모듈 '{mid}'이 없습니다.")
+            ref = _module_ref(op)
+            module_entry = _find_module(steps[idx], ref)
+            mid = _module_name(module_entry)
             spec = registry.get(mid)
             new_params = op.get("params") or {}
+            # sub_name/measure는 조립 필드라 params로 바꾸지 않는다 — 여기로 오면 같은 것이
+            # 두 자리에 생겨 어느 쪽이 진짜인지 알 수 없게 된다(2026-09-01).
+            misplaced = set(new_params) & {"dimension", "dimensions", "measure"}
+            if misplaced:
+                raise OperationError(
+                    f"모듈 '{mid}': {sorted(misplaced)}은(는) 파라미터가 아니라 모듈 자체를 "
+                    "바꾸는 값입니다. 분석 대상을 바꾸려면 그 대상의 모듈을 쓰세요."
+                )
             unknown = set(new_params) - set(spec.params if spec else {})
             if unknown:
                 raise OperationError(f"모듈 '{mid}': 알 수 없는 파라미터 {sorted(unknown)}.")
@@ -232,10 +329,8 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
 
         elif kind == "set_tool":
             idx = _find_index(steps, op["step_id"])
-            mid = op["module_id"]
-            module_entry = next((m for m in steps[idx]["modules"] if m["module_id"] == mid), None)
-            if module_entry is None:
-                raise OperationError(f"스텝 '{op['step_id']}'에 모듈 '{mid}'이 없습니다.")
+            module_entry = _find_module(steps[idx], _module_ref(op))
+            mid = _module_name(module_entry)
             spec = registry.get(mid)
             available = (spec.tools.get("available") if spec else None) or []
             tool = op.get("tool")
@@ -244,6 +339,72 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
                     f"모듈 '{mid}': 툴 '{tool}'을 쓸 수 없습니다. 사용 가능: {available or '(없음)'}"
                 )
             module_entry["tool"] = tool
+
+        # ── 모듈 단위 연산 (2026-09-01, 스텝 카드 팝업) ───────────────────────
+        # 스텝 단위 연산(add/remove/move)이 "방을 넣고 뺀다"면, 이 넷은 "방 안의 가구를
+        # 바꾼다". 팝업에서 자연어로 지시하는 것이 대부분 이쪽이다.
+
+        elif kind == "set_sub_name":
+            idx = _find_index(steps, op["step_id"])
+            entry = _find_module(steps[idx], _module_ref(op))
+            mid = _module_name(entry)
+            spec = registry.get(mid)
+            sub_name = op.get("sub_name") or None
+            if spec is not None and not spec.sub_name_pool:
+                raise OperationError(
+                    f"모듈 '{mid}'은 분석 대상을 따로 고르지 않습니다."
+                )
+            if spec is not None and spec.sub_name_required and not sub_name:
+                raise OperationError(f"모듈 '{mid}'은 분석 대상을 비울 수 없습니다.")
+            new_key = to_key({**normalize(entry), "sub_name": sub_name})
+            _assert_no_duplicate(steps[idx], new_key, exclude=entry)
+            entry["sub_name"] = sub_name
+
+        elif kind == "set_measure":
+            idx = _find_index(steps, op["step_id"])
+            entry = _find_module(steps[idx], _module_ref(op))
+            mid = _module_name(entry)
+            spec = registry.get(mid)
+            measure = op.get("measure") or None
+            if spec is not None and not spec.accepts_measure:
+                raise OperationError(f"모듈 '{mid}'은 기준 값을 따로 고르지 않습니다.")
+            new_key = to_key({**normalize(entry), "measure": measure})
+            _assert_no_duplicate(steps[idx], new_key, exclude=entry)
+            entry["measure"] = measure
+
+        elif kind == "add_module":
+            idx = _find_index(steps, op["step_id"])
+            entry = _module_entry_for(
+                op.get("module_name") or op.get("module"),
+                op.get("sub_name"), op.get("measure"), registry,
+            )
+            _assert_no_duplicate(steps[idx], to_key(normalize(entry)))
+
+            # 싱글턴 이름표 사전 검사 — add(스텝)와 같은 규칙이다. 실행 도중 PlanError로
+            # 죽기 전에 여기서 막는다.
+            spec = registry.get(_module_name(entry))
+            clash = set(spec.produces if spec else []) & _producer_labels(steps, registry)
+            if clash:
+                raise OperationError(
+                    f"'{_module_name(entry)}'을 추가할 수 없습니다 — 이미 있는 분석과 같은 "
+                    f"결과({sorted(clash)})를 만듭니다."
+                )
+            steps[idx]["modules"].append(entry)
+
+        elif kind == "remove_module":
+            idx = _find_index(steps, op["step_id"])
+            entry = _find_module(steps[idx], _module_ref(op))
+            mid = _module_name(entry)
+            if mid in _ROOT_MODULE_IDS | _TAIL_MODULE_IDS:
+                raise OperationError(
+                    f"'{mid}'은 다른 모든 분석의 기반(자료확인/총평)이거나 결론이라 뺄 수 "
+                    "없습니다."
+                )
+            steps[idx]["modules"] = [m for m in steps[idx]["modules"] if m is not entry]
+            # 모듈이 하나도 안 남으면 그 스텝 자체가 사라진다 — 빈 스텝은 두지 않는다.
+            if not steps[idx]["modules"]:
+                removed = steps.pop(idx)
+                notes.append(f"'{removed.get('title')}' 스텝은 모듈이 모두 빠져 함께 제외했습니다.")
 
         else:
             raise OperationError(f"알 수 없는 연산: '{kind}'")
