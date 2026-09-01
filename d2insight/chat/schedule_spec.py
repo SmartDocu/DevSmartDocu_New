@@ -304,17 +304,18 @@ def create_set_spec(qauid: str, origin_period: str | None = None) -> dict:
 
 
 def _extract(message: str, project_id=None, tenant_id=None, user_uid=None, account_uid=None) -> dict:
-    from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+    from utilsPrj.ai_chain import get_llm_clients
     from langchain_core.messages import SystemMessage, HumanMessage
 
     defaults = {"day_of_month": None, "hour": None, "minute": None, "confirmed": False, "cancel": False}
     try:
-        # service_code="In"이면 models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
-        models, api_key, vendor, _, _ = get_llm_info(
+        # ai_chain.get_llm_clients()가 (project/tenant/user/account) 조합당 한 번만 인증·생성해
+        # 캐싱한다(2026-08-31, 매번 새로 인증하던 것 수정).
+        clients = get_llm_clients(
             project_id=project_id, tenant_id=tenant_id,
             user_uid=user_uid, account_uid=account_uid, service_code="In",
         )
-        llm = build_langchain_llm(vendor, api_key, models["fast"])
+        llm = clients["fast"]
         resp = llm.invoke([SystemMessage(content=_EXTRACT_SYSTEM), HumanMessage(content=message)])
         raw = resp.content if isinstance(resp.content, str) else resp.content[0].text
         m = re.search(r"\{.*?\}", raw, re.DOTALL)

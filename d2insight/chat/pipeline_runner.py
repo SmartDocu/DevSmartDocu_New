@@ -5,22 +5,18 @@ import json
 import traceback
 
 from backend.app.config import settings
-from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+from utilsPrj.ai_chain import get_llm_clients, get_llm_info
 from d2insight import token_tracker
-
-_llm_cache: dict = {}
 
 
 def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
-    key = (grade, project_id, tenant_id, user_uid, account_uid)
-    if key not in _llm_cache:
-        # service_code="In"이면 _models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
-        _models, _api_key, _vendor, _, _ = get_llm_info(
-            project_id=project_id, tenant_id=tenant_id,
-            user_uid=user_uid, account_uid=account_uid, service_code="In",
-        )
-        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, _models[grade])
-    return _llm_cache[key]
+    # ai_chain.get_llm_clients()가 (project/tenant/user/account) 조합당 한 번만 인증·생성해
+    # 캐싱한다 — 중앙 캐시 하나를 공유(2026-08-31, 파일별 로컬 캐시 통일).
+    clients = get_llm_clients(
+        project_id=project_id, tenant_id=tenant_id,
+        user_uid=user_uid, account_uid=account_uid, service_code="In",
+    )
+    return clients[grade]
 
 
 def _quick_chat(

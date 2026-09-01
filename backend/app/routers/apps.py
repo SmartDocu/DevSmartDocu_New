@@ -40,11 +40,6 @@ class AppTranslationSaveRequest(BaseModel):
     translated_text: Optional[str] = None
 
 
-class WarmLlmRequest(BaseModel):
-    tenantid: Optional[str] = None
-    account_uid: Optional[str] = None
-
-
 @router.get("", response_model=AppsListResponse)
 def list_apps(token: str = Depends(get_token), tenantid: Optional[str] = None, languagecd: Optional[str] = None):
     try:
@@ -163,32 +158,3 @@ def delete_app_translation(appcd: str, languagecd: str, token: str = Depends(get
     sb = _sb(token)
     sb.schema(SUPABASE_SCHEMA).table("app_translations").delete().eq("appcd", appcd).eq("languagecd", languagecd).execute()
     return {"ok": True}
-
-
-# ─── LLM 미리 인증(warm-up) — 메뉴에서 앱을 고른 시점에 한 번만 인증받아 캐싱해두고,
-# 실제 문서 작성/보고서 생성 시에는 그 결과를 재사용한다(2026-08-31, d2doc/d2insight가
-# 항목·모듈마다 매번 재인증하던 문제 확인 후 도입). ────────────────────────────────
-
-@router.post("/{appcd}/warm-llm")
-def warm_llm(appcd: str, body: WarmLlmRequest, token: str = Depends(get_token)):
-    """appcd에 대응하는 servicecd로 LLM을 미리 인증·캐싱한다(utilsPrj.ai_chain.get_llm_clients).
-    실패해도 화면 흐름을 막지 않는다 — 실제 사용 시점에 다시 시도되므로 여기선 조용히 넘어간다."""
-    user = _get_user(token)
-    sb = _sb(token)
-    rows = (
-        sb.schema(SUPABASE_SCHEMA).table("apps").select("servicecd")
-        .eq("appcd", appcd).execute().data or []
-    )
-    service_code = rows[0].get("servicecd") if rows else None
-    if not service_code:
-        return {"ok": False, "reason": "servicecd 없음"}
-
-    from utilsPrj.ai_chain import get_llm_clients
-    try:
-        get_llm_clients(
-            project_id=None, tenant_id=body.tenantid, user_uid=str(user.id),
-            account_uid=body.account_uid, service_code=service_code,
-        )
-        return {"ok": True, "service_code": service_code}
-    except Exception as e:
-        return {"ok": False, "reason": str(e)}

@@ -6,22 +6,20 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
+from utilsPrj.ai_chain import get_llm_clients
 
 _KST = ZoneInfo("Asia/Seoul")
-_llm_cache: dict = {}
 
 
 def _get_llm(grade: str = "fast", project_id=None, tenant_id=None, user_uid=None, account_uid=None):
-    key = (grade, project_id, tenant_id, user_uid, account_uid)
-    if key not in _llm_cache:
-        # service_code="In"이면 _models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
-        _models, _api_key, _vendor, _, _ = get_llm_info(
-            project_id=project_id, tenant_id=tenant_id,
-            user_uid=user_uid, account_uid=account_uid, service_code="In",
-        )
-        _llm_cache[key] = build_langchain_llm(_vendor, _api_key, _models[grade])
-    return _llm_cache[key]
+    # ai_chain.get_llm_clients()가 (project/tenant/user/account) 조합당 한 번만 인증·생성해
+    # 캐싱한다 — 파일마다 따로 _llm_cache를 두면 같은 조합인데도 각자 인증하게 되므로
+    # 중앙 캐시 하나를 공유한다(2026-08-31, 여러 파일에 중복된 로컬 캐시 확인 후 통일).
+    clients = get_llm_clients(
+        project_id=project_id, tenant_id=tenant_id,
+        user_uid=user_uid, account_uid=account_uid, service_code="In",
+    )
+    return clients[grade]
 
 
 def _quick_chat(prompt: str, system: str, grade: str = "fast", max_tokens: int = 200,

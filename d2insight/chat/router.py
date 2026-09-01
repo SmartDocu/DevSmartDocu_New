@@ -56,13 +56,14 @@ def _dataset_preview(key: str, df: pd.DataFrame, filename: str, metadata: dict) 
 
 
 def _get_llm(project_id=None, tenant_id=None, user_uid=None, account_uid=None):
-    from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
-    # service_code="In"이면 models가 문자열이 아니라 {"fast":.., "balanced":.., "quality":..} dict다.
-    models, api_key, vendor, _, _ = get_llm_info(
+    from utilsPrj.ai_chain import get_llm_clients
+    # (project/tenant/user/account) 조합당 한 번만 인증·생성 — 데이터셋 업로드도 이 캐시를
+    # 그대로 재사용한다(예전엔 매번 새로 인증했음, 2026-08-31 확인 후 수정).
+    clients = get_llm_clients(
         project_id=project_id, tenant_id=tenant_id,
         user_uid=user_uid, account_uid=account_uid, service_code="In",
     )
-    return build_langchain_llm(vendor, api_key, models["fast"])
+    return clients["fast"]
 
 
 # ── 요청 모델 ─────────────────────────────────────────────────────
