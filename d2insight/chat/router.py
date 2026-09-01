@@ -23,6 +23,7 @@ from d2insight.chat import report_spec as _spec_mod
 from d2insight.chat import schedule_spec as _sched_mod
 from d2insight.db import insight_storage as storage
 from d2insight import token_tracker
+from utilsPrj.private_storage import resolve_display_url
 from d2insight.report.excel_registry import get_excel_server
 from d2shared.api_dataset import fetch_json, json_to_dataframe
 
@@ -380,6 +381,10 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
     if qauid and (tokens["input"] or tokens["output"]):
         token_tracker.record_turn(sid, qauid, tokens)
     token_tracker.set_log_ctx(None)
+
+    if result.get("fileurl"):
+        from d2insight.db.supabase_client import get_client
+        result["fileurl"] = resolve_display_url(get_client(), result["fileurl"])
 
     return ChatResponse(session_id=sid, qauid=qauid, **result)
 

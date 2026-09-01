@@ -37,6 +37,35 @@ def resolve_user_accountuid(sb_service, tenantid: int, user_id: str) -> Optional
     return acc.data["accountuid"] if acc and acc.data else None
 
 
+def resolve_accountuid_best_effort(sb_service, user_id: str, tenantid=None) -> Optional[str]:
+    """tenantid가 있으면 정석대로 해석하고, 없거나 실패하면 accounts.useruid로 직접 조회한다.
+    (예: d2insight의 tenant_id는 "이 사용자가 만든 project" 기준으로만 구해지는 한계가 있어
+    본인이 프로젝트를 만든 적 없는 사용자는 tenant_id를 못 구함 — 그래도 본인 개인 계정은
+    있을 수 있으니 이 폴백으로 커버한다.)"""
+    if tenantid is not None:
+        accountuid = resolve_user_accountuid(sb_service, tenantid, user_id)
+        if accountuid:
+            return accountuid
+    sd = sb_service.schema(SUPABASE_SCHEMA)
+    acc = sd.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    return acc.data["accountuid"] if acc and acc.data else None
+
+
+def resolve_accountuid_via_docid(sb_service, docid, user_id: str, tenantid=None) -> Optional[str]:
+    """docid로부터 accountuid를 해석한다. tenantid를 모르면 docs.projectid → projects.tenantid로
+    거슬러 올라가 구한다(gendocs/genchapters 결과물처럼 호출부에 tenantid가 항상 있지 않은 경우용)."""
+    sd = sb_service.schema(SUPABASE_SCHEMA)
+    if tenantid is None:
+        doc = sd.table("docs").select("projectid").eq("docid", docid).maybe_single().execute()
+        projectid = doc.data.get("projectid") if doc and doc.data else None
+        if projectid is not None:
+            proj = sd.table("projects").select("tenantid").eq("projectid", projectid).maybe_single().execute()
+            tenantid = proj.data.get("tenantid") if proj and proj.data else None
+    if tenantid is None:
+        return None
+    return resolve_user_accountuid(sb_service, tenantid, user_id)
+
+
 def build_private_path(accountuid: str, servicecd: str, *parts: str) -> str:
     """Users/{accountuid}/{servicecd}/{parts...} 형태로 경로를 조립."""
     segments = [p.strip("/") for p in parts if p]

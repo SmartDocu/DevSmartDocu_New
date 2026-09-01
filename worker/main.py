@@ -15,6 +15,10 @@ from utilsPrj.credit_helper import apply_chapter_credit_deduction, apply_doc_cre
 from utilsPrj.html_to_docx import html_to_docx_merge
 from utilsPrj.notifications import create_notification
 from utilsPrj.audit_log import log_work_action
+from utilsPrj.private_storage import (
+    resolve_accountuid_via_docid, build_private_path, upload_private_file,
+    delete_private_file, is_private_path,
+)
 
 
 class FakeRequest:
@@ -267,29 +271,34 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             p.add_run(" / ")
             _add_total_pages(p)
 
-        # Phase 3: Storage 업로드
+        # Phase 3: Storage 업로드 (private)
         logger.info("Phase 3: Storage 업로드 (%s)", gendocuid)
         filenm = f"{uuid.uuid4()}.docx"
-        path = f"result/{gendocuid}/{filenm}"
 
         try:
             old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("createfileurl").eq("gendocuid", gendocuid).execute().data
             if old and old[0].get("createfileurl"):
-                parsed = urlparse(old[0]["createfileurl"])
-                prefix = "/storage/v1/object/public/d2doc/"
-                if prefix in parsed.path:
-                    sb_svc.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
+                old_url = old[0]["createfileurl"]
+                if is_private_path(old_url):
+                    delete_private_file(sb_svc, old_url)
+                else:
+                    parsed = urlparse(old_url)
+                    prefix = "/storage/v1/object/public/d2doc/"
+                    if prefix in parsed.path:
+                        sb_svc.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
         except Exception:
             pass
+
+        accountuid = resolve_accountuid_via_docid(sb_svc, docid, user_id, tenantid=tenantid)
+        path = build_private_path(accountuid, "Doc", str(docid), "result", str(gendocuid), filenm)
 
         buf = io.BytesIO()
         comp_doc.save(buf)
         buf.seek(0)
-        sb_svc.storage.from_("d2doc").upload(path, buf.read(), {"cacheControl": "3600", "upsert": "true"})
-        public_url = sb_svc.storage.from_("d2doc").get_public_url(path)
+        upload_private_file(sb_svc, path, buf.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", upsert=True)
 
         sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
-            "createfileurl": public_url,
+            "createfileurl": path,
             "createfiledts": datetime.now(timezone.utc).isoformat(),
             "createuserid": user_id,
         }).eq("gendocuid", gendocuid).execute()
@@ -305,7 +314,7 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             actioncd="create",
             targettype="gendocs/combine" if selected_chapters is not None else "gendocs/generate",
             targetid=gendocuid,
-            after={"createfileurl": public_url},
+            after={"createfileurl": path},
             detail={"gendocjobuid": gendocjobuid, "gendocnm": gendocnm, "note": "worker 완료 처리"},
         )
 

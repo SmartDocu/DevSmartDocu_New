@@ -6,6 +6,7 @@ from urllib.parse import quote
 import base64, json
 
 from utilsPrj.supabase_client import get_supabase, SUPABASE_SCHEMA
+from utilsPrj.private_storage import resolve_template_bytes, resolve_display_url
 # 업로드 용
 from utilsPrj.docx_read import convert_docx_to_html_2
 
@@ -56,8 +57,10 @@ def chapter_contents_read(request, gendocuid, genchapteruid, sep, type):
                 html_contents = '작성된 문서가 없습니다.'
         elif type == 'upload':
             if texttemplate[0]['updatefileurl']:
-                file_path = texttemplate[0]['updatefileurl']
-                html_contents = convert_docx_to_html_2(file_path, url=True, formyn=False, ckeditor_mode=False, printyn=False);
+                raw_path = texttemplate[0]['updatefileurl']
+                doc_obj = Document(BytesIO(resolve_template_bytes(supabase, raw_path)))
+                html_contents = convert_docx_to_html_2(doc_obj, url=False, formyn=False, ckeditor_mode=False, printyn=False)
+                file_path = resolve_display_url(supabase, raw_path)
                 file_name = f"{chaptername}.docx"
             else:
                 html_contents = '업로드 된 문서가 없습니다.'
@@ -65,15 +68,19 @@ def chapter_contents_read(request, gendocuid, genchapteruid, sep, type):
         texttemplate = supabase.schema(SUPABASE_SCHEMA).table('gendocs').select('createfileurl, updatefileurl, gendocnm').eq('gendocuid', gendocuid).execute().data
         if type == 'auto':
             if texttemplate[0]['createfileurl']:
-                file_path = texttemplate[0]['createfileurl']
-                html_contents = convert_docx_to_html_2(file_path, url=True, formyn=False, ckeditor_mode=False, printyn=False);
+                raw_path = texttemplate[0]['createfileurl']
+                doc_obj = Document(BytesIO(resolve_template_bytes(supabase, raw_path)))
+                html_contents = convert_docx_to_html_2(doc_obj, url=False, formyn=False, ckeditor_mode=False, printyn=False)
+                file_path = resolve_display_url(supabase, raw_path)
                 file_name = f"{texttemplate[0]['gendocnm']}.docx"
             else:
                 html_contents = '작성된 문서가 없습니다.'
         elif type == 'upload':
             if texttemplate[0]['updatefileurl']:
-                file_path = texttemplate[0]['updatefileurl']
-                html_contents = convert_docx_to_html_2(file_path, url=True, formyn=False, ckeditor_mode=False, printyn=False);
+                raw_path = texttemplate[0]['updatefileurl']
+                doc_obj = Document(BytesIO(resolve_template_bytes(supabase, raw_path)))
+                html_contents = convert_docx_to_html_2(doc_obj, url=False, formyn=False, ckeditor_mode=False, printyn=False)
+                file_path = resolve_display_url(supabase, raw_path)
                 file_name = f"{texttemplate[0]['gendocnm']}.docx"
                 # print(html_contents)
             else:

@@ -37,6 +37,8 @@ from utilsPrj.chart_utils import draw_chart    # 차트 용
 from utilsPrj.table_utils import draw_table    # 표 용
 from utilsPrj.sentences_utils import draw_sentences    # 문자 용
 from utilsPrj.docx_read import convert_docx_to_html_2    # 업로드 용
+from utilsPrj.private_storage import resolve_template_bytes
+from docx import Document as _DocxDocument
 from utilsPrj.chapter_making_ai_table import render_preview_table
 
 from utilsPrj.supabase_client import get_thread_supabase, cleanup_thread_client, SUPABASE_SCHEMA
@@ -1257,7 +1259,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                 text_template = gen_text_template[0]['gentexttemplate']
 
         elif make_type == 'update':
-            html_content = convert_docx_to_html_2(updatafileurl, url=True, formyn=False, ckeditor_mode=False, printyn=True)
+            doc_obj = _DocxDocument(io.BytesIO(resolve_template_bytes(supabase, updatafileurl)))
+            html_content = convert_docx_to_html_2(doc_obj, url=False, formyn=False, ckeditor_mode=False, printyn=True)
             text_template = html_content
 
         elif make_type == 'all':
@@ -1266,7 +1269,8 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
             if gen_text_template and gen_text_template[0].get('gentexttemplate'):
                 text_template = gen_text_template[0]['gentexttemplate']
             elif updatafileurl:
-                html_content = convert_docx_to_html_2(updatafileurl, url=True, formyn=False, ckeditor_mode=False, printyn=True)
+                doc_obj = _DocxDocument(io.BytesIO(resolve_template_bytes(supabase, updatafileurl)))
+                html_content = convert_docx_to_html_2(doc_obj, url=False, formyn=False, ckeditor_mode=False, printyn=True)
                 text_template = html_content
             else:
                 text_template = ''

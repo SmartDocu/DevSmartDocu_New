@@ -18,6 +18,10 @@ from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
+from utilsPrj.private_storage import (
+    resolve_accountuid_via_docid, build_private_path, upload_private_file,
+    delete_private_file, is_private_path, resolve_display_url,
+)
 
 router = APIRouter()
 
@@ -473,13 +477,16 @@ def delete_gendoc(gendocuid: str, request: Request, token: str = Depends(get_tok
         raise HTTPException(status_code=400, detail="msg.gendoc.closed.readonly")
     if row and row[0].get("createfileurl"):
         url = row[0]["createfileurl"]
-        parsed = urlparse(url)
-        prefix = "/storage/v1/object/public/d2doc/"
-        if prefix in parsed.path:
-            try:
-                sb.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
-            except Exception:
-                pass
+        if is_private_path(url):
+            delete_private_file(get_service_client(), url)
+        else:
+            parsed = urlparse(url)
+            prefix = "/storage/v1/object/public/d2doc/"
+            if prefix in parsed.path:
+                try:
+                    sb.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
+                except Exception:
+                    pass
     gendoc_params = sb.schema(SUPABASE_SCHEMA).table("gendoc_params").select("*").eq("gendocuid", gendocuid).execute().data or []
     genchapters = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("*").eq("gendocuid", gendocuid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("gendoc_params").delete().eq("gendocuid", gendocuid).execute()
@@ -902,8 +909,8 @@ def get_doc_content(
         if gd:
             d = gd[0]
             doc_info["gendocnm"] = d.get("gendocnm", "")
-            doc_info["createfileurl"] = d.get("createfileurl")
-            doc_info["updatefileurl"] = d.get("updatefileurl")
+            doc_info["createfileurl"] = resolve_display_url(get_service_client(), d.get("createfileurl"))
+            doc_info["updatefileurl"] = resolve_display_url(get_service_client(), d.get("updatefileurl"))
             doc_info["closeyn"] = bool(d.get("closeyn", False))
             # 작성자/업로더 이름
             for uid_field, nm_field, ts_field in [
@@ -1170,31 +1177,38 @@ async def upload_chapter_file(
     sb = _sb(token)
     user_id = str(user.id)
 
-    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("gendocuid,updatefileurl").eq("genchapteruid", genchapteruid).execute().data
+    genchap = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("docid,gendocuid,updatefileurl").eq("genchapteruid", genchapteruid).execute().data
     if not genchap:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+    docid = genchap[0]["docid"]
     gendocuid = genchap[0]["gendocuid"]
     before = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
 
+    svc_root = get_service_client()
     if genchap[0].get("updatefileurl"):
         old_url = genchap[0]["updatefileurl"]
-        parsed = urlparse(old_url)
-        prefix = "/storage/v1/object/public/d2doc/"
-        if prefix in parsed.path:
-            try:
-                sb.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
-            except Exception:
-                pass
+        if is_private_path(old_url):
+            delete_private_file(svc_root, old_url)
+        else:
+            parsed = urlparse(old_url)
+            prefix = "/storage/v1/object/public/d2doc/"
+            if prefix in parsed.path:
+                try:
+                    sb.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
+                except Exception:
+                    pass
 
+    accountuid = resolve_accountuid_via_docid(svc_root, docid, user_id, tenantid=int(tenantid) if tenantid else None)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="msg.required.account")
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "docx"
-    path = f"result/{gendocuid}/chapters/{uuid.uuid4()}.{ext}"
+    path = build_private_path(accountuid, "Doc", str(docid), "result", str(gendocuid), "chapters", f"{uuid.uuid4()}.{ext}")
     content = await file.read()
-    sb.storage.from_("d2doc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
-    public_url = sb.storage.from_("d2doc").get_public_url(path)
+    upload_private_file(svc_root, path, content, file.content_type, upsert=True)
     now = datetime.now(timezone.utc).isoformat()
 
     sb.schema(SUPABASE_SCHEMA).table("genchapters").update({
-        "updatefileurl": public_url,
+        "updatefileurl": path,
         "updatefilenm": file.filename,
         "updatefiledts": now,
         "updateuserid": user_id,
@@ -1207,7 +1221,7 @@ async def upload_chapter_file(
         before=before, after=after,
         ip=get_client_ip(request),
     )
-    return {"success": True, "message": "업로드되었습니다.", "url": public_url}
+    return {"success": True, "message": "업로드되었습니다.", "url": resolve_display_url(svc_root, path)}
 
 
 # ── File Upload ──────────────────────────────────────────────────────────────────
@@ -1225,25 +1239,36 @@ async def upload_file(
     user_id = str(user.id)
 
     before = snapshot_row(sb, "gendocs", "gendocuid", gendocuid)
-    old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("updatefileurl,updatefilenm").eq("gendocuid", gendocuid).execute().data
-    if old and old[0].get("updatefileurl"):
-        parsed = urlparse(old[0]["updatefileurl"])
-        prefix = "/storage/v1/object/public/d2doc/"
-        if prefix in parsed.path:
-            try:
-                sb.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
-            except Exception:
-                pass
+    old = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid,updatefileurl,updatefilenm").eq("gendocuid", gendocuid).execute().data
+    if not old:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    docid = old[0]["docid"]
 
+    svc_root = get_service_client()
+    if old[0].get("updatefileurl"):
+        old_url = old[0]["updatefileurl"]
+        if is_private_path(old_url):
+            delete_private_file(svc_root, old_url)
+        else:
+            parsed = urlparse(old_url)
+            prefix = "/storage/v1/object/public/d2doc/"
+            if prefix in parsed.path:
+                try:
+                    sb.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
+                except Exception:
+                    pass
+
+    accountuid = resolve_accountuid_via_docid(svc_root, docid, user_id, tenantid=int(tenantid) if tenantid else None)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="msg.required.account")
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "docx"
-    path = f"result/{gendocuid}/{uuid.uuid4()}.{ext}"
+    path = build_private_path(accountuid, "Doc", str(docid), "result", str(gendocuid), f"{uuid.uuid4()}.{ext}")
     content = await file.read()
-    sb.storage.from_("d2doc").upload(path, content, {"cacheControl": "3600", "upsert": "true"})
-    public_url = sb.storage.from_("d2doc").get_public_url(path)
+    upload_private_file(svc_root, path, content, file.content_type, upsert=True)
     now = datetime.now(timezone.utc).isoformat()
 
     sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
-        "updatefileurl": public_url,
+        "updatefileurl": path,
         "updatefilenm": file.filename,
         "updatefiledts": now,
         "updateuserid": user_id,
@@ -1255,7 +1280,7 @@ async def upload_file(
         actioncd="update", targettype="gendocs/upload", targetid=gendocuid, before=before, after=after,
         ip=get_client_ip(request),
     )
-    return {"message": "업로드되었습니다.", "url": public_url}
+    return {"message": "업로드되었습니다.", "url": resolve_display_url(svc_root, path)}
 
 
 # ── Generate (SQS) ───────────────────────────────────────────────────────────────

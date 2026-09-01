@@ -1,7 +1,7 @@
 import pandas as pd
-import requests
 from io import BytesIO
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.private_storage import resolve_template_bytes
 
 
 def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, all = None):
@@ -14,9 +14,7 @@ def process_data_excel(supabase, request, datauid, docid=None, gendoc_uid=None, 
     )
     excelurl = Datas_resp.data[0]['excelurl']
 
-    response = requests.get(excelurl)
-    response.raise_for_status()
-    excel_data = BytesIO(response.content)
+    excel_data = BytesIO(resolve_template_bytes(supabase, excelurl))
     if excelurl.lower().endswith('.csv'):
         try:
             df = pd.read_csv(excel_data)

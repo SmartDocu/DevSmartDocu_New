@@ -15,8 +15,12 @@ from backend.app.schemas.datas import (
     DfDataSaveRequest, DfvDataSaveRequest,
     ApiConnectorsResponse, ApiDataSaveRequest,
 )
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
+from utilsPrj.private_storage import (
+    resolve_user_accountuid, build_private_path, upload_private_file,
+    delete_private_file, is_private_path, resolve_display_url,
+)
 
 router = APIRouter()
 
@@ -109,6 +113,9 @@ def _active_projects(sb, user_id: str, servicecd: Optional[str] = None, tenantid
 
 def _delete_storage(sb, url: str):
     if not url:
+        return
+    if is_private_path(url):
+        delete_private_file(get_service_client(), url)
         return
     parsed = urlparse(url)
     prefix = "/storage/v1/object/public/d2doc/"
@@ -591,9 +598,12 @@ def list_datas(
             existing_uids = {r["datauid"] for r in rows}
             rows += [r for r in ai_rows if r["datauid"] not in existing_uids]
 
+    svc_client = get_service_client()
     for r in rows:
         pid = r.get("projectid")
         r["projectnm"] = pmap.get(pid)
+        if r.get("excelurl"):
+            r["excelurl"] = resolve_display_url(svc_client, r["excelurl"])
 
     db_rows = [r for r in rows if r.get("datasourcecd") == "db"]
     if db_rows:
@@ -764,12 +774,16 @@ async def save_ex_data(
             raise HTTPException(status_code=400, detail=f"엑셀 파일 크기는 최대 {limit_mb:g}MB까지 업로드할 수 있습니다.")
 
         _delete_storage(sb, existing_url)
+        svc_root = get_service_client()
+        resolved_accountuid = accountuid or (
+            resolve_user_accountuid(svc_root, int(tenantid), str(user.id)) if tenantid else None
+        )
+        if not resolved_accountuid:
+            raise HTTPException(status_code=400, detail="msg.required.account")
         ext = os.path.splitext(excelfile.filename)[1]
-        fname = f"{uuid.uuid4()}{ext}"
-        path = f"source/ex/{tenantid or 'common'}/{fname}"
-        sb.storage.from_("d2doc").upload(path, content, {"content-type": excelfile.content_type})
-        public_url = sb.storage.from_("d2doc").get_public_url(path).split("?")[0]
-        record["excelurl"] = public_url
+        path = build_private_path(resolved_accountuid, "Doc", "Data", f"{uuid.uuid4()}{ext}")
+        upload_private_file(svc_root, path, content, excelfile.content_type)
+        record["excelurl"] = path
         record["excelnm"] = excelfile.filename
 
     if datauid:

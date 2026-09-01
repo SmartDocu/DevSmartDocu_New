@@ -7,6 +7,7 @@ from typing import Optional
 
 from d2insight.db import supabase_client as _sc
 from d2insight.db.supabase_client import build_shares_path, delete_from_storage
+from utilsPrj.private_storage import resolve_display_url
 
 
 # ── Timezone ────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ def get_schedule_turns(session_uid: str, until: str | None = None) -> list[dict]
             "question": row["question"],
             "answer": answer_text,
             "filenm": row.get("filenm"),
-            "fileurl": row.get("fileurl"),
+            "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
             "target_period": _parse_target_period(row.get("filenm")),
             "created_at": row.get("createdts"),
             "appliedSteps": applied_steps,
@@ -343,7 +344,7 @@ def get_session_messages(session_uid: str) -> list[dict]:
             "role": "assistant",
             "content": answer_text,
             "reportPath": filenm,
-            "fileurl": row.get("fileurl"),
+            "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
             "qauid": row["qauid"],
             "appliedSteps": applied_steps,
             "isTemplate": bool(filenm) and filenm in scheduled_filenms,
@@ -381,7 +382,7 @@ def get_last_report_qa(session_uid: str) -> dict | None:
         "qauid": row["qauid"],
         "question": row["question"],
         "filenm": row.get("filenm"),
-        "fileurl": row.get("fileurl"),
+        "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
         "applied_steps": obj.get("applied_steps") if isinstance(obj, dict) else None,
         "analytic_uid": obj.get("analytic_uid") if isinstance(obj, dict) else None,
     }
@@ -641,7 +642,7 @@ def get_favorites(creator: str, offsetminutes: int | None = None) -> list[dict]:
                 "question": row.get("question", ""),
                 "answer": answer_text,
                 "filenm": row.get("filenm"),
-                "fileurl": row.get("fileurl"),
+                "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
                 "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
             })
         return result
@@ -852,7 +853,7 @@ def _format_share_rows(rows: list[dict], offsetminutes: int | None = None) -> li
             "question": row.get("question", ""),
             "answer": answer_text,
             "filenm": row.get("filenm"),
-            "fileurl": row.get("fileurl"),
+            "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
             "folder_uid": row.get("folderuid"),
             "creator": row.get("creator"),
             "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
