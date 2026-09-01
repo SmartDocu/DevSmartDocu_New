@@ -11,11 +11,18 @@ Storage RLS(Postgres 정책 기반)는 이 프로젝트에서 신뢰할 수 없�
 호출해도 anon 취급되니 RLS로 막을 수 없다 — service-role로 통일하고 권한 판단은
 코드가 대신한다).
 
+주의(2026-09-01 실측 버그로 발견): upload_private_file/get_private_signed_url/
+delete_private_file/resolve_template_bytes의 sb_service 인자는 실제 .storage 호출에는
+쓰이지 않는다 — 호출부가 실수로 유저 JWT 클라이언트를 넘겨도(예: auth.py의
+_load_user_context가 서명URL 발급에 실패해 사이드바 테넌트 아이콘이 안 보이던 버그)
+항상 내부에서 새로 만든 service-role 클라이언트로 강제 수행한다. 인자는 호출부
+시그니처 호환을 위해 남겨뒀을 뿐이다.
+
 경로 규칙: Users/{accountuid}/{servicecd}/...
 """
 from typing import Optional
 
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 
 PRIVATE_BUCKET = "d2doc-private"
 
@@ -73,15 +80,19 @@ def build_private_path(accountuid: str, servicecd: str, *parts: str) -> str:
 
 
 def upload_private_file(sb_service, path: str, content: bytes, content_type: str, upsert: bool = False) -> None:
-    sb_service.storage.from_(PRIVATE_BUCKET).upload(
+    # Storage API는 유저 JWT를 anon으로 오인식하는 버그가 있어(위 설명 참고) 넘겨받은
+    # sb_service와 무관하게 항상 새 service-role 클라이언트로 실제 스토리지 I/O를 수행한다.
+    get_service_client().storage.from_(PRIVATE_BUCKET).upload(
         path, content, {"content-type": content_type, "upsert": "true" if upsert else "false"}
     )
 
 
 def get_private_signed_url(sb_service, path: str, expires_in: int = 3600) -> Optional[str]:
-    """만료시간(초)이 있는 서명 URL 발급. 실패하면 None."""
+    """만료시간(초)이 있는 서명 URL 발급. 실패하면 None.
+    넘겨받은 sb_service가 유저 JWT 클라이언트여도(Storage API가 anon으로 오인식해 실패하므로)
+    항상 새 service-role 클라이언트로 발급한다."""
     try:
-        res = sb_service.storage.from_(PRIVATE_BUCKET).create_signed_url(path, expires_in)
+        res = get_service_client().storage.from_(PRIVATE_BUCKET).create_signed_url(path, expires_in)
     except Exception:
         return None
     if isinstance(res, dict):
@@ -91,7 +102,7 @@ def get_private_signed_url(sb_service, path: str, expires_in: int = 3600) -> Opt
 
 def delete_private_file(sb_service, path: str) -> None:
     try:
-        sb_service.storage.from_(PRIVATE_BUCKET).remove([path])
+        get_service_client().storage.from_(PRIVATE_BUCKET).remove([path])
     except Exception:
         pass
 
@@ -118,7 +129,7 @@ def resolve_template_bytes(sb_service, url_or_path: Optional[str]) -> Optional[b
     if not url_or_path:
         return None
     if is_private_path(url_or_path):
-        return sb_service.storage.from_(PRIVATE_BUCKET).download(url_or_path)
+        return get_service_client().storage.from_(PRIVATE_BUCKET).download(url_or_path)
     import requests
     resp = requests.get(url_or_path)
     resp.raise_for_status()
