@@ -248,16 +248,26 @@ export default function AppSidebar({ collapsed = false, isDark = false, appcd = 
     [visibleMenus, location.pathname],
   )
 
-  /* ── 열린 부모 키 목록 (현재 경로 기준) ── */
+  /* ── 1단계(최상위) 메뉴 중 자식이 있는 것 — 기본적으로 2단계까지는 펼쳐 보이도록 ── */
+  const level1OpenKeys = useMemo(
+    () => visibleMenus
+      .filter((m) => !m.menucd.includes('.'))
+      .filter((m) => visibleMenus.some((c) => c.menucd.startsWith(m.menucd + '.')))
+      .map((m) => m.menucd),
+    [visibleMenus],
+  )
+
+  /* ── 열린 부모 키 목록: 1단계 메뉴(기본) + 현재 경로 기준 조상 키 ── */
   const defaultOpenKeys = useMemo(() => {
-    if (!selectedKey) return []
-    const parts = selectedKey.split('.')
-    const opens = []
-    for (let i = 1; i < parts.length; i++) {
-      opens.push(parts.slice(0, i).join('.'))
+    const opens = new Set(level1OpenKeys)
+    if (selectedKey) {
+      const parts = selectedKey.split('.')
+      for (let i = 1; i < parts.length; i++) {
+        opens.add(parts.slice(0, i).join('.'))
+      }
     }
-    return opens
-  }, [selectedKey])
+    return [...opens]
+  }, [selectedKey, level1OpenKeys])
 
   const handleMenuClick = ({ key }) => {
     const menu = visibleMenus.find((m) => m.menucd === key)
