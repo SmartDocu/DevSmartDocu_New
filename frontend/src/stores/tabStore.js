@@ -6,7 +6,7 @@ export const useTabStore = create(
     (set) => ({
       tabs: [],
       activeKey: null,
-      siderCollapsed: true,
+      siderCollapsed: false,
       setSiderCollapsed: (v) => set({ siderCollapsed: v }),
       colorTheme: 'light',
       setColorTheme: (theme) => set({ colorTheme: theme }),

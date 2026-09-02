@@ -199,7 +199,7 @@ export default function MasterDatasDbPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="data-connuid">{t('lbl.connectnm_lbl')}</label>
+            <label htmlFor="data-connuid"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connectnm_lbl')}</label>
             <select id="data-connuid" value={form.connuid}
               onChange={(e) => setForm(f => ({ ...f, connuid: e.target.value }))}>
               <option value="">{t('msg.select.placeholder')}</option>
@@ -210,7 +210,7 @@ export default function MasterDatasDbPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.datanm_lbl')}</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}</label>
             <input type="text" value={form.datanm}
               onChange={(e) => setForm(f => ({ ...f, datanm: e.target.value }))} />
           </div>

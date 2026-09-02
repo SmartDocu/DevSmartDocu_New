@@ -111,6 +111,13 @@ def _active_projects(sb, user_id: str, servicecd: Optional[str] = None, tenantid
     return [p["projectid"] for p in active], pmap, svc_map
 
 
+def _require_data_tenant(row: Optional[dict], tenantid: Optional[str]) -> None:
+    """dataunits.tenantid(저장 시 항상 기록됨)와 요청 헤더 tenantid를 비교해,
+    datauid만으로 다른 테넌트의 데이터를 수정/삭제할 수 없도록 검증한다."""
+    if not row or not tenantid or str(row.get("tenantid")) != str(tenantid):
+        raise HTTPException(status_code=400, detail="msg.data.no.permission")
+
+
 def _delete_storage(sb, url: str):
     if not url:
         return
@@ -707,6 +714,7 @@ def save_db_data(body: DbDataSaveRequest, request: Request, token: str = Depends
     }
     if body.datauid:
         before = snapshot_row(sb, "dataunits", "datauid", body.datauid)
+        _require_data_tenant(before, tenantid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         after = snapshot_row(sb, "dataunits", "datauid", body.datauid)
         log_work_action(
@@ -745,9 +753,14 @@ async def save_ex_data(
 
     existing_url = None
     if datauid:
-        res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl").eq("datauid", datauid).execute()
-        if res.data:
-            existing_url = res.data[0].get("excelurl")
+        # dataunits.tenantid는 저장 시 항상 기록되므로(datasourcecd와 무관), datauid만으로
+        # 다른 테넌트의 데이터를 수정/파일교체할 수 없도록 여기서 소유권을 검증한다.
+        res = sb.schema(SUPABASE_SCHEMA).table("dataunits").select("excelurl, tenantid").eq("datauid", datauid).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="msg.data.not.found")
+        if not tenantid or str(res.data[0].get("tenantid")) != str(tenantid):
+            raise HTTPException(status_code=400, detail="msg.data.no.permission")
+        existing_url = res.data[0].get("excelurl")
 
     if excelfile:
         content = await excelfile.read()
@@ -822,6 +835,7 @@ def save_ai_data(body: AiDataSaveRequest, request: Request, token: str = Depends
     }
     if body.datauid:
         before = snapshot_row(sb, "dataunits", "datauid", body.datauid)
+        _require_data_tenant(before, tenantid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         after = snapshot_row(sb, "dataunits", "datauid", body.datauid)
         log_work_action(
@@ -866,6 +880,7 @@ def save_api_data(body: ApiDataSaveRequest, request: Request, token: str = Depen
     before = _snapshot_api_data(sb, body.datauid)
     is_new = not body.datauid
     if body.datauid:
+        _require_data_tenant(before.get("dataunits") if before else None, tenantid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
     else:
@@ -997,6 +1012,7 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token), tenan
         "is_multirow": body.is_multirow,
     }
     if body.datauid:
+        _require_data_tenant(snapshot_row(sb, "dataunits", "datauid", body.datauid), tenantid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
     else:
@@ -1044,6 +1060,7 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), ten
         "dfv_docid": body.dfv_docid,
     }
     if body.datauid:
+        _require_data_tenant(snapshot_row(sb, "dataunits", "datauid", body.datauid), tenantid)
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update(record).eq("datauid", body.datauid).execute()
         datauid = body.datauid
     else:
@@ -1071,9 +1088,13 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), ten
 def delete_data(datauid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
-    res = sb.schema(SUPABASE_SCHEMA).table("datas").select("excelurl, datasourcecd").eq("datauid", datauid).execute()
-    if res.data:
-        _delete_storage(sb, res.data[0].get("excelurl"))
+    res = sb.schema(SUPABASE_SCHEMA).table("dataunits").select("excelurl, datasourcecd, tenantid").eq("datauid", datauid).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="삭제할 데이터가 없습니다.")
+    # datauid만으로 다른 테넌트의 데이터를 삭제할 수 없도록 소유권 검증 (save_ex_data와 동일)
+    if not tenantid or str(res.data[0].get("tenantid")) != str(tenantid):
+        raise HTTPException(status_code=400, detail="msg.data.no.permission")
+    _delete_storage(sb, res.data[0].get("excelurl"))
 
     before = {
         "dataunits": snapshot_row(sb, "dataunits", "datauid", datauid),
@@ -1144,7 +1165,7 @@ def _extract_json_columns(data) -> list:
 
 
 @router.post("/datacols/create", dependencies=[Depends(require_doc_write)])
-def create_datacols(body: dict, token: str = Depends(get_token)):
+def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """쿼리를 실행해 컬럼을 자동 생성한다."""
     user = _get_user(token)
     sb = _sb(token)
@@ -1152,6 +1173,9 @@ def create_datacols(body: dict, token: str = Depends(get_token)):
     projectid = body.get("projectid")
     if not datauid:
         raise HTTPException(status_code=400, detail="datauid가 필요합니다.")
+
+    # 다른 테넌트의 DB/API 커넥터로 실제 쿼리·API 호출이 실행되는 엔드포인트라 반드시 선검증
+    _require_data_tenant(snapshot_row(sb, "dataunits", "datauid", datauid), tenantid)
 
     data_resp = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").eq("datauid", datauid).execute()
     if not data_resp.data:

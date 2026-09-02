@@ -272,7 +272,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
             {/* ── 데이터 선택 행 ── */}
             <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 4, flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>{t('ttl.data.list')}:</label>
+                <label style={{ whiteSpace: 'nowrap', fontWeight: 500 }}><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('ttl.data.list')}:</label>
                 <select
                   value={selectedDatauid}
                   onChange={(e) => { if (!isFilterDefault) setSelectedDatauid(e.target.value) }}

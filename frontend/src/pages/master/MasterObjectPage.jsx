@@ -275,7 +275,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.objectnm_lbl')}:</label>
+            <label>{!form.objectuid && <span style={{ color: 'red', marginRight: 2 }}>*</span>}{t('lbl.objectnm_lbl')}:</label>
             {form.objectuid ? (
               <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
             ) : (

@@ -1510,11 +1510,12 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
         .eq("tenantid", body.tenantid).eq("useruid", user_id)
         .maybe_single().execute()
     )
-    is_manager = bool(
-        tu_row and tu_row.data
-        and tu_row.data.get("rolecd") == "M"
-        and tu_row.data.get("useyn") is True
-    )
+    # 대상 테넌트의 활성 멤버가 아니면 전환 자체를 막는다 — 로그인 시 tenantids 목록이
+    # tenantusers 멤버십에서만 파생되는 것과 동일 기준(_load_user_context). 여기서 막지
+    # 않으면 tenantid 헤더만으로 다른 테넌트 컨텍스트를 얻어 다른 엔드포인트들을 공격할 수 있다.
+    if not tu_row or not tu_row.data or tu_row.data.get("useyn") is not True:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="msg.tenant.no.permission")
+    is_manager = tu_row.data.get("rolecd") == "M"
 
     eval_result = _evaluate_tenant_access(supabase, body.tenantid, is_manager, ip)
     if eval_result["status"] == "blocked":

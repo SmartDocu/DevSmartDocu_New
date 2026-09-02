@@ -131,7 +131,7 @@ export default function OrgTenantLlmsPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="projectid">{t('lbl.projectnm_lbl')}:</label>
+            <label htmlFor="projectid"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:</label>
             <select id="projectid" value={selectedId || ''}
               onChange={(e) => handleProjectSelect(e.target.value)}>
               <option value="">{t('msg.select')}</option>

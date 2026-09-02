@@ -234,7 +234,7 @@ export default function MasterDatasApiPage() {
           </div>
 
           <div className="form-group">
-            <label>{t('lbl.datanm_lbl')}</label>
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}</label>
             <input type="text" value={form.datanm} onChange={(e) => setForm((f) => ({ ...f, datanm: e.target.value }))} />
           </div>
 

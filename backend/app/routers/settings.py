@@ -20,6 +20,7 @@ from utilsPrj.private_storage import (
     resolve_user_accountuid, build_private_path, upload_private_file,
     delete_private_file, is_private_path, resolve_display_url,
 )
+from backend.app.routers.admin import _require_admin
 
 router = APIRouter()
 
@@ -399,7 +400,8 @@ def delete_project(projectid: str, token: str = Depends(get_token)):
 
 @router.get("/tenants")
 def list_tenants(token: str = Depends(get_token)):
-    _get_user(token)
+    # 전체 테넌트 목록(복호화된 연락처 포함)이라 시스템 관리자(roleid=7)만 접근 가능해야 한다
+    admin = _require_admin(token)
     sb = _sb(token)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").order("createdts", desc=True).execute().data or []
@@ -479,7 +481,8 @@ async def save_tenant(
     iconfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
 ):
-    user = _get_user(token)
+    # 테넌트 생성/수정은 시스템 관리자(roleid=7)만 가능해야 한다
+    user = _require_admin(token)
     sb = _sb(token)
 
     useyn_bool = useyn.lower() not in ("false", "0", "")
@@ -548,7 +551,8 @@ async def save_tenant(
 
 @router.delete("/tenants/{tenantid}")
 def delete_tenant(tenantid: str, request: Request, token: str = Depends(get_token)):
-    user = _get_user(token)
+    # 테넌트 삭제는 시스템 관리자(roleid=7)만 가능해야 한다
+    user = _require_admin(token)
     sb = _sb(token)
     before = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
     sb.schema(SUPABASE_SCHEMA).table("tenants").delete().eq("tenantid", tenantid).execute()

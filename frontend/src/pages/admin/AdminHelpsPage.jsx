@@ -136,7 +136,7 @@ export default function AdminHelpsPage() {
 
             <div style={{ display: 'flex', gap: 16 }}>
               <div className="form-group" style={{ flex: 1 }}>
-                <label>URL</label>
+                <label><span style={{ color: 'red', marginRight: 2 }}>*</span>URL</label>
                 <input
                   type="text"
                   value={form.url}
@@ -158,7 +158,7 @@ export default function AdminHelpsPage() {
             </div>
 
             <div className="form-group">
-              <label>{t('lbl.subject')}</label>
+              <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.subject')}</label>
               <input
                 type="text"
                 value={form.help}

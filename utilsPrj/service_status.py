@@ -51,8 +51,25 @@ def get_service_permission(sb, tenantid, user_id: str, servicecd: str = "Do") ->
     )
     issystemtenant = t_row.data.get("issystemtenant", True) if t_row and t_row.data else True
 
-    acc_q = sb.schema(SUPABASE_SCHEMA).table("accounts").select("accountuid")
-    acc_q = acc_q.eq("useruid", user_id) if issystemtenant else acc_q.eq("tenantid", int(tenantid))
+    if issystemtenant:
+        acc_q = sb.schema(SUPABASE_SCHEMA).table("accounts").select("accountuid").eq("useruid", user_id)
+    else:
+        # 기업 테넌트는 계정을 테넌트 전체가 공유하므로, tenantid만으로 조회하면
+        # 그 테넌트 소속이 아닌 사용자도(예: 다른 테넌트에서 X-Tenant-ID를 조작) 공유 계정의
+        # 권한을 그대로 얻게 된다. tenantusers에 활성 멤버로 등록돼 있는지 먼저 확인한다.
+        membership = (
+            sb.schema(SUPABASE_SCHEMA).table("tenantusers")
+            .select("tenantid")
+            .eq("tenantid", int(tenantid))
+            .eq("useruid", user_id)
+            .eq("useyn", True)
+            .maybe_single()
+            .execute()
+        )
+        if not membership or not membership.data:
+            return {"servicestatus": None, "can_read": False, "can_write": False}
+        acc_q = sb.schema(SUPABASE_SCHEMA).table("accounts").select("accountuid").eq("tenantid", int(tenantid))
+
     acc = acc_q.maybe_single().execute()
     accountuid = acc.data.get("accountuid") if acc and acc.data else None
     if not accountuid:

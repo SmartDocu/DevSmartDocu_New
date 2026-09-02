@@ -45,6 +45,15 @@ def _tenant_of_doc(sb, docid: int) -> Optional[str]:
     return str(proj_row.data["tenantid"]) if proj_row and proj_row.data and proj_row.data.get("tenantid") is not None else None
 
 
+def _require_doc_tenant(sb, docid: Optional[int], tenantid: Optional[str]) -> None:
+    """docid가 현재 활성 테넌트(tenantid, X-Tenant-ID) 소속인지 검증한다.
+
+    gendocuid/genchapteruid는 PK만으로 조회되기 때문에, storage 파일 삭제/발급 전에
+    반드시 이 체크를 거쳐 다른 테넌트의 문서를 대상으로 한 요청을 막는다."""
+    if not docid or not tenantid or _tenant_of_doc(sb, docid) != str(tenantid):
+        raise HTTPException(status_code=403, detail="msg.doc.no.permission")
+
+
 def _resolve_docid(sb, user_id: str, tenantid: Optional[str], requested_docid: Optional[int]) -> Optional[int]:
     """docid를 현재 테넌트 기준으로 검증/해석한다.
 
@@ -471,14 +480,19 @@ def create_gendoc(body: GendocCreateRequest, request: Request, token: str = Depe
 def delete_gendoc(gendocuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    user_id = str(user.id)
     # Remove storage file
     row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("*").eq("gendocuid", gendocuid).execute().data
-    if row and row[0].get("closeyn"):
+    if not row:
+        raise HTTPException(status_code=404, detail="msg.gendoc.not.found")
+    _require_doc_tenant(sb, row[0].get("docid"), tenantid)
+    if row[0].get("closeyn"):
         raise HTTPException(status_code=400, detail="msg.gendoc.closed.readonly")
-    if row and row[0].get("createfileurl"):
+    if row[0].get("createfileurl"):
         url = row[0]["createfileurl"]
         if is_private_path(url):
-            delete_private_file(get_service_client(), url)
+            accountuid = resolve_accountuid_via_docid(get_service_client(), row[0].get("docid"), user_id, tenantid=int(tenantid) if tenantid else None)
+            delete_private_file(get_service_client(), url, expected_accountuid=accountuid)
         else:
             parsed = urlparse(url)
             prefix = "/storage/v1/object/public/d2doc/"
@@ -884,6 +898,14 @@ def get_doc_content(
     user = _get_user(token)
     sb = _sb(token)
     user_id = str(user.id)
+    gendoc_docid_row = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data
+    if not gendoc_docid_row:
+        raise HTTPException(status_code=404, detail="msg.gendoc.not.found")
+    _require_doc_tenant(sb, gendoc_docid_row[0].get("docid"), tenantid)
+    doc_accountuid = resolve_accountuid_via_docid(
+        get_service_client(), gendoc_docid_row[0].get("docid"), user_id, tenantid=int(tenantid) if tenantid else None
+    )
+
     ctx = _get_user_context(sb, user_id, tenantid)
     docid = ctx["docid"]
     offsetminutes = _get_offsetminutes(sb, user_id, tenantid)
@@ -909,8 +931,8 @@ def get_doc_content(
         if gd:
             d = gd[0]
             doc_info["gendocnm"] = d.get("gendocnm", "")
-            doc_info["createfileurl"] = resolve_display_url(get_service_client(), d.get("createfileurl"))
-            doc_info["updatefileurl"] = resolve_display_url(get_service_client(), d.get("updatefileurl"))
+            doc_info["createfileurl"] = resolve_display_url(get_service_client(), d.get("createfileurl"), expected_accountuid=doc_accountuid)
+            doc_info["updatefileurl"] = resolve_display_url(get_service_client(), d.get("updatefileurl"), expected_accountuid=doc_accountuid)
             doc_info["closeyn"] = bool(d.get("closeyn", False))
             # 작성자/업로더 이름
             for uid_field, nm_field, ts_field in [
@@ -1182,13 +1204,18 @@ async def upload_chapter_file(
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
     docid = genchap[0]["docid"]
     gendocuid = genchap[0]["gendocuid"]
+    _require_doc_tenant(sb, docid, tenantid)
     before = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
 
     svc_root = get_service_client()
+    accountuid = resolve_accountuid_via_docid(svc_root, docid, user_id, tenantid=int(tenantid) if tenantid else None)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="msg.required.account")
+
     if genchap[0].get("updatefileurl"):
         old_url = genchap[0]["updatefileurl"]
         if is_private_path(old_url):
-            delete_private_file(svc_root, old_url)
+            delete_private_file(svc_root, old_url, expected_accountuid=accountuid)
         else:
             parsed = urlparse(old_url)
             prefix = "/storage/v1/object/public/d2doc/"
@@ -1198,9 +1225,6 @@ async def upload_chapter_file(
                 except Exception:
                     pass
 
-    accountuid = resolve_accountuid_via_docid(svc_root, docid, user_id, tenantid=int(tenantid) if tenantid else None)
-    if not accountuid:
-        raise HTTPException(status_code=400, detail="msg.required.account")
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "docx"
     path = build_private_path(accountuid, "Doc", str(docid), "result", str(gendocuid), "chapters", f"{uuid.uuid4()}.{ext}")
     content = await file.read()
@@ -1243,12 +1267,17 @@ async def upload_file(
     if not old:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     docid = old[0]["docid"]
+    _require_doc_tenant(sb, docid, tenantid)
 
     svc_root = get_service_client()
+    accountuid = resolve_accountuid_via_docid(svc_root, docid, user_id, tenantid=int(tenantid) if tenantid else None)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="msg.required.account")
+
     if old[0].get("updatefileurl"):
         old_url = old[0]["updatefileurl"]
         if is_private_path(old_url):
-            delete_private_file(svc_root, old_url)
+            delete_private_file(svc_root, old_url, expected_accountuid=accountuid)
         else:
             parsed = urlparse(old_url)
             prefix = "/storage/v1/object/public/d2doc/"
@@ -1258,9 +1287,6 @@ async def upload_file(
                 except Exception:
                     pass
 
-    accountuid = resolve_accountuid_via_docid(svc_root, docid, user_id, tenantid=int(tenantid) if tenantid else None)
-    if not accountuid:
-        raise HTTPException(status_code=400, detail="msg.required.account")
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "docx"
     path = build_private_path(accountuid, "Doc", str(docid), "result", str(gendocuid), f"{uuid.uuid4()}.{ext}")
     content = await file.read()

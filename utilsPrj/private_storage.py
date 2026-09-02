@@ -79,6 +79,14 @@ def build_private_path(accountuid: str, servicecd: str, *parts: str) -> str:
     return "/".join(["Users", accountuid, servicecd, *segments])
 
 
+def path_accountuid(path: Optional[str]) -> Optional[str]:
+    """private 경로(Users/{accountuid}/...)에서 accountuid 세그먼트를 추출. 형식이 아니면 None."""
+    if not path:
+        return None
+    parts = path.strip("/").split("/")
+    return parts[1] if len(parts) >= 2 and parts[0] == "Users" else None
+
+
 def upload_private_file(sb_service, path: str, content: bytes, content_type: str, upsert: bool = False) -> None:
     # Storage API는 유저 JWT를 anon으로 오인식하는 버그가 있어(위 설명 참고) 넘겨받은
     # sb_service와 무관하게 항상 새 service-role 클라이언트로 실제 스토리지 I/O를 수행한다.
@@ -87,10 +95,15 @@ def upload_private_file(sb_service, path: str, content: bytes, content_type: str
     )
 
 
-def get_private_signed_url(sb_service, path: str, expires_in: int = 3600) -> Optional[str]:
+def get_private_signed_url(sb_service, path: str, expires_in: int = 3600, expected_accountuid: Optional[str] = None) -> Optional[str]:
     """만료시간(초)이 있는 서명 URL 발급. 실패하면 None.
     넘겨받은 sb_service가 유저 JWT 클라이언트여도(Storage API가 anon으로 오인식해 실패하므로)
-    항상 새 service-role 클라이언트로 발급한다."""
+    항상 새 service-role 클라이언트로 발급한다.
+
+    expected_accountuid를 넘기면(2단 방어 — Storage RLS가 무력화된 상태라 storage 헬퍼
+    레벨에서도 재검증) 경로의 accountuid 세그먼트가 일치할 때만 발급하고, 불일치면 None."""
+    if expected_accountuid is not None and path_accountuid(path) != expected_accountuid:
+        return None
     try:
         res = get_service_client().storage.from_(PRIVATE_BUCKET).create_signed_url(path, expires_in)
     except Exception:
@@ -100,7 +113,11 @@ def get_private_signed_url(sb_service, path: str, expires_in: int = 3600) -> Opt
     return res
 
 
-def delete_private_file(sb_service, path: str) -> None:
+def delete_private_file(sb_service, path: str, expected_accountuid: Optional[str] = None) -> None:
+    """expected_accountuid를 넘기면 경로의 accountuid 세그먼트가 일치할 때만 삭제한다
+    (2단 방어 — get_private_signed_url과 동일한 취지)."""
+    if expected_accountuid is not None and path_accountuid(path) != expected_accountuid:
+        return
     try:
         get_service_client().storage.from_(PRIVATE_BUCKET).remove([path])
     except Exception:
@@ -113,13 +130,14 @@ def is_private_path(value: Optional[str]) -> bool:
     return bool(value) and not value.startswith("http://") and not value.startswith("https://")
 
 
-def resolve_display_url(sb_service, value: Optional[str]) -> Optional[str]:
+def resolve_display_url(sb_service, value: Optional[str], expected_accountuid: Optional[str] = None) -> Optional[str]:
     """저장된 값이 private 경로면 서명 URL로 변환, 구형 공개 URL이면 그대로 반환.
-    프론트에 URL을 그대로 내려주는 모든 read 지점에서 공용으로 사용."""
+    프론트에 URL을 그대로 내려주는 모든 read 지점에서 공용으로 사용.
+    expected_accountuid는 get_private_signed_url로 그대로 전달(2단 방어)."""
     if not value:
         return value
     if is_private_path(value):
-        return get_private_signed_url(sb_service, value) or value
+        return get_private_signed_url(sb_service, value, expected_accountuid=expected_accountuid) or value
     return value
 
 

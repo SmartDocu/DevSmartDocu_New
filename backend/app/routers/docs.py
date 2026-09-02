@@ -394,11 +394,11 @@ async def save_doc(
         template_content = await templatefile.read()
 
     def _upload_template(target_docid: int, old_url: Optional[str]) -> str:
-        if old_url:
-            _delete_storage_file(sb, old_url)
         accountuid = resolve_user_accountuid(get_service_client(), int(tenantid), user_id) if tenantid else None
         if not accountuid:
             raise HTTPException(status_code=400, detail="msg.required.tenantid")
+        if old_url:
+            _delete_storage_file(sb, old_url, expected_accountuid=accountuid)
         path = build_private_path(accountuid, "Doc", str(target_docid), "source", f"{uuid.uuid4()}{template_ext}")
         upload_private_file(get_service_client(), path, template_content, templatefile.content_type)
         return path
@@ -447,14 +447,27 @@ async def save_doc(
 def delete_doc(docid: int, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    user_id = str(user.id)
 
     rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("*").eq("docid", docid).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="msg.doc.not.found")
     doc = rows[0]
 
+    # 프로젝트 편집 권한 확인 (save_doc과 동일 — docid만으로 다른 프로젝트 문서를 삭제할 수 없게)
+    allowed = (
+        sb.schema(SUPABASE_SCHEMA)
+        .rpc("fn_project_filtered__r_user_manager", {"p_useruid": user_id})
+        .execute()
+        .data or []
+    )
+    allowed_ids = [r["projectid"] for r in allowed]
+    if doc.get("projectid") not in allowed_ids:
+        raise HTTPException(status_code=400, detail="msg.doc.no.permission")
+
     if doc.get("basetemplateurl"):
-        _delete_storage_file(sb, doc["basetemplateurl"])
+        accountuid = resolve_user_accountuid(get_service_client(), int(tenantid), user_id) if tenantid else None
+        _delete_storage_file(sb, doc["basetemplateurl"], expected_accountuid=accountuid)
 
     # 연관 gendocs 삭제
     gendocs = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("docid", docid).execute().data or []
@@ -757,9 +770,9 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, request: Request, tok
 
 # ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
-def _delete_storage_file(sb, url: str):
+def _delete_storage_file(sb, url: str, expected_accountuid: Optional[str] = None):
     if is_private_path(url):
-        delete_private_file(get_service_client(), url)
+        delete_private_file(get_service_client(), url, expected_accountuid=expected_accountuid)
         return
     try:
         parsed = urlparse(url)
