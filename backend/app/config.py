@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://localhost:5174",
-        "http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com",
+        "http://d2doc-alb-2141263733.ap-northeast-2.elb.amazonaws.com",
     ]
 
     class Config:

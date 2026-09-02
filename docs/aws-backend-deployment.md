@@ -2,12 +2,16 @@
 
 워커(`worker/`)는 이전부터 AWS ECS Fargate(`smartdocu-cluster`)에서 운영 중이었고, 메인 앱(루트 `Dockerfile`, FastAPI + React 통합 이미지)은 2026-08-13에 **최초로 AWS에 배포**되었다. 그 전까지는 어디에도 배포된 적 없었음(로컬/Azure 웹앱 URL만 CORS에 남아 있던 상태).
 
+**2026-09-02 정정**: 최초 배포 당시 서비스명은 `smartdocu-backend-service`/ALB `smartdocu-backend-alb`였으나, 이후 어느 시점에 `d2doc-service`/`d2doc-alb`로 새로 만들어 옮겨갔고 옛 리소스는 그대로 방치되어 있었다(이 문서가 최신화 안 된 채로 남아있던 원인). 아래 내용은 실제 운영 중인 `d2doc-service` 기준으로 갱신함.
+
+**옛 리소스(`smartdocu-backend-*`) 처리 필요** — `smartdocu-backend-service`는 desired=0(실행 태스크 없음)인데, `smartdocu-backend-alb`는 `state: active`로 여전히 켜져 있어 트래픽 없이도 계속 과금 중이다. 정리(ALB/서비스/타겟그룹/ECR 리포지토리 삭제)는 사용자 확인 후 별도로 진행할 것 — 이 문서 갱신 시점엔 조사만 하고 삭제는 하지 않음.
+
 ---
 
 ## 현재 접속 주소
 
 ```
-http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com
+http://d2doc-alb-2141263733.ap-northeast-2.elb.amazonaws.com
 ```
 
 도메인 미연결 — ALB 기본 DNS로만 접속 가능. HTTP만 지원(HTTPS 없음).
@@ -18,24 +22,24 @@ http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com
 
 | 항목 | 값 |
 |---|---|
-| ECR 리포지토리 | `189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-backend` |
+| ECR 리포지토리 | `189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/d2doc-service` |
 | ECS 클러스터 | `smartdocu-cluster` (워커와 공유) |
-| ECS 서비스 | `smartdocu-backend-service` |
-| ECS 태스크 정의 | `smartdocu-backend` (family), cpu=1024 / memory=2048 |
-| 태스크 역할 (IAM) | `smartdocu-backend-task-role` — SecretsManagerReadWrite, AmazonSQSFullAccess, AmazonEC2ContainerRegistryReadOnly |
-| 실행 역할 (IAM) | `smartdocu-backend-exec-role` — AmazonECSTaskExecutionRolePolicy, SecretsManagerReadWrite |
+| ECS 서비스 | `d2doc-service` |
+| ECS 태스크 정의 | `d2doc-service` (family) |
+| 태스크 역할 (IAM) | `smartdocu-backend-task-role` — SecretsManagerReadWrite, AmazonSQSFullAccess, AmazonEC2ContainerRegistryReadOnly (최초 배포 때 만든 이름 그대로 재사용 중) |
+| 실행 역할 (IAM) | `smartdocu-backend-exec-role` — AmazonECSTaskExecutionRolePolicy, SecretsManagerReadWrite (마찬가지로 이름만 구버전) |
 | VPC | 디폴트 VPC `vpc-041f22aeb124f2e1f`, 퍼블릭 서브넷 4개 (워커와 동일), NAT 게이트웨이 없음 → 태스크는 `assignPublicIp=ENABLED` |
-| 보안그룹 (ALB) | `sg-055256bc0667a43b6` — 인바운드 80 전체 허용 |
-| 보안그룹 (태스크) | `sg-0752690b93855e164` — ALB SG로부터만 8000 인바운드 허용 |
-| ALB | `smartdocu-backend-alb` |
-| 타겟그룹 | `smartdocu-backend-tg` — HTTP:8000, 헬스체크 `/health` |
+| ALB | `d2doc-alb` |
+| 타겟그룹 | `d2doc-alb-tg` — HTTP:8000, 헬스체크 `/health` |
 | 리스너 | HTTP:80 → 타겟그룹 forward |
-| CloudWatch 로그 그룹 | `smartdocu-backend` (30일 보관) |
-| Secrets Manager | `smartdocu/backend/env` — CLAUDE_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY(비어있음, 미설정), SUPABASE_KEY, SUPABASE_SERVICE_ROLE_KEY, ENCRYPTION_KEY, EMAIL_HOST_PASSWORD, NAVER_ACCESS_KEY_ID, NAVER_SECRET_KEY |
+| CloudWatch 로그 그룹 | `d2doc-service` |
+| Secrets Manager | `smartdocu/backend/env` — CLAUDE_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, SUPABASE_KEY, SUPABASE_SERVICE_ROLE_KEY, ENCRYPTION_KEY, EMAIL_HOST_PASSWORD, NAVER_ACCESS_KEY_ID, NAVER_SECRET_KEY, PORTONE_STORE_ID, PORTONE_CHANNEL_KEY, PORTONE_API_SECRET, PORTONE_WEBHOOK_SECRET, BILLING_CRON_SECRET (시크릿 이름 자체는 최초 배포 때 이름 그대로 재사용 중) |
 
 민감하지 않은 값(SUPABASE_URL, SUPABASE_SCHEMA, SQS 큐 URL 등)은 태스크 정의에 평문 `environment`로 직접 넣음. 워커와 달리 이번엔 시크릿을 Secrets Manager로 분리했다(워커 태스크 정의는 여전히 평문 방식 — 개선 여지 있음).
 
-2026-08-14에 `BASE_URL` 평문 env를 추가함(태스크 정의 리비전 2). 비밀번호 재설정/초대 이메일 링크가 이 값을 기준으로 생성된다(`backend/app/config.py`의 `settings.BASE_URL`). 현재값: `http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com`. 도메인 연결 시(후속 작업 #1) 이 값도 함께 갱신할 것.
+2026-08-14에 `BASE_URL` 평문 env를 추가함. 비밀번호 재설정/초대 이메일 링크가 이 값을 기준으로 생성된다(`backend/app/config.py`의 `settings.BASE_URL`). 현재값: `http://d2doc-alb-2141263733.ap-northeast-2.elb.amazonaws.com`. 도메인 연결 시(후속 작업 #1) 이 값도 함께 갱신할 것.
+
+**미해결 버그(2026-09-02 발견)**: `backend/app/config.py`의 `CORS_ORIGINS`에 옛 `smartdocu-backend-alb` 주소만 남아있고 현재 실제 운영 주소인 `d2doc-alb`가 빠져있음. 프론트가 API와 같은 오리진(같은 ALB)에서 서빙되는 구조라 대부분의 요청엔 영향 없지만, 정정 필요 — 후속 작업으로 기록.
 
 `smartdocu-app` IAM 사용자에 배포에 필요한 커스텀 정책(`smartdocu-deploy-policy`) + `ElasticLoadBalancingFullAccess`를 추가로 붙여야 했음(원래 권한이 ECR/ECS 정도로 좁았음).
 
@@ -45,15 +49,15 @@ http://smartdocu-backend-alb-876682109.ap-northeast-2.elb.amazonaws.com
 
 ```powershell
 # 프로젝트 루트에서
-docker build -f Dockerfile -t smartdocu-backend:latest `
+docker build -f Dockerfile -t d2doc-service:latest `
   --build-arg VITE_SUPABASE_URL=<frontend/.env 값> `
   --build-arg VITE_SUPABASE_ANON_KEY=<frontend/.env 값> .
 
 aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com
-docker tag smartdocu-backend:latest 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-backend:latest
-docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-backend:latest
+docker tag d2doc-service:latest 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/d2doc-service:latest
+docker push 189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/d2doc-service:latest
 
-aws ecs update-service --cluster smartdocu-cluster --service smartdocu-backend-service --force-new-deployment --region ap-northeast-2
+aws ecs update-service --cluster smartdocu-cluster --service d2doc-service --force-new-deployment --region ap-northeast-2
 ```
 
 환경변수/시크릿 값을 바꿔야 하면: `smartdocu/backend/env` 시크릿(콘솔) 또는 태스크 정의 자체를 새 리비전으로 등록 후 서비스 업데이트.
@@ -72,12 +76,14 @@ aws ecs update-service --cluster smartdocu-cluster --service smartdocu-backend-s
 
 ## 후속 작업 (미완료)
 
-- [ ] **`creditbuckets_daily_batch.sql` 재실행 필요(Supabase SQL 에디터)** — `sdoc.fn_process_creditbuckets_daily()`의 Ba 크레딧 갱신(Part B) 대상 조회에 `account_billing`에 등록된 계정은 건너뛰는 조건을 추가함(2026-08-31, 코드는 이 리포의 `creditbuckets_daily_batch.sql`에 반영 완료). 안 그러면 EventBridge(`run-billing-cycle`)를 켰을 때 실제 청구 성공 후 Python이 갱신한 Ba 크레딧을 Supabase pg_cron(`Global_CreditBuckets-Daily`)이 결제 여부와 무관하게 또 갱신해버려 이중 갱신되고, 결제 실패로 Suspended된 계정도 크레딧이 계속 리셋되는 문제가 생김. **아직 Supabase에 반영 전** — SQL 에디터에서 `CREATE OR REPLACE FUNCTION` 부분 재실행 필요.
-- [x] ~~Ch/In 서비스는 결제 실패 시 접근 차단 로직이 없음~~ — 2026-08-31 완료. 기록 당시 "Ch/In은 실제 기능 라우터가 없다"고 판단했던 것 자체가 오류였음(정정: `d2chat/routes.py`·`d2insight/chat/router.py`가 루트 레벨 별도 패키지로 존재하고 `backend/app/routers/__init__.py`에서 그대로 include되는 실제 라우터임 — `backend/app/routers/` 폴더 안만 찾아서 놓쳤던 것). `backend/app/dependencies.py`의 `require_doc_read`/`require_doc_write`를 `_require_service_permission(servicecd, need)` 팩토리로 일반화하고 `require_chat_read`/`write`(Ch), `require_insight_read`/`write`(In)를 추가, d2chat 19개·d2insight 31개 엔드포인트(POST/DELETE→write, GET→read)에 적용 완료. 내부 스케줄러 전용(`/scheduled/run`)·공개 참조 데이터(`/catalog`, `/health`, `/questions`)는 원래부터 토큰이 없어 대상에서 제외. FastAPI 앱 임포트(라우트 368개 정상 등록) + 무인증 호출 시 401 확인으로 검증 완료.
+- [x] ~~`creditbuckets_daily_batch.sql` 재실행 필요(Supabase SQL 에디터)~~ — 사용자가 2026-08-31 SQL 에디터에서 실행 완료 확인. `sdoc.fn_process_creditbuckets_daily()`의 Ba 크레딧 갱신(Part B) 대상 조회에 `account_billing`에 등록된 계정은 건너뛰는 `NOT EXISTS` 조건이 반영됨(안 그러면 EventBridge(`run-billing-cycle`)를 켰을 때 실제 청구 성공 후 Python이 갱신한 Ba 크레딧을 이 배치가 결제 여부와 무관하게 또 갱신해 이중 갱신되는 문제). **검증**: 사용자가 배포된 함수 소스(`pg_get_functiondef` 결과로 추정)를 그대로 붙여넣어 확인해줌 — 로컬 `creditbuckets_daily_batch.sql`과 한 글자도 다르지 않고 일치, 위 `NOT EXISTS` 조건 포함해 정확히 반영됨. 다음 EventBridge 재청구(첫 대상: `d022f771` 계정 2026-09-26, `0aeded61` 계정 2026-09-20) 시점에 실제 이중 갱신이 안 일어나는지 최종 확인하면 완전히 끝남.
+- [x] ~~Ch/In 서비스는 결제 실패 시 접근 차단 로직이 없음~~ — 2026-08-31 완료, AWS(`d2doc-service`)까지 배포 완료. 기록 당시 "Ch/In은 실제 기능 라우터가 없다"고 판단했던 것 자체가 오류였음(정정: `d2chat/routes.py`·`d2insight/chat/router.py`가 루트 레벨 별도 패키지로 존재하고 `backend/app/routers/__init__.py`에서 그대로 include되는 실제 라우터임 — `backend/app/routers/` 폴더 안만 찾아서 놓쳤던 것). `backend/app/dependencies.py`의 `require_doc_read`/`require_doc_write`를 `_require_service_permission(servicecd, need)` 팩토리로 일반화하고 `require_chat_read`/`write`(Ch), `require_insight_read`/`write`(In)를 추가, d2chat 19개·d2insight 31개 엔드포인트(POST/DELETE→write, GET→read)에 적용 완료. 내부 스케줄러 전용(`/scheduled/run`)·공개 참조 데이터(`/catalog`, `/health`, `/questions`)는 원래부터 토큰이 없어 대상에서 제외. 로컬 `docker run` 스모크테스트 → ECR 푸시(이번엔 Auto Mode 분류기에 안 막힘) → `d2doc-service` force-new-deployment(rolloutState COMPLETED) → 프로덕션 ALB(`d2doc-alb`)에서 `/health` 200, `/api/d2chat/history`·`/api/d2insight/history/{user_id}` 무인증 401 확인까지 전부 완료.
 - [x] ~~`BILLING_CRON_SECRET`을 Secrets Manager(`smartdocu/backend/env`)에 추가 + 태스크 정의 secrets 매핑 등록~~ — 2026-08-27 완료. 사용자가 AWS 콘솔에서 시크릿 키 추가, 태스크 정의(`d2doc-service`)에 secrets 매핑 등록은 이어서 진행(리비전 4는 ARN 포맷 실수로 태스크 기동 실패 — `unexpected ARN format with parameters` — 살아있던 기존 리비전3가 계속 트래픽 처리해서 실서비스 영향 없었음; 리비전 5로 정상 ARN 재등록 후 배포 성공). 프로덕션에서 잘못된 시크릿→403, 정상 시크릿→200(처리 대상 0건, 안전) 확인 완료.
   - **EventBridge Scheduler는 2026-08-27에 만들어뒀지만 DISABLED 상태** — `d2doc-billing-daily-cron`(매일 00:00 KST) → Lambda `d2doc-billing-cron` → `run-billing-cycle` 호출 구조(ALB가 HTTP만 지원해서 API destination 대신 Lambda 경유). **ENABLED 전환은 사용자의 명시적 요청 후에만** — 절대 먼저 켜지 말 것. 상세 리소스 목록/켜는 명령어는 메모리 `portone-integration-progress` 참고.
 
 - [ ] **도메인 연결 + ACM 인증서 + HTTPS 전환** — 도메인 미정. 정해지면 Route53 + ACM 발급 + ALB 리스너 443 추가, `CORS_ORIGINS`/Supabase 리다이렉트 URL 갱신 필요
+- [x] ~~`backend/app/config.py`의 `CORS_ORIGINS`에 현재 운영 주소(`d2doc-alb`) 추가~~ — 2026-09-02 완료. 옛 `smartdocu-backend-alb` 주소는 제거하고 현재 운영 주소(`http://d2doc-alb-2141263733.ap-northeast-2.elb.amazonaws.com`)로 교체, `d2doc-service` 재배포(rolloutState COMPLETED) + `/health` 200 확인까지 완료.
+- [ ] **옛 리소스(`smartdocu-backend-*`) 정리** — `smartdocu-backend-alb`가 `state: active`로 켜진 채 방치돼 트래픽 없이 계속 과금 중(연결된 `smartdocu-backend-service`는 desired=0). ALB/서비스/타겟그룹(`smartdocu-backend-tg`)/ECR 리포지토리(`smartdocu-backend`) 삭제 필요. 2026-09-02 발견, **사용자가 2026-09-08에 직접 제거 예정** — 그 전에는 먼저 삭제하지 말 것.
 - [x] ~~`worker/main.py`에 Audit Log(work_logs) "작성 완료" 기록 추가~~ — 2026-08-28 코드 반영 + 배포 완료.
   - 배경: `sdoc.work_logs`(감사 로그, append-only) 테이블에 일반 사용자의 문서/챕터/항목 작업을 기록하는 시스템을 구축함(`backend/app/main.py`의 ASGI 미들웨어 + 일부 라우터의 직접 `log_work_action()` 호출). 상세는 `utilsPrj/audit_log.py`(`log_work_action`, `snapshot_row`, `get_client_ip`) 참고.
   - 문제였던 것: `backend/app/routers/gendocs.py`의 비동기 SQS 엔드포인트 3개 — `POST /gendocs/genchapters/{id}/rewrite`(챕터 재작성), `POST /gendocs/{id}/generate`(문서 전체 작성), `POST /gendocs/{id}/combine`(챕터 조합) — 는 SQS에 메시지만 던지고 즉시 응답해서, API 요청 시점엔 "요청(`create_requested`)"만 남고 실제 "작성 완료" 기록이 없었음.
