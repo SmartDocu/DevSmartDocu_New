@@ -179,7 +179,7 @@ export default function ReqChaptersReadPage() {
       setRewriting(true)
       message.success(t('msg.chapter.write.started'))
     } catch (e) {
-      message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+      message.error(t('msg.server.error') + ': ' + (t(e.response?.data?.detail) || e.message))
     } finally {
       setRequestLoading(false)
     }
@@ -241,7 +241,7 @@ export default function ReqChaptersReadPage() {
       setGenerating(true)
       message.success(t('msg.doc.write.started'))
     } catch (e) {
-      message.error(t('msg.server.error') + ': ' + (e.response?.data?.detail || e.message))
+      message.error(t('msg.server.error') + ': ' + (t(e.response?.data?.detail) || e.message))
     } finally {
       setRequestLoading(false)
     }

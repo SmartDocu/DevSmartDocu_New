@@ -54,7 +54,7 @@ export default function TenantSubscriptionPage() {
       message.success(t('msg.save.success'))
       navigate('/launcher')
     } catch (err) {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     }
   }
 

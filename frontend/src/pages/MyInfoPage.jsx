@@ -1,16 +1,22 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
-  App, Button, Card, Col, Descriptions, Form, Input, Modal, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
+  App, Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
 import {
   useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions,
-  useMyInfoCreditPurchase, useProCancel, useProCancelUndo,
+  useMyInfoCreditPurchase, useProCancel, useProCancelUndo, useWithdrawAccount,
 } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useLangStore, t } from '@/stores/langStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useTabStore } from '@/stores/tabStore'
+import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
+import WithdrawAccountModal from '@/components/payment/WithdrawAccountModal'
 
 const { Title } = Typography
 
@@ -18,6 +24,11 @@ export default function MyInfoPage() {
   useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const openInTab = useOpenInTab()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { clearAuth } = useAuthStore()
+  const { clearTabs } = useTabStore()
+  const resetLang = useLangStore((s) => s.resetLang)
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
@@ -36,8 +47,9 @@ export default function MyInfoPage() {
   const proCancelMutation = useProCancel()
   const proCancelUndoMutation = useProCancelUndo()
   const [cancelTarget, setCancelTarget] = useState(null)
-  const [cancelReasonCd, setCancelReasonCd] = useState(null)
-  const [cancelReasonDesc, setCancelReasonDesc] = useState('')
+
+  const withdrawMutation = useWithdrawAccount()
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   const userInfo = data.user_info || {}
   const tenant = data.tenant || {}
@@ -83,17 +95,14 @@ export default function MyInfoPage() {
 
   const handleProCancel = (servicecd) => {
     setCancelTarget(servicecd)
-    setCancelReasonCd(null)
-    setCancelReasonDesc('')
   }
 
-  const handleProCancelSubmit = () => {
-    if (!cancelReasonCd) { message.warning(t('msg.select.placeholder')); return }
+  const handleProCancelSubmit = (payload) => {
     proCancelMutation.mutate(
-      { servicecd: cancelTarget, cancel_reasoncd: cancelReasonCd, cancel_reasondesc: cancelReasonDesc || null },
+      { servicecd: cancelTarget, ...payload },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
       },
     )
   }
@@ -103,9 +112,28 @@ export default function MyInfoPage() {
       { servicecd },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
       },
     )
+  }
+
+  const handleWithdrawSubmit = (payload) => {
+    withdrawMutation.mutate(payload, {
+      onSuccess: () => {
+        message.success(t('msg.withdraw.success'))
+        setWithdrawOpen(false)
+        // 계정 자체가 삭제되어 이 토큰은 더 이상 쓸 수 없다 — 로그아웃과 동일하게 정리 후 이동
+        clearTabs()
+        resetLang()
+        clearAuth()
+        queryClient.clear()
+        navigate('/')
+      },
+      onError: (err) => {
+        const detail = err.response?.data?.detail
+        message.error(detail ? t(detail) : t('msg.save.error'))
+      },
+    })
   }
 
   const roleLabel = (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-'
@@ -237,7 +265,7 @@ export default function MyInfoPage() {
                   render: (_, row) => {
                     if (!isSystemTenant) return null
                     if (row.plancd === 'Fr') return (
-                      <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`)}>{t('btn.upgrade.pro')}</Button>
+                      <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`, t('ttl.upgrade.available'))}>{t('btn.upgrade.pro')}</Button>
                     )
                     if (row.cancel_reserved) return (
                       <Space size="small">
@@ -352,38 +380,31 @@ export default function MyInfoPage() {
         />
       </Card>
 
-      <Modal
-        title={t('btn.subscription.cancel')}
+      {/* 회원 탈퇴 — 개인(시스템 테넌트) 계정 전용 */}
+      {isSystemTenant && (
+        <div style={{ textAlign: 'right' }}>
+          <Button type="text" danger size="small" onClick={() => setWithdrawOpen(true)}>
+            {t('btn.account.withdraw')}
+          </Button>
+        </div>
+      )}
+
+      <CancelSubscriptionModal
         open={!!cancelTarget}
-        onOk={handleProCancelSubmit}
-        onCancel={() => setCancelTarget(null)}
-        confirmLoading={proCancelMutation.isPending}
-        okType="danger"
-      >
-        <div style={{ marginBottom: 12, color: '#888', fontSize: 12 }}>{t('inf.pro.cancel.notice')}</div>
-        <div className="form-group">
-          <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.cancel_reasoncd')}:</label>
-          <Select
-            value={cancelReasonCd}
-            onChange={setCancelReasonCd}
-            style={{ width: '100%' }}
-            placeholder={t('msg.select.placeholder')}
-            options={cancelReasonCodes.map((c) => ({
-              label: t(c.term_key) || c.default_name,
-              value: c.codevalue,
-            }))}
-          />
-        </div>
-        <div className="form-group">
-          <label>{t('lbl.cancel_reasondesc')}:</label>
-          <Input.TextArea
-            rows={3}
-            style={{ resize: 'vertical' }}
-            value={cancelReasonDesc}
-            onChange={(e) => setCancelReasonDesc(e.target.value)}
-          />
-        </div>
-      </Modal>
+        onClose={() => setCancelTarget(null)}
+        onSubmit={handleProCancelSubmit}
+        loading={proCancelMutation.isPending}
+        cancelReasonCodes={cancelReasonCodes}
+        allowDowngrade
+      />
+
+      <WithdrawAccountModal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        onSubmit={handleWithdrawSubmit}
+        loading={withdrawMutation.isPending}
+        reasonCodes={cancelReasonCodes}
+      />
     </div>
   )
 }

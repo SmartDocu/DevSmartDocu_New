@@ -45,7 +45,7 @@ export default function AdminUserRolePage() {
         },
         onError: (err) => {
           message.error(
-            err?.response?.data?.detail || t('msg.save.error')
+            t(err?.response?.data?.detail) || t('msg.save.error')
           )
         },
         onSettled: () => {

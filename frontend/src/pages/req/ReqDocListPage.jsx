@@ -347,7 +347,7 @@ export default function ReqDocListPage() {
         doCreate()
       } catch (e) {
         hideLoading()
-        message.error(e.response?.data?.detail || t('msg.server.error'))
+        message.error(t(e.response?.data?.detail) || t('msg.server.error'))
       }
     }
   }

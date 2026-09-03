@@ -357,7 +357,7 @@ export default function D2InsightPage() {
       }
       fetchFavorites()
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2insight.fav_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2insight.fav_error'))
     }
   }
 
@@ -383,7 +383,7 @@ export default function D2InsightPage() {
       setActiveReportIndex(null)
       setViewMode('chat')
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2insight.continue_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2insight.continue_error'))
     }
   }
 
@@ -425,7 +425,7 @@ export default function D2InsightPage() {
     } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (error.response?.data?.detail || error.message) },
+        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (t(error.response?.data?.detail) || error.message) },
       ])
     }
   }
@@ -569,7 +569,7 @@ export default function D2InsightPage() {
     } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (error.response?.data?.detail || error.message) },
+        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (t(error.response?.data?.detail) || error.message) },
       ])
     } finally {
       setIsLoading(false)
@@ -630,7 +630,7 @@ export default function D2InsightPage() {
         if (id === sessionId) handleNewChat()
       }
     } catch (e2) {
-      message.error(e2.response?.data?.detail || t('msg.d2insight.delete_error'))
+      message.error(t(e2.response?.data?.detail) || t('msg.d2insight.delete_error'))
     }
   }
 
@@ -641,7 +641,7 @@ export default function D2InsightPage() {
       await apiClient.post(`/d2insight/schedule/${sid}/share`, { user_id: userId })
       fetchScheduleShares()
     } catch (e) {
-      message.error(e.response?.data?.detail || '공유에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '공유에 실패했습니다.')
     }
   }
 
@@ -651,7 +651,7 @@ export default function D2InsightPage() {
       await apiClient.delete(`/d2insight/schedule/share/${shareUid}/${userId}`)
       fetchScheduleShares()
     } catch (e) {
-      message.error(e.response?.data?.detail || '공유 취소에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '공유 취소에 실패했습니다.')
     }
   }
 
@@ -668,7 +668,7 @@ export default function D2InsightPage() {
           await apiClient.delete(`/d2insight/schedule/turn/${qauid}/${userId}`)
           refresh?.()
         } catch (e) {
-          message.error(e.response?.data?.detail || '삭제에 실패했습니다.')
+          message.error(t(e.response?.data?.detail) || '삭제에 실패했습니다.')
         }
       },
     })
@@ -680,7 +680,7 @@ export default function D2InsightPage() {
       await apiClient.delete(`/d2insight/schedule/shares/received/${shareUid}/${userId}`)
       fetchScheduleShares()
     } catch (e) {
-      message.error(e.response?.data?.detail || '삭제에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '삭제에 실패했습니다.')
     }
   }
 
@@ -697,7 +697,7 @@ export default function D2InsightPage() {
       })
       return data
     } catch (e) {
-      message.error(e.response?.data?.detail || '정기 보고서 등록 확인에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '정기 보고서 등록 확인에 실패했습니다.')
       return null
     }
   }
@@ -722,7 +722,7 @@ export default function D2InsightPage() {
       setHistoryMessages((prev) => markTemplate(prev))
       fetchHistory()
     } catch (e) {
-      message.error(e.response?.data?.detail || '정기 보고서 등록에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '정기 보고서 등록에 실패했습니다.')
     }
   }
 
@@ -736,7 +736,7 @@ export default function D2InsightPage() {
       })
       return data
     } catch (e) {
-      message.error(e.response?.data?.detail || '일정 변경 확인에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '일정 변경 확인에 실패했습니다.')
       return null
     }
   }
@@ -752,7 +752,7 @@ export default function D2InsightPage() {
       loadScheduleSettings(settings.session_id)
       fetchHistory()
     } catch (e) {
-      message.error(e.response?.data?.detail || '일정 변경에 실패했습니다.')
+      message.error(t(e.response?.data?.detail) || '일정 변경에 실패했습니다.')
     }
   }
 
@@ -1454,7 +1454,7 @@ function StepEditPopup({ step, readOnly = false, onDescribeStep, onEditStep, onS
       setStepRemoved(!!data.step_removed)
       if ((data.notes || []).length) setMessage(data.notes.join(' '))
     } catch (e) {
-      setMessage('수정 중 오류가 났습니다: ' + (e?.response?.data?.detail || e.message))
+      setMessage('수정 중 오류가 났습니다: ' + (t(e?.response?.data?.detail) || e.message))
     } finally {
       setSending(false)
     }
@@ -2181,7 +2181,7 @@ function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
       onShared?.()
       onClose()
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2insight.share_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2insight.share_error'))
       setSharing(false)
     }
   }

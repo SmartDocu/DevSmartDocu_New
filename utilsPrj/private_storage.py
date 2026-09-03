@@ -124,6 +124,46 @@ def delete_private_file(sb_service, path: str, expected_accountuid: Optional[str
         pass
 
 
+def delete_private_prefix(sb_service, prefix: str) -> int:
+    """prefix(폴더) 이하의 모든 파일을 재귀적으로 찾아 전부 삭제한다. 계정의 서비스 콘텐츠
+    전체 삭제(content_purge.py) 용도 — 개별 파일 경로를 하나씩 아는 게 아니라 폴더 통째로
+    지워야 할 때 쓴다.
+
+    supabase-py(storage3)에는 prefix 일괄삭제 API가 없어 .list()로 하위 항목을 모으고
+    .remove()로 지운다. .list() 응답에서 폴더는 id/metadata가 둘 다 None, 파일은 둘 다
+    값이 있다(2026-09-03 실측 확인) — 이 구분으로 폴더면 재귀 진입, 파일이면 삭제 대상에 추가.
+    .list()는 기본 limit=100이라 100개 넘는 폴더는 페이지네이션(offset) 없이 돌면 뒷부분이
+    조용히 누락되므로 반드시 offset을 넘겨가며 전부 순회해야 한다."""
+    client = get_service_client().storage.from_(PRIVATE_BUCKET)
+    leaf_paths: list[str] = []
+
+    def _walk(current_prefix: str) -> None:
+        offset = 0
+        page = 100
+        while True:
+            entries = client.list(current_prefix, {"limit": page, "offset": offset}) or []
+            for e in entries:
+                name = e.get("name")
+                if not name:
+                    continue
+                full = f"{current_prefix}/{name}" if current_prefix else name
+                if e.get("id") is None and e.get("metadata") is None:
+                    _walk(full)
+                else:
+                    leaf_paths.append(full)
+            if len(entries) < page:
+                break
+            offset += page
+
+    _walk(prefix.strip("/"))
+    for i in range(0, len(leaf_paths), 100):
+        try:
+            client.remove(leaf_paths[i:i + 100])
+        except Exception:
+            pass
+    return len(leaf_paths)
+
+
 def is_private_path(value: Optional[str]) -> bool:
     """DB에 저장된 값이 (구형) 공개 URL이 아니라 (신형) private 버킷 경로인지 판별.
     구형 값은 항상 http(s):// 로 시작하는 완전한 URL이었다."""

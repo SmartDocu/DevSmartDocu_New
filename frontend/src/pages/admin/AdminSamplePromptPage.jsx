@@ -155,7 +155,7 @@ export default function AdminSamplePromptPage() {
       }, { timeout: 180000 })
       setPreviewResult(resp.data)
     } catch (e) {
-      setPreviewResult({ message_type: 'error', message: e?.response?.data?.detail || t('msg.preview.error') })
+      setPreviewResult({ message_type: 'error', message: t(e?.response?.data?.detail) || t('msg.preview.error') })
     } finally {
       setPreviewLoading(false)
     }

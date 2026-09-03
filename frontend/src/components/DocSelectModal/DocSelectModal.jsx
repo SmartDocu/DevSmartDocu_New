@@ -37,7 +37,7 @@ export default function DocSelectModal({ open, onClose }) {
       })
       .catch((err) => {
         const status = err.response?.status
-        const detail = err.response?.data?.detail || err.message
+        const detail = t(err.response?.data?.detail) || err.message
         console.error('[DocSelectModal] GET /docs 오류:', status, detail)
         message.error(`${t('msg.load.error')} (${status ?? 'network'}): ${detail}`)
       })
@@ -90,7 +90,7 @@ export default function DocSelectModal({ open, onClose }) {
       })
     } catch (err) {
       const status = err.response?.status
-      const detail = err.response?.data?.detail || err.message
+      const detail = t(err.response?.data?.detail) || err.message
       console.error('[DocSelectModal] POST /docs/select 오류:', status, detail)
       message.error(`${t('msg.docselect.error')} (${status ?? 'network'}): ${detail}`)
     } finally {

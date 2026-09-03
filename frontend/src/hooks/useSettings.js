@@ -111,7 +111,7 @@ export function useUpdateUsername() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -125,7 +125,7 @@ export function useUpdateTimezone() {
       useAuthStore.getState().updateUser({ offsetminutes: data.offsetminutes ?? null })
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -138,7 +138,7 @@ export function useUpdateMarketing() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -196,6 +196,12 @@ export function useProCancelUndo() {
   })
 }
 
+export function useWithdrawAccount() {
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/myinfo/withdraw', body).then((r) => r.data),
+  })
+}
+
 // ─── Tenant Subscription (신규 테넌트 셀프 생성) ────────────────────────────────
 
 export function useTenantSubscriptionInit() {
@@ -236,6 +242,26 @@ export function useChangeTenantSubscription() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/tenant-manage/subscription-change', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-subscriptions'] })
+    },
+  })
+}
+
+export function useCancelTenantSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/subscription-cancel', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-subscriptions'] })
+    },
+  })
+}
+
+export function useCancelUndoTenantSubscription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/subscription-cancel-undo', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tenant-manage-subscriptions'] })
     },
@@ -331,7 +357,7 @@ export function useSaveTenantManageMfaConfig() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['tenant-manage-mfa-config'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 

@@ -214,7 +214,7 @@ export default function D2ChatPage() {
       }
       fetchFavorites()
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2chat.fav_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2chat.fav_error'))
     }
   }
 
@@ -223,7 +223,7 @@ export default function D2ChatPage() {
       await apiClient.delete(`/d2chat/favorite/qa/${qauid}`)
       fetchFavorites()
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2chat.fav_delete_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2chat.fav_delete_error'))
     }
   }
 
@@ -263,7 +263,7 @@ export default function D2ChatPage() {
       setShowAutoTest(false)
       setViewMode('chat')
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2chat.continue_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2chat.continue_error'))
     }
   }
 
@@ -320,7 +320,7 @@ export default function D2ChatPage() {
         addMessage('assistant', t('msg.d2chat.error_prefix') + (data.error || t('msg.d2chat.unknown_error')))
       }
     } catch (error) {
-      addMessage('assistant', t('msg.d2chat.chat_error_prefix') + (error.response?.data?.detail || error.message))
+      addMessage('assistant', t('msg.d2chat.chat_error_prefix') + (t(error.response?.data?.detail) || error.message))
     } finally {
       setIsLoading(false)
     }
@@ -383,7 +383,7 @@ export default function D2ChatPage() {
         if (id === sessionId) handleNewChat()
       }
     } catch (e2) {
-      message.error(e2.response?.data?.detail || t('msg.d2chat.delete_error'))
+      message.error(t(e2.response?.data?.detail) || t('msg.d2chat.delete_error'))
     }
   }
 
@@ -851,7 +851,7 @@ function ShareModal({ sessionId, sessionTitle, onClose, onShared }) {
       onShared?.()
       onClose()
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2chat.share_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2chat.share_error'))
       setSharing(false)
     }
   }

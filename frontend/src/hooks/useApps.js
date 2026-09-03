@@ -31,7 +31,7 @@ export function useSaveAppTranslation() {
       qc.invalidateQueries({ queryKey: ['app-translations', appcd] })
       qc.invalidateQueries({ queryKey: ['apps'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -46,6 +46,6 @@ export function useDeleteAppTranslation() {
       qc.invalidateQueries({ queryKey: ['app-translations', appcd] })
       qc.invalidateQueries({ queryKey: ['apps'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
   })
 }

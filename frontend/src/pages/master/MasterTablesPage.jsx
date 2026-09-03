@@ -171,7 +171,7 @@ export default function MasterTablesPage() {
       },
       {
         onSuccess: () => message.success(t('msg.save.success')),
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
       }
     )
   }
@@ -189,7 +189,7 @@ export default function MasterTablesPage() {
               setColjson({})
               setColOrder([])
             },
-            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+            onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
           }
         )
       },
@@ -215,7 +215,7 @@ export default function MasterTablesPage() {
       setPreviewHtml(resp.data.preview_html || '')
       setPreviewOpen(true)
     } catch (e) {
-      message.error(t('msg.preview.error') + ': ' + (e.response?.data?.detail || e.message))
+      message.error(t('msg.preview.error') + ': ' + (t(e.response?.data?.detail) || e.message))
     } finally {
       setPreviewLoading(false)
     }

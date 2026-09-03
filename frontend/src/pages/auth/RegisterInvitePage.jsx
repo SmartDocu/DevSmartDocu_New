@@ -84,7 +84,7 @@ export default function RegisterInvitePage() {
       alert(t('msg.register.success'))
       navigate('/')
     } catch (err) {
-      alert(err.response?.data?.detail || t('msg.register.failed'))
+      alert(t(err.response?.data?.detail) || t('msg.register.failed'))
     } finally {
       setSaving(false)
     }

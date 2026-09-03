@@ -86,7 +86,7 @@ export default function MasterSentencesPage() {
       })
       setPreviewResult(resp.data.result || '')
     } catch (e) {
-      message.error(t('msg.preview.error') + ': ' + (e.response?.data?.detail || e.message))
+      message.error(t('msg.preview.error') + ': ' + (t(e.response?.data?.detail) || e.message))
     } finally {
       setPreviewLoading(false)
     }
@@ -101,7 +101,7 @@ export default function MasterSentencesPage() {
       { objectuid, chapteruid, objectnm, datauid: selectedDatauid, sentencestext: templateText },
       {
         onSuccess: () => message.success(t('msg.save.success')),
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
       }
     )
   }
@@ -120,7 +120,7 @@ export default function MasterSentencesPage() {
               setSelectedDatauid('')
               setDataRows([])
             },
-            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+            onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
           }
         )
       },

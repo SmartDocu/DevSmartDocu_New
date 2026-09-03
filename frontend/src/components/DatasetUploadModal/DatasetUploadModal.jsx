@@ -50,7 +50,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       onSuccess?.(data)
       resetAndClose()
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.d2insight.upload_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2insight.upload_error'))
     } finally {
       setSubmitting(false)
     }
@@ -75,7 +75,7 @@ export default function DatasetUploadModal({ open, sessionId, onClose, onSuccess
       resetAndClose()
     } catch (e) {
       if (e?.errorFields) return // antd form validation error, 조용히 무시
-      message.error(e.response?.data?.detail || t('msg.d2insight.api_connect_error'))
+      message.error(t(e.response?.data?.detail) || t('msg.d2insight.api_connect_error'))
     } finally {
       setSubmitting(false)
     }

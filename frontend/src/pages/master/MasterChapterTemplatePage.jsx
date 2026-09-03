@@ -1132,7 +1132,7 @@ export default function MasterChapterTemplatePage() {
     },
     onError: (err) => {
       setSaveLoading(false)
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 

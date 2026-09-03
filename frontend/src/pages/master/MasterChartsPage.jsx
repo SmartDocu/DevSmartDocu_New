@@ -174,7 +174,7 @@ export default function MasterChartsPage() {
       },
       {
         onSuccess: () => message.success(t('msg.save.success')),
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
       }
     )
   }
@@ -190,7 +190,7 @@ export default function MasterChartsPage() {
               message.success(t('msg.delete.success'))
               handleReset()
             },
-            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+            onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
           }
         )
       },
@@ -221,7 +221,7 @@ export default function MasterChartsPage() {
       setPreviewUrl(url)
       setPreviewOpen(true)
     } catch (e) {
-      message.error(t('msg.preview.error') + ': ' + (e.response?.data?.detail || e.message))
+      message.error(t('msg.preview.error') + ': ' + (t(e.response?.data?.detail) || e.message))
     } finally {
       setPreviewLoading(false)
     }

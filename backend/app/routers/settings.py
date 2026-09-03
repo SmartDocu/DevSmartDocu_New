@@ -751,8 +751,9 @@ def get_myinfo_subscriptions(token: str = Depends(get_token), tenantid: Optional
     if not accountuid:
         return {"subscriptions": []}
 
-    # 예약된 Pro 해지 중 이번 결제 주기가 끝난 건이 있으면 Free로 자동 전환 후 조회
+    # 예약된 Pro 해지 중 이번 결제 주기가 끝난 건이 있으면 Free로 자동 전환(또는 Archived로 전이) 후 조회
     _apply_due_pro_downgrades(svc, accountuid)
+    _apply_due_pro_archival(svc, accountuid)
 
     svcs = svc.table("accountservices").select(
         "productcd,plancd,servicecd,servicestatus,subscriptionuid"
@@ -1464,10 +1465,14 @@ def _apply_due_pro_downgrades(svc, accountuid: str) -> None:
             continue
 
         sub_row = svc.table("subscriptions").select(
-            "subscriptionuid,canceldts,canceluseruid"
+            "subscriptionuid,canceldts,canceluseruid,cancel_typecd"
         ).eq("subscriptionuid", row["subscriptionuid"]).maybe_single().execute()
         sub = sub_row.data if sub_row else None
         if not sub or not sub.get("canceldts"):
+            continue
+        # ArchiveDelete/ImmediateDelete로 예약된 건은 Free 전환이 아니라 _apply_due_pro_archival()이
+        # 처리해야 한다 — 여기서 그대로 두면 옵션1을 고른 사용자가 의도와 다르게 Free로 전환돼버린다.
+        if sub.get("cancel_typecd") in ("ArchiveDelete", "ImmediateDelete"):
             continue
 
         bucket_row = svc.table("creditbuckets").select("expiredts").eq(
@@ -1541,6 +1546,65 @@ def _apply_due_pro_downgrades(svc, accountuid: str) -> None:
                 svc, category="plan", status="info",
                 title="요금제 변경", message=f"'{row['servicecd']}' 서비스 요금제가 무료(Free)로 전환되었습니다.",
                 title_key="msg.notification.plan.downgraded.title", message_key="msg.notification.plan.downgraded.body",
+                params={"servicecd": row["servicecd"]},
+                target_object="accountservice", target_uid=accountuid, target_url="myinfo", target_useruid=actor,
+            )
+
+
+def _apply_due_pro_archival(svc, accountuid: str) -> None:
+    """예약된 '90일 유예 후 삭제'(subscriptions.cancel_typecd='ArchiveDelete') 중 이번 결제
+    주기(Ba 크레딧버킷 expiredts)가 끝난 건을 Archived로 전환한다. _apply_due_pro_downgrades()와
+    동일한 지연 평가 패턴이지만, Free 전환이 아니라 읽기전용(Archived) 상태로 전이한다는 점만 다르다.
+
+    여기서는 상태 전이만 하고 실제 하위 콘텐츠 물리삭제는 하지 않는다 — 파괴적 작업은
+    반드시 별도 배치(content_purge.py의 run-purge-cycle)에서만 처리한다."""
+    from datetime import datetime, timezone as tz
+    from dateutil import parser as dtparser
+
+    active_rows = svc.table("accountservices").select(
+        "servicecd,subscriptionuid,tenantid"
+    ).eq("accountuid", accountuid).eq("servicestatus", "Active").execute().data or []
+
+    for row in active_rows:
+        if not row.get("subscriptionuid"):
+            continue
+
+        sub_row = svc.table("subscriptions").select(
+            "subscriptionuid,canceldts,canceluseruid,cancel_typecd"
+        ).eq("subscriptionuid", row["subscriptionuid"]).maybe_single().execute()
+        sub = sub_row.data if sub_row else None
+        if not sub or not sub.get("canceldts") or sub.get("cancel_typecd") != "ArchiveDelete":
+            continue
+
+        bucket_row = svc.table("creditbuckets").select("expiredts").eq(
+            "subscriptionuid", row["subscriptionuid"]
+        ).eq("creditchargecd", "Ba").maybe_single().execute()
+        expiredts = bucket_row.data.get("expiredts") if bucket_row and bucket_row.data else None
+        if not expiredts:
+            continue
+        try:
+            due = dtparser.parse(expiredts) <= datetime.now(tz.utc)
+        except Exception:
+            continue
+        if not due:
+            continue
+
+        now_utc = datetime.now(tz.utc)
+        actor = sub.get("canceluseruid")
+
+        svc.table("accountservices").update({
+            "servicestatus": "Archived",
+            "archived_dt": now_utc.isoformat(),
+            "purge_immediate": False,
+            "updater": actor,
+        }).eq("accountuid", accountuid).eq("servicecd", row["servicecd"]).execute()
+
+        if actor:
+            create_notification(
+                svc, category="plan", status="info",
+                title="서비스 보관 전환",
+                message=f"'{row['servicecd']}' 서비스가 읽기전용으로 전환되었습니다. 90일 후 데이터가 삭제됩니다.",
+                title_key="msg.notification.service.archived.title", message_key="msg.notification.service.archived.body",
                 params={"servicecd": row["servicecd"]},
                 target_object="accountservice", target_uid=accountuid, target_url="myinfo", target_useruid=actor,
             )
@@ -1663,16 +1727,40 @@ def _next_billing_date(billingday: int, today: date) -> date:
     return _clamp(y, m, billingday)
 
 
+_OVERCAPACITY_REMINDER_COOLDOWN_HOURS = 24
+
+
+def _recent_overcapacity_notification(svc, accountuid: str, servicecd: str, cooldown_hours: int = _OVERCAPACITY_REMINDER_COOLDOWN_HOURS) -> bool:
+    """최근 cooldown_hours 이내에 이 계정+서비스로 인원초과 알림을 이미 보냈는지 확인한다.
+    accountuid 하나가 서비스 여러 개에서 동시에 초과 상태일 수 있어 params.servicecd까지 대조한다."""
+    from datetime import datetime, timedelta, timezone as tz
+
+    cutoff = (datetime.now(tz.utc) - timedelta(hours=cooldown_hours)).isoformat()
+    rows = (
+        svc.table("notifications").select("params,createdts")
+        .eq("target_object", "accountservice").eq("target_uid", accountuid)
+        .eq("titlekey", "msg.notification.overcapacity.title")
+        .gte("createdts", cutoff)
+        .execute().data or []
+    )
+    return any((r.get("params") or {}).get("servicecd") == servicecd for r in rows)
+
+
 def _apply_due_quantity_decreases(svc, accountuid: str) -> None:
     """Add User 등 producttype='User' 상품의 수량 감소 예약(pending_decrease_qty) 중,
     적용일(pending_decrease_applydt)이 도래한 건을 실제로 quantity에서 차감한다.
     증가(+)는 즉시 반영되지만 감소(-)는 다음 결제일까지 유예되는 지연 평가 패턴 —
-    [[_apply_due_feature_cancellations]]와 동일하게 별도 스케줄러 없이 목록 조회 시점에 처리."""
+    [[_apply_due_feature_cancellations]]와 동일하게 별도 스케줄러 없이 목록 조회 시점에 처리.
+
+    신청 시점(change_add_user_quantity)에 이미 활성 인원 기준으로 사전 차단하지만, 신청 후
+    적용일 사이에 인원이 다시 늘어나면 적용 시점에도 초과일 수 있다. 이 경우 감소를 적용하지
+    않고(정원·청구 그대로 유지) 쿨다운을 둔 반복 알림만 보낸다 — 실제로 인원을 줄여야 감소가
+    반영되도록, 다음 조회 시점에 이 함수가 다시 평가한다(옵션 B, 2026-09-03)."""
     from datetime import datetime, timezone as tz
 
     rows = (
         svc.table("subscription_features").select(
-            "subscriptionuid,productcd,tenantid,quantity,pending_decrease_qty,pending_decrease_applydt"
+            "subscriptionuid,productcd,tenantid,quantity,pending_decrease_qty,pending_decrease_applydt,updater,creator"
         )
         .eq("accountuid", accountuid).eq("subscriptionstatus", "Paid")
         .gt("pending_decrease_qty", 0)
@@ -1698,6 +1786,42 @@ def _apply_due_quantity_decreases(svc, accountuid: str) -> None:
 
         decrease_qty = row["pending_decrease_qty"]
         new_quantity = (row.get("quantity") or 0) - decrease_qty
+        removed_units = (row.get("quantity") or 0) if new_quantity <= 0 else decrease_qty
+
+        # 적용 전에 먼저 "적용했을 때의 정원"을 미리 계산해 현재 활성 인원과 비교한다.
+        # 신청 시점엔 안전했어도 그 사이 인원이 다시 늘었으면 여기서 걸린다.
+        if product.get("servicecd"):
+            svcrow = svc.table("accountservices").select(
+                "included_users,add_users"
+            ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
+            accsvc = svcrow.data if svcrow else None
+            if accsvc:
+                removed_users = (product.get("users") or 0) * removed_units
+                future_add_users = max((accsvc.get("add_users") or 0) - removed_users, 0)
+                future_total_users = (accsvc.get("included_users") or 0) + future_add_users
+                active_cnt = svc.table("serviceusers").select("useruid", count="exact").eq(
+                    "accountuid", accountuid
+                ).eq("servicecd", product["servicecd"]).eq("useyn", True).execute()
+                active_count = active_cnt.count or 0
+
+                if active_count > future_total_users:
+                    # 정원·청구 유지 — 감소를 적용하지 않고 다음 조회 시점에 다시 평가되도록 그대로 둔다.
+                    target_useruid = row.get("updater") or row.get("creator")
+                    if target_useruid and not _recent_overcapacity_notification(svc, accountuid, product["servicecd"]):
+                        create_notification(
+                            svc, category="plan", status="error",
+                            title="인원 초과 안내",
+                            message=(
+                                f"'{product['servicecd']}' 서비스 정원을 {future_total_users}명으로 줄이려면 "
+                                f"현재 활성 인원({active_count}명)을 먼저 비활성화해야 합니다. 인원을 정리할 때까지 "
+                                f"기존 정원과 청구가 유지됩니다."
+                            ),
+                            title_key="msg.notification.overcapacity.title", message_key="msg.notification.overcapacity.pending_body",
+                            params={"servicecd": product["servicecd"], "total_users": future_total_users, "active_count": active_count},
+                            target_object="accountservice", target_uid=accountuid,
+                            target_url="org/tenant-users", target_useruid=target_useruid,
+                        )
+                    continue
 
         if new_quantity <= 0:
             svc.table("subscription_features").update({
@@ -1710,7 +1834,6 @@ def _apply_due_quantity_decreases(svc, accountuid: str) -> None:
             svc.table("account_features").delete().eq(
                 "accountuid", accountuid
             ).eq("productcd", row["productcd"]).execute()
-            removed_units = row.get("quantity") or 0
         else:
             svc.table("subscription_features").update({
                 "quantity": new_quantity,
@@ -1718,39 +1841,12 @@ def _apply_due_quantity_decreases(svc, accountuid: str) -> None:
                 "pending_decrease_applydt": None,
                 "updatedts": now_iso,
             }).eq("subscriptionuid", row["subscriptionuid"]).execute()
-            removed_units = decrease_qty
 
-        if product.get("servicecd"):
-            svcrow = svc.table("accountservices").select(
-                "included_users,add_users"
-            ).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).maybe_single().execute()
-            accsvc = svcrow.data if svcrow else None
-            if accsvc:
-                removed_users = (product.get("users") or 0) * removed_units
-                new_add_users = max((accsvc.get("add_users") or 0) - removed_users, 0)
-                new_total_users = (accsvc.get("included_users") or 0) + new_add_users
-                svc.table("accountservices").update({
-                    "add_users": new_add_users,
-                    "total_users": new_total_users,
-                }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
-
-                active_cnt = svc.table("serviceusers").select("useruid", count="exact").eq(
-                    "accountuid", accountuid
-                ).eq("servicecd", product["servicecd"]).eq("useyn", True).execute()
-                active_count = active_cnt.count or 0
-                if active_count > new_total_users:
-                    create_notification(
-                        svc, category="plan", status="error",
-                        title="인원 초과 안내",
-                        message=(
-                            f"'{product['servicecd']}' 서비스 정원이 {new_total_users}명으로 줄었지만 "
-                            f"현재 활성 인원은 {active_count}명입니다. 인원을 비활성화해주세요."
-                        ),
-                        title_key="msg.notification.overcapacity.title", message_key="msg.notification.overcapacity.body",
-                        params={"servicecd": product["servicecd"], "total_users": new_total_users, "active_count": active_count},
-                        target_object="accountservice", target_uid=accountuid,
-                        target_url="org/tenant-users", target_useruid=None,
-                    )
+        if product.get("servicecd") and accsvc:
+            svc.table("accountservices").update({
+                "add_users": future_add_users,
+                "total_users": future_total_users,
+            }).eq("accountuid", accountuid).eq("servicecd", product["servicecd"]).execute()
 
 
 def _calc_addon_users(svc, accountuid: str, servicecd: str) -> int:
@@ -1813,10 +1909,82 @@ def _get_personal_active_subscription(svc, user_id: str, tenantid: Optional[str]
     return accountuid, sub
 
 
+_CANCEL_TYPECDS = {"Downgrade", "ArchiveDelete", "ImmediateDelete"}
+
+
+def _validate_cancel_request(
+    cancel_typecd: str, allowed_typecds: set, confirm_deletion_policy: bool, confirm_delete_phrase: Optional[str]
+) -> None:
+    """구독 해지 요청 공통 검증 — 개인(Pro)/기업 테넌트 양쪽에서 재사용한다."""
+    if cancel_typecd not in allowed_typecds:
+        raise HTTPException(status_code=400, detail="msg.cancel_typecd.invalid")
+    if cancel_typecd != "Downgrade" and not confirm_deletion_policy:
+        raise HTTPException(status_code=400, detail="msg.deletion.policy.confirm.required")
+    # 즉시삭제는 결제기간을 안 채워주는 예외라 체크박스 외에 "DELETE" 확인 구문까지 요구한다.
+    if cancel_typecd == "ImmediateDelete" and confirm_delete_phrase != "DELETE":
+        raise HTTPException(status_code=400, detail="msg.deletion.confirm.phrase.required")
+
+
+def _reserve_service_cancellation(
+    svc, accountuid: str, servicecd: str, subscriptionuid: str, user_id: str,
+    cancel_typecd: str, extra_fields: Optional[dict] = None,
+) -> Optional[str]:
+    """subscriptions에 해지를 예약(canceldts/cancel_typecd 기록)하고, ImmediateDelete면 accountservices를
+    즉시 Archived+purge_immediate=True로 동기 전이한다(물리삭제는 이 안에서 안 함 — content_purge.py 배치가
+    처리). 반환값은 실제 반영 예정일 — ArchiveDelete/Downgrade는 이번 결제 주기(Ba 크레딧버킷 expiredts),
+    ImmediateDelete는 오늘. 개인(Pro)/기업 테넌트 양쪽에서 재사용한다."""
+    from datetime import datetime, timezone as tz
+
+    now_utc = datetime.now(tz.utc)
+    payload = {
+        "canceluseruid": user_id,
+        "canceldts": now_utc.isoformat(),
+        "cancel_typecd": cancel_typecd,
+        "updater": user_id,
+        "updatedts": now_utc.isoformat(),
+    }
+    if extra_fields:
+        payload.update(extra_fields)
+    svc.table("subscriptions").update(payload).eq("subscriptionuid", subscriptionuid).execute()
+
+    if cancel_typecd == "ImmediateDelete":
+        svc.table("accountservices").update({
+            "servicestatus": "Archived",
+            "archived_dt": now_utc.isoformat(),
+            "purge_immediate": True,
+            "updater": user_id,
+        }).eq("accountuid", accountuid).eq("servicecd", servicecd).execute()
+        return now_utc.date().isoformat()
+
+    bucket_row = svc.table("creditbuckets").select("expiredts").eq(
+        "subscriptionuid", subscriptionuid
+    ).eq("creditchargecd", "Ba").maybe_single().execute()
+    return bucket_row.data.get("expiredts") if bucket_row and bucket_row.data else None
+
+
+def _undo_service_cancellation(svc, subscriptionuid: str, user_id: str) -> None:
+    """예약된 해지 철회 — subscriptions의 해지 관련 필드를 초기화한다.
+    개인(Pro)/기업 테넌트 양쪽에서 재사용한다."""
+    from datetime import datetime, timezone as tz
+
+    svc.table("subscriptions").update({
+        "canceluseruid": None,
+        "canceldts": None,
+        "cancel_reasoncd": None,
+        "cancel_reasondesc": None,
+        "cancel_typecd": None,
+        "updater": user_id,
+        "updatedts": datetime.now(tz.utc).isoformat(),
+    }).eq("subscriptionuid", subscriptionuid).execute()
+
+
 class ProCancelRequest(BaseModel):
     servicecd: str
     cancel_reasoncd: str
     cancel_reasondesc: Optional[str] = None
+    cancel_typecd: str = "Downgrade"
+    confirm_deletion_policy: bool = False
+    confirm_delete_phrase: Optional[str] = None
 
 
 @router.post("/myinfo/pro-cancel")
@@ -1826,41 +1994,46 @@ def request_pro_cancel(
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """개인(Pro) 요금제 해지 예약 — 즉시 다운그레이드하지 않고, 이미 낸 결제는 그대로 두고
-    현재 결제 주기가 끝나는 시점까지 Pro를 유지한 뒤 자동으로 Free로 전환한다."""
+    """개인(Pro) 요금제 해지 예약 — 3가지 처리 방식 중 하나를 고른다.
+
+    - Downgrade(기본, 기존 동작): 즉시 다운그레이드하지 않고 이미 낸 결제는 그대로 두고
+      현재 결제 주기가 끝나는 시점까지 Pro를 유지한 뒤 자동으로 Free로 전환한다.
+    - ArchiveDelete(옵션1): Downgrade와 동일하게 결제 주기가 끝날 때까지 대기하지만,
+      끝나는 시점에 Free 전환이 아니라 Archived(90일 읽기전용) 상태로 전이한다
+      (_apply_due_pro_archival() 참고). 90일 후 실제 삭제는 배치(content_purge.py)가 처리.
+    - ImmediateDelete(옵션2): 결제 주기를 기다리지 않고 요청 즉시 Archived+purge_immediate=True로
+      전이한다(=이미 낸 결제 기간을 채워주지 않음. 사용자가 명시적으로 선택한 예외 케이스).
+      실제 데이터 물리삭제는 이 요청 안에서 하지 않고 배치가 다음 실행 시 처리한다."""
     from datetime import datetime, timezone as tz
 
     user = _get_user(token)
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
 
+    _validate_cancel_request(body.cancel_typecd, _CANCEL_TYPECDS, body.confirm_deletion_policy, body.confirm_delete_phrase)
+
     accountuid, sub = _get_personal_active_subscription(svc, user_id, tenantid, body.servicecd)
     if sub.get("canceldts"):
         raise HTTPException(status_code=400, detail="이미 해지가 예약되어 있습니다.")
 
-    now_utc = datetime.now(tz.utc)
-    svc.table("subscriptions").update({
-        "canceluseruid": user_id,
-        "canceldts": now_utc.isoformat(),
-        "cancel_reasoncd": body.cancel_reasoncd,
-        "cancel_reasondesc": body.cancel_reasondesc,
-        "updater": user_id,
-        "updatedts": now_utc.isoformat(),
-    }).eq("subscriptionuid", sub["subscriptionuid"]).execute()
-
-    bucket_row = svc.table("creditbuckets").select("expiredts").eq(
-        "subscriptionuid", sub["subscriptionuid"]
-    ).eq("creditchargecd", "Ba").maybe_single().execute()
-    effective_date = bucket_row.data.get("expiredts") if bucket_row and bucket_row.data else None
+    request_dts = datetime.now(tz.utc).isoformat()
+    effective_date = _reserve_service_cancellation(
+        svc, accountuid, body.servicecd, sub["subscriptionuid"], user_id, body.cancel_typecd,
+        extra_fields={"cancel_reasoncd": body.cancel_reasoncd, "cancel_reasondesc": body.cancel_reasondesc},
+    )
 
     log_work_action(
         useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
         actioncd="update", targettype="settings/myinfo/pro-cancel", targetid=sub["subscriptionuid"],
-        before={"canceldts": sub.get("canceldts")}, after={"canceldts": now_utc.isoformat()},
-        detail={"cancel_reasoncd": body.cancel_reasoncd},
+        before={"canceldts": sub.get("canceldts")}, after={"canceldts": request_dts},
+        detail={
+            "cancel_reasoncd": body.cancel_reasoncd,
+            "cancel_typecd": body.cancel_typecd,
+            "confirm_deletion_policy": body.confirm_deletion_policy,
+        },
         ip=get_client_ip(request),
     )
-    return {"result": "success", "effective_date": effective_date}
+    return {"result": "success", "effective_date": effective_date, "cancel_typecd": body.cancel_typecd}
 
 
 class ProCancelUndoRequest(BaseModel):
@@ -1875,8 +2048,6 @@ def undo_pro_cancel(
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
     """예약된 Pro 해지 철회 — 결제 주기가 끝나기 전까지만 가능하다."""
-    from datetime import datetime, timezone as tz
-
     user = _get_user(token)
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
@@ -1885,14 +2056,16 @@ def undo_pro_cancel(
     if not sub.get("canceldts"):
         raise HTTPException(status_code=400, detail="예약된 해지가 없습니다.")
 
-    svc.table("subscriptions").update({
-        "canceluseruid": None,
-        "canceldts": None,
-        "cancel_reasoncd": None,
-        "cancel_reasondesc": None,
-        "updater": user_id,
-        "updatedts": datetime.now(tz.utc).isoformat(),
-    }).eq("subscriptionuid", sub["subscriptionuid"]).execute()
+    # ImmediateDelete는 신청 즉시 Archived로 동기 전이되므로 신청 순간부터 철회 불가.
+    # ArchiveDelete/Downgrade는 결제 주기가 끝나기 전(=아직 Active)까지만 철회 가능(기존 규칙과 동일).
+    accsvc_row = svc.table("accountservices").select("servicestatus").eq(
+        "accountuid", accountuid
+    ).eq("servicecd", body.servicecd).maybe_single().execute()
+    accsvc_status = accsvc_row.data.get("servicestatus") if accsvc_row and accsvc_row.data else None
+    if accsvc_status in ("Archived", "Deleted"):
+        raise HTTPException(status_code=400, detail="이미 처리가 시작되어 철회할 수 없습니다.")
+
+    _undo_service_cancellation(svc, sub["subscriptionuid"], user_id)
 
     log_work_action(
         useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
@@ -1901,6 +2074,103 @@ def undo_pro_cancel(
         ip=get_client_ip(request),
     )
     return {"result": "success"}
+
+
+class WithdrawAccountRequest(BaseModel):
+    confirm_deletion_policy: bool = False
+    reasoncd: Optional[str] = None
+    reasondesc: Optional[str] = None
+
+
+@router.post("/myinfo/withdraw")
+def withdraw_personal_account(
+    body: WithdrawAccountRequest,
+    request: Request,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """개인(시스템 테넌트) 계정 탈퇴.
+
+    1. 보유 중인 모든 활성 서비스(Do/Ch/In, Free 포함)를 90일 유예 삭제(ArchiveDelete)로
+       일괄 예약한다 — 실제 콘텐츠 물리 삭제는 기존 배치(content_purge.py)가 처리한다.
+    2. sdoc.users 행을 초기화한다: email/usernm은 공백(재가입을 허용하는 의도 — 결제/세금계산서
+       등 법적 보존이 필요한 이메일은 accounts.encemail이 이미 암호화해 별도 보관 중이라 여기서
+       따로 암호화 보존할 필요가 없다), isemailconfirm/default_tenantid/electronicfinancialtermsyn은
+       null, useyn=False. termsofuseyn/userinfoyn/marketingyn(동의 이력)은 그대로 둔다.
+    3. Supabase Auth(GoTrue) 사용자를 하드 삭제한다 — sdoc.users.useyn만 바꿔서는 로그인이
+       막히지 않는다(어떤 라우터의 인증 흐름도 이 필드를 확인하지 않음, get_user()는 JWT
+       유효성만 봄). 실제 재로그인 차단을 보장하려면 Auth 쪽도 반드시 같이 지워야 한다 —
+       그래서 이 호출을 마지막에 둔다(이후 이 토큰으로는 어떤 API도 호출할 수 없게 됨)."""
+    if not body.confirm_deletion_policy:
+        raise HTTPException(status_code=400, detail="msg.withdraw.policy.confirm.required")
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, issystemtenant = _get_tenant_and_issystemtenant(svc, user_id, tenantid)
+    if not issystemtenant:
+        raise HTTPException(status_code=400, detail="msg.withdraw.system_tenant_only")
+
+    # 지금 선택된 테넌트가 개인 테넌트여도, 이 사람이 다른 "기업" 테넌트의 관리자(rolecd='M')로
+    # 등록돼 있으면 탈퇴를 막는다 — 관리자가 사라지면 그 테넌트가 고아 상태가 되기 때문.
+    mgr_tenantids = [
+        r["tenantid"] for r in (
+            svc.table("tenantusers").select("tenantid")
+            .eq("useruid", user_id).eq("useyn", True).eq("rolecd", "M").execute().data or []
+        )
+    ]
+    if mgr_tenantids:
+        org_tenants = svc.table("tenants").select("tenantid").in_(
+            "tenantid", mgr_tenantids
+        ).eq("issystemtenant", False).execute().data or []
+        if org_tenants:
+            raise HTTPException(status_code=400, detail="msg.withdraw.org_manager_blocked")
+
+    acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
+    accountuid = acc.data["accountuid"] if acc and acc.data else None
+
+    reserved_services: list[str] = []
+    if accountuid:
+        accsvcs = svc.table("accountservices").select(
+            "servicecd,subscriptionuid"
+        ).eq("accountuid", accountuid).eq("servicestatus", "Active").execute().data or []
+        for row in accsvcs:
+            subscriptionuid = row.get("subscriptionuid")
+            if not subscriptionuid:
+                continue
+            sub_row = svc.table("subscriptions").select("canceldts").eq(
+                "subscriptionuid", subscriptionuid
+            ).maybe_single().execute()
+            if sub_row and sub_row.data and sub_row.data.get("canceldts"):
+                continue  # 이미 별도로 해지가 예약된 서비스는 건드리지 않는다
+            _reserve_service_cancellation(
+                svc, accountuid, row["servicecd"], subscriptionuid, user_id, "ArchiveDelete",
+            )
+            reserved_services.append(row["servicecd"])
+
+    before_user = svc.table("users").select("*").eq("useruid", user_id).maybe_single().execute()
+    svc.table("users").update({
+        "email": "",
+        "usernm": "",
+        "isemailconfirm": None,
+        "default_tenantid": None,
+        "electronicfinancialtermsyn": None,
+        "useyn": False,
+    }).eq("useruid", user_id).execute()
+
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        actioncd="update", targettype="settings/myinfo/withdraw", targetid=user_id,
+        before=before_user.data if before_user else None,
+        after={"useyn": False, "reserved_services": reserved_services},
+        detail={"reasoncd": body.reasoncd, "reasondesc": body.reasondesc},
+        ip=get_client_ip(request),
+    )
+
+    get_service_client().auth.admin.delete_user(user_id)
+
+    return {"result": "success", "reserved_services": reserved_services}
 
 
 # ══════════════════════════════════════════════════════
@@ -1990,15 +2260,22 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
                     "servicecd": c["codevalue"], "productcd": None, "productnm": None,
                     "plancd": None, "billingtermcd": None, "users": None, "credit": None,
                     "servicestatus": None, "included_users": None, "add_users": None,
+                    "cancel_reserved": False, "cancel_effective_date": None,
                 }
                 for c in service_codes
             ],
             "accountuid": None,
         }
 
+    # 예약된 서비스 해지(90일 유예삭제) 중 이번 결제 주기가 끝난 건이 있으면 Archived로 전이한 뒤 조회 —
+    # 개인(Pro) 쪽 get_myinfo_subscriptions()와 동일한 지연평가 트리거 패턴. 기업 테넌트는 Downgrade
+    # 예약 자체가 생기지 않으므로(아래 신규 엔드포인트가 ArchiveDelete/ImmediateDelete만 허용) 여기선
+    # _apply_due_pro_downgrades()는 호출하지 않는다.
+    _apply_due_pro_archival(svc, accountuid)
+
     rows = (
         svc.table("accountservices")
-        .select("servicecd,productcd,plancd,servicestatus,included_users,add_users")
+        .select("servicecd,productcd,plancd,servicestatus,included_users,add_users,subscriptionuid")
         .eq("accountuid", accountuid)
         .execute()
         .data or []
@@ -2012,6 +2289,24 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
     ) if productcds else []
     prod_map = {p["productcd"]: p for p in prods}
 
+    # 서비스 해지 예약 여부/반영 예정일 — subscriptions.canceldts 존재 여부 + Ba 크레딧버킷 expiredts
+    # (개인 get_myinfo_subscriptions()의 cancel_map/bucket_map 계산과 동일한 방식)
+    sub_ids = [r["subscriptionuid"] for r in rows if r.get("subscriptionuid")]
+    cancel_map = {}
+    bucket_map = {}
+    if sub_ids:
+        cancel_rows = svc.table("subscriptions").select("subscriptionuid,canceldts").in_(
+            "subscriptionuid", sub_ids
+        ).execute().data or []
+        cancel_map = {r["subscriptionuid"]: r.get("canceldts") for r in cancel_rows}
+
+        bucket_rows = svc.table("creditbuckets").select("subscriptionuid,expiredts").in_(
+            "subscriptionuid", sub_ids
+        ).eq("creditchargecd", "Ba").execute().data or []
+        bucket_map = {r["subscriptionuid"]: r.get("expiredts") for r in bucket_rows}
+
+    offsetminutes = _get_offsetminutes(get_service_client(), user_id, tenantid)
+
     result = []
     for c in service_codes:
         scd = c["codevalue"]
@@ -2021,9 +2316,12 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
                 "servicecd": scd, "productcd": None, "productnm": None,
                 "plancd": None, "billingtermcd": None, "users": None, "credit": None,
                 "servicestatus": None, "included_users": None, "add_users": None,
+                "cancel_reserved": False, "cancel_effective_date": None,
             })
             continue
         p = prod_map.get(r.get("productcd"), {})
+        sub_id = r.get("subscriptionuid")
+        cancel_reserved = bool(cancel_map.get(sub_id))
         result.append({
             "servicecd": scd,
             "productcd": r.get("productcd"),
@@ -2035,9 +2333,135 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
             "servicestatus": r.get("servicestatus"),
             "included_users": r.get("included_users"),
             "add_users": r.get("add_users"),
+            "cancel_reserved": cancel_reserved,
+            "cancel_effective_date": _fmt_dt(bucket_map.get(sub_id), offsetminutes) if cancel_reserved else None,
         })
 
     return {"subscriptions": result, "accountuid": accountuid}
+
+
+_TENANT_CANCEL_TYPECDS = {"ArchiveDelete", "ImmediateDelete"}
+
+
+class TenantSubscriptionCancelRequest(BaseModel):
+    servicecd: str
+    cancel_reasoncd: str
+    cancel_reasondesc: Optional[str] = None
+    cancel_typecd: str
+    confirm_deletion_policy: bool = False
+    confirm_delete_phrase: Optional[str] = None
+
+
+@router.post("/tenant-manage/subscription-cancel")
+def request_tenant_subscription_cancel(
+    body: TenantSubscriptionCancelRequest,
+    request: Request,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """구독 관리 화면: 서비스 해지 예약 — 90일 유예삭제(ArchiveDelete) 또는 즉시삭제(ImmediateDelete)만
+    허용한다. 개인 Pro의 Downgrade(Free 전환)에 해당하는 선택지는 기업 테넌트엔 없다 — 서비스가
+    프로젝트의 상위 개념이라 해지는 곧 하위 프로젝트 데이터 보관정책 결정이지 요금제 다운그레이드가
+    아니기 때문. 신청은 즉시 접수되고 실제 반영(Archived 전이)은 결제주기 종료 후라는 동작 자체는
+    개인 Pro 해지와 동일 — _reserve_service_cancellation()/_apply_due_pro_archival()/content_purge.py를
+    그대로 재사용한다(둘 다 accountuid+servicecd로만 스코프돼 테넌트 종류를 구분하지 않음)."""
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    _validate_cancel_request(body.cancel_typecd, _TENANT_CANCEL_TYPECDS, body.confirm_deletion_policy, body.confirm_delete_phrase)
+
+    accsvc_row = svc.table("accountservices").select("subscriptionuid").eq(
+        "accountuid", accountuid
+    ).eq("servicecd", body.servicecd).eq("servicestatus", "Active").maybe_single().execute()
+    accsvc = accsvc_row.data if accsvc_row else None
+    if not accsvc or not accsvc.get("subscriptionuid"):
+        raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+
+    sub_row = svc.table("subscriptions").select("subscriptionuid,canceldts").eq(
+        "subscriptionuid", accsvc["subscriptionuid"]
+    ).maybe_single().execute()
+    sub = sub_row.data if sub_row else None
+    if not sub:
+        raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+    if sub.get("canceldts"):
+        raise HTTPException(status_code=400, detail="이미 해지가 예약되어 있습니다.")
+
+    request_dts = datetime.now(tz.utc).isoformat()
+    effective_date = _reserve_service_cancellation(
+        svc, accountuid, body.servicecd, sub["subscriptionuid"], user_id, body.cancel_typecd,
+        extra_fields={"cancel_reasoncd": body.cancel_reasoncd, "cancel_reasondesc": body.cancel_reasondesc},
+    )
+
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/subscription-cancel", targetid=sub["subscriptionuid"],
+        before={"canceldts": sub.get("canceldts")}, after={"canceldts": request_dts},
+        detail={
+            "cancel_reasoncd": body.cancel_reasoncd,
+            "cancel_typecd": body.cancel_typecd,
+            "confirm_deletion_policy": body.confirm_deletion_policy,
+        },
+        ip=get_client_ip(request),
+    )
+    return {"result": "success", "effective_date": effective_date, "cancel_typecd": body.cancel_typecd}
+
+
+class TenantSubscriptionCancelUndoRequest(BaseModel):
+    servicecd: str
+
+
+@router.post("/tenant-manage/subscription-cancel-undo")
+def undo_tenant_subscription_cancel(
+    body: TenantSubscriptionCancelUndoRequest,
+    request: Request,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """구독 관리 화면: 예약된 서비스 해지 철회 — 결제 주기가 끝나기 전(=아직 Active)까지만 가능하다."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    accsvc_row = svc.table("accountservices").select("subscriptionuid,servicestatus").eq(
+        "accountuid", accountuid
+    ).eq("servicecd", body.servicecd).maybe_single().execute()
+    accsvc = accsvc_row.data if accsvc_row else None
+    if not accsvc or not accsvc.get("subscriptionuid"):
+        raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+    if accsvc.get("servicestatus") in ("Archived", "Deleted"):
+        raise HTTPException(status_code=400, detail="이미 처리가 시작되어 철회할 수 없습니다.")
+
+    sub_row = svc.table("subscriptions").select("subscriptionuid,canceldts").eq(
+        "subscriptionuid", accsvc["subscriptionuid"]
+    ).maybe_single().execute()
+    sub = sub_row.data if sub_row else None
+    if not sub or not sub.get("canceldts"):
+        raise HTTPException(status_code=400, detail="예약된 해지가 없습니다.")
+
+    _undo_service_cancellation(svc, sub["subscriptionuid"], user_id)
+
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/subscription-cancel-undo", targetid=sub["subscriptionuid"],
+        before={"canceldts": sub.get("canceldts")}, after={"canceldts": None},
+        ip=get_client_ip(request),
+    )
+    return {"result": "success"}
 
 
 def _get_user_currencycd(svc, user_id: str, tenantid: Optional[str] = None) -> str:
@@ -2687,6 +3111,15 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
             unit_price = None
             if p.get("producttype") == "User":
                 unit_price = _get_current_price(svc, r["productcd"], p.get("billingtermcd"), currencycd)
+            # 적용일이 지났는데도 pending_decrease_qty가 안 비었으면 인원 초과로 보류 중인 것
+            # (_apply_due_quantity_decreases 참고) — 화면에 "예정" 대신 "보류"로 구분해 보여준다.
+            pending_decrease_blocked = False
+            applydt = r.get("pending_decrease_applydt")
+            if (r.get("pending_decrease_qty") or 0) > 0 and applydt:
+                try:
+                    pending_decrease_blocked = date.fromisoformat(applydt) <= date.today()
+                except Exception:
+                    pending_decrease_blocked = False
             owned.append({
                 "subscriptionuid": r["subscriptionuid"],
                 "productcd": r["productcd"],
@@ -2697,6 +3130,7 @@ def get_tenant_manage_other_subscriptions(token: str = Depends(get_token), tenan
                 "quantity": r.get("quantity") or 1,
                 "pending_decrease_qty": r.get("pending_decrease_qty") or 0,
                 "pending_decrease_applydt": r.get("pending_decrease_applydt"),
+                "pending_decrease_blocked": pending_decrease_blocked,
                 "unit_price": unit_price,
                 "currencycd": currencycd if unit_price is not None else None,
                 "createdts": _fmt_dt(r.get("createdts"), offsetminutes),

@@ -67,7 +67,7 @@ export default function OrgTenantBasicInfoPage() {
     if (iconFile) fd.append('iconfile', iconFile)
     saveMutation.mutate(fd, {
       onSuccess: () => { message.success(t('msg.save.success')) },
-      onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+      onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
     })
   }
 

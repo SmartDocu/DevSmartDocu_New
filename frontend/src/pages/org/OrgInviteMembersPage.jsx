@@ -93,7 +93,7 @@ export default function OrgInviteMembersPage() {
       { emails: form.emails, servicecd: form.servicecd },
       {
         onSuccess: (data) => { message.success(data?.message || t('msg.invite.sent')); handleNew() },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
       },
     )
   }

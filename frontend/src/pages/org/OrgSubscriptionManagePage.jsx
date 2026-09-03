@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
-import { App, Alert, Radio, Spin } from 'antd'
+import { App, Alert, Button, Radio, Space, Spin, Tag } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
   useTenantManageSubscriptions,
   useTenantManageTeamProducts,
   useChangeTenantSubscription,
+  useCancelTenantSubscription,
+  useCancelUndoTenantSubscription,
 } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
+import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
 
 export default function OrgSubscriptionManagePage() {
   const { message, modal } = App.useApp()
@@ -27,6 +30,10 @@ export default function OrgSubscriptionManagePage() {
 
   const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('org/payment-manage')
   const changeMutation = useChangeTenantSubscription()
+  const cancelMutation = useCancelTenantSubscription()
+  const cancelUndoMutation = useCancelUndoTenantSubscription()
+  const { data: cancelReasonCodes = [] } = useMenuCodes('cancel_reasoncd')
+  const [cancelTarget, setCancelTarget] = useState(null)
 
   // 상품 목록 로딩 완료 시 현재 구독 중인 상품을 기본 선택
   useEffect(() => {
@@ -82,6 +89,32 @@ export default function OrgSubscriptionManagePage() {
     })
   }
 
+  const handleCancel = (servicecd, e) => {
+    e.stopPropagation()
+    setCancelTarget(servicecd)
+  }
+
+  const handleCancelSubmit = (payload) => {
+    cancelMutation.mutate(
+      { servicecd: cancelTarget, ...payload },
+      {
+        onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+      },
+    )
+  }
+
+  const handleCancelUndo = (servicecd, e) => {
+    e.stopPropagation()
+    cancelUndoMutation.mutate(
+      { servicecd },
+      {
+        onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+      },
+    )
+  }
+
   return (
     <div>
       <div className="page-title">
@@ -102,17 +135,18 @@ export default function OrgSubscriptionManagePage() {
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer', tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '15%' }}>{t('lbl.service_name_lbl')}</th>
-                  <th style={{ width: '50%' }}>{t('lbl.product')}</th>
-                  <th style={{ width: '15%' }}>{t('lbl.plan')}</th>
-                  <th style={{ width: '20%' }}>{t('lbl.items')}</th>
+                  <th style={{ width: '12%' }}>{t('lbl.service_name_lbl')}</th>
+                  <th style={{ width: '24%' }}>{t('lbl.product')}</th>
+                  <th style={{ width: '12%' }}>{t('lbl.plan')}</th>
+                  <th style={{ width: '16%' }}>{t('lbl.items')}</th>
+                  <th style={{ width: '36%' }} />
                 </tr>
               </thead>
               <tbody>
                 {subsLoading ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : subscriptions.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : subscriptions.map((s) => (
                   <tr
                     key={s.servicecd}
@@ -120,9 +154,21 @@ export default function OrgSubscriptionManagePage() {
                     onClick={() => handleSelectRow(s)}
                   >
                     <td>{codeLabel(serviceCodes, s.servicecd)}</td>
-                    <td>{s.productnm || '-'}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.productnm || ''}>{s.productnm || '-'}</td>
                     <td>{s.plancd ? codeLabel(planCodes, s.plancd) : '-'}</td>
                     <td>{s.users ? `${s.users} users / ${s.credit ?? 0} credit` : '-'}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {s.servicestatus === 'Active' && s.productcd ? (
+                        s.cancel_reserved ? (
+                          <Space direction="vertical" size={4} style={{ alignItems: 'flex-start' }}>
+                            <Tag color="orange" style={{ whiteSpace: 'normal' }}>{t('lbl.pro.cancel.reserved')}{s.cancel_effective_date ? ` (${s.cancel_effective_date})` : ''}</Tag>
+                            <Button size="small" loading={cancelUndoMutation.isPending} onClick={(e) => handleCancelUndo(s.servicecd, e)}>{t('btn.pro.cancel.undo')}</Button>
+                          </Space>
+                        ) : (
+                          <Button size="small" danger onClick={(e) => handleCancel(s.servicecd, e)}>{t('btn.subscription.cancel')}</Button>
+                        )
+                      ) : '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -201,6 +247,14 @@ export default function OrgSubscriptionManagePage() {
           </div>
         </div>
       )}
+
+      <CancelSubscriptionModal
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onSubmit={handleCancelSubmit}
+        loading={cancelMutation.isPending}
+        cancelReasonCodes={cancelReasonCodes}
+      />
     </div>
   )
 }

@@ -90,7 +90,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       if (ex.displaytype !== undefined) setSelectedDisplayType(ex.displaytype || '')
       if (ex.gptq !== undefined)        setPromptText(ex.gptq || '')
     }).catch((e) => {
-      const detail = e.response?.data?.detail || e.message || t('msg.unknown.error')
+      const detail = t(e.response?.data?.detail) || e.message || t('msg.unknown.error')
       message.error(`${t('msg.init.load.error')}: ${detail}`)
     })
       .finally(() => setInitLoading(false))
@@ -176,7 +176,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         })
       }
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.preview.error'))
+      message.error(t(e.response?.data?.detail) || t('msg.preview.error'))
     } finally {
       setPreviewLoading(false)
     }
@@ -199,7 +199,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       })
       message.success(t('msg.save.success'))
     } catch (e) {
-      message.error(e.response?.data?.detail || t('msg.save.error'))
+      message.error(t(e.response?.data?.detail) || t('msg.save.error'))
     } finally {
       setSaveLoading(false)
     }
@@ -219,7 +219,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
           setSelectedDatauid('')
           setSelectedDisplayType('')
         } catch (e) {
-          message.error(e.response?.data?.detail || t('msg.delete.error'))
+          message.error(t(e.response?.data?.detail) || t('msg.delete.error'))
         } finally {
           setDeleteLoading(false)
         }

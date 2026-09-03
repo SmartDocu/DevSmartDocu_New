@@ -21,7 +21,7 @@ export function useSaveObject() {
       qc.invalidateQueries({ queryKey: ['objects', body.chapteruid] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 }
@@ -37,7 +37,7 @@ export function useDeleteObject() {
       qc.invalidateQueries({ queryKey: ['objects', chapteruid] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.delete.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.delete.error'))
     },
   })
 }

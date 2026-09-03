@@ -115,7 +115,7 @@ export default function ReqChapterObjectsPage() {
       message.success(t('msg.object.write.complete'))
       setSelectedRow((prev) => prev)
     } catch (err) {
-      message.error(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
+      message.error(t('msg.server.error') + ': ' + (t(err.response?.data?.detail) || err.message))
     } finally {
       setShowLoading(false)
       setLoadingText('')
@@ -132,7 +132,7 @@ export default function ReqChapterObjectsPage() {
           await applyMutation.mutateAsync()
           message.success(t('msg.object.apply.complete'))
         } catch (err) {
-          message.error(t('msg.server.error') + ': ' + (err.response?.data?.detail || err.message))
+          message.error(t('msg.server.error') + ': ' + (t(err.response?.data?.detail) || err.message))
         } finally {
           setShowLoading(false)
           setLoadingText('')

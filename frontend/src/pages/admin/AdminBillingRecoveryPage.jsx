@@ -19,7 +19,7 @@ export default function AdminBillingRecoveryPage() {
 
   const handleRetry = (accountuid) => {
     retryMutation.mutate(accountuid, {
-      onError: (err) => { message.error(err.response?.data?.detail || t('msg.billing.retry.error')) },
+      onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.billing.retry.error')) },
     })
   }
 

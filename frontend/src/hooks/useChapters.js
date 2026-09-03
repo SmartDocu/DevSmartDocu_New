@@ -24,7 +24,7 @@ export function useSaveChapter() {
       qc.invalidateQueries({ queryKey: ['chapters', Number(docid)] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 }
@@ -40,7 +40,7 @@ export function useDeleteChapter() {
       qc.invalidateQueries({ queryKey: ['chapters', docid] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.delete.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.delete.error'))
     },
   })
 }

@@ -40,7 +40,7 @@ export default function OrgTenantLlmsPage() {
       { projectid: selectedId, llmmodelnm: form.llmmodelnm || null, apikey: form.apikey || '' },
       {
         onSuccess: () => message.success(t('msg.save.success')),
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
       }
     )
   }
@@ -56,7 +56,7 @@ export default function OrgTenantLlmsPage() {
           { projectid: selectedId },
           {
             onSuccess: () => { message.success(t('msg.delete.success')); setSelectedId(null); setForm(EMPTY_FORM) },
-            onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+            onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
           }
         )
       },

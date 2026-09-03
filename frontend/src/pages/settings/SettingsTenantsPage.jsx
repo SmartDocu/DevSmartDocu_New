@@ -64,7 +64,7 @@ export default function SettingsTenantsPage() {
     if (iconFile) fd.append('iconfile', iconFile)
     saveTenant.mutate(fd, {
       onSuccess: () => { message.success(t('msg.save.success')) },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+      onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
     })
   }
 

@@ -123,7 +123,7 @@ export default function OrgOtherSubscriptionManagePage() {
             onSuccess: (res) => {
               message.success(t('msg.quantity.decrease.scheduled').replace('{qty}', delta).replace('{date}', res.effective_date || ''))
             },
-            onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+            onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
           },
         )
       },
@@ -146,7 +146,7 @@ export default function OrgOtherSubscriptionManagePage() {
       },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
       },
     )
   }
@@ -156,7 +156,7 @@ export default function OrgOtherSubscriptionManagePage() {
       { subscriptionuid },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
-        onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
       },
     )
   }
@@ -241,9 +241,15 @@ export default function OrgOtherSubscriptionManagePage() {
                             />
                           </div>
                           {row.pending_decrease_qty > 0 && (
-                            <Tag color="gold" style={{ margin: 0 }}>
-                              {t('inf.quantity.pending_decrease').replace('{qty}', row.pending_decrease_qty).replace('{date}', row.pending_decrease_applydt || '')}
-                            </Tag>
+                            row.pending_decrease_blocked ? (
+                              <Tag color="red" style={{ margin: 0 }}>
+                                {t('inf.quantity.pending_decrease_blocked').replace('{qty}', row.pending_decrease_qty)}
+                              </Tag>
+                            ) : (
+                              <Tag color="gold" style={{ margin: 0 }}>
+                                {t('inf.quantity.pending_decrease').replace('{qty}', row.pending_decrease_qty).replace('{date}', row.pending_decrease_applydt || '')}
+                              </Tag>
+                            )
                           )}
                         </div>
                       ) : (row.users ? `${row.users} users` : '-')}

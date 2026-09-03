@@ -192,7 +192,7 @@ export default function SettingsConnectorsPage() {
       refresh_token:       form.refresh_token       || null,
     }, {
       onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-      onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+      onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
     })
   }
 
@@ -203,7 +203,7 @@ export default function SettingsConnectorsPage() {
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteConnector.mutate(selectedId, {
         onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
       }),
     })
   }
@@ -214,7 +214,7 @@ export default function SettingsConnectorsPage() {
       { baseurl: form.baseurl, health: form.health, health_method: form.health_method },
       {
         onSuccess: (res) => setHealthResult(res),
-        onError: (err) => setHealthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
+        onError: (err) => setHealthResult({ ok: false, status_code: 0, detail: t(err.response?.data?.detail) || err.message }),
       }
     )
   }
@@ -236,7 +236,7 @@ export default function SettingsConnectorsPage() {
     if (selectedId && !_hasFormSecret()) {
       testAuth.mutate(selectedId, {
         onSuccess: (res) => setAuthResult(res),
-        onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
+        onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: t(err.response?.data?.detail) || err.message }),
       })
     } else {
       testAuthInline.mutate(
@@ -252,7 +252,7 @@ export default function SettingsConnectorsPage() {
         },
         {
           onSuccess: (res) => setAuthResult(res),
-          onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: err.response?.data?.detail || err.message }),
+          onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: t(err.response?.data?.detail) || err.message }),
         }
       )
     }

@@ -21,7 +21,7 @@ export function useSaveDataset() {
       qc.invalidateQueries({ queryKey: ['datasets'] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 }
@@ -36,7 +36,7 @@ export function useDeleteDataset() {
       qc.invalidateQueries({ queryKey: ['datasets'] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.delete.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.delete.error'))
     },
   })
 }
@@ -59,7 +59,7 @@ export function useSaveDatasetMembers(datasetuid) {
       qc.invalidateQueries({ queryKey: ['dataset-members', datasetuid] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 }
@@ -82,7 +82,7 @@ export function useSaveDatasetProjects(datasetuid) {
       qc.invalidateQueries({ queryKey: ['dataset-projects', datasetuid] })
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 }
@@ -134,7 +134,7 @@ export function useSaveDatasetAll() {
       }
     },
     onError: (err) => {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     },
   })
 }

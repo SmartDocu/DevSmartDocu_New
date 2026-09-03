@@ -36,7 +36,7 @@ export default function QnaPage() {
   const saveMutation = useMutation({
     mutationFn: (body) => apiClient.post('/misc/qnas', body).then((r) => r.data),
     onSuccess: () => { message.success(t('msg.saved')); qc.invalidateQueries({ queryKey: ['qnas'] }) },
-    onError:   (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError:   (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
   })
 
   const deleteMutation = useMutation({
@@ -46,7 +46,7 @@ export default function QnaPage() {
       qc.invalidateQueries({ queryKey: ['qnas'] })
       setSelectedUid(null); setForm(EMPTY_FORM)
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
   })
 
   const answerSaveMutation = useMutation({
@@ -56,7 +56,7 @@ export default function QnaPage() {
       qc.invalidateQueries({ queryKey: ['qnas'] })
       setAnswerModal(false)
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
   })
 
   const handleRowClick = (q) => {

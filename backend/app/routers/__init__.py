@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc, menus, configs, i18n, codes, messages, terms, data_metas, data_cols, popups, connectors, docgroups, datasets, apps, llmkeys, notifications, whitelists, payments, auditlogs
+from backend.app.routers import auth, docs, chapters, objects, datas, tables, charts, sentences, gendocs, settings, org, admin, llm, misc, menus, configs, i18n, codes, messages, terms, data_metas, data_cols, popups, connectors, docgroups, datasets, apps, llmkeys, notifications, whitelists, payments, auditlogs, content_purge
 from d2chat import routes as d2chat
 from d2insight.chat import router as d2insight
 
@@ -38,3 +38,4 @@ router.include_router(notifications.router, prefix="/notifications", tags=["noti
 router.include_router(whitelists.router,  prefix="/whitelists",  tags=["whitelists"])
 router.include_router(payments.router,    prefix="/payments",    tags=["payments"])
 router.include_router(auditlogs.router,   prefix="/auditlogs",   tags=["auditlogs"])
+router.include_router(content_purge.router, prefix="/content-purge", tags=["content-purge"])

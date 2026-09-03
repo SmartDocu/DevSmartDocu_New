@@ -32,7 +32,7 @@ export function useSaveTerm() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -45,7 +45,7 @@ export function useDeleteTerm() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
   })
 }
 
@@ -58,7 +58,7 @@ export function useSaveTermTranslation() {
     onSuccess: (_data, { termkey }) => {
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -72,6 +72,6 @@ export function useDeleteTermTranslation() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
   })
 }

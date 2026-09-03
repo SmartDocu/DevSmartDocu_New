@@ -133,7 +133,7 @@ export default function MasterChatColumnsPage() {
       setEditedValues({})
       message.success(t('msg.save.success'))
     } catch (err) {
-      message.error(err.response?.data?.detail || t('msg.save.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
     } finally {
       setIsSaving(false)
     }

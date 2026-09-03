@@ -126,7 +126,7 @@ export default function ExperiencePage() {
     } catch (e) {
       setPreviewResult({
         message_type: 'error',
-        message: e?.response?.data?.detail || '미리보기 오류가 발생했습니다.',
+        message: t(e?.response?.data?.detail) || '미리보기 오류가 발생했습니다.',
       })
     } finally {
       setPreviewLoading(false)

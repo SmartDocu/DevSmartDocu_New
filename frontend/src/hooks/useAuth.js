@@ -22,7 +22,7 @@ export function useLogin() {
       navigate(from, { replace: true })
     },
     onError: (err) => {
-      const detail = err.response?.data?.detail || t('msg.login.failed')
+      const detail = t(err.response?.data?.detail) || t('msg.login.failed')
       alert(detail)
     },
   })
@@ -49,7 +49,7 @@ export function useSendResetEmail() {
       apiClient.post('/auth/send-reset-email', { email }).then((r) => r.data),
     onSuccess: () => alert(t('msg.reset.sent')),
     onError: (err) => {
-      const detail = err.response?.data?.detail || t('msg.reset.failed')
+      const detail = t(err.response?.data?.detail) || t('msg.reset.failed')
       alert(detail)
     },
   })
@@ -65,7 +65,7 @@ export function useRegister() {
       navigate('/')
     },
     onError: (err) => {
-      const detail = err.response?.data?.detail || t('msg.register.failed')
+      const detail = t(err.response?.data?.detail) || t('msg.register.failed')
       alert(detail)
     },
   })

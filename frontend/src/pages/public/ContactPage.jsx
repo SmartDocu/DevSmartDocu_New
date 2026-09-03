@@ -43,7 +43,7 @@ export default function ContactPage() {
       message.success(t('msg.contact.success'))
       setForm(EMPTY)
     } catch (err) {
-      message.error(err.response?.data?.detail || t('msg.server.error'))
+      message.error(t(err.response?.data?.detail) || t('msg.server.error'))
     } finally {
       setLoading(false)
     }

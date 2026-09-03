@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     PORTONE_API_SECRET: str = ""
     PORTONE_WEBHOOK_SECRET: str = ""
     BILLING_CRON_SECRET: str = ""
+    PURGE_CRON_SECRET: str = ""
 
     # SMS (Naver Cloud)
     NAVER_ACCESS_KEY_ID: str = ""

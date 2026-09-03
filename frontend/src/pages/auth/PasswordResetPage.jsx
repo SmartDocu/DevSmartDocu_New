@@ -72,7 +72,7 @@ export default function PasswordResetPage() {
       setTimeout(() => navigate('/', { replace: true }), 1500)
     },
     onError: (err) => {
-      const detail = err.response?.data?.detail || t('msg.password.change.failed')
+      const detail = t(err.response?.data?.detail) || t('msg.password.change.failed')
       message.error(detail)
     },
   })

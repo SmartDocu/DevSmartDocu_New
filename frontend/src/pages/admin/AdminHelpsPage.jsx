@@ -34,7 +34,7 @@ export default function AdminHelpsPage() {
       qc.invalidateQueries({ queryKey: ['admin-helps'] })
       handleNew()
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
   })
 
   const deleteMutation = useMutation({
@@ -44,7 +44,7 @@ export default function AdminHelpsPage() {
       qc.invalidateQueries({ queryKey: ['admin-helps'] })
       handleNew()
     },
-    onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
   })
 
   const selectHelp = (h) => {

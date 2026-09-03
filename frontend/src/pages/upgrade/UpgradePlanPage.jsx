@@ -64,16 +64,15 @@ export default function UpgradePlanPage() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="gradient-bar" />
           <div>{t('ttl.upgrade.available')}</div>
-          <button
-            className="btn btn-primary"
-            type="button"
-            style={{ marginLeft: 'auto' }}
-            disabled={!selectedProduct || upgradeMutation.isPending}
-            onClick={handleUpgrade}
-          >
-            {t('btn.upgrade')}
-          </button>
         </div>
+        <button
+          className="btn btn-primary"
+          type="button"
+          disabled={!selectedProduct || upgradeMutation.isPending}
+          onClick={handleUpgrade}
+        >
+          {t('btn.upgrade')}
+        </button>
       </div>
 
       {products.some((p) => p.currencycd === 'USD') && (

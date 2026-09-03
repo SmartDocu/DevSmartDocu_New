@@ -30,7 +30,7 @@ export function useSaveMessage() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['messages-admin'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -43,7 +43,7 @@ export function useDeleteMessage() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['messages-admin'] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
   })
 }
 
@@ -56,7 +56,7 @@ export function useSaveMessageTranslation() {
     onSuccess: (_data, { messagekey }) => {
       qc.invalidateQueries({ queryKey: ['message-translations', messagekey] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.save.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
   })
 }
 
@@ -70,6 +70,6 @@ export function useDeleteMessageTranslation() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['message-translations', messagekey] })
     },
-    onError: (err) => { message.error(err.response?.data?.detail || t('msg.delete.error')) },
+    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
   })
 }

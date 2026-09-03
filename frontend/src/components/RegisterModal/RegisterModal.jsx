@@ -88,7 +88,7 @@ export default function RegisterModal({ open, onClose }) {
       alert(t('msg.register.success'))
       onClose()
     } catch (err) {
-      const detail = err.response?.data?.detail || t('msg.register.failed')
+      const detail = t(err.response?.data?.detail) || t('msg.register.failed')
       alert(detail)
     } finally {
       setSaving(false)

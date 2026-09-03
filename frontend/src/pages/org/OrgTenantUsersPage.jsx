@@ -103,7 +103,7 @@ export default function OrgTenantUsersPage() {
       },
       {
         onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-        onError: (err) => message.error(err.response?.data?.detail || t('msg.save.error')),
+        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
       },
     )
   }
@@ -122,7 +122,7 @@ export default function OrgTenantUsersPage() {
         },
         {
           onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-          onError: (err) => message.error(err.response?.data?.detail || t('msg.delete.error')),
+          onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
         },
       ),
     })
