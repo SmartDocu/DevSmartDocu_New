@@ -372,5 +372,16 @@ STEP_REGISTRY: dict[str, dict] = {
 }
 
 
+# 카탈로그에 없는 스텝(LLM이 조합하며 새로 지은 스텝)의 step_id 접두어.
+# 스텝을 지목하는 값은 step_id 하나로 통일하되, 이 접두어로 "카탈로그 조회 대상인지"를
+# 가른다. 값은 보고서 한 건 안에서만 유일하면 된다 — 다른 보고서와 마주칠 일이 없다.
+TMP_STEP_PREFIX = "tmp_"
+
+
+def is_catalog_step(step_id: str | None) -> bool:
+    """카탈로그에서 프리셋을 꺼내도 되는 step_id인가."""
+    return bool(step_id) and not step_id.startswith(TMP_STEP_PREFIX)
+
+
 def get_step_registry() -> dict[str, dict]:
     return dict(STEP_REGISTRY)

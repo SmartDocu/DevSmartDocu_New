@@ -2,7 +2,7 @@
 
 채팅 라우터(app/chat/pipeline_runner.run_tool의 report 분기)가 부르는 단일 함수.
 인텐트 파서가 뽑은 message/target_month/compare_type를 받아
-계획기(scenario_plan 또는 auto_plan) → 실행 엔진(run_plan)을 돌리고 결과 마크다운·파일명·notes를 돌려준다.
+계획기(scenario_plan 또는 compose_scenario) → 실행 엔진(run_plan)을 돌리고 결과 마크다운·파일명·notes를 돌려준다.
 
 **출력 계약 변환과 Supabase 저장은 호출부가 기존 흐름 그대로 처리한다.** 이 함수는
 md_text/md_filename/notes 까지만 만든다 — 저장 로직을 여기서 중복하지 않는다(플랫폼 층은
@@ -13,6 +13,7 @@ ctx.meta에 실어 모듈이 읽게 할 뿐이다.
 """
 from __future__ import annotations
 
+import copy
 import json
 from datetime import datetime
 
@@ -23,7 +24,7 @@ from d2insight.engine.context import SharedContext
 from d2insight.engine.datasource import DEFAULT_SOURCE_ID
 from d2insight.engine.operations import apply_operations, is_locked_step
 from d2insight.engine.options import global_to_meta, options_to_plan
-from d2insight.engine.planner import auto_plan, data_digest, finalize, scenario_plan
+from d2insight.engine.planner import compose_scenario, data_digest, finalize, scenario_plan
 from d2insight.engine.runner import execute, expand_plan, plan_composition, run_plan, topo_order
 from d2insight.engine.schema import Schema
 from d2insight.engine.types import Render
@@ -41,18 +42,29 @@ _UNRESOLVED_INLINE = object()
 def _upload_schema(upload_session_id: str | None, upload_dataset_key: str | None) -> Schema | None:
     """업로드 데이터셋에 저장된 역할 메타(engine_meta)로 Schema를 만든다.
 
+    upload_dataset_key는 "key1+key2" 형태로 여러 파일을 담을 수 있다(DB의 source_id와 같은
+    형식). 여러 개면 컬럼 메타를 합쳐 하나의 Schema로 만든다 — 계획 단계가 어느 파일에 있든
+    쓸 수 있는 축·값을 모두 보게 하기 위해서다. 실제로 어느 파일을 읽을지는 스텝이 정한다.
+
     없으면(추론 실패·미생성) None — 호출부가 데이터소스 정의 파일 경로로 폴백하지 않고
     그대로 진행하게 둔다. finalize()가 이후 스키마 없이 실행되면 명시적으로 실패한다(§11 Step 2).
     """
     if not upload_session_id or not upload_dataset_key:
         return None
+    import pandas as pd
     from d2insight.report.excel_registry import get_excel_server
 
-    entry = (get_excel_server().session_datasets.get(upload_session_id) or {}).get(upload_dataset_key)
-    engine_meta = (entry or {}).get("engine_meta")
-    if not engine_meta:
+    datasets = get_excel_server().session_datasets.get(upload_session_id) or {}
+    metas = [
+        (datasets.get(key) or {}).get("engine_meta", {}).get("meta_columns")
+        for key in upload_dataset_key.split("+")
+    ]
+    metas = [m for m in metas if m is not None and len(m)]
+    if not metas:
         return None
-    return Schema(engine_meta["meta_columns"])
+    if len(metas) == 1:
+        return Schema(metas[0])
+    return Schema(pd.concat(metas, ignore_index=True).drop_duplicates(subset=["Physical_Name"]))
 
 
 _SCENARIO_MATCH_SYSTEM = """당신은 보고서 요청 문장을 읽고, 아래 등록된 시나리오 중 어느 것을
@@ -67,7 +79,7 @@ def match_scenario(message: str, provider: str | None = None) -> str | None:
     """메시지가 등록된 시나리오(기본세트) 중 하나를 요청하는 것인지 LLM으로 판단한다.
 
     문자열 부분일치가 아니라 의미 판단이다 — intent_parser의 report_type 분류와 같은 방식.
-    어느 것도 아니면 None → 호출부는 auto_plan(자유 계획, 예외 경로)으로 진행한다.
+    어느 것도 아니면 None → 호출부는 compose_scenario(LLM이 시나리오를 조합)로 진행한다.
     """
     if not message:
         return None
@@ -167,7 +179,7 @@ def resolve_report_plan(
     src_id = source_id or DEFAULT_SOURCE_ID
     upload_schema = _upload_schema(upload_session_id, upload_dataset_key)
 
-    # 시나리오가 매칭되면 프리셋 위에 요청한 옵션만 얹고, 못 찾으면 auto_plan(LLM)으로 간다.
+    # 시나리오가 매칭되면 프리셋 위에 요청한 옵션만 얹고, 못 찾으면 LLM이 시나리오를 조합한다.
     # applied_steps는 사용자에게 그대로 보여줄 JSON — 자동 삽입된 모듈은 포함하지 않는다.
     applied_steps: list[dict] | None = None
 
@@ -222,7 +234,8 @@ def resolve_report_plan(
             # applied_steps에도 반영한다.
             applied_steps = plan.get("steps")
     else:
-        plan, plan_notes = auto_plan(message, source_id=src_id, provider=provider, schema=upload_schema)
+        plan, plan_notes = compose_scenario(message, source_id=src_id, provider=provider,
+                                            schema=upload_schema)
         # 미리보기·이대로 작성이 실제 실행과 같은 구성을 보게 하려면, 검증까지 마친
         # plan["steps"]를 applied_steps에도 반영해야 한다(시나리오 경로와 동일한 원칙).
         applied_steps = plan.get("steps")
@@ -362,12 +375,9 @@ def run_engine_report(
 
     out = run_plan(plan, catalog, ctx)
 
-    # 정기 보고서 SQL 캐싱(Phase 3) — 방금 실행에서 스텝마다 실제로 생성된 SQL을
-    # applied_steps에 반영한다. 이대로 정기 보고서로 등록되면(StepsJson) 다음 회차부터는
-    # 이 SQL이 그대로 실려서 LLM 재호출 없이 재사용된다.
+    # 실행 흔적(생성 SQL·렌더 형식)은 applied_steps에 덧붙이지 않는다 — 작성 후 JSON이 작성 전
+    # JSON과 같아야 그대로 복사해 붙여넣어 같은 보고서를 다시 만들 수 있다.
     if applied_steps:
-        _sync_generated_sql(applied_steps, out["step_renders"])
-        _sync_llm_render_specs(applied_steps, out["step_renders"])
         _sync_failure_status(applied_steps, out["notes"])
 
     # 파일명 — 옛 보고서와 같은 규칙(안전유형_기준월_타임스탬프.md)이라 저장 경로가 일관된다.
@@ -380,59 +390,62 @@ def run_engine_report(
         "notes": out["notes"],
         "plan_notes": plan_notes,
         "applied_steps": applied_steps,
+        "execution_cache": collect_execution_cache(out["step_renders"]),
         "scenario": resolved["scenario"],
     }
 
 
-def _sync_llm_render_specs(applied_steps: list[dict], step_renders: dict) -> None:
-    """실행 중 각 모듈이 고른 표열·차트·서술 명세(render.llm_spec)를 applied_steps에 되돌려
-    쓴다. 정기 보고서로 등록되면 다음 회차부터 이 명세로 LLM 재호출 없이 형식을 재사용한다
-    (SQL 캐싱과 같은 자리 — _sync_generated_sql 참고).
-    """
-    for step_label, entries in step_renders.items():
-        step = next((s for s in applied_steps if s.get("title") == step_label), None)
-        if step is None:
-            continue
+def collect_execution_cache(step_renders: dict) -> dict:
+    """실행 중 만들어진 SQL과 표·차트 형식을 스텝별로 모은다.
 
+    applied_steps에는 넣지 않는다 — 사용자가 보는 JSON은 작성 전 지시 그대로여야 한다.
+    정기 보고서로 등록할 때만 merge_execution_cache()로 스냅샷에 합쳐, 회차마다 같은 SQL·형식으로
+    돌게 한다.
+    """
+    cache: dict = {}
+    for step_label, entries in step_renders.items():
+        query_sql = None
+        renders: dict = {}
         seen: dict[str, int] = {}
-        specs_by_key: dict[str, dict] = {}
         for inst, render in entries:
             n = seen.get(inst.module_id, 0) + 1
             seen[inst.module_id] = n
             key = inst.module_id if n == 1 else f"{inst.module_id}#{n}"
+            if inst.module_id == "period_dataset" and inst.params.get("query_sql"):
+                query_sql = inst.params["query_sql"]
             if render.llm_spec:
-                specs_by_key[key] = render.llm_spec
+                renders[key] = render.llm_spec
+        if query_sql or renders:
+            cache[step_label] = {"query_sql": query_sql, "renders": renders}
+    return cache
 
-        seen2: dict[str, int] = {}
+
+def merge_execution_cache(steps: list[dict] | None, cache: dict | None) -> list[dict]:
+    """지시 JSON + 실행 캐시 → 정기 보고서 스냅샷. 원본 steps는 건드리지 않는다."""
+    if not steps:
+        return []
+    if not cache:
+        return copy.deepcopy(steps)
+
+    merged = copy.deepcopy(steps)
+    for step in merged:
+        entry = cache.get(step.get("title"))
+        if not entry:
+            continue
+        seen: dict[str, int] = {}
         for m in step.get("modules", []):
             mid = m.get("module_id")
-            n = seen2.get(mid, 0) + 1
-            seen2[mid] = n
+            n = seen.get(mid, 0) + 1
+            seen[mid] = n
             key = mid if n == 1 else f"{mid}#{n}"
-            spec = specs_by_key.get(key)
+            params = dict(m.get("params") or {})
+            if mid == "period_dataset" and entry.get("query_sql"):
+                params["query_sql"] = entry["query_sql"]
+            spec = (entry.get("renders") or {}).get(key)
             if spec:
-                m["params"] = {**m.get("params", {}), "_llm_render_cache": spec}
-
-
-def _sync_generated_sql(applied_steps: list[dict], step_renders: dict) -> None:
-    """실행 중 period_dataset이 만든 SQL을 스텝 라벨로 매칭해 applied_steps에 되돌려 쓴다.
-
-    applied_steps의 모듈 dict가 실행에 쓰인 ModuleInstance.params와 같은 객체라는 보장이
-    없으므로(options_to_plan은 파라미터를 복사한다), step_label로 명시적으로 매칭한다.
-    """
-    sql_by_step: dict[str, str] = {}
-    for step_label, entries in step_renders.items():
-        for inst, _render in entries:
-            if inst.module_id == "period_dataset" and inst.params.get("query_sql"):
-                sql_by_step[step_label] = inst.params["query_sql"]
-
-    for step in applied_steps:
-        sql = sql_by_step.get(step.get("title"))
-        if not sql:
-            continue
-        for m in step.get("modules", []):
-            if m.get("module_id") == "period_dataset":
-                m["params"] = {**m.get("params", {}), "query_sql": sql}
+                params["_llm_render_cache"] = spec
+            m["params"] = params
+    return merged
 
 
 def _sync_failure_status(applied_steps: list[dict], notes: list[dict]) -> None:
@@ -453,6 +466,26 @@ def _sync_failure_status(applied_steps: list[dict], notes: list[dict]) -> None:
         failures = by_step.get(step.get("title"))
         if failures:
             step["execution_notes"] = failures
+
+
+def skipped_steps_note(notes: list[dict]) -> str:
+    """실행 중 빠진 스텝을 사용자에게 알릴 한 줄로 만든다. 빠진 것이 없으면 빈 문자열.
+
+    보고서는 끝까지 만들되, 무엇이 빠졌는지는 답변에서 알려준다 — 문서만 보면 그 분석을
+    처음부터 안 넣은 것인지 실패해서 빠진 것인지 알 수 없다.
+    """
+    steps: list[str] = []
+    reason = ""
+    for note in notes:
+        step_label = note["ref"].partition(" / ")[0]
+        if step_label not in steps:
+            steps.append(step_label)
+        if not reason and note["kind"] == "failed":
+            reason = note["reason"].splitlines()[0][:120]
+    if not steps:
+        return ""
+    return (f"다음 내용은 빠졌습니다 — {', '.join(steps)}."
+            + (f" ({reason})" if reason else ""))
 
 
 def resolve_scheduled_period(period_json: dict, run_date=None) -> dict:

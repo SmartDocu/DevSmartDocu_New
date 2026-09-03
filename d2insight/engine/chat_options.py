@@ -149,8 +149,11 @@ _SYSTEM = """당신은 분석 보고서 요청 문장에서, 사용자가 프리
 # 아래 둘은 스텝 **하나**를 문맥으로 삼는다. 위의 extract_operations가 보고서 전체를 놓고
 # 스텝을 넣고 빼는 것이라면, 이쪽은 그 스텝 안의 모듈·툴·값을 바꾼다.
 
-def _step_digest(step: dict, schema=None) -> str:
-    """스텝 하나를 LLM에게 보여줄 텍스트로 편다. 모듈마다 조합 키·기능·현재 값."""
+def _step_digest(step: dict, schema=None, *, include_candidates: bool = True) -> str:
+    """스텝 하나를 LLM에게 보여줄 텍스트로 편다. 모듈마다 조합 키·기능·현재 값.
+
+    include_candidates=False면 add_module 후보 목록을 뺀다 — 설명에는 쓰이지 않는다.
+    """
     modules = get_module_registry()
     lines = [f'스텝 "{step.get("title")}" (step_id: {step.get("step_id")})', "", "[포함된 모듈]"]
     for m in step.get("modules", []):
@@ -179,8 +182,8 @@ def _step_digest(step: dict, schema=None) -> str:
                     lines.append(f'    바꿀 수 있는 방법: {"; ".join(others)}')
         shown = {
             k: v for k, v in (m.get("params") or {}).items()
-            if k not in ("dimension", "dimensions", "measure") and not k.startswith("_")
-            and v is not None
+            if k not in ("dimension", "dimensions", "measure", "query_sql")
+            and not k.startswith("_") and v is not None
         }
         if shown:
             lines.append(f"    값: {shown}")
@@ -188,16 +191,17 @@ def _step_digest(step: dict, schema=None) -> str:
         lines.append("")
         lines.append(f"[이 데이터에서 쓸 수 있는 분석 대상] {', '.join(schema.dimensions)}")
         lines.append(f"[이 데이터에서 쓸 수 있는 기준 값] {', '.join(schema.measures)}")
-    lines.append("")
-    lines.append("[이 스텝에 넣을 수 있는 다른 모듈 — add_module 후보]")
-    present = {normalize(m)["module_name"] for m in step.get("modules", [])}
-    try:
-        from d2insight.engine.catalog.matrix import modules_for_step
-        candidates = [n for n in modules_for_step(step.get("step_id")) if n not in present]
-    except Exception:
-        candidates = [n for n in modules if n not in present]
-    for name in candidates:
-        lines.append(f'- "{name}": {modules[name].purpose}')
+    if include_candidates:
+        lines.append("")
+        lines.append("[이 스텝에 넣을 수 있는 다른 모듈 — add_module 후보]")
+        present = {normalize(m)["module_name"] for m in step.get("modules", [])}
+        try:
+            from d2insight.engine.catalog.matrix import modules_for_step
+            candidates = [n for n in modules_for_step(step.get("step_id")) if n not in present]
+        except Exception:
+            candidates = [n for n in modules if n not in present]
+        for name in candidates:
+            lines.append(f'- "{name}": {modules[name].purpose}')
     return "\n".join(lines)
 
 
@@ -238,7 +242,7 @@ def describe_step(step: dict, provider: str | None = None) -> list[dict]:
     modules = get_module_registry()
     try:
         raw = chat(
-            [{"role": "user", "content": _step_digest(step)}],
+            [{"role": "user", "content": _step_digest(step, include_candidates=False)}],
             grade="fast", system=_DESCRIBE_SYSTEM, max_tokens=1200,
             label="스텝 설명", stepnm="step_describe", steptitle="스텝 설명",
             provider=provider,
@@ -286,9 +290,14 @@ _EDIT_SYSTEM = """당신은 보고서의 한 스텝을 고쳐달라는 요청을
     분석 방법 변경. "IQR로 바꿔줘", "샤플리로 해줘". "선택 가능" 목록 중에서만.
 - {"op": "add_module", "module_name": "...", "sub_name": "...", "measure": "..."}
     분석 추가. "추이도 같이 보여줘". "[이 스텝에 넣을 수 있는 다른 모듈]" 목록에서만 고릅니다.
-    sub_name/measure는 그 모듈이 받을 때만 넣습니다.
+    module_name에는 그 목록에 적힌 **이름만** 씁니다(조합 키를 넣지 마세요). 분석 대상과
+    기준 값은 sub_name/measure에 따로 넣습니다.
 - {"op": "remove_module", "module": "..."}
     분석 제외. "구성비는 빼줘". 모듈이 하나도 안 남으면 이 스텝이 통째로 사라집니다.
+- {"op": "remove"}
+    이 스텝 전체를 뺍니다. "이 스텝 통째로 빼줘", "이 스텝의 분석을 전부 빼줘".
+- {"op": "set_title", "title": "..."}
+    이 스텝의 이름을 바꿉니다. "스텝명도 브랜드로 바꿔줘".
 
 규칙
 1. "module"은 위 목록에 적힌 조합 키를 **글자 그대로** 씁니다(예: "actual_aggregate@region").
@@ -296,8 +305,12 @@ _EDIT_SYSTEM = """당신은 보고서의 한 스텝을 고쳐달라는 요청을
 2. 요청에 명시된 것만 담습니다. 언급되지 않은 모듈·값은 절대 건드리지 마세요.
 3. sub_name/measure 값은 "[이 데이터에서 쓸 수 있는 …]" 목록에 있는 이름을 씁니다.
    목록이 주어지지 않았으면 역할 이름(item/party/item_group/region/amount/quantity)을 씁니다.
-4. 분석 대상이나 기준 값을 바꾸는 것은 set_param이 아니라 set_sub_name/set_measure입니다.
-5. 요청이 이 스텝에서 할 수 없는 일이면 빈 배열 []을 출력합니다.
+4. **사용자가 말한 대상이 그 목록에 없으면 비슷한 것으로 바꾸지 마세요.** 뜻이 통할 것
+   같아도 다른 이름을 대신 넣지 말고, 아무 연산도 만들지 말고 빈 배열 []을 출력합니다
+   (예: "쇼핑몰"이 목록에 없는데 region으로 바꿔 넣으면 안 됩니다).
+5. 분석 대상이나 기준 값을 바꾸는 것은 set_param이 아니라 set_sub_name/set_measure입니다.
+6. 요청이 이 스텝에서 할 수 없는 일이거나, 고쳐달라는 지시가 아니라 질문이면 빈 배열 []을
+   출력합니다("뭘 더 넣을 수 있나요?" 같은 물음에 억지로 연산을 만들지 마세요).
 
 출력 형식(다른 설명 없이 JSON 배열만): [ {"op": "...", ...}, ... ]"""
 
@@ -314,7 +327,7 @@ def extract_module_operations(
     try:
         raw = chat(
             [{"role": "user", "content": prompt}],
-            grade="balanced", system=_EDIT_SYSTEM, max_tokens=800,
+            grade="fast", system=_EDIT_SYSTEM, max_tokens=800,
             label="스텝 편집 연산 추출", stepnm="step_edit_ops", steptitle="스텝 편집",
             provider=provider,
         )
@@ -328,6 +341,41 @@ def extract_module_operations(
         print(f"[chat_options] 스텝 편집 연산 추출 실패: {e}")
         return []
     return [dict(op, step_id=step.get("step_id")) for op in operations if isinstance(op, dict)]
+
+
+_SUGGEST_SYSTEM = """당신은 데이터 분석 보고서 화면에서 사용자를 돕는 사람입니다.
+사용자는 기술 용어를 모릅니다. "모듈", "툴", "파라미터", "스텝", "sub_name" 같은 말을 쓰지 마세요.
+
+주어진 것은 지금 열려 있는 분석 묶음 하나의 구성과, 사용자가 적은 문장입니다. 그 문장은 고칠
+내용을 알아듣지 못한 것이거나, 무엇을 더 할 수 있는지 묻는 질문입니다.
+
+2~4문장으로 답하세요.
+1. 사용자가 콕 집어 요청한 것이 "[이 스텝에 넣을 수 있는 다른 모듈]" 목록에 없으면, 여기서는
+   할 수 없다고 한 줄로 알립니다.
+2. 추천은 **"[이 스텝에 넣을 수 있는 다른 모듈]" 목록 안에서만** 3~5개 고릅니다. 사람이 쓰는
+   말로 바꿔 부릅니다.
+3. **"[포함된 모듈]"에 이미 있는 것은 절대 추천하지 마세요** — 이미 들어 있는 분석입니다.
+4. 지금 있는 분석 중 "바꿀 수 있는 방법"이 적힌 것이 있으면 한 줄로 덧붙입니다.
+5. 어떻게 말하면 되는지 예를 하나 듭니다(예: "추이도 같이 보여주세요").
+
+목록에 없는 것을 지어내지 마세요. 짧게 씁니다."""
+
+
+def suggest_for_step(step: dict, instruction: str, schema=None, provider: str | None = None) -> str:
+    """고칠 내용을 못 찾았을 때 — 넣을 수 있는 분석·바꿀 수 있는 방법을 사람 말로 추천한다."""
+    prompt = f"{_step_digest(step, schema)}\n\n[사용자가 적은 문장]\n{instruction}"
+    try:
+        text = chat(
+            [{"role": "user", "content": prompt}],
+            grade="fast", system=_SUGGEST_SYSTEM, max_tokens=600,
+            label="스텝 추천", stepnm="step_suggest", steptitle="스텝 추천",
+            provider=provider,
+        ).strip()
+        if text:
+            return text
+    except Exception as e:
+        print(f"[chat_options] 스텝 추천 생성 실패: {e}")
+    return "고칠 내용을 알아듣지 못했습니다. 다르게 말씀해 주세요."
 
 
 def extract_operations(

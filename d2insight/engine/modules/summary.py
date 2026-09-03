@@ -130,13 +130,19 @@ def run(ctx, params, tools) -> ModuleResult:
         "rate": float(key["Rate"]),
     }
 
+    # 파생 지표는 실제로 만들어졌을 때만 언급한다 — 없는데 "단가·할인율" 같은 말을 지침에
+    # 넣으면 해설자가 그 데이터에 없는 이야기를 지어낸다(로그 데이터에서 "판매 전략" 언급).
+    derived = [r["Logical_Name"] for r in rows
+               if r["Physical_Name"] in (DERIVED_UNIT_PRICE, DERIVED_DISCOUNT_RATE)]
+    hint = f"핵심 측정값({schema.logical_name(key_measure)})의 증감을 먼저 말하라."
+    if derived:
+        hint += f" 이어서 파생 지표({', '.join(derived)})의 변화도 짚어라."
+    hint += " 표에 없는 지표는 언급하지 마라."
+
     render = render_from_dataframe(
         _display_table(summary_df, ratio_rows),
-        purpose="측정값 전체 증감 총평과 파생 지표(단가·할인율)를 제시.",
-        narrative_hint=(
-            f"핵심 측정값({schema.logical_name(key_measure)})의 증감을 먼저 말하고, 단가·할인율 같은 "
-            "파생 지표가 있으면 그 변화도 짚어라."
-        ),
+        purpose="측정값 전체 증감 총평을 제시.",
+        narrative_hint=hint,
         params={"핵심 측정값": schema.logical_name(key_measure)}, label="measure_summary",
         cache=params.get("_llm_render_cache"),
     )

@@ -24,14 +24,8 @@ import re
 import pandas as pd
 
 from d2insight.engine.datasource import definition_to_meta_columns
-from d2insight.engine.schema import (
-    ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_ITEM, ROLE_ITEM_GROUP, ROLE_PARTY,
-    ROLE_PERIOD, ROLE_QUANTITY,
-)
+from d2insight.engine.schema import ALL_ROLES, ROLE_AMOUNT, ROLE_GUIDE, ROLE_PERIOD
 from d2insight.engine._llm import chat
-
-_VALID_ROLES = {ROLE_AMOUNT, ROLE_QUANTITY, ROLE_DISCOUNT, ROLE_ITEM,
-                ROLE_ITEM_GROUP, ROLE_PARTY, ROLE_PERIOD}
 
 
 class RoleInferenceError(Exception):
@@ -59,13 +53,7 @@ def infer_definition(df: pd.DataFrame, dataset_name: str = "업로드 데이터"
 각 컬럼이 분석에서 어떤 역할을 하는지 판단해 아래 JSON으로만 답하라(설명 금지).
 
 역할(semantic) 후보 — 해당 없으면 빈 문자열로 둘 것:
-  amount      : 금액(합산 가능한 거래 금액). 단가처럼 합산하면 안 되는 값은 이 역할을 주지 말 것.
-  quantity    : 수량(합산 가능)
-  discount    : 할인·에누리액
-  item        : 분석의 최소 단위가 되는 항목(상품명·품목명 등)
-  item_group  : item의 상위 분류(카테고리 등)
-  party       : 거래 상대(고객·거래처 등)
-  period      : 날짜/기간 컬럼
+{ROLE_GUIDE}
 
 {{
   "columns": [
@@ -153,7 +141,7 @@ period_combine 규칙(날짜/시각 정보가 pandas가 바로 못 읽는 형태
 
     for c in cols:
         role = c.get("semantic")
-        if role and role not in _VALID_ROLES:
+        if role and role not in ALL_ROLES:
             warnings.append(f"컬럼 '{c.get('physical')}'에 알 수 없는 역할 '{role}' — 무시합니다.")
             c["semantic"] = ""
 

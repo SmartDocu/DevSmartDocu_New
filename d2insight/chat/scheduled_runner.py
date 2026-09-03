@@ -1,11 +1,10 @@
 """정기 보고서 무인 실행기 — 템플릿 하나를 받아 실제로 보고서를 생성·저장·기록한다.
 
 트리거(이 함수를 주기적으로 호출하는 것)는 본프로젝트 자체 Schedule 시스템이 담당할 예정이라
-여기서는 "호출되면 실행한다"까지만 담당한다. 본프로젝트의 보고서 생성은 LLM이 매번 자유롭게
-목차를 구성하는 에이전트(d2insight/report/agent.py)이므로, stepsjson을 재생(replay)하는 게 아니라
-등록 당시 저장해둔 report_type/months_back으로 chat과 동일한 생성 경로
-(run_report_from_spec)를 다시 호출한다 — 보고서 생성·Storage 업로드·실행 로그 기록
-(record_analytics)은 그 안에서 이미 다 처리된다.
+여기서는 "호출되면 실행한다"까지만 담당한다. 등록 당시의 stepsjson(스텝·모듈·툴 + 실행에 쓴
+SQL·표 형식)을 그대로 재생해 기간만 이번 회차로 바꾼다 — 회차마다 같은 보고서가 나와야 한다.
+보고서 생성·Storage 업로드·실행 로그 기록(record_analytics)은 run_report_from_spec 안에서
+이미 다 처리된다.
 """
 from __future__ import annotations
 
@@ -35,8 +34,15 @@ def run_scheduled_template(template_uid: str, run_date: date | None = None) -> d
             period.get("grain", "month"), period.get("offset", -1), run_date or date.today(),
         )
 
+        # 등록 당시 스냅샷(stepsjson)을 그대로 지시서로 넘긴다 — 기간만 이번 회차로 바뀌고
+        # 스텝·모듈·툴·SQL은 동일하게 돈다. 스냅샷이 없는 옛 템플릿은 예전처럼 새로 계획한다.
+        spec = {"target_month": target_month, "report_type": report_type, "months_back": months_back}
+        steps_json = json.loads(template.get("stepsjson") or "[]")
+        if steps_json:
+            spec["scenario_options"] = {"applied_steps": steps_json, "scenario": report_type}
+
         result = run_report_from_spec(
-            {"target_month": target_month, "report_type": report_type, "months_back": months_back},
+            spec,
             user_id=template.get("creator"),
             project_id=template.get("projectid"),
             tenant_id=template.get("tenantid"),
@@ -49,6 +55,7 @@ def run_scheduled_template(template_uid: str, run_date: date | None = None) -> d
             "table_html": result.get("table_html"),
             "applied_steps": result.get("applied_steps"),
             "analytic_uid": result.get("analytic_uid"),
+            "execution_cache": result.pop("execution_cache", None),
         }
         qauid = _session.append_qa(
             template["sessionuid"],

@@ -7,7 +7,31 @@ from typing import Optional
 
 from d2insight.db import supabase_client as _sc
 from d2insight.db.supabase_client import build_shares_path, delete_from_storage
-from utilsPrj.private_storage import resolve_display_url
+from utilsPrj.private_storage import get_private_signed_url, is_private_path, resolve_display_url
+
+
+def resolve_md_url(value: str | None) -> str | None:
+    """보고서 원문(.md)의 표시 URL — 미리보기가 이걸 HTML로 그린다.
+
+    저장된 값은 .pdf 경로라 확장자를 바꿔 따로 서명해야 한다. 서명 URL은 경로마다 토큰이 달라
+    프론트에서 문자열만 바꿔서는 열 수 없다.
+    """
+    if not value:
+        return None
+    md_value = value[:-4] + ".md" if value.endswith(".pdf") else value
+    if not md_value.endswith(".md"):
+        return None
+    if not is_private_path(md_value):
+        return md_value
+    return get_private_signed_url(None, md_value)
+
+
+def resolve_pdf_url(value: str | None) -> str | None:
+    """보고서 PDF의 표시 URL(내려받기용). 공유 기록은 .md 경로를 저장하므로 짝을 찾아 서명한다."""
+    if not value:
+        return None
+    pdf_value = value[:-3] + ".pdf" if value.endswith(".md") else value
+    return resolve_display_url(_sc.get_client(), pdf_value)
 
 
 # ── Timezone ────────────────────────────────────────────────────
@@ -212,6 +236,7 @@ def get_schedule_turns(session_uid: str, until: str | None = None) -> list[dict]
             "answer": answer_text,
             "filenm": row.get("filenm"),
             "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
+            "mdurl": resolve_md_url(row.get("fileurl")),
             "target_period": _parse_target_period(row.get("filenm")),
             "created_at": row.get("createdts"),
             "appliedSteps": applied_steps,
@@ -345,6 +370,7 @@ def get_session_messages(session_uid: str) -> list[dict]:
             "content": answer_text,
             "reportPath": filenm,
             "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
+            "mdurl": resolve_md_url(row.get("fileurl")),
             "qauid": row["qauid"],
             "appliedSteps": applied_steps,
             "isTemplate": bool(filenm) and filenm in scheduled_filenms,
@@ -622,7 +648,7 @@ def get_favorites(creator: str, offsetminutes: int | None = None) -> list[dict]:
     try:
         res = (
             _sc.table("insight_favorites")
-            .select("favoriteuid, qauid, sessionuid, question, answer, filenm, createdts")
+            .select("favoriteuid, qauid, sessionuid, question, answer, filenm, fileurl, createdts")
             .eq("creator", creator)
             .order("createdts", desc=True)
             .execute()
@@ -643,6 +669,7 @@ def get_favorites(creator: str, offsetminutes: int | None = None) -> list[dict]:
                 "answer": answer_text,
                 "filenm": row.get("filenm"),
                 "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
+                "mdurl": resolve_md_url(row.get("fileurl")),
                 "created_at": _fmt_dt(row.get("createdts"), offsetminutes),
             })
         return result
@@ -847,13 +874,15 @@ def _format_share_rows(rows: list[dict], offsetminutes: int | None = None) -> li
             answer_text = obj.get("answer", "") if isinstance(obj, dict) else ""
         except Exception:
             pass
+        src = row.get("fileurl")
         result.append({
             "share_qauid": row["qauid"],
             "session_id": row.get("sessionuid"),
             "question": row.get("question", ""),
             "answer": answer_text,
             "filenm": row.get("filenm"),
-            "fileurl": resolve_display_url(_sc.get_client(), row.get("fileurl")),
+            "fileurl": resolve_pdf_url(src),
+            "mdurl": resolve_md_url(src),
             "folder_uid": row.get("folderuid"),
             "creator": row.get("creator"),
             "created_at": _fmt_dt(row.get("createdts"), offsetminutes),

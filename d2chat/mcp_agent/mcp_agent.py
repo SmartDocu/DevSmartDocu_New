@@ -577,7 +577,7 @@ class MCPAgent:
                 # 조회를 강제 실행한다. 이 경로로 얻은 답변은 최초 LLM 답변(근거 없이 생성됐을 수
                 # 있음)을 버리고 실제 데이터만 근거로 _answer_from_data()에서 새로 생성한다.
                 if not any_tool_called:
-                    from d2chat.mcp_agent.classifier import classify_question_and_table
+                    from d2shared.table_classifier import classify_question_and_table
                     direct_result = None
                     try:
                         if self._current_session_mode == "external":

@@ -49,7 +49,7 @@ _BASE_RULES = """당신은 경영진 보고서의 결론을 쓰는 애널리스�
     비관하지 말고, 왜 그렇게 판단하는지 위 사실에 연결해 밝혀라.
 11. **전망은 감시 리스트가 아니라 예측이다.** 이미 계산된 추이(trend)·생애주기·구성비
     변화 신호를 근거로 "다음 기간엔 이렇게 될 가능성이 있다"를 써라. 반드시 추정임을 명시하는
-    완전한 문장으로 쓰고(예: "이 추세가 이어지면 다음 분기 매출은 추가로 감소할 가능성이 높다"),
+    완전한 문장으로 쓰고(예: "이 추세가 이어지면 다음 분기에도 추가로 감소할 가능성이 높다"),
     물결표(~)로 문장을 줄여 쓰지 마라 — 본문에 물결표가 두 번 나오면 마크다운이 그 사이를
     취소선으로 잘못 해석한다. 근거가 된 사실을 함께 인용하라. 새 수치를
     계산해 전망을 뒷받침하지 마라(규칙 1과 동일).
@@ -61,8 +61,8 @@ _BASE_RULES = """당신은 경영진 보고서의 결론을 쓰는 애널리스�
     쓴다.** "OO 추세를 지켜본다" 대신 "OO가 다음 기간에도 재현되는지 확인 필요"처럼, 검증
     가능한 질문 형태로 1~2개를 짚어라.
 14. **"### 결론" 본문은 소제목으로 쪼개지 말고 하나로 이어지는 서술형 문단으로 쓴다.**
-    핵심 수치·항목명은 **볼드**로 강조한다. 순서는 성장 요인(구체 항목·금액) → 감소 요인
-    (구체 항목·금액) → 종합 판단(규칙 10) → 전망(규칙 11) → 다음 기간 확인할 점(규칙 13) →
+    핵심 수치·항목명은 **볼드**로 강조한다. 순서는 증가 요인(구체 항목·수치) → 감소 요인
+    (구체 항목·수치) → 종합 판단(규칙 10) → 전망(규칙 11) → 다음 기간 확인할 점(규칙 13) →
     확대/방어해야 할 실행 방향(Action Item)이되, 각 앞에 소제목을 달지 말고 문단을 나눠
     자연스럽게 이어 써라.
 
@@ -133,7 +133,7 @@ def _facts(ctx) -> str:
                           ["Dimension_Logical_Name", "Impact_Score", "HHI", "DVI", "Shapley_Value"])
     lines += _table_block("차원 내 기여도(상위)", ctx.get("within_contribution"),
                           ["Item_Name", "Variance", "Rate", "Contribution_Rate"])
-    lines += _table_block("이상징후(금액순)", ctx.get("outlier_result"),
+    lines += _table_block("이상징후(규모순)", ctx.get("outlier_result"),
                           ["Dimension_Logical_Name", "Item_Name", "Variance", "Rate", "Reason", "Level"])
     lines += _grouped_table_block("교차 분석", ctx.get("drilldown_result"), "Outlier",
                                   ["Outlier", "Cross_Dimension", "Cross_Item", "Variance", "Share", "Factor"])

@@ -58,6 +58,32 @@ ROLE_ITEM_GROUP = "item_group"  # 무엇의 상위 분류
 ROLE_REGION = "region"          # 어디서 (지역·국가·권역)
 ROLE_PERIOD = "period"          # 이력 패널의 기간 컬럼
 
+# 역할을 판정하는 곳이 둘이다 — 등록된 DB 메타(pipeline/meta_roles.py)와 업로드 파일
+# (upload_meta.py). 두 곳이 같은 목록·같은 설명을 쓰도록 여기 하나만 둔다. 예전에 각자
+# 목록을 들고 있어 업로드 경로에만 region이 빠져 있었다(2026-09-02).
+ROLE_GUIDE = """  amount        합산 가능한 거래 금액(매출·판매액 등). 단가·비율처럼 합산하면 안 되는 값은 제외
+  quantity      합산 가능한 수량
+  discount      할인·에누리액
+  cost          매출원가·매입원가
+  opex          판매관리비
+  inventory     재고 잔량
+  inbound       입고(생산·매입)
+  outbound      출고(판매·소비)
+  safety_stock  안전재고 목표치
+  item          분석의 최소 단위 항목(상품·품목·설비 등)
+  item_group    item의 상위 분류
+  party         거래 상대(고객·거래처·공급사)
+  region        지역·국가·권역
+  period        기준 기간(날짜) 컬럼"""
+
+ALL_ROLES: set[str] = {line.split()[0] for line in ROLE_GUIDE.strip().splitlines()}
+
+# 합산할 숫자가 없는 데이터(로그·검사이력 등 행 하나가 사건 하나인 데이터)에서 쓰는 측정값.
+# period_dataset이 데이터에 이 컬럼(값 1)과 meta 한 줄을 넣어주면, 모듈은 평소처럼
+# groupby(...).sum()을 하면서 자연히 행을 세게 된다 — 모듈을 고치지 않는다.
+COUNT_MEASURE = "_건수"
+COUNT_MEASURE_LABEL = "건수"
+
 
 class SchemaError(Exception):
     """meta_columns가 없거나 필수 정보가 빠진 경우."""

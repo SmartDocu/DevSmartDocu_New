@@ -1,11 +1,10 @@
 """계획기 (Step 5) — 사용자 요청 → 조합(plan JSON).
 
-지시서 §4.2 결정: **프리셋/자유 계획은 방식이 다르다. 실행 엔진만 공유한다.**
+시나리오를 **어디서 얻느냐만** 다르다. 그 뒤 실행은 같은 엔진이다.
 
-  프리셋(scenario_plan): 등록된 시나리오 요청이면 LLM을 돌리지 않고 유형별 기본 세트(SCENARIO)를
-    그대로 쓴다. 이것이 기본 동작이다 — 사람이 미리 검증해둔 고정 스텝 구성.
-  자유 계획(auto_plan): 등록된 4개 시나리오 어디에도 해당하지 않는 요청에 한해, 카탈로그의
-    purpose를 근거로 LLM이 그 자리에서 조합을 짠다. 매번 다른 조합이 나올 수 있는 예외 경로다.
+  scenario_plan     : 등록된 시나리오면 LLM을 돌리지 않고 그 프리셋을 그대로 쓴다.
+  compose_scenario  : 등록된 시나리오가 없으면 LLM이 카탈로그(스텝·모듈·툴)에서 골라
+                      시나리오를 그 자리에서 조합한다.
 
 계획기는 **DB를 건드리지 않는다.** 차원·측정 목록은 데이터소스 정의(JSON)에서 오므로, 실행 전에
 "그런 차원 없다"를 잡아낼 수 있다. 실행 도중 터지는 것보다 계획 단계에서 고치는 편이 싸다.
@@ -19,6 +18,7 @@ import json
 import re
 
 from d2insight.engine.catalog import get_scenario, get_module_registry, get_step_registry
+from d2insight.engine.catalog.steps import TMP_STEP_PREFIX, is_catalog_step
 from d2insight.engine.catalog.module_key import (
     ModuleKeyError, check_required, label as module_label, to_execution_entry,
 )
@@ -30,6 +30,11 @@ from d2insight.engine._llm import chat
 
 class PlannerError(Exception):
     """계획을 세울 수 없음 (카탈로그에 없는 요청, 응답 파싱 실패 등)."""
+
+
+# 맺음 — 어느 보고서든 마지막은 결론이다(operations._TAIL_MODULE_IDS와 같은 대상).
+_CLOSING_STEP = "conclusion"
+_CLOSING_MODULE = "conclusion"
 
 
 # ── 카탈로그 → LLM에 보여줄 명세 ────────────────────────────────────────────
@@ -135,9 +140,12 @@ def _parse_plan(text: str) -> dict:
 
 
 # ── 자동 모드 ────────────────────────────────────────────────────────────────
-def auto_plan(message: str, source_id: str = DEFAULT_SOURCE_ID,
-              provider: str | None = None, schema: Schema | None = None) -> tuple[dict, list[str]]:
-    """순수 purpose 기반 LLM 계획 (§4.1). 보고서 유형 고정 세트를 쓰지 않는다."""
+def compose_scenario(message: str, source_id: str = DEFAULT_SOURCE_ID,
+                     provider: str | None = None, schema: Schema | None = None) -> tuple[dict, list[str]]:
+    """등록된 시나리오가 없을 때 — LLM이 카탈로그의 스텝·모듈·툴을 조합해 시나리오를 만든다.
+
+    만들어진 조합은 등록된 시나리오와 같은 plan 형태이고, 이후 finalize·실행 흐름도 같다.
+    """
     schema, data_text = data_digest(source_id, schema=schema)
     prompt = (
         f"[사용자 요청]\n{message}\n\n{data_text}\n\n{catalog_digest()}\n\n"
@@ -145,7 +153,7 @@ def auto_plan(message: str, source_id: str = DEFAULT_SOURCE_ID,
     )
     text = chat(
         [{"role": "user", "content": prompt}],
-        grade="balanced", system=_SYSTEM, label="planner:auto",
+        grade="balanced", system=_SYSTEM, label="planner:compose",
         call_type="planning", provider=provider,
     )
     plan = _parse_plan(text)
@@ -220,6 +228,15 @@ def _step_query_params(modules: list[dict], registry: dict) -> dict:
     return out
 
 
+def _tmp_step_id(title: str, used: set[str]) -> str:
+    """카탈로그에 없는 스텝의 id. 보고서 한 건 안에서만 유일하면 된다."""
+    base = TMP_STEP_PREFIX + re.sub(r"\s+", "_", (title or "step").strip())
+    sid, n = base, 2
+    while sid in used:
+        sid, n = f"{base}_{n}", n + 1
+    return sid
+
+
 def expand_steps(plan: dict) -> tuple[dict, list[str]]:
     """프리셋 스텝(step_id)을 실제 모듈 목록으로 펼친다.
 
@@ -234,9 +251,10 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
     notes: list[str] = []
     expanded: list[dict] = []
 
+    used_ids: set[str] = set()
     for sec in plan.get("steps", []):
         sid = sec.get("step_id")
-        if sid:
+        if is_catalog_step(sid):
             preset = steps.get(sid)
             if preset is None:
                 near = suggest(sid, list(steps))
@@ -249,14 +267,28 @@ def expand_steps(plan: dict) -> tuple[dict, list[str]]:
             entry = {"title": sec.get("title") or preset["title"], "step_id": sid,
                      "modules": _expand_modules(raw_modules, notes)}
         else:
-            entry = {"title": sec.get("title") or "무제 스텝",
+            # 카탈로그에 없는 스텝(LLM이 새로 지은 것)에도 지목할 값이 있어야 한다 —
+            # 없으면 오른쪽 카드를 눌러도 서버가 어느 스텝인지 모른다. 이미 tmp_ id가
+            # 있으면 그대로 둔다(붙여넣기·정기 보고서에서 같은 스텝을 가리켜야 한다).
+            title = sec.get("title") or "무제 스텝"
+            entry = {"title": title, "step_id": sid or _tmp_step_id(title, used_ids),
                      "modules": _expand_modules(sec.get("modules") or [], notes)}
-            if sec.get("step_id"):
-                entry["step_id"] = sec["step_id"]
+        used_ids.add(entry["step_id"])
         if sec.get("enabled") is False:
             entry["enabled"] = False
             entry["disabled_reason"] = sec.get("disabled_reason")
         expanded.append(entry)
+
+    # 보고서는 결론으로 끝난다. 등록된 시나리오는 결론 스텝을 명시하지만, LLM이 조합한
+    # 시나리오는 빠뜨릴 수 있다 — 그러면 본문만 있고 맺음이 없는 보고서가 나온다.
+    if not any(m.get("module_id") == _CLOSING_MODULE
+               for s in expanded for m in s.get("modules", [])):
+        preset = steps.get(_CLOSING_STEP)
+        if preset:
+            expanded.append({
+                "title": preset["title"], "step_id": _CLOSING_STEP,
+                "modules": _expand_modules(preset["default_modules"], notes),
+            })
 
     plan = dict(plan)
     plan["steps"] = expanded

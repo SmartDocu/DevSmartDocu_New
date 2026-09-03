@@ -18,7 +18,9 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.datasource import DEFAULT_SOURCE_ID, build_meta_columns, undeclared_columns
-from d2insight.engine.schema import ROLE_PERIOD, Schema
+from d2insight.engine.schema import (
+    COUNT_MEASURE, ROLE_PERIOD, Schema,
+)
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine.pipeline.dataset_builder import (
     query_step_dataset, build_history_dataset,
@@ -27,6 +29,23 @@ from d2insight.engine.pipeline.dataset_builder import (
 
 
 _GRAIN_LABEL = {"month": "개월", "quarter": "분기", "year": "년", "week": "주"}
+
+
+def _fill_count_measure(meta: pd.DataFrame, frames: dict) -> None:
+    """메타에 건수 측정값이 있으면 데이터에도 값 1짜리 컬럼을 만들어 준다.
+
+    합산할 숫자가 없는 데이터(로그 등)에는 메타를 만들 때 건수가 측정값으로 들어간다
+    (db_meta.count_measure_row). 그 컬럼은 DB에 없으므로 여기서 채운다. 그러면 모듈은
+    평소처럼 groupby(...).sum()을 하고 그 결과가 곧 건수가 된다 — 모듈을 고치지 않는다.
+
+    frames의 DataFrame은 제자리로 수정된다.
+    """
+    if COUNT_MEASURE not in set(meta["Physical_Name"]):
+        return
+    for df in frames.values():
+        # 이미 있으면 그대로 둔다 — 이력은 SQL이 COUNT(*)로 집계해 온 값이라 1로 덮으면 안 된다.
+        if df is not None and COUNT_MEASURE not in df.columns:
+            df[COUNT_MEASURE] = 1
 
 
 def run(ctx, params, tools) -> ModuleResult:
@@ -44,7 +63,8 @@ def run(ctx, params, tools) -> ModuleResult:
     upload_dataset_key = ctx.meta.get("upload_dataset_key")
     if upload_session_id and upload_dataset_key:
         return _run_from_upload(target_month, compare_type, upload_session_id, upload_dataset_key, grain,
-                                auto=bool(params.get("_auto")))
+                                auto=bool(params.get("_auto")),
+                                dimensions=params.get("dimensions"), measures=params.get("measures"))
 
     source_id = params.get("source_id") or ctx.meta.get("source_id") or DEFAULT_SOURCE_ID
 
@@ -68,7 +88,6 @@ def run(ctx, params, tools) -> ModuleResult:
     outputs = {
         "actual_dataset": actual_df,
         "compare_dataset": compare_df,
-        "meta_columns": meta,
     }
 
     history_note = ""
@@ -80,6 +99,9 @@ def run(ctx, params, tools) -> ModuleResult:
             history_rows = len(history_df)
         except Exception as e:
             history_note = f" (이력 적재 실패: {type(e).__name__} — 생애주기·추이 분석 제한됨)"
+
+    _fill_count_measure(meta, outputs)
+    outputs["meta_columns"] = meta
 
     if undeclared:
         # 정의에 없는 컬럼은 역할이 없어 브리지·생애주기 계산에서 빠진다. 조용히 넘기지 않는다.
@@ -97,8 +119,9 @@ def run(ctx, params, tools) -> ModuleResult:
     key_name = schema.logical_name(schema.key_measure)
     grain_label = _GRAIN_LABEL.get(grain, grain)
 
+    source_label = ", ".join(dict.fromkeys(meta["_source_label"])) if "_source_label" in meta else source_id
     info_rows = [
-        {"항목": "데이터소스", "값": source_id},
+        {"항목": "데이터소스", "값": source_label},
         {"항목": "분석기간", "값": f"{a_start} ~ {a_end_incl} (당기)"},
         {"항목": "비교기간", "값": f"{c_start} ~ {c_end_incl} ({compare_type})"},
         {"항목": "분석 레코드수", "값": f"{len(actual_df):,}"},
@@ -128,10 +151,52 @@ def run(ctx, params, tools) -> ModuleResult:
     )
 
 
+def _pick_upload_entries(datasets: dict, keys: list[str],
+                         dimensions, measures) -> list[tuple[str, dict]]:
+    """이 스텝이 요구한 컬럼을 가진 파일만 고른다. 요구가 없거나 못 찾으면 전부.
+
+    DB에서 스텝마다 필요한 테이블만 골라 쿼리하는 것과 같은 자리다.
+    """
+    available = [(k, datasets[k]) for k in keys if datasets.get(k)]
+    wanted = set(dimensions or []) | set(measures or [])
+    if not wanted or len(available) <= 1:
+        return available
+    picked = [(k, e) for k, e in available if wanted & set(e["df"].columns)]
+    return picked or available
+
+
+def _merge_upload_frames(entries: list[tuple[str, dict]]) -> tuple["pd.DataFrame", list[str]]:
+    """여러 파일을 하나의 평평한 표로 병합한다.
+
+    업로드할 때 파일끼리의 조인 키를 이미 추론해 둔다(excel_server.register_dataset →
+    metadata["reference"] = [{dataset, left_on, right_on}]). DB의 reference와 같은 자리이므로
+    그것을 그대로 쓴다. 선언된 조인 키가 없으면 붙이지 않는다 — 공통 컬럼명으로 짐작해 붙이면
+    행이 곱해져 수치가 어긋난다.
+
+    반환: (병합된 표, 실제로 쓴 파일 키 목록)
+    """
+    base_key, base = entries[0]
+    df = base["df"]
+    used = [base_key]
+    for key, entry in entries[1:]:
+        refs = (entry.get("metadata") or {}).get("reference") or []
+        rel = next((r for r in refs if r.get("dataset") in used), None)
+        if not rel:
+            print(f"[period_dataset] 업로드 '{key}'는 조인 정보가 없어 병합하지 않았습니다.")
+            continue
+        df = df.merge(entry["df"], left_on=rel["right_on"], right_on=rel["left_on"], how="inner")
+        used.append(key)
+    return df, used
+
+
 def _run_from_upload(target_month: str, compare_type: str,
                      session_id: str, dataset_key: str, grain: str = "month",
-                     auto: bool = False) -> ModuleResult:
+                     auto: bool = False,
+                     dimensions=None, measures=None) -> ModuleResult:
     """업로드된 데이터셋에서 뿌리 이름표를 만든다 (2026-07-20, 레벨 2).
+
+    dataset_key는 "key1+key2" 형태로 여러 파일을 담을 수 있다. 그중 이 스텝이 요구한 컬럼을
+    가진 파일만 골라 쓰고, 둘 이상이면 공통 컬럼으로 병합한다.
 
     DB 경로(build_actual_compare_datasets)는 SQL이 기간별로 나눠서 가져오지만, 업로드는
     **평평한 표 하나**뿐이다. 그래서 여기서 직접 기간(period) 역할 컬럼을 기준으로
@@ -150,22 +215,32 @@ def _run_from_upload(target_month: str, compare_type: str,
     from d2insight.report.excel_registry import get_excel_server
 
     excel_server = get_excel_server()
-    entry = (excel_server.session_datasets.get(session_id) or {}).get(dataset_key)
-    if entry is None:
+    datasets = excel_server.session_datasets.get(session_id) or {}
+    entries = _pick_upload_entries(datasets, dataset_key.split("+"), dimensions, measures)
+    if not entries:
         return ModuleResult(
             status="failed",
             error=f"업로드 데이터셋 '{dataset_key}'을 세션 '{session_id}'에서 찾을 수 없습니다.",
         )
 
-    engine_meta = entry.get("engine_meta")
-    if not engine_meta:
+    if any(not e.get("engine_meta") for _, e in entries):
         return ModuleResult(
             status="failed",
             error="이 업로드 데이터셋에는 엔진용 역할(semantic) 메타가 없습니다 "
                   "(추론이 실패했거나 아직 만들어지지 않았습니다). 다시 업로드해 보세요.",
         )
 
-    meta = engine_meta["meta_columns"]
+    engine_meta = entries[0][1]["engine_meta"]
+    raw_df, used_keys = _merge_upload_frames(entries)
+
+    # 실제로 병합된 파일의 컬럼만 남긴다 — 조인 정보가 없어 빠진 파일의 컬럼을 스키마에 두면
+    # 모듈이 없는 컬럼을 가리킨다(DB 경로가 available_columns로 거르는 것과 같은 자리).
+    metas = [e["engine_meta"]["meta_columns"] for k, e in entries if k in used_keys]
+    meta = (metas[0] if len(metas) == 1
+            else pd.concat(metas, ignore_index=True).drop_duplicates(subset=["Physical_Name"]))
+    # 건수는 파일에 없는 컬럼이라 거르면 안 된다(DB 경로의 datasource.build_meta_columns와 같다).
+    meta = meta[meta["Physical_Name"].isin(raw_df.columns)
+                | (meta["Physical_Name"] == COUNT_MEASURE)]
     schema = Schema(meta)
     period_col = schema.column(ROLE_PERIOD)
     if not period_col:
@@ -174,10 +249,9 @@ def _run_from_upload(target_month: str, compare_type: str,
             error="업로드 데이터셋에 기간(period) 역할 컬럼이 없어 기간 비교를 할 수 없습니다.",
         )
 
-    raw_df = entry["df"]
-    if period_col not in raw_df.columns:
-        return ModuleResult(status="failed",
-                            error=f"기간 역할 컬럼 '{period_col}'이 데이터에 없습니다.")
+    dataset_label = ", ".join(
+        (datasets[k].get("filename") or k) for k in used_keys
+    )
 
     period_dt = pd.to_datetime(raw_df[period_col], errors="coerce")
     invalid_n = int(period_dt.isna().sum())
@@ -199,6 +273,8 @@ def _run_from_upload(target_month: str, compare_type: str,
 
     undeclared = undeclared_columns(meta, list(raw_df.columns))
 
+    _fill_count_measure(meta, {"a": actual_df, "c": compare_df, "h": history_df})
+
     note = ""
     if invalid_n:
         note += f" 기간 값을 해석하지 못한 {invalid_n:,}행은 제외했습니다."
@@ -212,10 +288,10 @@ def _run_from_upload(target_month: str, compare_type: str,
     c_end_incl = c_end - timedelta(days=1)
     dims = schema.dimensions
     measures = schema.measures
-    key_name = schema.logical_name(schema.key_measure) if measures else "-"
+    key_name = schema.logical_name(schema.key_measure)
 
     info_table = pd.DataFrame([
-        {"항목": "데이터소스", "값": f"업로드: {dataset_key}"},
+        {"항목": "데이터소스", "값": f"업로드: {dataset_label}"},
         {"항목": "분석기간", "값": f"{a_start} ~ {a_end_incl} (당월)"},
         {"항목": "비교기간", "값": f"{c_start} ~ {c_end_incl} ({compare_type})"},
         {"항목": "분석 레코드수", "값": f"{len(actual_df):,}"},

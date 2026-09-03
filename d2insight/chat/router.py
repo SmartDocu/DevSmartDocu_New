@@ -4,6 +4,8 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
+import traceback
 import uuid as _uuid
 from datetime import date, datetime
 from typing import List, Optional
@@ -152,6 +154,7 @@ class ChatResponse(BaseModel):
     chart_image: str | None = None
     report_path: str | None = None
     fileurl: str | None = None
+    mdurl: str | None = None
     qauid: str | None = None
     applied_steps: list | None = None
 
@@ -277,7 +280,19 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
         target_month = intent.get("target_month")
         months_back = intent.get("months_back", 3)
 
-        if tool == "report" and (intent.get("mode") == "start" or not target_month):
+        # 옵션 JSON을 붙여넣었으면 이미 완성된 지시서다 — 양식을 되묻지 않는다. 다만 기준월은
+        # JSON에 없는 값이라 임의로 정하지 않고 물어본다.
+        from d2insight.engine.entry import extract_inline_options
+        inline = extract_inline_options(req.message)
+        if inline and not intent.get("scenario_options"):
+            tool = intent["tool"] = "report"
+            intent["scenario_options"] = {
+                "applied_steps": inline["steps"], "scenario": inline.get("scenario"),
+            }
+
+        if tool == "report" and not (inline and target_month) and (
+            intent.get("mode") == "start" or not target_month
+        ):
             spec = _spec_mod.create_spec(
                 target_month=target_month,
                 report_type=intent.get("report_type"),
@@ -287,7 +302,11 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                 spec["entry_asked"] = True
                 answer = _spec_mod.ENTRY_QUESTION
             else:
-                answer = "어느 기간의 보고서인가요? (예: 2013년 11월)"
+                # JSON이 있으면 구성은 이미 정해졌다 — 월을 받는 즉시 작성한다.
+                if inline:
+                    spec["entry_asked"] = True
+                    spec["bulk_mode"] = True
+                answer = "어느 기간의 보고서인가요?"
             _spec_mod.save_spec(sid, spec)
             result = {
                 "answer": answer,
@@ -363,6 +382,9 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             "table_html": result.get("table_html"),
             "applied_steps": result.get("applied_steps"),
             "analytic_uid": result.get("analytic_uid"),
+            # 실행에 쓰인 SQL·표 형식. applied_steps와 섞지 않고 나란히 둔다 — 정기 보고서로
+            # 등록할 때만 합쳐서 스냅샷에 넣는다.
+            "execution_cache": result.pop("execution_cache", None),
         }
         qauid = _session.append_qa(
             sid, req.message, answer_json,
@@ -384,6 +406,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
 
     if result.get("fileurl"):
         from d2insight.db.supabase_client import get_client
+        result["mdurl"] = storage.resolve_md_url(result["fileurl"])
         result["fileurl"] = resolve_display_url(get_client(), result["fileurl"])
 
     return ChatResponse(session_id=sid, qauid=qauid, **result)
@@ -604,6 +627,8 @@ def _register_schedule_for_qa(
     원래 세션 전체가 대화 목록에서 사라지고 그 세션의 다른 보고서까지 회차로 섞여 들어가던
     문제의 원인이었다). 등록 기준이 된 원본 보고서를 그 전용 세션의 첫 기록으로 남긴다.
     """
+    from d2insight.engine.entry import merge_execution_cache
+
     qa, answer_json, template_nm = _resolve_schedule_origin(qauid)
 
     tenant_id, db_project_id = storage.get_project_info(user_id)
@@ -627,7 +652,10 @@ def _register_schedule_for_qa(
         template_nm=template_nm,
         period_json={"grain": "month", "offset": -1, "report_type": report_type, "months_back": months_back},
         global_json={},
-        steps_json=answer_json.get("applied_steps"),
+        # 스냅샷에는 실행 캐시를 합쳐 넣는다 — 회차마다 같은 SQL·형식으로 돌아야 한다.
+        steps_json=merge_execution_cache(
+            answer_json.get("applied_steps"), answer_json.get("execution_cache"),
+        ),
         schedule_cron=cron,
         schedule_start_dt=next_dt.isoformat(),
         creator=user_id,
@@ -934,6 +962,10 @@ def get_share_detail(share_qauid: str, token: str = Depends(get_token)):
     row = storage.get_share(share_qauid)
     if not row:
         raise HTTPException(status_code=404, detail="공유 내역을 찾을 수 없습니다.")
+    # DB에는 스토리지 경로가 들어 있다 — 그대로 내려주면 프론트가 열지 못한다.
+    src = row.get("fileurl")
+    row["fileurl"] = storage.resolve_pdf_url(src)
+    row["mdurl"] = storage.resolve_md_url(src)
     return row
 
 
@@ -1021,7 +1053,9 @@ def _resolve_report_project(user_id: str | None, project_id: int | None) -> tupl
     return tenant_id, resolved_project_id
 
 
-def _resolve_report_source(session_id: str | None, resolved_project_id: int | None) -> tuple[str | None, str | None]:
+def _resolve_report_source(
+    session_id: str | None, resolved_project_id: int | None, message: str | None = None,
+) -> tuple[str | None, str | None]:
     """세션의 업로드/DB 데이터소스를 판별한다. 반환: (upload_dataset_key, source_id)."""
     from d2insight.chat.pipeline_runner import _upload_engine_target
 
@@ -1032,7 +1066,9 @@ def _resolve_report_source(session_id: str | None, resolved_project_id: int | No
 
     from d2insight.engine.pipeline.db_meta import DbMetaError, resolve_source_cluster
     try:
-        source_id = "+".join(c["datauid"] for c in resolve_source_cluster(resolved_project_id))
+        source_id = "+".join(
+            c["datauid"] for c in resolve_source_cluster(resolved_project_id, message=message)
+        )
     except DbMetaError:
         return None, None
     return None, source_id
@@ -1067,7 +1103,9 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
     inline_options = extract_inline_options(req.message)
     matched = match_scenario(req.message)
 
-    upload_dataset_key, source_id = _resolve_report_source(req.session_id, resolved_project_id)
+    upload_dataset_key, source_id = _resolve_report_source(
+        req.session_id, resolved_project_id, message=req.message,
+    )
     if not upload_dataset_key and source_id is None:
         return {"scenario": None, "report_title": "", "applied_steps": []}
 
@@ -1089,7 +1127,13 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
             inline_options=inline_options,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"옵션 미리보기 실패: {type(e).__name__}: {e}")
+        # 500을 내면 프론트가 조용히 /chat으로 넘어가, 패널도 없이 다른 경로로 보고서가
+        # 만들어진다. 사유를 담아 200으로 돌려주고 화면이 그 사유를 보여주게 한다.
+        traceback.print_exc()
+        return {
+            "scenario": None, "report_title": "", "applied_steps": [],
+            "error": f"보고서 구성을 만들지 못했습니다: {e}",
+        }
 
     applied_steps = result.get("applied_steps") or []
     for step in applied_steps:
@@ -1182,6 +1226,36 @@ def describe_step_api(req: DescribeStepRequest, token: str = Depends(get_token))
     return {"modules": describe_step(req.step)}
 
 
+_EDIT_SCHEMA_CACHE: dict[tuple, tuple[float, object]] = {}
+_EDIT_SCHEMA_TTL = 600.0
+# 못 구한 경우는 짧게만 기억한다 — 업로드 직전이라 못 구했을 수 있고, 그 사이 파일을 올려도
+# 10분간 목록 없이 LLM에게 물어보게 된다.
+_EDIT_SCHEMA_MISS_TTL = 30.0
+
+
+def _edit_step_schema(session_id: str | None, project_id: int | None):
+    """편집 프롬프트에 넣을 차원·측정값 목록. 세션 중 바뀌지 않아 캐시한다."""
+    key = (session_id, project_id)
+    now = time.monotonic()
+    hit = _EDIT_SCHEMA_CACHE.get(key)
+    if hit and now - hit[0] < (_EDIT_SCHEMA_TTL if hit[1] is not None else _EDIT_SCHEMA_MISS_TTL):
+        return hit[1]
+
+    from d2insight.engine.entry import _upload_schema
+    from d2insight.engine.planner import data_digest
+
+    schema = None
+    try:
+        upload_key, source_id = _resolve_report_source(session_id, project_id)
+        if upload_key or source_id is not None:
+            upload_schema = _upload_schema(session_id if upload_key else None, upload_key)
+            schema, _ = data_digest(source_id, schema=upload_schema)
+    except Exception as e:
+        print(f"[edit_step] 스키마 조회 생략: {type(e).__name__}: {e}")
+    _EDIT_SCHEMA_CACHE[key] = (now, schema)
+    return schema
+
+
 class EditStepRequest(BaseModel):
     steps: list[dict]          # 현재 미리보기의 스텝 전체
     step_id: str               # 그중 고칠 스텝
@@ -1201,10 +1275,10 @@ def edit_step_api(req: EditStepRequest, token: str = Depends(get_token)) -> dict
     (remove_module), 싱글턴 이름표가 다른 스텝과 부딪히는지 보려면 전체가 필요하다.
     """
     _check_owner(token, req.user_id)
-    from d2insight.engine.chat_options import describe_step, extract_module_operations
-    from d2insight.engine.entry import _upload_schema
+    from d2insight.engine.chat_options import (
+        describe_step, extract_module_operations, suggest_for_step,
+    )
     from d2insight.engine.operations import OperationError, apply_operations
-    from d2insight.engine.planner import data_digest
 
     step = next((s for s in req.steps if s.get("step_id") == req.step_id), None)
     if step is None:
@@ -1219,30 +1293,25 @@ def edit_step_api(req: EditStepRequest, token: str = Depends(get_token)) -> dict
 
     # 이 데이터에 실제로 있는 차원·측정값을 LLM에게 보여준다 — 없는 것을 지어내지 않게.
     # 스키마를 못 구해도 편집 자체는 진행한다(역할 이름만으로도 대개 맞는다).
-    schema = None
-    try:
-        upload_key, source_id = _resolve_report_source(req.session_id, resolved_project_id)
-        if upload_key or source_id is not None:
-            upload_schema = _upload_schema(req.session_id if upload_key else None, upload_key)
-            schema, _ = data_digest(source_id, schema=upload_schema)
-    except Exception as e:
-        print(f"[edit_step] 스키마 조회 생략: {type(e).__name__}: {e}")
+    schema = _edit_step_schema(req.session_id, resolved_project_id)
 
     operations = extract_module_operations(req.instruction, step, schema=schema)
+    # 아래 두 경로는 steps가 그대로다 — 팝업의 설명이 맞으므로 modules를 다시 만들지 않는다.
     if not operations:
+        # 고칠 내용을 못 찾았거나 애초에 질문이었던 경우 — 무엇을 더 할 수 있는지 안내한다.
         return {
-            "steps": req.steps, "operations": [], "notes": [],
-            "modules": describe_step(step),
-            "message": "고칠 내용을 알아듣지 못했습니다. 다르게 말씀해 주세요.",
+            "steps": req.steps, "operations": [], "notes": [], "modules": None,
+            "message": suggest_for_step(step, req.instruction, schema=schema),
+            "suggestion": True,
         }
 
     try:
-        new_steps, notes = apply_operations(req.steps, operations)
+        new_steps, notes = apply_operations(req.steps, operations, schema=schema)
     except OperationError as e:
         # 조용히 일부만 적용하지 않는다 — 원래 steps를 그대로 돌려주고 사유를 알린다.
         return {
             "steps": req.steps, "operations": operations, "notes": [],
-            "modules": describe_step(step), "message": str(e),
+            "modules": None, "message": str(e),
         }
 
     new_step = next((s for s in new_steps if s.get("step_id") == req.step_id), None)

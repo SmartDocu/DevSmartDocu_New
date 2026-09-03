@@ -355,7 +355,7 @@ _AGGREGATE = [
 _ANALYSIS = [
     _spec(
         "measure_summary",
-        purpose="전체 매출 증감 총평(규모/율/수량/ASP/할인율).",
+        purpose="측정값 전체의 증감 총평(규모·증감률). 단가·할인율은 그 역할이 있을 때만 덧붙인다.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=["measure_summary", "total_variance"],
@@ -419,7 +419,7 @@ _ANALYSIS = [
         "anomaly_detection",
         # 전 차원·전체 항목 대상, 금액·증감률 두 축으로 판정. dimension_impact가 만든 특정
         # measure 고정 싱글턴에 기대지 않고, 요청받은 measure로 직접 통계를 계산한다.
-        purpose="금액·증감률 분포에서 크게 벗어난 이상 항목을 탐지.",
+        purpose="측정값·증감률 분포에서 크게 벗어난 이상 항목을 탐지.",
         kind="analysis",
         requires=["actual_dataset", "compare_dataset"],
         produces=["outlier_result"],

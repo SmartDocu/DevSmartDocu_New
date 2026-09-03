@@ -50,7 +50,8 @@ def definition_to_meta_columns(definition: dict, source_label: str = "",
         })
     if not rows:
         raise DataSourceError(f"데이터소스 '{source_label}' 정의에 사용할 수 있는 컬럼이 없습니다.")
-    return pd.DataFrame(rows)
+    from d2insight.engine.pipeline.db_meta import count_measure_row
+    return count_measure_row(pd.DataFrame(rows))
 
 
 def build_meta_columns(source_id: str = DEFAULT_SOURCE_ID,
@@ -66,10 +67,15 @@ def build_meta_columns(source_id: str = DEFAULT_SOURCE_ID,
             "호출부(pipeline_runner._run_via_engine)가 프로젝트 기준으로 미리 정해 넘겨야 합니다."
         )
     from d2insight.engine.pipeline import db_meta
+    from d2insight.engine.schema import COUNT_MEASURE
+
     sources = [db_meta.fetch_registered_data(uid) for uid in source_id.split("+")]
     meta = db_meta.build_meta_columns(sources)
     if available_columns is not None:
-        meta = meta[meta["Physical_Name"].isin(available_columns) | meta["Is_Date_for_Analytic"]]
+        # 건수는 DB 컬럼이 아니라 조회 결과에 없다 — 거르면 안 된다.
+        meta = meta[meta["Physical_Name"].isin(available_columns)
+                    | meta["Is_Date_for_Analytic"]
+                    | (meta["Physical_Name"] == COUNT_MEASURE)]
     return meta
 
 

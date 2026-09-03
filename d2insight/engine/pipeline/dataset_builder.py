@@ -40,6 +40,24 @@ PARETO_THRESHOLD: float = config.PARETO_THRESHOLD          # 0.80
 ANOMALY_SIGMA:    float = getattr(config, "ANOMALY_SIGMA", 3.0)
 
 
+def _run_sql(server, sql: str, params: dict, sources: list[dict]):
+    """SQL 실행. DB가 이름을 못 찾으면 무엇을 고쳐야 하는지로 바꿔 알린다.
+
+    ODBC 원문("Invalid object name 'dbo.xxx'")만 보여주면 담당자가 어디를 손봐야 할지
+    알 수 없다. 등록된 테이블·뷰 이름이 실제 DB와 다른 것이 원인이다.
+    """
+    try:
+        return server._execute_query(sql, params=params)
+    except Exception as e:
+        if "Invalid object name" not in str(e):
+            raise
+        names = ", ".join(f'{s["schema"]}.{s["physical_name"]}' for s in sources)
+        raise db_meta.DbMetaError(
+            f"등록된 테이블·뷰({names})를 DB에서 찾지 못했습니다. 마스터데이터 화면에서 "
+            "이름이 실제 DB와 같은지 확인하고 메타 정보를 다시 저장한 뒤 요청해주세요."
+        ) from e
+
+
 def _resolve_sources(source_id: str | None) -> tuple[list[dict], "pd.DataFrame"]:
     if not source_id:
         raise db_meta.DbMetaError(
@@ -47,6 +65,14 @@ def _resolve_sources(source_id: str | None) -> tuple[list[dict], "pd.DataFrame"]
             "호출부가 프로젝트 기준으로 미리 정해 넘겨야 합니다."
         )
     sources = [db_meta.fetch_registered_data(uid) for uid in source_id.split("+")]
+    # 이름이 없으면 SQL이 "FROM [dbo].[]"로 만들어져 실행 직전에야 알 수 있다. 여기서 막는다.
+    nameless = [s["datanm"] for s in sources if not s["physical_name"]]
+    if nameless:
+        raise db_meta.DbMetaError(
+            f"'{', '.join(nameless)}'의 테이블·뷰 이름이 등록되어 있지 않아 조회할 수 없습니다. "
+            "마스터데이터 화면에서 조회 SQL의 FROM 절이 올바른지 확인하고 메타 정보를 다시 "
+            "저장한 뒤 요청해주세요."
+        )
     meta = db_meta.build_meta_columns(sources)
     return sources, meta
 
@@ -235,22 +261,34 @@ def query_step_dataset(
 
     sources, meta = _resolve_sources(source_id)
 
+    from d2insight.engine.schema import COUNT_MEASURE
+
     dim_rows = meta[(meta["Field_Type"] == "Dim") & (meta["Semantic_Type"] != "period")]
-    measure_rows = meta[meta["Field_Type"] == "Measure"]
+    # 건수는 DB에 없는 가짜 컬럼이다 — SQL로 조회하면 안 된다(period_dataset이 만들어 준다).
+    measure_rows = meta[(meta["Field_Type"] == "Measure")
+                        & (meta["Physical_Name"] != COUNT_MEASURE)]
     avail_dims = set(dim_rows["Physical_Name"])
     avail_measures = set(measure_rows["Physical_Name"])
 
     use_dims = [d for d in (dimensions or []) if d in avail_dims]
-    use_measures = [m for m in (measures or []) if m in avail_measures] or list(avail_measures)
-    if not use_measures:
-        raise db_meta.DbMetaError("등록된 측정값(금액/수량 등) 컬럼이 없어 집계할 수 없습니다.")
+    # 측정값이 없어도 조회한다 — 합칠 숫자가 없는 데이터(로그 등)는 행 자체가 측정값이고,
+    # period_dataset이 건수 컬럼을 넣어준다(schema.COUNT_MEASURE).
+    use_measures = [m for m in (measures or []) if m in avail_measures]
+    if not use_dims and not use_measures:
+        # 아무것도 지정하지 않은 스텝(자료 확인 등)은 등록된 컬럼 전부를 가져온다.
+        # 등록 순서를 그대로 쓴다 — set으로 풀면 실행마다 순서가 달라져 같은 스텝이 매번
+        # 다른 SQL을 만든다(정기 보고서가 어긋난다).
+        use_dims = list(dim_rows["Physical_Name"])
+        use_measures = list(measure_rows["Physical_Name"])
+    if not use_dims and not use_measures:
+        raise db_meta.DbMetaError("등록된 컬럼 중 조회할 수 있는 것이 없습니다.")
 
     if existing_sql:
         a_start, a_end = _actual_range(target_period, grain)
         c_start, c_end = _compare_range(target_period, compare_type, grain)
         server = MCPServer(db_connection=shared_meta_loader.get_connection_url())
-        actual_df = server._execute_query(existing_sql, params={"start_date": a_start, "end_date": a_end})
-        compare_df = server._execute_query(existing_sql, params={"start_date": c_start, "end_date": c_end})
+        actual_df = _run_sql(server, existing_sql, {"start_date": a_start, "end_date": a_end}, sources)
+        compare_df = _run_sql(server, existing_sql, {"start_date": c_start, "end_date": c_end}, sources)
         keep = [c for c in (use_dims + use_measures) if c in actual_df.columns]
         if keep:
             actual_df = actual_df[keep]
@@ -277,8 +315,9 @@ def query_step_dataset(
               f"default_time_column={_src.get('default_time_column')!r}")  # jeff
 
     dims_text = ", ".join(use_dims) if use_dims else "(없음)"
+    measures_text = ", ".join(use_measures) if use_measures else "(없음 — 행 자체를 셉니다)"
     question = (
-        f"다음 컬럼을 포함해 조회하세요.\n차원 컬럼: {dims_text}\n측정값 컬럼: {', '.join(use_measures)}\n"
+        f"다음 컬럼을 포함해 조회하세요.\n차원 컬럼: {dims_text}\n측정값 컬럼: {measures_text}\n"
         "집계는 하지 마세요 — 조회 결과는 이후 pandas가 직접 집계합니다.\n"
         "날짜 기간이 필요하면 반드시 기준 날짜 컬럼을 이용해 WHERE 절로 기간을 필터링하세요 — "
         "필터링 없이 전체 데이터를 가져오는 것은 허용되지 않습니다."
@@ -293,7 +332,10 @@ def query_step_dataset(
         "만들지 마세요 — 통화 단위조차 알 수 없는 원본 숫자이므로 이런 변환 자체가 "
         "부정확합니다. 원본 숫자 컬럼만 그대로 반환하세요.\n"
         "- SELECT 컬럼명은 위에 명시된 컬럼명과 정확히 똑같이 쓰세요(별칭을 바꾸지 마세요) — "
-        "호출부가 이 컬럼명을 그대로 참조합니다."
+        "호출부가 이 컬럼명을 그대로 참조합니다.\n"
+        f"- 주어진 테이블 중 이번 조회에 **실제로 필요한 것만** 쓰세요. 한 쿼리에서 조인하는 "
+        f"테이블은 최대 {db_meta.MAX_JOIN_TABLES}개입니다. 조인 정보(reference)가 없는 "
+        "테이블끼리는 조인하지 마세요."
     )
 
     url = shared_meta_loader.get_connection_url()
@@ -326,8 +368,8 @@ def query_step_dataset(
 
     a_start, a_end = _actual_range(target_period, grain)
     c_start, c_end = _compare_range(target_period, compare_type, grain)
-    actual_df = server._execute_query(sql, params={"start_date": a_start, "end_date": a_end})
-    compare_df = server._execute_query(sql, params={"start_date": c_start, "end_date": c_end})
+    actual_df = _run_sql(server, sql, {"start_date": a_start, "end_date": a_end}, sources)
+    compare_df = _run_sql(server, sql, {"start_date": c_start, "end_date": c_end}, sources)
 
     # 프롬프트로 금지해도 LLM이 파생 컬럼(예: '매출액_한글')을 만들어 끼워넣을 수 있으므로,
     # 요청한 차원·측정값 컬럼만 남기고 나머지는 코드에서 한 번 더 걸러낸다.

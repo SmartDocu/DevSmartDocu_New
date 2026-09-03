@@ -36,6 +36,10 @@ class PlanError(Exception):
     """조합(plan) 자체가 잘못됨 (빈 스텝, 미등록 모듈, 이름표 충돌, 순환 의존 등)."""
 
 
+class DataLoadError(Exception):
+    """어느 스텝에서도 데이터를 가져오지 못함 — 보고서를 만들 수 없다."""
+
+
 class Catalog(Protocol):
     """실행 엔진이 카탈로그에 요구하는 최소 인터페이스 (실제 레지스트리는 이 형태를 만족)."""
     def get_module(self, module_id: str) -> ModuleSpec: ...
@@ -52,10 +56,19 @@ class ModuleInstance:
     params: dict = field(default_factory=dict)
     tools: list[str] = field(default_factory=list)
     layout: list[str] = field(default_factory=list)
+    sub_name: str | None = None      # 이름표를 조합 단위로 만들 때 쓴다(같은 모듈 다중 실행)
 
     @property
     def ref(self) -> str:
         return f"{self.step_label} / {self.module_id}"
+
+    def label(self, base: str) -> str:
+        """이 인스턴스가 생산·소비하는 이름표. 분석 대상이 다르면 이름표도 다르다.
+
+        같은 모듈을 차원만 바꿔 두 번 넣을 수 있어야 한다(오류코드별 이상탐지 + 앱별
+        이상탐지). 이름표가 모듈 이름 단위면 그 둘이 충돌한다.
+        """
+        return f"{base}@{self.sub_name}" if self.sub_name else base
 
 
 # ── 1. plan 펼치기 ──────────────────────────────────────────────────────────
@@ -69,8 +82,11 @@ def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], lis
     instances: list[ModuleInstance] = []
     step_order: list[str] = []
 
+    from d2insight.engine.catalog.steps import is_catalog_step
+
     for sec in plan.get("steps", []):
-        if sec.get("step_id"):
+        # tmp_ id는 카탈로그에 없는 스텝(LLM이 새로 지은 것)이다 — 조회하지 않는다.
+        if is_catalog_step(sec.get("step_id")):
             preset = catalog.get_step(sec["step_id"])
             label = clean_title(sec.get("title") or preset.get("title") or sec["step_id"])
             modules = sec.get("modules") or preset.get("default_modules") or []
@@ -97,6 +113,7 @@ def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], lis
                 params=params,
                 tools=tools,
                 layout=m.get("layout") or list(spec.layout),   # 계획 > 모듈 명세 > 기본값
+                sub_name=m.get("sub_name") or None,
             ))
     return instances, step_order
 
@@ -130,9 +147,11 @@ def topo_order(instances: list[ModuleInstance]) -> list[ModuleInstance]:
     """requires/produces 이름표로 실행 순서를 계산한다. 의존 없는 것끼리는 plan 순서 유지.
 
     STEP_SCOPED_LABELS는 스텝마다 별도 생산자(스텝별 쿼리 모듈)를 허용한다 — 소비자는 같은
-    스텝의 생산자에만 연결된다. 그 외 이름표는 같은 이름표를 두 인스턴스가 produces 하면(같은
-    모듈 다중 실행, §3.4-2) 네임스페이스가 필요하며 이는 후속 과제다. 지금은 명확한 오류로
-    surface 한다(조용한 오작동 방지).
+    스텝의 생산자에만 연결된다.
+
+    그 외 이름표는 **조합 단위**로 본다(2026-09-01 재구조화). 같은 모듈을 분석 대상만 바꿔
+    두 번 넣을 수 있어야 하므로(오류코드별 이상탐지 + 앱별 이상탐지), 이름표에 그 대상을
+    붙여 구분한다. 대상까지 똑같은 두 모듈은 진짜 중복이라 여전히 오류다.
     """
     producer: dict[str, int] = {}
     step_producer: dict[tuple[str, str], int] = {}
@@ -147,13 +166,15 @@ def topo_order(instances: list[ModuleInstance]) -> list[ModuleInstance]:
                     )
                 step_producer[key] = i
                 continue
-            if lbl in producer:
+            scoped = inst.label(lbl)
+            if scoped in producer:
                 raise PlanError(
-                    f"이름표 '{lbl}'를 두 모듈이 생산합니다 "
-                    f"({instances[producer[lbl]].module_id}, {inst.module_id}). "
-                    f"같은 모듈 다중 실행 시 이름표 네임스페이스는 후속 과제입니다(§3.4-2)."
+                    f"같은 분석이 두 번 들어 있습니다 — "
+                    f"'{inst.module_id}'"
+                    + (f"({inst.sub_name}별)" if inst.sub_name else "")
+                    + "가 중복입니다. 하나를 빼주세요."
                 )
-            producer[lbl] = i
+            producer[scoped] = i
 
     deps: dict[int, set[int]] = {i: set() for i in range(len(instances))}
     for i, inst in enumerate(instances):
@@ -163,8 +184,14 @@ def topo_order(instances: list[ModuleInstance]) -> list[ModuleInstance]:
                 if key in step_producer and step_producer[key] != i:
                     deps[i].add(step_producer[key])
                 continue
-            if lbl in producer and producer[lbl] != i:
-                deps[i].add(producer[lbl])
+            # 같은 분석 대상의 생산자를 먼저 찾고, 없으면 대상 없는 공용 생산자를 쓴다.
+            # 그것도 없으면 그 이름표의 생산자 아무거나(대상이 하나뿐인 경우가 대부분).
+            src = producer.get(inst.label(lbl), producer.get(lbl))
+            if src is None:
+                src = next((j for k, j in producer.items()
+                            if k == lbl or k.startswith(f"{lbl}@")), None)
+            if src is not None and src != i:
+                deps[i].add(src)
 
     order: list[int] = []
     resolved: set[int] = set()
@@ -213,7 +240,11 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
             continue
 
         for lbl, val in result.outputs.items():
-            _ow = lbl in STEP_SCOPED_LABELS
+            # 모듈은 이름표를 평범한 이름으로 읽는다(ctx.get("outlier_result")). 같은 모듈이
+            # 대상만 바꿔 여러 번 돌면 뒤엣것이 앞엣것을 덮는데, 소비자는 위상정렬로 자기
+            # 생산자 바로 뒤에 오므로 그때그때 맞는 값을 본다.
+            # 대상이 없는 모듈(총평 등)은 공용 수치라 덮어쓰기를 막아 둔다(§6.2 재계산 금지).
+            _ow = lbl in STEP_SCOPED_LABELS or inst.sub_name is not None
             ctx.put(lbl, val, overwrite=_ow)
         if result.render is not None:
             ctx.add_summary(inst.ref, result.render.summary)   # 결론 전용(본문에는 안 나감)
@@ -361,6 +392,14 @@ def run_plan(plan: dict, catalog: Catalog, ctx: SharedContext | None = None) -> 
     instances, step_order = expand_plan(plan, catalog)
     ordered = topo_order(instances)
     step_renders = execute(ordered, ctx)
+
+    # 데이터를 한 번도 못 가져왔으면 더 진행할 것이 없다 — 해설·결론까지 돌려봐야 "분석 불가"만
+    # 적힌 문서와 LLM 호출이 남는다. 사유만 알리고 멈춘다.
+    if not ctx.has("actual_dataset"):
+        reason = next((n["reason"] for n in ctx.notes() if n["kind"] == "failed"),
+                      "원인을 알 수 없습니다.")
+        raise DataLoadError(f"분석할 데이터를 가져오지 못했습니다. {reason}")
+
     narrate(step_order, step_renders, catalog, ctx)
     markdown = assemble(plan, step_order, step_renders, ctx)
     return {

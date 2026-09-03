@@ -155,7 +155,7 @@ def options_to_plan(options: dict, schema: Schema,
       실행 스텝이라 빼면 오히려 보고서에서 결론이 통째로 사라진다).
     - 알 수 없는 module_id·param·tool은 조용히 고치지 않고 즉시 OptionsError를 올린다.
     - finalize()를 내부에서 호출해 누락된 선행 모듈(period_dataset 등)을 자동 삽입한다
-      (scenario_plan/auto_plan과 동일한 마지막 단계).
+      (scenario_plan/compose_scenario와 동일한 마지막 단계).
 
     global_measure: 옵션 JSON의 global.measure(역할 또는 물리명). 모듈이 measure를 직접
       지정하지 않았고 이 모듈이 measure 파라미터를 지원하면 기본값으로 채운다(2026-07-24 G2).
@@ -196,7 +196,9 @@ def options_to_plan(options: dict, schema: Schema,
                 )
 
             raw_params = dict(m.get("params") or {})
-            unknown = set(raw_params) - set(spec.params)
+            # "_"로 시작하는 값은 카탈로그에 없는 실행 캐시(_llm_render_cache 등)다 — 정기
+            # 보고서 스냅샷에 실려 오므로 알 수 없는 param으로 보지 않는다.
+            unknown = {k for k in raw_params if not k.startswith("_")} - set(spec.params)
             if unknown:
                 raise OptionsError(
                     f"스텝 '{title}' 모듈 '{module_id}': 알 수 없는 param {sorted(unknown)}. "
@@ -218,7 +220,9 @@ def options_to_plan(options: dict, schema: Schema,
                 skip_reasons.append(reason)
                 continue
 
-            tool = m.get("tool")
+            # 저장된 JSON은 툴을 "tools"(복수)로 남긴다 — 붙여넣어 재실행할 때 골라둔 툴이
+            # 사라지지 않게 둘 다 받는다.
+            tool = m.get("tool") or (m.get("tools") or [None])[0]
             auto = bool(m.get("_auto"))
 
             try:

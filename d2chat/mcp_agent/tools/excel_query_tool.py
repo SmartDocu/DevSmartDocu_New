@@ -10,7 +10,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from d2shared.visualization import detect_suspicious_uniform_ratio
-from d2chat.mcp_agent.classifier import classify_question_and_table
+from d2shared.table_classifier import classify_question_and_table
 
 _VALID_VIZ_TYPES = {"table", "chart", "none"}
 

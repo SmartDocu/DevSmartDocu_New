@@ -207,7 +207,7 @@ def advance_spec(session_id: str, message: str, history: list[dict] | None = Non
             save_spec(session_id, spec)
             return spec, "__EXECUTE__"
         save_spec(session_id, spec)
-        return spec, "분석 기준월을 알려주세요. (예: 2013년 3월)"
+        return spec, "분석할 기간을 알려주세요."
 
     if spec.get("mode") == "confirming":
         if params.get("confirmed"):
@@ -232,7 +232,7 @@ def advance_spec(session_id: str, message: str, history: list[dict] | None = Non
 
     if not is_required_complete(spec):
         save_spec(session_id, spec)
-        return spec, "분석 기준월을 알려주세요. (예: 2013년 11월)"
+        return spec, "분석할 기간을 알려주세요."
 
     if not spec.get("entry_asked"):
         spec["entry_asked"] = True

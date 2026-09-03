@@ -20,7 +20,7 @@ OperationError를 올린다. 호출부(entry.py)가 이를 잡아 사용자에�
 """
 from __future__ import annotations
 
-from d2insight.engine.catalog.module_key import normalize, to_key
+from d2insight.engine.catalog.module_key import ModuleKeyError, normalize, to_key
 from d2insight.engine.catalog.modules import get_module_registry
 from d2insight.engine.catalog.steps import get_step_registry
 
@@ -75,12 +75,18 @@ def _find_index(steps: list[dict], step_id: str) -> int:
 
 
 def _producer_labels(steps: list[dict], registry: dict) -> set[str]:
+    """이미 생산되는 이름표. 조합 단위로 본다 — runner.ModuleInstance.label과 같은 규칙이다.
+
+    같은 분석이라도 대상이 다르면 다른 이름표다(오류코드별 이상탐지 ≠ 앱별 이상탐지).
+    """
     labels: set[str] = set()
     for s in steps:
         for m in s.get("modules", []):
             spec = registry.get(_module_name(m))
-            if spec:
-                labels.update(spec.produces)
+            if not spec:
+                continue
+            sub = normalize(m).get("sub_name")
+            labels.update(f"{lbl}@{sub}" if sub else lbl for lbl in spec.produces)
     return labels
 
 
@@ -157,15 +163,30 @@ def _assert_no_duplicate(step: dict, key: str, exclude: dict | None = None) -> N
             )
 
 
+def _assert_in_schema(schema, kind: str, value) -> None:
+    """바꾸려는 분석 대상·기준 값이 이 데이터에 실제로 있는지 확인한다.
+
+    역할 이름(item/region 등)과 컬럼명 둘 다 받는다 — 프롬프트가 두 형태를 모두 허용한다.
+    확인 없이 통과시키면 나중에 "작성 불가"로만 나타나 사유를 알 수 없다.
+    """
+    if schema is None or not value:
+        return
+    available = schema.dimensions if kind == "sub_name" else schema.measures
+    if value in available or schema.columns(value):
+        return
+    what = "분석 대상" if kind == "sub_name" else "기준 값"
+    raise OperationError(
+        f"이 데이터에 '{value}'이(가) 없습니다. 쓸 수 있는 {what}: {', '.join(available)}"
+    )
+
+
 def _module_entry_for(module_name: str, sub_name, measure, registry: dict) -> dict:
     """카탈로그에서 모듈 하나를 꺼내 steps[] 항목으로 만든다(조립 표현 + params 기본값)."""
     from d2insight.engine.chat_options import module_entry_from_preset
 
     spec = registry.get(module_name)
     if spec is None:
-        raise OperationError(
-            f"'{module_name}'은 카탈로그에 없는 모듈입니다. 등록된 모듈: {sorted(registry)}"
-        )
+        raise OperationError(f"'{module_name}'은 이 앱에 없는 분석입니다.")
     if sub_name and not spec.sub_name_pool:
         raise OperationError(
             f"모듈 '{module_name}'은 분석 대상을 따로 고르지 않습니다(sub_name 지정 불가)."
@@ -221,10 +242,13 @@ def _position_of(op: dict) -> dict:
     return {k: v for k, v in op.items() if k in ("before", "after", "at")}
 
 
-def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[dict], list[str]]:
+def apply_operations(
+    steps: list[dict], operations: list[dict], schema=None,
+) -> tuple[list[dict], list[str]]:
     """편집 연산 목록을 스텝 목록에 순서대로 적용한다.
 
     steps: 옵션 JSON의 steps 형태(각 항목 {"step_id","title","modules":[...]}).
+    schema: 주면 분석 대상·기준 값이 그 데이터에 실제로 있는지 확인한다.
     실패하면 즉시 OperationError — 일부만 적용된 애매한 상태로 두지 않는다(호출부가
     통째로 롤백해 기본 구성으로 대체하도록).
     반환: (적용된 steps, notes). notes에는 요청한 그대로 처리된 경우의 "확인" 문구는 담지
@@ -267,11 +291,7 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
             entry = _default_step_entry(step_id, step_registry, registry)
 
             # 싱글턴 이름표 사전 검사(G5) — 실행 도중 PlanError로 죽기 전에 여기서 막는다.
-            new_labels: set[str] = set()
-            for m in entry["modules"]:
-                spec = registry.get(_module_name(m))
-                if spec:
-                    new_labels.update(spec.produces)
+            new_labels = _producer_labels([entry], registry)
             clash = new_labels & _producer_labels(steps, registry)
             if clash:
                 raise OperationError(
@@ -284,18 +304,26 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
 
         elif kind == "reorder":
             order = op.get("order") or []
-            non_locked_ids = {s["step_id"] for s in steps if not is_locked_step(s)}
+            # step_id가 없는 옛 저장분도 있으므로 .get으로 읽는다 — 직접 꺼내면 KeyError다.
+            non_locked_ids = {s.get("step_id") for s in steps if not is_locked_step(s)}
             if set(order) != non_locked_ids:
                 raise OperationError(
                     "reorder의 step_id 목록은 잠기지 않은 스텝 전체와 정확히 일치해야 합니다"
-                    f"(자료확인/총평 등 뿌리 스텝, 결론은 제외). 대상: {sorted(non_locked_ids)}"
+                    f"(자료확인/총평 등 뿌리 스텝, 결론은 제외). 대상: {sorted(filter(None, non_locked_ids))}"
                 )
-            by_id = {s["step_id"]: s for s in steps}
+            by_id = {s.get("step_id"): s for s in steps}
             # 뿌리 스텝(맨 앞)과 결론(맨 뒤)은 방향이 반대라 한데 묶어 앞으로 몰면 안 된다
             # (2026-07-28, 결론 스텝화 — 예전엔 모든 잠긴 스텝을 맨 앞으로 몰았다).
             head_locked = [s for s in steps if is_locked_step(s) and not _is_tail_locked(s)]
             tail_locked = [s for s in steps if _is_tail_locked(s)]
             steps = head_locked + [by_id[sid] for sid in order] + tail_locked
+
+        elif kind == "set_title":
+            idx = _find_index(steps, op["step_id"])
+            title = (op.get("title") or "").strip()
+            if not title:
+                raise OperationError("바꿀 스텝 이름이 비어 있습니다.")
+            steps[idx]["title"] = title
 
         elif kind == "set_param":
             idx = _find_index(steps, op["step_id"])
@@ -356,6 +384,7 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
                 )
             if spec is not None and spec.sub_name_required and not sub_name:
                 raise OperationError(f"모듈 '{mid}'은 분석 대상을 비울 수 없습니다.")
+            _assert_in_schema(schema, "sub_name", sub_name)
             new_key = to_key({**normalize(entry), "sub_name": sub_name})
             _assert_no_duplicate(steps[idx], new_key, exclude=entry)
             entry["sub_name"] = sub_name
@@ -368,22 +397,30 @@ def apply_operations(steps: list[dict], operations: list[dict]) -> tuple[list[di
             measure = op.get("measure") or None
             if spec is not None and not spec.accepts_measure:
                 raise OperationError(f"모듈 '{mid}'은 기준 값을 따로 고르지 않습니다.")
+            _assert_in_schema(schema, "measure", measure)
             new_key = to_key({**normalize(entry), "measure": measure})
             _assert_no_duplicate(steps[idx], new_key, exclude=entry)
             entry["measure"] = measure
 
         elif kind == "add_module":
             idx = _find_index(steps, op["step_id"])
-            entry = _module_entry_for(
-                op.get("module_name") or op.get("module"),
-                op.get("sub_name"), op.get("measure"), registry,
-            )
+            # 이름만 오기도 하고 조합 키("amount:actual_aggregate@Brand")로 오기도 한다.
+            ref = op.get("module_name") or op.get("module")
+            try:
+                parts = normalize(ref)
+            except ModuleKeyError:
+                raise OperationError(f"추가할 분석을 읽지 못했습니다: {ref!r}")
+            sub_name = op.get("sub_name") or parts["sub_name"]
+            measure = op.get("measure") or parts["measure"]
+            _assert_in_schema(schema, "sub_name", sub_name)
+            _assert_in_schema(schema, "measure", measure)
+            entry = _module_entry_for(parts["module_name"], sub_name, measure, registry)
             _assert_no_duplicate(steps[idx], to_key(normalize(entry)))
 
             # 싱글턴 이름표 사전 검사 — add(스텝)와 같은 규칙이다. 실행 도중 PlanError로
             # 죽기 전에 여기서 막는다.
-            spec = registry.get(_module_name(entry))
-            clash = set(spec.produces if spec else []) & _producer_labels(steps, registry)
+            clash = (_producer_labels([{"modules": [entry]}], registry)
+                     & _producer_labels(steps, registry))
             if clash:
                 raise OperationError(
                     f"'{_module_name(entry)}'을 추가할 수 없습니다 — 이미 있는 분석과 같은 "
