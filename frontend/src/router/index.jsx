@@ -56,6 +56,7 @@ const OrgInviteMembersPage = lazy(() => import('@/pages/org/OrgInviteMembersPage
 const OrgTenantManagePage = lazy(() => import('@/pages/org/OrgTenantManagePage'))
 const OrgTenantBasicInfoPage = lazy(() => import('@/pages/org/OrgTenantBasicInfoPage'))
 const OrgSubscriptionManagePage = lazy(() => import('@/pages/org/OrgSubscriptionManagePage'))
+const OrgTenantCancelPage = lazy(() => import('@/pages/org/OrgTenantCancelPage'))
 const OrgOtherSubscriptionManagePage = lazy(() => import('@/pages/org/OrgOtherSubscriptionManagePage'))
 const OrgCreditManagePage = lazy(() => import('@/pages/org/OrgCreditManagePage'))
 const OrgPaymentManagePage = lazy(() => import('@/pages/org/OrgPaymentManagePage'))
@@ -192,6 +193,7 @@ export const router = createBrowserRouter([
       { path: 'org/tenant-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgTenantManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/tenant-basic-info', element: <RequireTenantManager><RequireNotSystemTenant><OrgTenantBasicInfoPage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
+      { path: 'org/tenant-cancel', element: <RequireTenantManager><RequireNotSystemTenant><OrgTenantCancelPage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/other-subscription-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgOtherSubscriptionManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/credit-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgCreditManagePage /></RequireNotSystemTenant></RequireTenantManager> },
       { path: 'org/payment-manage', element: <RequireTenantManager><RequireNotSystemTenant><OrgPaymentManagePage /></RequireNotSystemTenant></RequireTenantManager> },

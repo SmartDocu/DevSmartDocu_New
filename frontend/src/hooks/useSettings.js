@@ -268,6 +268,26 @@ export function useCancelUndoTenantSubscription() {
   })
 }
 
+export function useRequestTenantCancel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/settings/tenant-manage/tenant-cancel', body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-subscriptions'] })
+    },
+  })
+}
+
+export function useUndoTenantCancel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post('/settings/tenant-manage/tenant-cancel-undo', {}).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-manage-subscriptions'] })
+    },
+  })
+}
+
 export function useTenantManageTenantInfo() {
   return useQuery({
     queryKey: ['tenant-manage-tenant-info'],

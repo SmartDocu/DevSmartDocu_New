@@ -1,4 +1,4 @@
-import { Button, Card, Row, Col, Table } from 'antd'
+import { Button, Card, Row, Col, Table, Space } from 'antd'
 import { CreditCardOutlined, HistoryOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
@@ -43,12 +43,22 @@ function TenantInfoCard({ openInTab }) {
       size="small"
       title={t('ttl.tenant.manage.tenant_info')}
       extra={(
-        <Button
-          size="small"
-          onClick={() => openInTab('org/tenant-basic-info', '', t('ttl.tenant.manage.basic_info'))}
-        >
-          {t('btn.setting')}
-        </Button>
+        <Space size={8}>
+          <Button
+            size="small"
+            onClick={() => openInTab('org/tenant-basic-info', '', t('ttl.tenant.manage.basic_info'))}
+          >
+            {t('btn.setting')}
+          </Button>
+          <Button
+            size="small"
+            danger
+            type="text"
+            onClick={() => openInTab('org/tenant-cancel', '', t('ttl.tenant_cancel'))}
+          >
+            {t('btn.tenant_cancel')}
+          </Button>
+        </Space>
       )}
       loading={isLoading}
       style={{ height: '100%' }}

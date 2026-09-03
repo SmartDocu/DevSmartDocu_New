@@ -15,8 +15,13 @@ from fastapi import APIRouter, HTTPException, Request
 from backend.app.config import settings
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.private_storage import build_private_path, delete_private_prefix
+from utilsPrj.notifications import create_notification
+from utilsPrj.audit_log import log_work_action
 
 router = APIRouter()
+
+# 프로젝트 관례상 자동화 배치 작업의 creator/useruid 플레이스홀더(payments.py:SYSTEM_USER_ID와 동일 값)
+_SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 
 def _chunked(items: list, size: int = 500):
@@ -162,7 +167,63 @@ def _purge_accountservice_content(sd, accsvc_row: dict) -> dict:
             "subscription_status": "Cancelled",
         }).eq("subscriptionuid", subscriptionuid).execute()
 
+    log_work_action(
+        useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd=servicecd,
+        actioncd="delete", targettype="content-purge/service", targetid=accountuid,
+        after={"servicestatus": "Deleted", **detail},
+    )
+
+    _lock_tenant_if_fully_deleted(sd, accountuid, tenantid)
+
     return {"result": "purged", **detail}
+
+
+def _lock_tenant_if_fully_deleted(sd, accountuid: str, tenantid: int) -> None:
+    """테넌트 해지가 신청된(tenants.cancel_requested_dt IS NOT NULL) 계정의 서비스가 방금
+    Deleted로 전이됐다면, 이 계정의 accountservices가 전부 Deleted인지 확인하고 그렇다면
+    테넌트 전체를 잠근다(tenants.useyn=False + 소속 tenantusers.useyn=False 일괄).
+    tenants/accounts row 자체는 지우지 않는다 — Do 서비스 purge가 projects 컨테이너를
+    안 지우는 것과 동일한 원칙(결제/감사 기록 보존)."""
+    tenant_row = sd.table("tenants").select("tenantnm,cancel_requested_dt,useyn").eq(
+        "tenantid", tenantid
+    ).maybe_single().execute()
+    tenant = tenant_row.data if tenant_row else None
+    if not tenant or not tenant.get("cancel_requested_dt") or not tenant.get("useyn", True):
+        return
+
+    remaining = sd.table("accountservices").select("servicecd").eq(
+        "accountuid", accountuid
+    ).neq("servicestatus", "Deleted").execute().data or []
+    if remaining:
+        return
+
+    # useyn=False로 잠그기 전에 현재 활성 멤버 목록을 먼저 구해서 전원에게 최종 알림을 보낸다
+    # (신청 시점엔 매니저에게만 알림/이메일이 갔지만, 실제로 접근이 막히는 이 순간은 일반
+    # 멤버에게도 알려야 한다 — 2026-09-03 보완).
+    member_rows = sd.table("tenantusers").select("useruid").eq(
+        "tenantid", tenantid
+    ).eq("useyn", True).execute().data or []
+    for row in member_rows:
+        if not row.get("useruid"):
+            continue
+        create_notification(
+            sd, category="plan", status="warning",
+            title="테넌트 해지 완료",
+            message=f"'{tenant.get('tenantnm', '')}' 테넌트가 완전히 삭제되어 더 이상 접근할 수 없습니다.",
+            title_key="msg.notification.tenant_deleted.title", message_key="msg.notification.tenant_deleted.body",
+            params={"tenantnm": tenant.get("tenantnm", "")},
+            target_object="tenant", target_uid=accountuid,
+            target_useruid=row["useruid"],
+        )
+
+    sd.table("tenants").update({"useyn": False}).eq("tenantid", tenantid).execute()
+    sd.table("tenantusers").update({"useyn": False}).eq("tenantid", tenantid).execute()
+
+    log_work_action(
+        useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd="Tenant",
+        actioncd="delete", targettype="content-purge/tenant-lock", targetid=str(tenantid),
+        after={"useyn": False},
+    )
 
 
 @router.post("/run-purge-cycle")

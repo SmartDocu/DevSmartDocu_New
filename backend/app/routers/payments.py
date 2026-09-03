@@ -897,13 +897,19 @@ def _process_account_billing_cycle(sd, ab: dict, today: date) -> dict:
     """계정 1건의 통합 결제 사이클을 처리한다 — 만료된 부가상품/기능/Pro 해지를 먼저 정리한 뒤
     이번 사이클에 청구할 항목을 모아 한 번에 청구하고, 성공하면 invoices/invoice_items를 남긴다."""
     from backend.app.routers.settings import (
-        _apply_due_pro_downgrades, _apply_due_feature_cancellations, _apply_due_quantity_decreases, _next_billing_date,
+        _apply_due_pro_downgrades, _apply_due_pro_archival, _apply_due_feature_cancellations,
+        _apply_due_quantity_decreases, _next_billing_date,
     )
 
     accountuid = ab["accountuid"]
     tenantid = ab["tenantid"]
 
     _apply_due_pro_downgrades(sd, accountuid)
+    # ArchiveDelete/즉시삭제로 해지된 서비스를 Archived로 전이 — 이게 빠져 있으면 사용자가 구독
+    # 관리 화면을 다시 안 들어가는 한 accountservices.servicestatus가 계속 Active로 남아
+    # _collect_billing_items()가 이미 해지한 서비스를 계속 청구 대상에 포함시키는 버그가 있었음
+    # (2026-09-03 발견). Downgrade는 _apply_due_pro_downgrades가 이미 처리하므로 별개.
+    _apply_due_pro_archival(sd, accountuid)
     _apply_due_feature_cancellations(sd, accountuid)
     _apply_due_quantity_decreases(sd, accountuid)
 

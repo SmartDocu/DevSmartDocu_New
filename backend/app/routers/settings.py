@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from postgrest.utils import sanitize_param
 from pydantic import BaseModel
 
+from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket, offset_negative_ba_bucket
@@ -2253,6 +2254,11 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
         .eq("codegroupcd", "servicecd").eq("useyn", True).order("orderno").execute().data or []
     )
 
+    tenant_row = svc.table("tenants").select("cancel_requested_dt").eq(
+        "tenantid", int(tenantid)
+    ).maybe_single().execute()
+    tenant_cancel_requested_dt = tenant_row.data.get("cancel_requested_dt") if tenant_row and tenant_row.data else None
+
     if not accountuid:
         return {
             "subscriptions": [
@@ -2265,6 +2271,8 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
                 for c in service_codes
             ],
             "accountuid": None,
+            "tenant_cancel_requested": bool(tenant_cancel_requested_dt),
+            "tenant_cancel_requested_dt": tenant_cancel_requested_dt,
         }
 
     # 예약된 서비스 해지(90일 유예삭제) 중 이번 결제 주기가 끝난 건이 있으면 Archived로 전이한 뒤 조회 —
@@ -2337,7 +2345,11 @@ def get_tenant_manage_subscriptions(token: str = Depends(get_token), tenantid: O
             "cancel_effective_date": _fmt_dt(bucket_map.get(sub_id), offsetminutes) if cancel_reserved else None,
         })
 
-    return {"subscriptions": result, "accountuid": accountuid}
+    return {
+        "subscriptions": result, "accountuid": accountuid,
+        "tenant_cancel_requested": bool(tenant_cancel_requested_dt),
+        "tenant_cancel_requested_dt": _fmt_dt(tenant_cancel_requested_dt, offsetminutes) if tenant_cancel_requested_dt else None,
+    }
 
 
 _TENANT_CANCEL_TYPECDS = {"ArchiveDelete", "ImmediateDelete"}
@@ -2459,6 +2471,190 @@ def undo_tenant_subscription_cancel(
         useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
         actioncd="update", targettype="settings/tenant-manage/subscription-cancel-undo", targetid=sub["subscriptionuid"],
         before={"canceldts": sub.get("canceldts")}, after={"canceldts": None},
+        ip=get_client_ip(request),
+    )
+    return {"result": "success"}
+
+
+def _all_services_already_cancelled(svc, accountuid: str) -> bool:
+    """이 계정의 Active 서비스가 전부 이미 해지 예약(canceldts 존재)돼 있는지 확인한다.
+    테넌트 해지는 매니저가 서비스를 미리 다 해지해둔 뒤에만 신청할 수 있다 — 개인 계정 탈퇴와
+    반대 순서(탈퇴는 신청 즉시 서비스를 자동으로 해지시켜주지만, 테넌트 해지는 그 반대)."""
+    active_rows = svc.table("accountservices").select("subscriptionuid").eq(
+        "accountuid", accountuid
+    ).eq("servicestatus", "Active").execute().data or []
+    sub_ids = [r["subscriptionuid"] for r in active_rows if r.get("subscriptionuid")]
+    if not sub_ids:
+        return True
+    cancel_rows = svc.table("subscriptions").select("subscriptionuid,canceldts").in_(
+        "subscriptionuid", sub_ids
+    ).execute().data or []
+    canceled_ids = {r["subscriptionuid"] for r in cancel_rows if r.get("canceldts")}
+    return set(sub_ids) <= canceled_ids
+
+
+class TenantCancelRequest(BaseModel):
+    cancel_reasoncd: Optional[str] = None
+    cancel_reasondesc: Optional[str] = None
+    confirm_deletion_policy: bool = False
+
+
+@router.post("/tenant-manage/tenant-cancel")
+def request_tenant_cancel(
+    body: TenantCancelRequest,
+    request: Request,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """테넌트(기업) 해지 신청 — 개인 계정 탈퇴와 순서가 반대다: 탈퇴는 신청 즉시 모든 서비스를
+    자동으로 해지 예약해주지만, 테넌트 해지는 매니저가 이미 모든 서비스(Do/Ch/In)를 개별적으로
+    해지해둔 상태여야만 신청할 수 있다(_all_services_already_cancelled로 검증 — 프론트도 미리
+    막지만 여기서도 방어적으로 재검증한다).
+
+    신청 자체는 tenants.cancel_requested_dt만 기록한다 — 각 서비스는 이미 예약된 자기 유예기간을
+    그대로 다 채운 뒤 content_purge.py가 실제로 Deleted 처리하고, 그 마지막 서비스가 Deleted되는
+    순간(_purge_accountservice_content 참고) 테넌트 전체가 잠긴다(tenants.useyn=False + 소속
+    tenantusers.useyn=False 일괄 처리)."""
+    if not body.confirm_deletion_policy:
+        raise HTTPException(status_code=400, detail="msg.tenant_cancel.policy.confirm.required")
+
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    tenant_row = svc.table("tenants").select("tenantnm,cancel_requested_dt,useyn").eq(
+        "tenantid", int(tenantid)
+    ).maybe_single().execute()
+    tenant = tenant_row.data if tenant_row else None
+    if not tenant:
+        raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
+    if tenant.get("cancel_requested_dt"):
+        raise HTTPException(status_code=400, detail="이미 해지가 신청되어 있습니다.")
+    if not tenant.get("useyn", True):
+        raise HTTPException(status_code=400, detail="이미 해지된 테넌트입니다.")
+
+    if not _all_services_already_cancelled(svc, accountuid):
+        raise HTTPException(status_code=400, detail="msg.tenant_cancel.services_not_cancelled")
+
+    now_iso = datetime.now(tz.utc).isoformat()
+    svc.table("tenants").update({
+        "cancel_requested_dt": now_iso,
+        "cancel_useruid": user_id,
+        "cancel_reasoncd": body.cancel_reasoncd,
+        "cancel_reasondesc": body.cancel_reasondesc,
+    }).eq("tenantid", int(tenantid)).execute()
+
+    # 인앱 알림은 매니저뿐 아니라 일반 멤버 전원에게 보낸다 — 나중에 유예기간이 끝나 테넌트가
+    # 잠기는 순간 아무 예고도 못 받았던 사람이 생기지 않도록(2026-09-03 보완). 이메일은 아래에서
+    # 매니저에게만 보낸다(전 멤버 대상 메일은 과할 수 있어 기존 범위 유지).
+    member_rows = svc.table("tenantusers").select("useruid,rolecd").eq(
+        "tenantid", int(tenantid)
+    ).eq("useyn", True).execute().data or []
+    member_useruids = [r["useruid"] for r in member_rows if r.get("useruid")]
+    manager_useruids = [r["useruid"] for r in member_rows if r.get("useruid") and r.get("rolecd") == "M"]
+
+    for member_uid in member_useruids:
+        create_notification(
+            svc, category="plan", status="warning",
+            title="테넌트 해지 신청 접수",
+            message=f"'{tenant.get('tenantnm')}' 테넌트의 해지가 신청되었습니다. 각 서비스의 유예기간이 끝나는 대로 완전히 삭제됩니다.",
+            title_key="msg.notification.tenant_cancel.title", message_key="msg.notification.tenant_cancel.body",
+            params={"tenantnm": tenant.get("tenantnm")},
+            target_object="tenant", target_uid=accountuid,
+            target_url="org/tenant-cancel", target_useruid=member_uid,
+        )
+
+    if manager_useruids:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+
+            mgr_users = svc.schema("public").table("users").select("useruid,email").in_(
+                "useruid", manager_useruids
+            ).execute().data or []
+            mgr_emails = [r["email"] for r in mgr_users if r.get("email")]
+            if mgr_emails:
+                login_user = settings.EMAIL_HOST_USER
+                smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+                smtp.login(login_user, settings.EMAIL_HOST_PASSWORD)
+                try:
+                    subject = f"[D2Doc] '{tenant.get('tenantnm')}' 테넌트 해지 신청 접수"
+                    mail_body = (
+                        f"안녕하세요,\n\n"
+                        f"'{tenant.get('tenantnm')}' 테넌트의 해지가 신청되었습니다.\n\n"
+                        f"이용 중인 각 서비스는 자체 유예기간이 끝날 때까지 계속 사용할 수 있으며, "
+                        f"모든 서비스의 유예기간이 끝나면 테넌트가 완전히 삭제됩니다.\n\n"
+                        f"착오로 신청하셨다면 유예기간이 끝나기 전까지 관리 화면에서 신청을 철회할 수 있습니다.\n\n"
+                        f"감사합니다.\nD2Doc 팀"
+                    )
+                    for email in mgr_emails:
+                        msg = MIMEText(mail_body, "plain", "utf-8")
+                        msg["Subject"] = subject
+                        msg["From"] = login_user
+                        msg["To"] = email
+                        smtp.sendmail(login_user, [email], msg.as_string())
+                finally:
+                    smtp.quit()
+        except Exception:
+            # 이메일 발송 실패가 해지 신청 자체를 막지는 않는다(인앱 알림은 이미 갔음) — create_notification과
+            # 동일한 관용: 부가 채널 하나가 실패했다고 핵심 동작을 롤백할 이유는 없다.
+            pass
+
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/tenant-cancel", targetid=str(tenantid),
+        before={"cancel_requested_dt": None}, after={"cancel_requested_dt": now_iso},
+        detail={"cancel_reasoncd": body.cancel_reasoncd, "cancel_reasondesc": body.cancel_reasondesc},
+        ip=get_client_ip(request),
+    )
+    return {"result": "success"}
+
+
+@router.post("/tenant-manage/tenant-cancel-undo")
+def undo_tenant_cancel(
+    request: Request,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """테넌트 해지 신청 철회 — 아직 완전히 잠기지 않은 동안(tenants.useyn=True)만 가능하다.
+    개별 서비스들의 자체 해지 예약은 건드리지 않는다(원한다면 각자 구독 관리 화면에서 따로 철회)."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+
+    tenant_row = svc.table("tenants").select("cancel_requested_dt,useyn").eq(
+        "tenantid", int(tenantid)
+    ).maybe_single().execute()
+    tenant = tenant_row.data if tenant_row else None
+    if not tenant or not tenant.get("cancel_requested_dt"):
+        raise HTTPException(status_code=400, detail="신청된 해지가 없습니다.")
+    if not tenant.get("useyn", True):
+        raise HTTPException(status_code=400, detail="이미 처리가 완료되어 철회할 수 없습니다.")
+
+    prev_requested_dt = tenant.get("cancel_requested_dt")
+    svc.table("tenants").update({
+        "cancel_requested_dt": None,
+        "cancel_useruid": None,
+        "cancel_reasoncd": None,
+        "cancel_reasondesc": None,
+    }).eq("tenantid", int(tenantid)).execute()
+
+    log_work_action(
+        useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
+        actioncd="update", targettype="settings/tenant-manage/tenant-cancel-undo", targetid=str(tenantid),
+        before={"cancel_requested_dt": prev_requested_dt}, after={"cancel_requested_dt": None},
         ip=get_client_ip(request),
     )
     return {"result": "success"}
