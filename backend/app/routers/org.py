@@ -63,6 +63,29 @@ def _require_not_system_tenant(sb, tenantid) -> None:
         raise HTTPException(status_code=403, detail="msg.org.feature.unavailable.system.tenant")
 
 
+def _require_tenant_member_tenantid(user_id: str, tenantid: Optional[str]) -> int:
+    """호출자가 해당 테넌트의 활성 멤버(역할 무관)인지 검증 후 tenantid 반환. 아니면 403.
+    _require_tenant_manager_tenantid보다 느슨한 버전 — 조회 전용 화면처럼 매니저가 아니어도
+    같은 테넌트 소속이면 접근을 허용해야 하는 경우에 쓴다."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    tenantid = int(tenantid)
+    svc = get_service_client()
+    tu_row = (
+        svc.schema(SUPABASE_SCHEMA)
+        .table("tenantusers")
+        .select("useruid")
+        .eq("useruid", user_id)
+        .eq("tenantid", tenantid)
+        .eq("useyn", True)
+        .maybe_single()
+        .execute()
+    )
+    if not tu_row or not tu_row.data:
+        raise HTTPException(status_code=403, detail="이 테넌트에 소속돼 있지 않습니다.")
+    return tenantid
+
+
 # ══════════════════════════════════════════════════════
 #  TENANT USERS
 # ══════════════════════════════════════════════════════
@@ -74,20 +97,29 @@ def list_tenant_users(
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
+    """팀원 목록 조회 — 매니저 전용이 아니라 같은 테넌트 소속이면 누구나 볼 수 있는 화면이다
+    (프론트 라우트 가드도 RequireNotSystemTenant뿐, RequireTenantManager는 없음). 다만 어느
+    tenantid를 조회할지는 호출자가 실제로 그 테넌트의 활성 멤버일 때만 허용한다(과거엔 Query
+    파라미터의 tenantid를 그대로 믿어서, 다른 조직의 tenantid를 넣으면 그 조직 멤버 전체의
+    이메일/이름/역할이 노출되는 결함이 있었다 — 2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
 
-    # tenantid 결정: Query 파라미터 > X-Tenant-ID 헤더
-    if not tenantid:
-        tenantid = header_tenantid
-    if not tenantid:
-        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    # tenantid 결정: Query 파라미터 > X-Tenant-ID 헤더 — 둘 중 뭐가 왔든 호출자의 실제 소속 여부를 검증
+    tenantid = tenantid or header_tenantid
+    tenantid = _require_tenant_member_tenantid(str(user.id), tenantid)
     _require_not_system_tenant(sb, tenantid)
     offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     # 기업명 조회
     t_rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
     tenantnm = t_rows[0]["tenantnm"] if t_rows else ""
+
+    # accountuid는 Query 파라미터를 신뢰하지 않고 검증된 tenantid로부터 직접 도출한다
+    # (과거엔 ?accountuid=<다른 조직 accountuid>를 그대로 믿어서, 그 조직이 구독 중인 서비스
+    # 목록과 서비스별 정원/현재인원이 그대로 노출되는 결함이 있었다 — 2026-09-07 수정).
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    _, accountuid = _resolve_tenant_accountuid(svc_root, tenantid, str(user.id))
 
     # 계정이 구독 중인 서비스 목록 (서비스 조건 radio 옵션) + 서비스별 정원/현재인원
     available_servicecds = []
@@ -150,18 +182,30 @@ class TenantUserSaveRequest(BaseModel):
 
 
 @router.post("/tenant-users")
-def save_tenant_user(body: TenantUserSaveRequest, request: Request, token: str = Depends(get_token)):
+def save_tenant_user(
+    body: TenantUserSaveRequest, request: Request,
+    token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """팀원 추가/역할변경 — 대상 테넌트는 반드시 호출자가 현재 선택 중인(X-Tenant-ID) 테넌트여야
+    하고, 그 테넌트의 매니저여야 한다. body.tenantid/body.accountuid는 클라이언트가 보낸 값이라
+    신뢰하지 않는다(과거엔 body.tenantid를 그대로 믿어서, 로그인만 한 사용자라면 다른 조직의
+    tenantid를 넣어 멤버를 추가/역할변경할 수 있는 결함이 있었다 — 2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
     user_id = user.id
-    tenantid = int(body.tenantid)
+    tenantid = _require_tenant_manager_tenantid(str(user_id), header_tenantid)
     _require_not_system_tenant(sb, tenantid)
 
-    if not body.accountuid or not body.servicecds:
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    _, accountuid = _resolve_tenant_accountuid(svc_root, tenantid, str(user_id))
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    if not body.servicecds:
         raise HTTPException(status_code=400, detail="서비스를 선택해야 합니다.")
 
     # 구독하지 않은 서비스는 저장 차단
-    subscribed_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", body.accountuid).execute().data or []
+    subscribed_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
     subscribed_servicecds = {r["servicecd"] for r in subscribed_rows if r.get("servicecd")}
     not_subscribed = set(body.servicecds) - subscribed_servicecds
     if not_subscribed:
@@ -180,7 +224,7 @@ def save_tenant_user(body: TenantUserSaveRequest, request: Request, token: str =
     other_tenantid = int(sd_tenant[0]["tenantid"]) if sd_tenant else None
 
     # 선택된 서비스 집합을 사용자의 가입 상태로 동기화 (신규 가입 / 유지 / 탈퇴 구분)
-    current_su_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("servicecd").eq("accountuid", body.accountuid).eq("useruid", useruid).execute().data or []
+    current_su_rows = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("servicecd").eq("accountuid", accountuid).eq("useruid", useruid).execute().data or []
     current_servicecds = {r["servicecd"] for r in current_su_rows}
     desired_servicecds = set(body.servicecds)
     to_add = desired_servicecds - current_servicecds
@@ -188,10 +232,10 @@ def save_tenant_user(body: TenantUserSaveRequest, request: Request, token: str =
 
     # 신규로 추가되는 서비스만 인원 제한 검사
     for scd in to_add:
-        acc_svc = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("total_users").eq("accountuid", body.accountuid).eq("servicecd", scd).maybe_single().execute()
+        acc_svc = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("total_users").eq("accountuid", accountuid).eq("servicecd", scd).maybe_single().execute()
         total_users = acc_svc.data.get("total_users") if acc_svc and acc_svc.data else None
         if total_users is not None:
-            cnt = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid", count="exact").eq("accountuid", body.accountuid).eq("servicecd", scd).execute()
+            cnt = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("useruid", count="exact").eq("accountuid", accountuid).eq("servicecd", scd).execute()
             if (cnt.count or 0) >= total_users:
                 raise HTTPException(status_code=400, detail=f"{scd} 서비스는 최대 {total_users}명까지 가입할 수 있습니다.")
 
@@ -215,7 +259,7 @@ def save_tenant_user(body: TenantUserSaveRequest, request: Request, token: str =
     # serviceusers 동기화: 신규 가입 insert / 유지 서비스 useyn update / 탈퇴 서비스 delete
     for scd in to_add:
         sb.schema(SUPABASE_SCHEMA).table("serviceusers").insert({
-            "accountuid": body.accountuid,
+            "accountuid": accountuid,
             "servicecd": scd,
             "useruid": useruid,
             "tenantid": tenantid,
@@ -223,12 +267,12 @@ def save_tenant_user(body: TenantUserSaveRequest, request: Request, token: str =
             "creator": user_id,
         }).execute()
     for scd in (desired_servicecds & current_servicecds):
-        sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"useyn": body.useyn}).eq("accountuid", body.accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").update({"useyn": body.useyn}).eq("accountuid", accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
     for scd in to_remove:
-        sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", body.accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", accountuid).eq("servicecd", scd).eq("useruid", useruid).execute()
 
     after_tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).eq("useruid", useruid).execute().data or []
-    after_su = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("*").eq("accountuid", body.accountuid).eq("useruid", useruid).execute().data or []
+    after_su = sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("*").eq("accountuid", accountuid).eq("useruid", useruid).execute().data or []
     log_work_action(
         useruid=str(user_id), tenantid=tenantid, servicecd="Tenant",
         actioncd="update" if existing else "create", targettype="org/tenant-users", targetid=useruid,
@@ -246,16 +290,25 @@ class TenantUserDeleteRequest(BaseModel):
 
 
 @router.delete("/tenant-users")
-def delete_tenant_user(body: TenantUserDeleteRequest, request: Request, token: str = Depends(get_token)):
+def delete_tenant_user(
+    body: TenantUserDeleteRequest, request: Request,
+    token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """팀원 제거 — save_tenant_user()와 동일한 이유로 대상 테넌트는 호출자가 현재 선택 중인
+    (X-Tenant-ID) 테넌트여야 하고 그 테넌트의 매니저여야 한다. body.tenantid/body.accountuid는
+    신뢰하지 않는다(2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
-    tenantid = body.tenantid
+    tenantid = _require_tenant_manager_tenantid(str(user.id), header_tenantid)
     useruid = body.useruid
     _require_not_system_tenant(sb, tenantid)
 
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    _, accountuid = _resolve_tenant_accountuid(svc_root, tenantid, str(user.id))
+
     before = {
         "tenantusers": sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).eq("useruid", useruid).execute().data or [],
-        "serviceusers": sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("*").eq("accountuid", body.accountuid).eq("useruid", useruid).execute().data if body.accountuid else [],
+        "serviceusers": sb.schema(SUPABASE_SCHEMA).table("serviceusers").select("*").eq("accountuid", accountuid).eq("useruid", useruid).execute().data if accountuid else [],
     }
 
     # tenantusers에서 삭제
@@ -269,11 +322,11 @@ def delete_tenant_user(body: TenantUserDeleteRequest, request: Request, token: s
             sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", pid).eq("useruid", useruid).execute()
 
     # 해당 계정의 서비스 가입 정보 전체 삭제 (모든 servicecd)
-    if body.accountuid:
-        sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", body.accountuid).eq("useruid", useruid).execute()
+    if accountuid:
+        sb.schema(SUPABASE_SCHEMA).table("serviceusers").delete().eq("accountuid", accountuid).eq("useruid", useruid).execute()
 
     log_work_action(
-        useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
+        useruid=str(user.id), tenantid=tenantid, servicecd="Tenant",
         actioncd="delete", targettype="org/tenant-users", targetid=useruid, before=before,
         ip=get_client_ip(request),
     )
@@ -452,17 +505,18 @@ def delete_tenant_llm(body: TenantLlmDeleteRequest, request: Request, token: str
 @router.get("/projects")
 def list_org_projects(
     tenantid: Optional[str] = Query(None),
-    accountuid: Optional[str] = Query(None),
     token: str = Depends(get_token),
     header_tenantid: Optional[str] = Depends(get_tenantid),
 ):
+    """프로젝트 목록 조회 — tenant-users와 동일하게 매니저 전용이 아니라 같은 테넌트 소속이면
+    누구나 볼 수 있는 화면이다. 다만 호출자가 실제로 그 테넌트의 활성 멤버일 때만 허용한다
+    (과거엔 Query 파라미터의 tenantid를 그대로 믿어서, 다른 조직의 tenantid를 넣으면 그 조직의
+    프로젝트 목록이 노출되는 결함이 있었다 — 2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
 
-    if not tenantid:
-        tenantid = header_tenantid
-    if not tenantid:
-        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    tenantid = tenantid or header_tenantid
+    tenantid = _require_tenant_member_tenantid(str(user.id), tenantid)
     _require_not_system_tenant(sb, tenantid)
     offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
@@ -478,6 +532,11 @@ def list_org_projects(
         else:
             row["creatornm"] = ""
 
+    # accountuid는 Query 파라미터를 신뢰하지 않고 검증된 tenantid로부터 직접 도출한다
+    # (과거엔 ?accountuid=<다른 조직 accountuid>를 그대로 믿어서, 그 조직이 구독 중인 서비스
+    # 목록이 그대로 노출되는 결함이 있었다 — 2026-09-07 수정).
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    _, accountuid = _resolve_tenant_accountuid(svc_root, tenantid, str(user.id))
     available_servicecds = []
     if accountuid:
         svc_rows = sb.schema(SUPABASE_SCHEMA).table("accountservices").select("servicecd").eq("accountuid", accountuid).execute().data or []
@@ -498,12 +557,16 @@ class OrgProjectSaveRequest(BaseModel):
 
 @router.post("/projects")
 def save_org_project(body: OrgProjectSaveRequest, request: Request, token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid)):
+    """프로젝트 저장 — 이 화면은 매니저 전용이 아니라 같은 테넌트 소속이면 누구나 쓸 수 있게
+    설계됐다(프론트에 역할 기반 제한이 없음). 다만 대상 테넌트는 반드시 호출자가 현재
+    선택 중인(X-Tenant-ID) 테넌트의 실제 멤버여야 하고, 수정 시엔 기존 프로젝트가 정말 그
+    테넌트 소속인지도 재검증한다(과거엔 body.tenantid를 그대로 믿고 기존 프로젝트 소유권도
+    재검증 안 해서, 다른 조직의 tenantid를 넣어 프로젝트를 만들거나 남의 프로젝트를 그대로
+    수정할 수 있는 결함이 있었다 — 2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
 
-    tenantid = body.tenantid or header_tenantid
-    if not tenantid:
-        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    tenantid = _require_tenant_member_tenantid(str(user.id), header_tenantid)
     _require_not_system_tenant(sb, tenantid)
 
     if not body.projectnm:
@@ -542,6 +605,8 @@ def save_org_project(body: OrgProjectSaveRequest, request: Request, token: str =
     if body.projectid:
         existing = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("projectid", body.projectid).execute().data
         if existing:
+            if existing[0].get("tenantid") != tenantid:
+                raise HTTPException(status_code=403, detail="이 프로젝트에 대한 권한이 없습니다.")
             sb.schema(SUPABASE_SCHEMA).table("projects").update(data).eq("projectid", body.projectid).execute()
             after = snapshot_row(sb, "projects", "projectid", body.projectid)
             log_work_action(
@@ -563,16 +628,27 @@ def save_org_project(body: OrgProjectSaveRequest, request: Request, token: str =
 
 
 @router.delete("/projects/{projectid}")
-def delete_org_project(projectid: str, request: Request, token: str = Depends(get_token)):
+def delete_org_project(
+    projectid: str, request: Request,
+    token: str = Depends(get_token), header_tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """프로젝트 삭제 — save_org_project()와 동일한 이유로 대상 프로젝트가 반드시 호출자가
+    현재 선택 중인(X-Tenant-ID) 테넌트 소속이어야 한다(과거엔 프로젝트 자신의 tenantid만
+    보고 개인테넌트인지만 확인해서, 호출자가 그 테넌트 소속인지 전혀 검증하지 않았다 —
+    2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
+    tenantid = _require_tenant_member_tenantid(str(user.id), header_tenantid)
+
     proj = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("projectid", projectid).maybe_single().execute()
-    if proj and proj.data:
-        _require_not_system_tenant(sb, proj.data.get("tenantid"))
+    if not proj or not proj.data or proj.data.get("tenantid") != tenantid:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    _require_not_system_tenant(sb, tenantid)
+
     sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", projectid).execute()
     log_work_action(
-        useruid=str(user.id), tenantid=proj.data.get("tenantid") if proj and proj.data else None, servicecd="Tenant",
-        actioncd="delete", targettype="org/projects", targetid=projectid, before=proj.data if proj else None,
+        useruid=str(user.id), tenantid=tenantid, servicecd="Tenant",
+        actioncd="delete", targettype="org/projects", targetid=projectid, before=proj.data,
         ip=get_client_ip(request),
     )
     return {"result": "success", "message": "프로젝트가 성공적으로 삭제되었습니다."}
@@ -619,6 +695,12 @@ def list_project_users(
 
     if not projectid:
         return {"projects": proj_rows, "projectid": None, "projectusers": [], "tenantusers": []}
+
+    # projectid가 위에서 이미 구한 "내가 볼 수 있는 프로젝트 목록"(proj_rows) 안에 있는지 확인 —
+    # 과거엔 이 검증이 없어서 ?projects=<임의 projectid>로 접근 권한 없는 프로젝트의 멤버
+    # 목록(이메일 포함)을 그대로 볼 수 있는 정보노출 결함이 있었다(2026-09-07 수정).
+    if projectid not in {str(p.get("projectid")) for p in proj_rows}:
+        raise HTTPException(status_code=403, detail="이 프로젝트에 대한 권한이 없습니다.")
 
     # 프로젝트의 서비스(accountuid/servicecd) 및 계정 내 사용자별 가입 서비스 매핑
     proj_detail = sb.schema(SUPABASE_SCHEMA).table("projects").select("accountuid,servicecd").eq("projectid", projectid).execute().data
@@ -685,8 +767,17 @@ class ProjectUserSaveRequest(BaseModel):
 
 @router.post("/project-users")
 def save_project_user(body: ProjectUserSaveRequest, request: Request, token: str = Depends(get_token)):
+    """프로젝트 멤버 추가/역할변경 — 원래 권한 체크가 전혀 없어서 projectid만 알면 누구나
+    호출할 수 있었다. 호출자가 그 프로젝트가 속한 테넌트의 실제 멤버일 때만 허용한다
+    (2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
+
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    proj = svc_root.table("projects").select("tenantid").eq("projectid", body.projectid).maybe_single().execute()
+    if not proj or not proj.data:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    _require_tenant_member_tenantid(str(user.id), str(proj.data["tenantid"]))
 
     pub_users = sb.schema("public").table("users").select("useruid").eq("email", body.email).execute().data
     if not pub_users:
@@ -726,8 +817,17 @@ class ProjectUserDeleteRequest(BaseModel):
 
 @router.delete("/project-users")
 def delete_project_user(body: ProjectUserDeleteRequest, request: Request, token: str = Depends(get_token)):
+    """프로젝트 멤버 삭제 — save_project_user()와 동일한 이유로 호출자가 그 프로젝트의
+    테넌트 실제 멤버일 때만 허용한다(2026-09-07 수정)."""
     user = _get_user(token)
     sb = _sb(token)
+
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    proj = svc_root.table("projects").select("tenantid").eq("projectid", body.projectid).maybe_single().execute()
+    if not proj or not proj.data:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    _require_tenant_member_tenantid(str(user.id), str(proj.data["tenantid"]))
+
     before = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", body.projectid).eq("useruid", body.useruid).execute().data
     sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", body.projectid).eq("useruid", body.useruid).execute()
     log_work_action(
@@ -772,7 +872,7 @@ def _require_tenant_manager_tenantid(user_id: str, header_tenantid: Optional[str
         .maybe_single()
         .execute()
     )
-    if not tu_row.data or tu_row.data.get("rolecd") != "M":
+    if not tu_row or not tu_row.data or tu_row.data.get("rolecd") != "M":
         raise HTTPException(status_code=403, detail="테넌트 매니저 권한이 필요합니다.")
     return tenantid
 

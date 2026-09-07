@@ -174,8 +174,15 @@ def save_whitelist(
     }
 
     if body.whitelistuid:
+        # 수정 대상이 정말 이 테넌트 소유인지 먼저 확인한다(과거엔 확인 없이 whitelistuid만으로
+        # update했고, record에 tenantid=내 테넌트가 들어있어서 다른 테넌트의 whitelistuid를
+        # 알면 그 행을 통째로 가로채거나 IP값을 조작할 수 있는 결함이 있었다 — 2026-09-07 수정).
+        existing_row = sb.schema(SUPABASE_SCHEMA).table("whitelists").select("tenantid").eq("whitelistuid", body.whitelistuid).maybe_single().execute()
+        if not existing_row or not existing_row.data or existing_row.data.get("tenantid") != int(tenantid):
+            raise HTTPException(status_code=404, detail="msg.whitelist.not.found")
+
         before = snapshot_row(sb, "whitelists", "whitelistuid", body.whitelistuid)
-        sb.schema(SUPABASE_SCHEMA).table("whitelists").update(record).eq("whitelistuid", body.whitelistuid).execute()
+        sb.schema(SUPABASE_SCHEMA).table("whitelists").update(record).eq("whitelistuid", body.whitelistuid).eq("tenantid", int(tenantid)).execute()
         after = snapshot_row(sb, "whitelists", "whitelistuid", body.whitelistuid)
         log_work_action(
             useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",

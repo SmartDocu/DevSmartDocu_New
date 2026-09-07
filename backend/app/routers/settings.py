@@ -314,88 +314,6 @@ def delete_server(connuid: str, request: Request, token: str = Depends(get_token
 
 
 # ══════════════════════════════════════════════════════
-#  PROJECTS
-# ══════════════════════════════════════════════════════
-
-@router.get("/projects")
-def list_projects(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    user = _get_user(token)
-    sb = _sb(token)
-
-    rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).order("createdts", desc=True).execute().data or []
-    tenant_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("tenantnm").eq("tenantid", tenantid).execute().data
-    tenantnm = tenant_row[0]["tenantnm"] if tenant_row else ""
-
-    for row in rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"))
-        nm, _ = get_usernm_email(sb, row.get("creator"))
-        row["creatornm"] = nm
-
-    return {"projects": rows, "tenantnm": tenantnm}
-
-
-class ProjectSaveRequest(BaseModel):
-    projectid: Optional[str] = None
-    projectnm: str
-    projectdesc: Optional[str] = None
-    useyn: bool = True
-    servicecd: Optional[str] = None
-    accountuid: Optional[str] = None
-
-
-@router.post("/projects")
-def save_project(body: ProjectSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    user = _get_user(token)
-    sb = _sb(token)
-
-    # 신규 생성 시 플랜 제한 체크
-    is_new = not body.projectid
-    if is_new and body.accountuid and body.servicecd:
-        svc = sb.schema(SUPABASE_SCHEMA).table("accountservices") \
-            .select("plancd").eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
-            .maybe_single().execute()
-        plancd = svc.data.get("plancd") if svc and svc.data else None
-        if plancd:
-            cfg = sb.schema(SUPABASE_SCHEMA).table("config_plans") \
-                .select("value").eq("configcd", "project_limit").eq("plancd", plancd).eq("servicecd", body.servicecd) \
-                .maybe_single().execute()
-            limit = int(cfg.data["value"]) if cfg and cfg.data and cfg.data.get("value") else None
-            if limit is not None:
-                cnt = sb.schema(SUPABASE_SCHEMA).table("projects") \
-                    .select("projectid", count="exact") \
-                    .eq("accountuid", body.accountuid).eq("servicecd", body.servicecd) \
-                    .execute()
-                if (cnt.count or 0) >= limit:
-                    raise HTTPException(status_code=400, detail=f"프로젝트는 최대 {limit}개까지 생성할 수 있습니다.")
-
-    data = {
-        "projectnm": body.projectnm,
-        "projectdesc": body.projectdesc,
-        "useyn": body.useyn,
-        "tenantid": tenantid,
-        "creator": user.id,
-        "servicecd": body.servicecd,
-        "accountuid": body.accountuid,
-    }
-
-    if body.projectid:
-        existing = sb.schema(SUPABASE_SCHEMA).table("projects").select("projectid").eq("projectid", body.projectid).execute().data
-        if existing:
-            sb.schema(SUPABASE_SCHEMA).table("projects").update(data).eq("projectid", body.projectid).execute()
-            return {"status": "updated"}
-
-    sb.schema(SUPABASE_SCHEMA).table("projects").insert(data).execute()
-    return {"status": "inserted"}
-
-
-@router.delete("/projects/{projectid}")
-def delete_project(projectid: str, token: str = Depends(get_token)):
-    sb = _sb(token)
-    sb.schema(SUPABASE_SCHEMA).table("projects").delete().eq("projectid", projectid).execute()
-    return {"status": "ok"}
-
-
-# ══════════════════════════════════════════════════════
 #  TENANTS
 # ══════════════════════════════════════════════════════
 
@@ -3081,16 +2999,22 @@ def change_tenant_subscription(
 
 @router.get("/tenant-manage/tenant-info")
 def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """테넌트 관리 화면 [테넌트 정보] 카드: 담당자 연락처 + 언어·타임존 표시 전용 조회."""
+    """테넌트 관리 화면 [테넌트 정보] 카드: 담당자 연락처 + 언어·타임존 표시 전용 조회.
+
+    tenants 조회만 호출자 JWT(sb)로 수행한다 — 앱 레벨 _require_tenant_manager 체크에
+    버그가 있더라도 DB의 tenants RLS(is_tenant_member/is_tenant_manager)가 한 번 더
+    막아주도록 하기 위함(2026-09-07). accounts/languages 등 나머지는 아직 RLS 정책이
+    없어(accounts는 RLS는 켜져 있으나 정책이 없어 전체 차단) 그대로 service-role(svc) 유지."""
     user = _get_user(token)
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
+    sb = _sb(token)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
     _require_tenant_manager(svc, user_id, tenantid)
     _require_not_system_tenant(svc, tenantid)
 
-    t_row = svc.table("tenants").select("disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     tenant = t_row.data if t_row else {}
 
     languagenm = None
@@ -3124,16 +3048,20 @@ def get_tenant_manage_tenant_info(token: str = Depends(get_token), tenantid: Opt
 
 @router.get("/tenant-manage/basic-info")
 def get_tenant_manage_basic_info(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """[테넌트 기본 정보 설정] 화면: 아이콘·언어·타임존(tenants) + 담당자 연락처(accounts) 조회."""
+    """[테넌트 기본 정보 설정] 화면: 아이콘·언어·타임존(tenants) + 담당자 연락처(accounts) 조회.
+
+    tenants 조회만 호출자 JWT(sb)로 수행 — 이유는 get_tenant_manage_tenant_info() 주석 참고
+    (2026-09-07)."""
     user = _get_user(token)
     user_id = str(user.id)
     svc = get_service_client().schema(SUPABASE_SCHEMA)
+    sb = _sb(token)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
     _require_tenant_manager(svc, user_id, tenantid)
     _require_not_system_tenant(svc, tenantid)
 
-    t_row = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    t_row = sb.schema(SUPABASE_SCHEMA).table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     tenant = t_row.data if t_row else {}
 
     email, telno = "", ""
@@ -3171,17 +3099,21 @@ async def save_tenant_manage_basic_info(
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """[테넌트 기본 정보 설정] 화면: tenants(아이콘·표현기업명·언어·타임존) + accounts(담당자 연락처) 저장."""
+    """[테넌트 기본 정보 설정] 화면: tenants(아이콘·표현기업명·언어·타임존) + accounts(담당자 연락처) 저장.
+
+    tenants의 select/update만 호출자 JWT(sb)로 수행 — 이유는 get_tenant_manage_tenant_info()
+    주석 참고(2026-09-07). accounts update는 아직 RLS 정책이 없어(전체 차단) service-role 유지."""
     user = _get_user(token)
     user_id = str(user.id)
     svc_root = get_service_client()
     svc = svc_root.schema(SUPABASE_SCHEMA)
+    sb = _sb(token).schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
     _require_tenant_manager(svc, user_id, tenantid)
     _require_not_system_tenant(svc, tenantid)
 
-    before_tenant = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    before_tenant = sb.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     before_tenant = before_tenant.data if before_tenant else None
 
     tenant_payload = {}
@@ -3194,13 +3126,13 @@ async def save_tenant_manage_basic_info(
     if iconfile and iconfile.filename:
         if not accountuid:
             raise HTTPException(status_code=400, detail="msg.required.account")
-        existing = svc.table("tenants").select("iconfileurl").eq("tenantid", int(tenantid)).maybe_single().execute()
+        existing = sb.table("tenants").select("iconfileurl").eq("tenantid", int(tenantid)).maybe_single().execute()
         existing_url = existing.data.get("iconfileurl") if existing and existing.data else None
         icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid, existing_url)
         tenant_payload["iconfilenm"] = icon_nm
         tenant_payload["iconfileurl"] = icon_url
     if tenant_payload:
-        svc.table("tenants").update(tenant_payload).eq("tenantid", int(tenantid)).execute()
+        sb.table("tenants").update(tenant_payload).eq("tenantid", int(tenantid)).execute()
 
     if accountuid and (email or telno):
         acc_payload = {}
@@ -3210,7 +3142,7 @@ async def save_tenant_manage_basic_info(
             acc_payload["enctelno"] = _encrypt(telno)
         svc.table("accounts").update(acc_payload).eq("accountuid", accountuid).execute()
 
-    after_tenant = svc.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    after_tenant = sb.table("tenants").select("iconfilenm,iconfileurl,disptenantnm,languagecd,timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
     log_work_action(
         useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
         actioncd="update", targettype="settings/tenant-manage/basic-info", targetid=str(tenantid),
