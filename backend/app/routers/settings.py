@@ -319,11 +319,15 @@ def delete_server(connuid: str, request: Request, token: str = Depends(get_token
 
 @router.get("/tenants")
 def list_tenants(token: str = Depends(get_token)):
-    # 전체 테넌트 목록(복호화된 연락처 포함)이라 시스템 관리자(roleid=7)만 접근 가능해야 한다
+    # 전체 테넌트 목록(복호화된 연락처 포함)이라 시스템 관리자(roleid=7)만 접근 가능해야 한다.
+    # tenants select 정책(is_tenant_member)은 "소속 테넌트만"이라 관리자가 sb로 조회하면
+    # 자기가 속한 테넌트만 보이고 나머지는 빠지는 결함이 있었다(2026-09-07 수정) —
+    # save_tenant()/delete_tenant()와 동일한 이유로 service-role 사용.
     admin = _require_admin(token)
     sb = _sb(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
 
-    rows = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").order("createdts", desc=True).execute().data or []
+    rows = svc.table("tenants").select("*").order("createdts", desc=True).execute().data or []
 
     tenantids = [row["tenantid"] for row in rows if row.get("tenantid")]
     account_map = {}
@@ -400,9 +404,14 @@ async def save_tenant(
     iconfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
 ):
-    # 테넌트 생성/수정은 시스템 관리자(roleid=7)만 가능해야 한다
+    # 테넌트 생성/수정은 시스템 관리자(roleid=7)만 가능해야 한다.
+    # 이 화면은 관리자가 자기 소속과 무관한 임의의 테넌트를 다루는 전역 관리 화면이라
+    # tenants RLS(is_tenant_member/is_tenant_manager, 소속 테넌트 전제)와 맞지 않는다.
+    # _require_admin() 자체가 이미 충분한 권한 경계이므로 service-role을 그대로 쓴다
+    # (과거엔 sb(사용자 JWT)를 썼는데, RLS 적용 이후 소속 없는 테넌트 생성/수정이 막히고
+    # 삭제는 0행 삭제로 조용히 실패하는 결함이 있었다 — 2026-09-07 수정).
     user = _require_admin(token)
-    sb = _sb(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
 
     useyn_bool = useyn.lower() not in ("false", "0", "")
     issystemtenant_bool = issystemtenant.lower() not in ("false", "0", "")
@@ -419,7 +428,7 @@ async def save_tenant(
         tenant_data["timezone"] = timezone
 
     if tenantid:
-        existing = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
+        existing = svc.table("tenants").select("*").eq("tenantid", tenantid).execute().data
         if existing:
             svc_root = get_service_client()
             # 아이콘 업로드 전에 accounts row 존재를 보장해야 accountuid를 해석할 수 있다
@@ -432,8 +441,8 @@ async def save_tenant(
                 icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid, existing_url)
                 tenant_data["iconfilenm"] = icon_nm
                 tenant_data["iconfileurl"] = icon_url
-            sb.schema(SUPABASE_SCHEMA).table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
-            after = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
+            svc.table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
+            after = svc.table("tenants").select("*").eq("tenantid", tenantid).execute().data
             log_work_action(
                 useruid=str(user.id), tenantid=int(tenantid), servicecd="Tenant",
                 actioncd="update", targettype="settings/tenants", targetid=tenantid,
@@ -442,7 +451,7 @@ async def save_tenant(
             )
             return {"status": "updated"}
 
-    resp = sb.schema(SUPABASE_SCHEMA).table("tenants").insert({**tenant_data, "disptenantnm": tenantnm}).execute()
+    resp = svc.table("tenants").insert({**tenant_data, "disptenantnm": tenantnm}).execute()
     new_tenantid = resp.data[0]["tenantid"] if resp.data else None
     if new_tenantid:
         svc_root = get_service_client()
@@ -453,12 +462,12 @@ async def save_tenant(
             if not accountuid:
                 raise HTTPException(status_code=400, detail="msg.required.account")
             icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid)
-            sb.schema(SUPABASE_SCHEMA).table("tenants").update({
+            svc.table("tenants").update({
                 "iconfilenm": icon_nm,
                 "iconfileurl": icon_url,
             }).eq("tenantid", new_tenantid).execute()
         _save_default_tenant_configs(int(new_tenantid), str(user.id))
-    after = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", new_tenantid).execute().data if new_tenantid else []
+    after = svc.table("tenants").select("*").eq("tenantid", new_tenantid).execute().data if new_tenantid else []
     log_work_action(
         useruid=str(user.id), tenantid=new_tenantid, servicecd="Tenant",
         actioncd="create", targettype="settings/tenants", targetid=new_tenantid,
@@ -470,11 +479,14 @@ async def save_tenant(
 
 @router.delete("/tenants/{tenantid}")
 def delete_tenant(tenantid: str, request: Request, token: str = Depends(get_token)):
-    # 테넌트 삭제는 시스템 관리자(roleid=7)만 가능해야 한다
+    # 테넌트 삭제는 시스템 관리자(roleid=7)만 가능해야 한다.
+    # save_tenant()와 동일한 이유로 service-role 사용(관리자가 소속 없는 테넌트도 다뤄야 함) —
+    # 과거 sb(사용자 JWT) 사용 시 RLS 적용 후 0행 삭제로 조용히 실패하면서도 200을 반환하는
+    # 결함이 있었다(2026-09-07 수정).
     user = _require_admin(token)
-    sb = _sb(token)
-    before = sb.schema(SUPABASE_SCHEMA).table("tenants").select("*").eq("tenantid", tenantid).execute().data
-    sb.schema(SUPABASE_SCHEMA).table("tenants").delete().eq("tenantid", tenantid).execute()
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    before = svc.table("tenants").select("*").eq("tenantid", tenantid).execute().data
+    svc.table("tenants").delete().eq("tenantid", tenantid).execute()
     log_work_action(
         useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
         actioncd="delete", targettype="settings/tenants", targetid=tenantid,
