@@ -7,8 +7,22 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
+
+
+def _require_tenant_manager(user_id: str, tenantid: Optional[str]) -> str:
+    """API 커넥터 관리 화면 전용: 해당 테넌트의 매니저(rolecd=M)만 허용.
+
+    과거엔 이 체크가 아예 없어서 X-Tenant-ID 헤더만 바꾸면 인증된 사용자 누구나 다른
+    조직의 API 커넥터(자격증명 포함)를 조회·생성·수정·삭제할 수 있었다(2026-09-08 발견·수정)."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    tu = svc.table("tenantusers").select("rolecd,useyn").eq("useruid", user_id).eq("tenantid", int(tenantid)).maybe_single().execute()
+    if not tu or not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
+        raise HTTPException(status_code=403, detail="테넌트 관리자만 접근할 수 있습니다.")
+    return tenantid
 
 
 # 시크릿(비밀번호/API키/OAuth secret) 절대 감사로그에 남기지 않음 — secret_path 컬럼 제외하고 스냅샷
@@ -167,6 +181,7 @@ class ConnectorSaveRequest(BaseModel):
 def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
     offsetminutes = _get_offsetminutes(sb, str(user.id), tenantid)
 
     conns = (
@@ -258,6 +273,7 @@ def list_connectors(token: str = Depends(get_token), tenantid: Optional[str] = D
 def save_connector(body: ConnectorSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
     is_new = not body.connuid
     before = _snapshot_connector(sb, body.connuid)
 
@@ -359,10 +375,9 @@ def save_connector(body: ConnectorSaveRequest, request: Request, token: str = De
 
 @router.delete("/{connuid}")
 def delete_connector(connuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    from utilsPrj.secrets_cache import delete_secret, invalidate_tenant
-
     sb   = _sb(token)
     user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
 
     exists = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -470,6 +485,7 @@ def test_auth_inline(body: InlineAuthRequest, token: str = Depends(get_token)):
 def test_health(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
     _verify_connector(sb, connuid, tenantid)
 
     api_rows = (
@@ -496,6 +512,7 @@ def test_health(connuid: str, token: str = Depends(get_token), tenantid: Optiona
 def test_auth(connuid: str, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     sb   = _sb(token)
     user = _get_user(token)
+    _require_tenant_manager(str(user.id), tenantid)
     _verify_connector(sb, connuid, tenantid)
 
     api_rows = (

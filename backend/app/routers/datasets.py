@@ -4,10 +4,34 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
-from utilsPrj.supabase_client import SUPABASE_SCHEMA
+from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
+
+
+def _require_tenant_manager(user_id: str, tenantid: Optional[str]) -> str:
+    """데이터셋 그룹 관리 화면 전용: 해당 테넌트의 매니저(rolecd=M)만 허용.
+
+    과거엔 이 체크가 전혀 없어서 X-Tenant-ID 헤더만 바꾸면 인증된 사용자 누구나 다른
+    조직의 데이터셋 그룹을 조회·생성·수정·삭제할 수 있었다(2026-09-08 발견·수정)."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    tu = svc.table("tenantusers").select("rolecd,useyn").eq("useruid", user_id).eq("tenantid", int(tenantid)).maybe_single().execute()
+    if not tu or not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
+        raise HTTPException(status_code=403, detail="테넌트 관리자만 접근할 수 있습니다.")
+    return tenantid
+
+
+def _require_dataset_tenant_manager(user_id: str, datasetuid: str) -> str:
+    """datasetuid의 실제 소속 테넌트를 서버에서 조회해 그 테넌트의 매니저인지 검증한다
+    (클라이언트가 보낸 tid 헤더를 신뢰하지 않음 — datasetuid가 다른 조직 소유일 수 있음)."""
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    row = svc.table("datasets").select("tenantid").eq("datasetuid", datasetuid).maybe_single().execute()
+    if not row or not row.data:
+        raise HTTPException(status_code=404, detail="데이터셋을 찾을 수 없습니다.")
+    return _require_tenant_manager(user_id, str(row.data["tenantid"]))
 
 
 def _tenant_project_ids(sb, user_id: str, tid: Optional[str]) -> list[int]:
@@ -101,6 +125,7 @@ def list_datasets(token: str = Depends(get_token), tid: Optional[str] = Depends(
     sb = _sb(token)
     if not tid:
         return {"datasets": []}
+    _require_tenant_manager(str(user.id), tid)
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("datasets")
         .select("*")
@@ -117,6 +142,10 @@ def list_datasets(token: str = Depends(get_token), tid: Optional[str] = Depends(
 def save_dataset(body: DatasetSaveRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    if body.datasetuid:
+        _require_dataset_tenant_manager(str(user.id), body.datasetuid)
+    else:
+        _require_tenant_manager(str(user.id), tid)
     record = {
         "tenantid":  tid,
         "datasetnm": body.datasetnm,
@@ -149,6 +178,7 @@ def save_dataset(body: DatasetSaveRequest, request: Request, token: str = Depend
 def delete_dataset(datasetuid: str, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_dataset_tenant_manager(str(user.id), datasetuid)
     before = {
         "datasets": snapshot_row(sb, "datasets", "datasetuid", datasetuid),
         "datasetmembers": sb.schema(SUPABASE_SCHEMA).table("datasetmembers").select("*").eq("datasetuid", datasetuid).execute().data or [],
@@ -173,6 +203,7 @@ def delete_dataset(datasetuid: str, request: Request, token: str = Depends(get_t
 def list_available_datas(token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_tenant_manager(str(user.id), tid)
     return {"datas": _tenant_datas_candidates(sb, tid, str(user.id))}
 
 
@@ -182,6 +213,7 @@ def list_available_datas(token: str = Depends(get_token), tid: Optional[str] = D
 def list_available_projects(token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_tenant_manager(str(user.id), tid)
 
     project_ids = _tenant_project_ids(sb, str(user.id), tid)
     projects = []
@@ -203,6 +235,7 @@ def list_available_projects(token: str = Depends(get_token), tid: Optional[str] 
 def get_dataset_members(datasetuid: str, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_dataset_tenant_manager(str(user.id), datasetuid)
 
     datas = _tenant_datas_candidates(sb, tid, str(user.id))
 
@@ -222,6 +255,7 @@ def get_dataset_members(datasetuid: str, token: str = Depends(get_token), tid: O
 def save_dataset_members(datasetuid: str, body: MembersSaveRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_dataset_tenant_manager(str(user.id), datasetuid)
 
     before = sb.schema(SUPABASE_SCHEMA).table("datasetmembers").select("*").eq("datasetuid", datasetuid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("datasetmembers").delete().eq("datasetuid", datasetuid).execute()
@@ -245,6 +279,7 @@ def save_dataset_members(datasetuid: str, body: MembersSaveRequest, request: Req
 def get_dataset_projects(datasetuid: str, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_dataset_tenant_manager(str(user.id), datasetuid)
 
     project_ids = _tenant_project_ids(sb, str(user.id), tid)
     projects = []
@@ -273,6 +308,7 @@ def get_dataset_projects(datasetuid: str, token: str = Depends(get_token), tid: 
 def save_dataset_projects(datasetuid: str, body: ProjectsSaveRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    _require_dataset_tenant_manager(str(user.id), datasetuid)
 
     before = sb.schema(SUPABASE_SCHEMA).table("project_datasets").select("*").eq("datasetuid", datasetuid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("project_datasets").delete().eq("datasetuid", datasetuid).execute()
@@ -306,6 +342,10 @@ def _snapshot_dataset_all(sb, datasetuid: Optional[str]) -> dict:
 def save_dataset_all(body: DatasetSaveAllRequest, request: Request, token: str = Depends(get_token), tid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    if body.datasetuid:
+        _require_dataset_tenant_manager(str(user.id), body.datasetuid)
+    else:
+        _require_tenant_manager(str(user.id), tid)
 
     is_new = not body.datasetuid
     before = _snapshot_dataset_all(sb, body.datasetuid)

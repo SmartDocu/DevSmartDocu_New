@@ -22,6 +22,21 @@ def _snapshot_llmkey(sd, llmkeyuid: Optional[str]) -> Optional[dict]:
     return row.data if row else None
 
 
+def _require_tenant_manager(user_id: str, tenantid: Optional[str]) -> str:
+    """LLM API 키 관리 화면 전용: 해당 테넌트의 매니저(rolecd=M)만 허용.
+
+    과거엔 이 체크가 전혀 없어서 X-Tenant-ID 헤더만 바꾸면 인증된 사용자 누구나 다른
+    조직의 LLM API 키를 조회·생성·수정·삭제할 수 있었다 — 특히 delete_llmkey()는 tenantid
+    필터조차 없어 llmkeyuid만 알면 무조건 삭제가 가능했다(2026-09-08 발견·수정)."""
+    if not tenantid:
+        raise HTTPException(status_code=400, detail="tenantid를 확인할 수 없습니다.")
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    tu = svc.table("tenantusers").select("rolecd,useyn").eq("useruid", user_id).eq("tenantid", int(tenantid)).maybe_single().execute()
+    if not tu or not tu.data or tu.data.get("rolecd") != "M" or tu.data.get("useyn") is not True:
+        raise HTTPException(status_code=403, detail="테넌트 관리자만 접근할 수 있습니다.")
+    return tenantid
+
+
 def _get_tenant_and_account(sd, user_id: str, tenantid: Optional[str]) -> tuple[str, Optional[str]]:
     """tenantid와 accountuid를 반환."""
     if not tenantid:
@@ -50,6 +65,7 @@ def llmkeys_init(
     """화면 초기 데이터: accountuid, vendors, llmmodels, servicecodes."""
     user = _get_user(token)
     user_id = str(user.id)
+    _require_tenant_manager(user_id, header_tenantid)
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
@@ -99,6 +115,7 @@ def list_llmkeys(
     """현재 테넌트의 llmapikeys 목록 반환 (encapikey는 마스킹)."""
     user = _get_user(token)
     user_id = str(user.id)
+    _require_tenant_manager(user_id, header_tenantid)
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
@@ -142,10 +159,20 @@ def save_llmkey(
 ):
     user = _get_user(token)
     user_id = str(user.id)
+    _require_tenant_manager(user_id, header_tenantid)
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
 
     tenantid, accountuid = _get_tenant_and_account(sd, user_id, header_tenantid)
+
+    if body.llmkeyuid:
+        # 수정 대상이 정말 이 테넌트/계정 소유인지 먼저 확인한다(과거엔 확인 없이
+        # llmkeyuid만으로 update했다 — whitelists.py save_whitelist()에서 발견한 것과
+        # 동일한 IDOR 패턴, 2026-09-08 수정).
+        owner_row = sd.table("llmapikeys").select("tenantid,accountuid").eq("llmkeyuid", body.llmkeyuid).maybe_single().execute()
+        if not owner_row or not owner_row.data or str(owner_row.data.get("tenantid")) != str(tenantid) or owner_row.data.get("accountuid") != accountuid:
+            raise HTTPException(status_code=404, detail="LLM 키를 찾을 수 없습니다.")
+
     before = _snapshot_llmkey(sd, body.llmkeyuid)
 
     # encapikey 처리: 입력값 있으면 암호화, 없으면 기존 키 유지
@@ -176,7 +203,7 @@ def save_llmkey(
     def _do_save(payload: dict):
         nonlocal new_llmkeyuid
         if body.llmkeyuid:
-            sd.table("llmapikeys").update(payload).eq("llmkeyuid", body.llmkeyuid).execute()
+            sd.table("llmapikeys").update(payload).eq("llmkeyuid", body.llmkeyuid).eq("tenantid", int(tenantid)).eq("accountuid", accountuid).execute()
         else:
             payload["creator"] = user_id
             res = sd.table("llmapikeys").insert(payload).execute()
@@ -205,11 +232,18 @@ def save_llmkey(
 
 @router.delete("/{llmkeyuid}")
 def delete_llmkey(llmkeyuid: str, request: Request, token: str = Depends(get_token)):
+    """LLM 키 삭제 — 과거엔 권한 체크는 물론 tenantid 필터조차 없어서 llmkeyuid만 알면
+    (또는 다른 조직 화면에서 자기 llmkeyuid인 줄 알고 삭제 요청을 보내면) 누구나 삭제할 수
+    있었다. 대상 행의 실제 소속 테넌트를 서버에서 직접 조회해 그 테넌트의 매니저인지
+    검증한다(2026-09-08 발견·수정)."""
     user = _get_user(token)
     svc = get_service_client()
     sd = svc.schema(SUPABASE_SCHEMA)
     before = _snapshot_llmkey(sd, llmkeyuid)
-    sd.table("llmapikeys").delete().eq("llmkeyuid", llmkeyuid).execute()
+    if not before:
+        raise HTTPException(status_code=404, detail="LLM 키를 찾을 수 없습니다.")
+    _require_tenant_manager(str(user.id), str(before.get("tenantid")))
+    sd.table("llmapikeys").delete().eq("llmkeyuid", llmkeyuid).eq("tenantid", before.get("tenantid")).execute()
     log_work_action(
         useruid=str(user.id), tenantid=before.get("tenantid") if before else None, servicecd="Tenant",
         actioncd="delete", targettype="settings/llm-keys", targetid=llmkeyuid, before=before,

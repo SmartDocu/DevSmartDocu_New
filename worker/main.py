@@ -106,7 +106,7 @@ _DOMAIN_TBL_MAP = {"CU": "charts", "TU": "tables", "SU": "sentences",
                    "CA": "charts", "TA": "tables", "SA": "sentences"}
 
 
-def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None,
+def _upsert_genobjects(sb, svc, extracted: list, genchapteruid: str, chapteruid: str, user_id: str, docid=None,
                         projectid=None, tenantid=None, accountuid=None,
                         gendocjobuid=None, genchapterjobuid=None):
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -151,9 +151,14 @@ def _upsert_genobjects(sb, extracted: list, genchapteruid: str, chapteruid: str,
             "genchapterjobuid": genchapterjobuid,
             "gencontenttypecd": gencontenttypecd,
         })
-    sb.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
+    # genobjects는 RLS 대상이라 원 요청자 토큰(sb)이 아니라 service-role(svc)로 쓴다 — 이 워커
+    # 호출 자체가 이미 API 요청 시점에 require_doc_write로 권한 검증을 마친 신뢰된 작업이라
+    # 여기서 다시 RLS로 재검증할 필요가 없고, delete+insert처럼 부분 payload가 섞이는 쓰기 패턴은
+    # RLS의 INSERT 쪽 WITH CHECK가 후보 행(컬럼 미포함 시 NULL)을 기준으로 평가돼 원래는 UPDATE로
+    # 끝날 upsert까지 막힐 수 있다(2026-09-08 실측 확인).
+    svc.schema(SUPABASE_SCHEMA).table("genobjects").delete().eq("genchapteruid", genchapteruid).execute()
     if rows:
-        sb.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()
+        svc.schema(SUPABASE_SCHEMA).table("genobjects").insert(rows).execute()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -297,7 +302,7 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         buf.seek(0)
         upload_private_file(sb_svc, path, buf.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", upsert=True)
 
-        sb.schema(SUPABASE_SCHEMA).table("gendocs").update({
+        sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").update({
             "createfileurl": path,
             "createfiledts": datetime.now(timezone.utc).isoformat(),
             "createuserid": user_id,
@@ -331,7 +336,7 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
         )
 
-        sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
+        sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
             "doclocked": False,
             "docenddts": datetime.now(timezone.utc).isoformat(),
         }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
@@ -353,7 +358,7 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         except Exception:
             logger.exception("문서 오류 상태 업데이트 실패: %s", gendocuid)
         try:
-            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
+            sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
                 "doclocked": False,
                 "docenddts": datetime.now(timezone.utc).isoformat(),
             }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
@@ -463,7 +468,7 @@ def process_message(msg):
     finally:
         if not fan_out_success:
             try:
-                sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
+                sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
                     "doclocked": False,
                     "docenddts": datetime.now(timezone.utc).isoformat(),
                 }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
@@ -531,12 +536,14 @@ def process_chapter_message(msg):
         _reg = FunctionRegistry()
         _reg.set_default(lambda name, ctx, params: f"{{{{{name}}}}}[{json.dumps(params, ensure_ascii=False)}]")
         _flat = process_template(_tt, _ctx, _reg, True)
-        sb.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
+        # genchapters upsert도 service-role로 — 부분 payload(genchapteruid+flattexttemplate만)라
+        # RLS의 INSERT WITH CHECK가 누락된 docid를 NULL로 보고 막는 문제가 실측 확인됨(2026-09-08).
+        sb_svc.schema(SUPABASE_SCHEMA).table("genchapters").upsert({"genchapteruid": genchapteruid, "flattexttemplate": _flat}).execute()
         _extracted = extract_from_processed_html(_flat)
         # 문서 전체 작성(fan-out) 시에는 gendocjobuid+genchapterjobuid 둘 다, 단일 챕터 작성 시에는
         # genchapterjobuid만 genobjects에 기록한다(gendocjobuid는 process_chapter_message 호출부에서
         # 이미 단독 작성 시 None으로 넘어옴 — 여기서 genchapterjobuid를 임의로 지우지 않는다).
-        _upsert_genobjects(sb, _extracted, genchapteruid, chapteruid, user_id, docid=docid,
+        _upsert_genobjects(sb, sb_svc, _extracted, genchapteruid, chapteruid, user_id, docid=docid,
                            projectid=projectid, tenantid=tenantid, accountuid=accountuid,
                            gendocjobuid=gendocjobuid,
                            genchapterjobuid=genchapterjobuid)
@@ -552,7 +559,7 @@ def process_chapter_message(msg):
                 raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
 
         try:
-            sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
+            sb_svc.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
                 "gendocuid": gendocuid,
                 "genchapteruid": genchapteruid,
                 "creator": user_id,
@@ -651,7 +658,7 @@ def process_chapter_message(msg):
                         params={"gendocnm": doc_rt[0].get("gendocnm") or gendocnm},
                         target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
                     )
-                    sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
+                    sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
                         "doclocked": False,
                         "docenddts": datetime.now(timezone.utc).isoformat(),
                     }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
@@ -660,7 +667,7 @@ def process_chapter_message(msg):
 
     finally:
         try:
-            sb.schema(SUPABASE_SCHEMA).table("genlocks").update({
+            sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({
                 "chapterlocked": False,
                 "chapterenddts": datetime.now(timezone.utc).isoformat(),
             }).eq("genchapteruid", genchapteruid).execute()

@@ -132,8 +132,13 @@ def _fetch_db_secret(secret_path: Optional[str], tenantid: Optional[str], connui
 
 @router.get("/servers")
 def list_servers(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """DB 커넥터(서버) 관리 화면 — 과거엔 권한 체크가 전혀 없어서 X-Tenant-ID 헤더만 바꾸면
+    인증된 사용자 누구나 다른 조직의 DB 연결정보를 조회·생성·수정·삭제할 수 있었다
+    (2026-09-08 발견·수정)."""
     user = _get_user(token)
     sb = _sb(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    _require_tenant_manager(svc, str(user.id), tenantid)
 
     rows = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
@@ -191,16 +196,22 @@ def _snapshot_server(sb, connuid: Optional[str]) -> Optional[dict]:
 
 @router.post("/servers")
 def save_server(body: ServerSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """DB 커넥터(서버) 저장 — list_servers()와 동일한 이유로 매니저 권한을 요구한다
+    (2026-09-08 발견·수정). 수정 시엔 대상 connuid가 정말 이 테넌트 소유인지도 재검증한다
+    (과거엔 확인 없이 connuid만으로 update했음 — whitelists.py save_whitelist()에서 발견한
+    것과 동일한 IDOR 패턴)."""
     from utilsPrj.secrets_cache import save_connector_secret
 
     user = _get_user(token)
     sb = _sb(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    _require_tenant_manager(svc, str(user.id), tenantid)
     before = _snapshot_server(sb, body.connuid)
 
     if body.connuid:
         existing = (
             sb.schema(SUPABASE_SCHEMA).table("connectors")
-            .select("connuid, secret_path").eq("connuid", body.connuid).execute().data
+            .select("connuid, secret_path").eq("connuid", body.connuid).eq("tenantid", tenantid).execute().data
         )
         if existing:
             existing_sp = existing[0].get("secret_path") or ""
@@ -231,7 +242,7 @@ def save_server(body: ServerSaveRequest, request: Request, token: str = Depends(
                 "useyn": body.useyn,
                 "secret_path": "aws-sm",
             }
-            sb.schema(SUPABASE_SCHEMA).table("connectors").update(update_fields).eq("connuid", body.connuid).execute()
+            sb.schema(SUPABASE_SCHEMA).table("connectors").update(update_fields).eq("connuid", body.connuid).eq("tenantid", tenantid).execute()
             log_work_action(
                 useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
                 actioncd="update", targettype="settings/servers", targetid=body.connuid,
@@ -283,10 +294,15 @@ def save_server(body: ServerSaveRequest, request: Request, token: str = Depends(
 
 @router.delete("/servers/{connuid}")
 def delete_server(connuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """DB 커넥터 삭제 — list_servers()와 동일한 이유로 매니저 권한을 요구하고, 삭제 대상이
+    정말 이 테넌트 소유인지도 검증한다(과거엔 connuid만으로 다른 조직의 커넥터를 그대로
+    삭제할 수 있었다 — 2026-09-08 발견·수정)."""
     from utilsPrj.secrets_cache import delete_connector_secret
 
     user = _get_user(token)
     sb = _sb(token)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    _require_tenant_manager(svc, str(user.id), tenantid)
 
     in_use = (
         sb.schema(SUPABASE_SCHEMA).table("datas")
@@ -299,12 +315,14 @@ def delete_server(connuid: str, request: Request, token: str = Depends(get_token
     before = _snapshot_server(sb, connuid)
     existing = (
         sb.schema(SUPABASE_SCHEMA).table("connectors")
-        .select("secret_path").eq("connuid", connuid).execute().data
+        .select("secret_path").eq("connuid", connuid).eq("tenantid", tenantid).execute().data
     )
-    if existing and (existing[0].get("secret_path") or "") == "aws-sm":
+    if not existing:
+        raise HTTPException(status_code=404, detail="커넥터를 찾을 수 없습니다.")
+    if (existing[0].get("secret_path") or "") == "aws-sm":
         delete_connector_secret(tenantid, connuid)
 
-    sb.schema(SUPABASE_SCHEMA).table("connectors").delete().eq("connuid", connuid).execute()
+    sb.schema(SUPABASE_SCHEMA).table("connectors").delete().eq("connuid", connuid).eq("tenantid", tenantid).execute()
     log_work_action(
         useruid=str(user.id), tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
         actioncd="delete", targettype="settings/servers", targetid=connuid, before=before,

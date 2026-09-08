@@ -363,9 +363,20 @@ def list_tenant_llms(
      raise
 
 def _list_tenant_llms_impl(token: str, accountuid: Optional[str]):
+    """과거엔 accountuid 쿼리 파라미터를 그대로 믿어서, 다른 조직의 accountuid를 넣으면
+    그 조직의 프로젝트명/LLM 모델 설정이 그대로 노출되는 결함이 있었다. accountuid의 실제
+    소속 테넌트를 서버에서 조회해 호출자가 그 테넌트의 매니저일 때만 허용한다
+    (2026-09-08 수정)."""
     sb = _sb(token)
+    user = _get_user(token)
     if not accountuid:
         return {"projects": [], "llmmodels": [], "account_projects": []}
+
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    acc_row = svc_root.table("accounts").select("tenantid").eq("accountuid", accountuid).maybe_single().execute()
+    if not acc_row or not acc_row.data:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
+    _require_tenant_manager_tenantid(str(user.id), str(acc_row.data["tenantid"]))
 
     # 프로젝트 목록 (accountuid 기준)
     rows = (
@@ -437,11 +448,22 @@ def _snapshot_tenant_llm(sb, projectid: Optional[str]) -> Optional[dict]:
 
 @router.post("/tenant-llms")
 def save_tenant_llm(body: TenantLlmSaveRequest, request: Request, token: str = Depends(get_token)):
+    """과거엔 권한 체크가 전혀 없어서 projectid만 알면(순차 정수라 추측도 쉬움) 누구나
+    다른 조직의 프로젝트에 자기 LLM API 키를 심을 수 있었다 — 그 프로젝트를 쓰는 문서
+    생성이 전부 공격자 소유 LLM 계정으로 흘러가 생성 내용을 그대로 들여다볼 수 있는
+    심각한 결함이었다. projectid의 실제 소속 테넌트를 서버에서 조회해 호출자가 그
+    테넌트의 매니저일 때만 허용한다(2026-09-08 발견·수정)."""
     user = _get_user(token)
     sb = _sb(token)
 
     if not body.projectid:
         raise HTTPException(status_code=400, detail="projectid가 필요합니다.")
+
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    proj_row = svc_root.table("projects").select("tenantid").eq("projectid", body.projectid).maybe_single().execute()
+    if not proj_row or not proj_row.data:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    _require_tenant_manager_tenantid(str(user.id), str(proj_row.data["tenantid"]))
 
     from utilsPrj.crypto_helper import encrypt_value, decrypt_value
 
@@ -480,11 +502,19 @@ class TenantLlmDeleteRequest(BaseModel):
 
 @router.delete("/tenant-llms")
 def delete_tenant_llm(body: TenantLlmDeleteRequest, request: Request, token: str = Depends(get_token)):
+    """save_tenant_llm()과 동일한 이유로 projectid의 실제 소속 테넌트 매니저인지 검증한다
+    (2026-09-08 발견·수정)."""
     user = _get_user(token)
     sb = _sb(token)
 
     if not body.projectid:
         raise HTTPException(status_code=400, detail="projectid가 필요합니다.")
+
+    svc_root = get_service_client().schema(SUPABASE_SCHEMA)
+    proj_row = svc_root.table("projects").select("tenantid").eq("projectid", body.projectid).maybe_single().execute()
+    if not proj_row or not proj_row.data:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    _require_tenant_manager_tenantid(str(user.id), str(proj_row.data["tenantid"]))
 
     before = _snapshot_tenant_llm(sb, body.projectid)
     data = {"projectid": body.projectid, "llmmodelnm": None, "encapikey": None}
@@ -703,9 +733,15 @@ def list_project_users(
         raise HTTPException(status_code=403, detail="이 프로젝트에 대한 권한이 없습니다.")
 
     # 프로젝트의 서비스(accountuid/servicecd) 및 계정 내 사용자별 가입 서비스 매핑
-    proj_detail = sb.schema(SUPABASE_SCHEMA).table("projects").select("accountuid,servicecd").eq("projectid", projectid).execute().data
+    proj_detail = sb.schema(SUPABASE_SCHEMA).table("projects").select("accountuid,servicecd,tenantid").eq("projectid", projectid).execute().data
     proj_accountuid = proj_detail[0].get("accountuid") if proj_detail else None
     proj_servicecd = proj_detail[0].get("servicecd") if proj_detail else None
+    # 이 화면은 조직(기업) 테넌트 전용이라 메뉴 자체가 시스템(개인) 테넌트에서 숨겨져 있지만,
+    # tenantid 헤더를 안 보내면 위 조회가 헤더와 무관하게 본인 개인 프로젝트를 그대로 반환하는
+    # 경로가 있어(690번째 줄 근처) URL 직접 접근 시 우회될 수 있었다 — 프로젝트의 실제 tenantid로
+    # 재검증한다(2026-09-08 수정).
+    if proj_detail:
+        _require_not_system_tenant(sb, str(proj_detail[0].get("tenantid")))
 
     svc_map = {}
     if proj_accountuid:
@@ -769,7 +805,8 @@ class ProjectUserSaveRequest(BaseModel):
 def save_project_user(body: ProjectUserSaveRequest, request: Request, token: str = Depends(get_token)):
     """프로젝트 멤버 추가/역할변경 — 원래 권한 체크가 전혀 없어서 projectid만 알면 누구나
     호출할 수 있었다. 호출자가 그 프로젝트가 속한 테넌트의 실제 멤버일 때만 허용한다
-    (2026-09-07 수정)."""
+    (2026-09-07 수정). 이 화면은 조직(기업) 테넌트 전용이라 시스템(개인) 테넌트는 명시적으로
+    차단한다(메뉴는 이미 숨겨져 있었으나 백엔드엔 차단이 없었음 — 2026-09-08 추가)."""
     user = _get_user(token)
     sb = _sb(token)
 
@@ -778,6 +815,7 @@ def save_project_user(body: ProjectUserSaveRequest, request: Request, token: str
     if not proj or not proj.data:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     _require_tenant_member_tenantid(str(user.id), str(proj.data["tenantid"]))
+    _require_not_system_tenant(sb, str(proj.data["tenantid"]))
 
     pub_users = sb.schema("public").table("users").select("useruid").eq("email", body.email).execute().data
     if not pub_users:
@@ -818,7 +856,8 @@ class ProjectUserDeleteRequest(BaseModel):
 @router.delete("/project-users")
 def delete_project_user(body: ProjectUserDeleteRequest, request: Request, token: str = Depends(get_token)):
     """프로젝트 멤버 삭제 — save_project_user()와 동일한 이유로 호출자가 그 프로젝트의
-    테넌트 실제 멤버일 때만 허용한다(2026-09-07 수정)."""
+    테넌트 실제 멤버일 때만 허용한다(2026-09-07 수정). 시스템(개인) 테넌트는 명시적으로
+    차단한다(2026-09-08 추가, save_project_user()와 동일한 이유)."""
     user = _get_user(token)
     sb = _sb(token)
 
@@ -827,6 +866,7 @@ def delete_project_user(body: ProjectUserDeleteRequest, request: Request, token:
     if not proj or not proj.data:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     _require_tenant_member_tenantid(str(user.id), str(proj.data["tenantid"]))
+    _require_not_system_tenant(sb, str(proj.data["tenantid"]))
 
     before = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", body.projectid).eq("useruid", body.useruid).execute().data
     sb.schema(SUPABASE_SCHEMA).table("projectusers").delete().eq("projectid", body.projectid).eq("useruid", body.useruid).execute()
