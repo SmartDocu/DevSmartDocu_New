@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RLS 적용 현황 점검</title>
+<style>
+:root{
+  --bg:#f5f6f8;
+  --surface:#ffffff;
+  --surface-2:#eef0f4;
+  --border:#dde1e8;
+  --text:#1a2030;
+  --text-muted:#5c6579;
+  --text-faint:#8991a3;
+  --accent:#33509e;
+  --accent-soft:#e8edf9;
+  --danger-bg:#fbe6e3;
+  --danger-fg:#a3311f;
+  --danger-bd:#f0c6bf;
+  --warn-bg:#fbf0dc;
+  --warn-fg:#8a5a10;
+  --warn-bd:#efd9a8;
+  --safe-bg:#e4f2e6;
+  --safe-fg:#276740;
+  --safe-bd:#c2e0c8;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14161c; --surface:#1b1e26; --surface-2:#20232c; --border:#2c303c;
+    --text:#e8eaf0; --text-muted:#9aa1b4; --text-faint:#6c7386;
+    --accent:#8ba3e8; --accent-soft:#232a42;
+    --danger-bg:#3a2320; --danger-fg:#f0a394; --danger-bd:#5c342c;
+    --warn-bg:#382d18; --warn-fg:#e8c47c; --warn-bd:#5a4823;
+    --safe-bg:#1c3126; --safe-fg:#8fd3a4; --safe-bd:#2c4d38;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14161c; --surface:#1b1e26; --surface-2:#20232c; --border:#2c303c;
+  --text:#e8eaf0; --text-muted:#9aa1b4; --text-faint:#6c7386;
+  --accent:#8ba3e8; --accent-soft:#232a42;
+  --danger-bg:#3a2320; --danger-fg:#f0a394; --danger-bd:#5c342c;
+  --warn-bg:#382d18; --warn-fg:#e8c47c; --warn-bd:#5a4823;
+  --safe-bg:#1c3126; --safe-fg:#8fd3a4; --safe-bd:#2c4d38;
+}
+*{box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);margin:0;padding:0 0 64px;}
+.wrap{max-width:1160px;margin:0 auto;padding:40px 28px 0;}
+header.page{margin-bottom:28px;}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 10px;}
+h1{font-size:30px;font-weight:650;letter-spacing:-.01em;margin:0 0 8px;text-wrap:balance;}
+.sub{color:var(--text-muted);font-size:15px;line-height:1.6;max-width:70ch;margin:0;}
+
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0;}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+.stat .n{font-family:var(--mono);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;}
+.stat .lbl{font-size:12.5px;color:var(--text-muted);margin-top:6px;}
+.stat.done .n{color:var(--safe-fg);}
+.stat.bug .n{color:var(--danger-fg);}
+.stat.warn .n{color:var(--warn-fg);}
+
+.callout{background:var(--danger-bg);border:1px solid var(--danger-bd);border-radius:12px;padding:20px 22px;margin:0 0 24px;}
+.callout h2{font-size:15px;font-weight:650;margin:0 0 10px;color:var(--danger-fg);display:flex;align-items:center;gap:8px;}
+.callout .incident{margin:0 0 14px;padding-bottom:14px;border-bottom:1px solid var(--danger-bd);}
+.callout .incident:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none;}
+.callout .incident h3{font-size:13.5px;font-weight:650;margin:0 0 6px;color:var(--text);}
+.callout p{margin:0 0 8px;font-size:13.5px;line-height:1.65;color:var(--text);}
+.callout p:last-child{margin-bottom:0;}
+.callout code{font-family:var(--mono);background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:.92em;}
+:root[data-theme="dark"] .callout code,
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .callout code{background:rgba(255,255,255,.08);}}
+.tag{display:inline-block;font-size:10.5px;font-weight:650;padding:2px 8px;border-radius:999px;background:var(--danger-fg);color:#fff;letter-spacing:.03em;margin-right:6px;vertical-align:1px;}
+.tag.fixed{background:var(--safe-fg);}
+
+.section{margin-top:30px;}
+.section h2.h{font-size:17px;font-weight:650;margin:0 0 4px;}
+.section .desc{font-size:13.5px;color:var(--text-muted);margin:0 0 14px;line-height:1.6;max-width:80ch;}
+
+.tablewrap{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+thead th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-faint);font-weight:600;padding:9px 14px;background:var(--surface-2);border-bottom:1px solid var(--border);}
+tbody tr{border-top:1px solid var(--border);}
+tbody tr:first-child{border-top:none;}
+td{padding:10px 14px;vertical-align:top;line-height:1.55;}
+td.tname{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--text);font-weight:600;}
+td.reason{color:var(--text-muted);}
+td.num{font-family:var(--mono);text-align:center;color:var(--text);}
+
+.polpill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin:1px 3px 1px 0;white-space:nowrap;}
+.notepill{display:inline-block;font-size:11px;font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid transparent;white-space:nowrap;}
+.notepill.ok{background:var(--safe-bg);color:var(--safe-fg);border-color:var(--safe-bd);}
+.notepill.fixed{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-bd);}
+
+.pill-sev{display:inline-block;font-size:11.5px;font-weight:650;padding:3px 10px;border-radius:999px;border:1px solid transparent;white-space:nowrap;}
+.pill-sev.r{background:var(--danger-bg);color:var(--danger-fg);border-color:var(--danger-bd);}
+.pill-sev.y{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-bd);}
+
+footer.note{margin-top:40px;padding-top:20px;border-top:1px solid var(--border);font-size:12.5px;color:var(--text-faint);line-height:1.8;}
+footer.note a{color:var(--accent);}
+
+@media (max-width:760px){.summary{grid-template-columns:1fr 1fr;}}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">sdoc 스키마 · 2026-09-07 ~ 09-08</p>
+    <h1>RLS 적용 현황 점검</h1>
+    <p class="sub"><a href="rls-audit.html" style="color:var(--accent)">rls-audit.html</a>(적용 전 우선순위 조사)의 후속 — 실제로 RLS를 켜고 정책을 만든 테이블의 현재 상태와, 그 과정에서 터진 프로덕션 장애, 함께 발견한 앱 레벨 취약점을 정리했습니다. <strong>2026-09-08</strong>엔 핵심 아이덴티티 그룹 마무리(<code>users</code>/<code>accountservices</code>), 애플리케이션 레벨 권한 체크 전수점검(6개 라우터), 문서생성 파이프라인 11개·항목/콘텐츠 정의 6개·마스터 데이터 소스 12개까지 RLS를 적용해 <a href="rls-audit.html">rls-audit.html</a>의 "적용 권장" 47개를 사실상 전부 처리했습니다. 앱 코드 배포분은 전부 AWS(<code>d2doc-service</code>/<code>smartdocu-worker</code>) 완료.</p>
+  </header>
+
+  <div class="summary">
+    <div class="stat done"><div class="n">49</div><div class="lbl">RLS 적용 완료 테이블</div></div>
+    <div class="stat done"><div class="n">11</div><div class="lbl">SECURITY DEFINER 헬퍼 함수</div></div>
+    <div class="stat bug"><div class="n">2</div><div class="lbl">RLS로 유발된 프로덕션 장애 (전부 수정·배포)</div></div>
+    <div class="stat warn"><div class="n">12</div><div class="lbl">RLS 설계 중 함께 발견한 앱 레벨 취약점(09-07)</div></div>
+  </div>
+
+  <div class="summary" style="margin-top:-16px;">
+    <div class="stat bug"><div class="n">6</div><div class="lbl">2026-09-08 추가 발견 — 권한 체크 누락 라우터</div></div>
+    <div class="stat warn"><div class="n">2</div><div class="lbl">배포 전 실측으로 잡은 RLS 안전성 버그(워커 upsert, datas 뷰)</div></div>
+    <div class="stat done"><div class="n">251</div><div class="lbl">전체 재검증 통과(24개 스크립트, 회귀 0건)</div></div>
+    <div class="stat done"><div class="n">✓</div><div class="lbl">"적용 권장" 47개 전부 처리(완료/재분류/보류)</div></div>
+  </div>
+
+  <div class="callout">
+    <h2>⚠ RLS 적용 직후 실제로 터진 프로덕션 장애 2건</h2>
+    <div class="incident">
+      <h3><span class="tag fixed">해결됨</span><code>accounts</code> — SELECT 정책 누락으로 전체 사용자 문서 읽기/쓰기 차단</h3>
+      <p>사용자 실제 신고(mm4707@naver.com, "이 서비스에 대한 읽기 권한이 없습니다")로 발견. <code>accounts</code>에 RLS만 켜고 SELECT 정책을 만들지 않아서, <code>get_service_permission()</code>(<code>require_doc_read</code>/<code>write</code> 등 Do/Ch/In 서비스 권한판정의 핵심 함수, 8개 라우터에서 사용)이 사용자 JWT로 <code>accounts</code>를 조회할 때마다 0행 → <code>can_read=False</code>로 판정되어 <strong>모든 사용자의 문서·챕터·문장·차트·테이블 읽기/쓰기가 403으로 막힘</strong>.</p>
+      <p>수정: <code>useruid = auth.uid() OR (useruid IS NULL AND is_tenant_member(tenantid))</code> SELECT 정책 추가. <code>tenantid=1</code>(시스템 테넌트)을 모든 개인 계정이 공유하므로 <code>is_tenant_member</code>만 걸면 남의 개인 계정까지 노출되는 걸 <code>useruid IS NULL</code> 조건(=기업 계정만 테넌트 단위 공개)으로 차단.</p>
+    </div>
+    <div class="incident">
+      <h3><span class="tag fixed">해결됨</span><code>tenants</code> — 관리자 전용 화면 3곳이 RLS(소속 전제)와 충돌</h3>
+      <p><code>settings.py</code>의 시스템관리자(roleid=7) 전용 테넌트 관리 화면(<code>list_tenants</code>/<code>save_tenant</code>/<code>delete_tenant</code>)이 <code>_require_admin()</code>으로 권한 체크는 하면서 실제 DB 접근은 사용자 JWT(<code>sb</code>)를 사용. 관리자가 자기 소속과 무관한 임의의 테넌트를 다루는 전역 화면인데, <code>tenants</code> RLS는 "소속 테넌트만" 전제라 근본적으로 안 맞았음 — 신규 생성 불가, 소속 없는 테넌트 수정 시 엉뚱하게 신규 생성으로 빠짐, 삭제는 0행 삭제인데도 200 성공 응답.</p>
+      <p>수정: 이 3곳은 <code>_require_admin()</code> 자체가 이미 충분한 권한 경계이므로 <code>svc</code>(service-role)로 되돌림 — RLS를 우회하되, 앱 레벨 관리자 체크는 그대로 유지.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="h">적용 완료 테이블 (49개)</h2>
+    <p class="desc">전부 더미 계정으로 교차 테넌트/교차 사용자 공격 시뮬레이션 테스트를 거쳐 검증했습니다. SECURITY DEFINER 헬퍼 함수 11개 — <code>is_tenant_member</code>/<code>is_tenant_manager</code>(tenantid 직접) / <code>is_project_tenant_member</code>(projectid→tenantid) / <code>is_doc_tenant_member</code>(docid→projectid→tenantid) / <code>is_chapter_tenant_member</code>(chapteruid→docid) / <code>is_gendoc_tenant_member</code>(gendocuid→docid) / <code>is_objectfilter_tenant_member</code>(objectfilteruid→chapteruid) / <code>is_data_tenant_member</code>(datauid→dataunits.tenantid) / <code>is_connector_tenant_member</code>·<code>is_connector_tenant_manager</code>(connuid→connectors.tenantid) / <code>is_chat_snapshot_recipient</code>(shareuid→chat_session_share_users.targetuseruid, 테넌트 무관 소유자/수신자 모델). 자가권한상승 방지 BEFORE UPDATE 트리거 3개 — <code>tenantusers</code>(rolecd/useyn) · <code>serviceusers</code>(useyn/accountuid 등) · <code>users</code>(roleid/email/default_tenantid 등, usernm/marketingyn만 자가수정 허용).</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:150px">테이블</th><th style="width:70px">정책수</th><th>정책 (명령)</th><th style="width:180px">비고</th></tr></thead>
+        <tbody id="tbl-done"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="h">함께 발견·수정한 앱 레벨 취약점 (12건)</h2>
+    <p class="desc">RLS 설계 과정에서 "이 화면이 실제로 어떤 권한 모델이어야 하는가"를 다시 짚다가 찾은, RLS와 무관하게 이미 존재하던 진짜 결함들입니다. 대부분 같은 패턴 — 클라이언트가 보낸 <code>tenantid</code>/<code>projectid</code>/<code>accountuid</code>를 검증 없이 그대로 신뢰.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:150px">파일</th><th style="width:230px">함수 / 엔드포인트</th><th>취약점</th></tr></thead>
+        <tbody id="tbl-vulns"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 추가 조사 — RLS와 무관한 애플리케이션 레벨 권한 체크 전수점검</h2>
+    <p class="desc">"프로젝트 사용자" 화면이 메뉴만 숨기고 백엔드엔 시스템 테넌트 차단이 없던 걸 고치면서 "다른 곳도 이럴 수 있지 않을까"로 시작한 전수점검. <code>Depends(get_tenantid)</code>를 쓰는 16개 라우터를 전부 훑어서, <strong>테넌트 매니저 전용으로 설계된 메뉴인데 백엔드엔 권한 체크가 아예 없어 X-Tenant-ID 헤더만 바꾸면 인증된 사용자 누구나 다른 조직의 리소스를 조회·생성·수정·삭제할 수 있던 6개 라우터</strong>를 찾았다. 앞의 12개(테이블 RLS)와 달리 이건 DB 정책이 아니라 애플리케이션 코드 자체에 권한 체크가 빠져 있던 것 — 대부분의 대상 테이블은 애초에 RLS조차 켜져 있지 않다.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:60px">심각도</th><th style="width:170px">파일</th><th>내용</th></tr></thead>
+        <tbody id="tbl-sweep"></tbody>
+      </table>
+    </div>
+    <p class="desc" style="margin-top:14px;">모두 <code>_require_tenant_manager()</code>류 체크 추가(메뉴가 원래 테넌트 매니저 전용으로 설계돼 있었음) + 리소스 ID로 조회/수정/삭제 시 그 리소스의 <strong>실제 소속 테넌트</strong>를 서버에서 재확인하는 IDOR 방어까지 적용. "헤더 스푸핑"(X-Tenant-ID를 남의 테넌트로 바꿔치기)과 "ID 치환"(자기 테넌트 컨텍스트에서 남의 리소스 ID를 넣기) 두 공격 벡터 모두 더미 계정으로 시뮬레이션 테스트해 검증(32개 체크 전부 통과, 회귀 없음). <span class="notepill ok" style="margin-left:2px;">AWS 배포 완료</span></p>
+    <p class="desc" style="margin-top:10px;">추가로 <code>org.py</code>의 "프로젝트 사용자"(<code>list/save/delete_project_user</code>) 3곳에 시스템(개인) 테넌트 명시적 차단을 넣었습니다 — 메뉴는 이미 숨겨져 있었지만 백엔드엔 차단이 없던 걸 방어심층 차원에서 닫은 것으로, 이 조사 자체가 시작된 계기이기도 합니다. <code>tenantid</code> 헤더를 생략해서 우회하는 시도까지 막도록 프로젝트의 실제 소속 테넌트 기준으로 검증하며, 5개 체크 전부 통과했습니다.</p>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 — 핵심 아이덴티티 그룹 마무리 (users / accountservices)</h2>
+    <p class="desc"><code>users</code>는 본인 행만 조회/수정 가능하되, 자가 수정은 <code>usernm</code>/<code>marketingyn</code>만 허용 — 그 외(<code>roleid</code>/<code>email</code>/<code>useyn</code>/<code>default_tenantid</code> 등)를 트리거로 막지 않으면 사용자가 Supabase REST를 직접 호출해 자기 <code>roleid</code>를 7(시스템 관리자)로 자가승격할 수 있었다. <code>accountservices</code>는 코드 전수조사 결과 <code>sb</code>(사용자 JWT) 쓰기가 단 한 곳도 없어 SELECT 정책만 추가(쓰기는 계속 service-role 전용). 15개 체크(자가 roleid/email/default_tenantid 변경 차단, 정상 self-update, 교차 테넌트 차단, service-role 대조군) 전부 통과.</p>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 — 문서생성 파이프라인 RLS 적용 (11개 테이블)</h2>
+    <p class="desc"><code>docs</code>/<code>chapters</code>/<code>docparams</code>/<code>docparamdtls</code>/<code>doc_datas</code>/<code>gendocs</code>/<code>genchapters</code>/<code>genobjects</code>/<code>gendoc_params</code>/<code>gendoc_genchapters</code>/<code>genlocks</code> — 전부 "테넌트 소속이면 누구나"(<code>require_doc_write</code>와 동일 모델) 정책으로 적용.</p>
+    <div class="incident" style="background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:10px;padding:14px 16px;margin:0 0 12px;">
+      <h3 style="margin:0 0 6px;font-size:13.5px;font-weight:650;">⚠ 설계 도중 발견 — <code>gendocs</code>/<code>genchapters</code>/<code>genobjects</code>의 tenantid/projectid 컬럼이 구행 다수 NULL</h3>
+      <p style="margin:0;font-size:13.5px;line-height:1.65;">실제 데이터를 확인해보니 <code>gendocs</code> 29건 중 21건, <code>genchapters</code> 42건 중 27건, <code>genobjects</code> 270건 중 231건이 <code>tenantid</code>/<code>projectid</code> NULL(나중에 추가된 컬럼이라 과거 행 미백필). 처음 설계대로 <code>is_tenant_member(tenantid)</code>를 그대로 걸었다면 기존 생성 문서 대부분이 본인에게도 안 보이는 대형 회귀가 날 뻔했다. NULL 0건으로 확인된 <code>docid</code>/<code>chapteruid</code>/<code>gendocuid</code> 연결키를 타고 올라가는 방식(<code>is_doc_tenant_member</code>/<code>is_chapter_tenant_member</code>/<code>is_gendoc_tenant_member</code>)으로 설계를 바꿔 우회했다. 20개 체크(교차 테넌트 차단, tenantid NULL인 구행도 정상 조회 등)로 검증.</p>
+    </div>
+    <div class="incident" style="background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:10px;padding:14px 16px;margin:0;">
+      <h3 style="margin:0 0 6px;font-size:13.5px;font-weight:650;">⚠ 배포 전 실측으로 잡은 워커 쓰기 문제 — <code>genchapters</code> upsert RLS 위반</h3>
+      <p style="margin:0 0 8px;font-size:13.5px;line-height:1.65;"><code>worker/main.py</code>가 원 요청자의 access_token을 그대로 전달받아(<code>get_thread_supabase(access_token=...)</code>) 쓰는데, <code>genchapters</code> upsert가 <code>{genchapteruid, flattexttemplate}</code>만 보내는 부분 payload라 문제가 됐다. PostgreSQL이 upsert를 "INSERT ... ON CONFLICT DO UPDATE"로 처리하면서 결과적으로는 UPDATE로 끝나더라도 <strong>INSERT 쪽 WITH CHECK를 후보 행 기준으로 먼저 검사</strong>하는데, payload에 없는 <code>docid</code>가 NULL로 취급되어 항상 막혔다(실제 재현 테스트로 확인).</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.65;">수정: 워커가 <code>genobjects</code>/<code>gendocs</code>/<code>genlocks</code>/<code>genchapters</code>/<code>gendoc_genchapters</code>에 쓰는 10곳 전부 원 요청자 토큰(<code>sb</code>)에서 service-role(<code>sb_svc</code>)로 전환 — 이미 API 요청 시점에 <code>require_doc_write</code>로 권한 검증이 끝난 신뢰된 백엔드 작업이라 RLS 재검증이 불필요하고, <code>*_realtimes</code> 테이블에 이미 적용된 것과 같은 패턴. (반면 <code>gendocs.py</code> API 레벨의 <code>genlocks</code> upsert 3곳은 라이브 사용자 요청이라 <code>gendocuid</code>가 항상 payload에 포함돼 있어 안전함을 확인, 그대로 둠.) 옛 패턴이 여전히 막히는지(회귀 확인)와 고친 service-role 경로가 정상 동작하는지 둘 다 포함해 20개 체크 전부 통과. <span class="notepill ok">AWS 배포 완료</span></p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 — 항목/콘텐츠 정의 RLS 적용 (6개 테이블)</h2>
+    <p class="desc"><code>objects</code>/<code>sentences</code>/<code>charts</code>/<code>tables</code>/<code>objectfilters</code>는 <code>chapteruid</code>를 직접 보유(NULL 0건)해 <code>is_chapter_tenant_member</code>를 그대로 재사용, <code>objectfiltermaps</code>만 <code>objectfilteruid</code>로 한 단계 더 경유하는 신규 헬퍼가 필요했습니다. <code>objects.py save_object()</code>가 사용자 JWT로 <strong>upsert</strong>를 쓰는 걸 확인해서(워커에서 터졌던 것과 같은 위험 패턴) payload에 <code>chapteruid</code>가 항상 포함되는지 먼저 확인 — 포함돼 있어 안전했습니다. 16개 체크(교차 테넌트 차단, 정당한 소유자 조회, upsert 패턴 재현) 전부 통과.</p>
+    <p class="desc" style="margin-top:10px;"><code>prompts</code>는 이 그룹에서 <strong>제외</strong>했습니다 — 코드 전수조사 결과 <code>sb</code>(사용자 JWT) 접근이 단 한 곳도 없고 전부 관리자 화면 또는 service-role에서만 씁니다. <code>codes</code>/<code>terms</code>/<code>menus</code>와 같은 "전역 참조 카탈로그" 성격이라 RLS가 불필요 — 원래 감사표(rls-audit.html)의 "적용 권장" 분류가 오분류였던 것으로 판단해 "적용 불필요"로 재분류했습니다.</p>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 — 마스터 데이터 소스 RLS 적용 (12개 테이블)</h2>
+    <p class="desc">단순한 "테넌트 소속이면 누구나" 하나로 안 끝났습니다. <code>datas.py</code>(일반 멤버용 데이터 등록 화면)를 조사해보니, 오늘 앱 레벨에서 매니저 전용으로 고쳤던 <code>connectors</code>/<code>conn_apis</code>/<code>conn_api_credentials</code>/<code>project_datasets</code>/<code>datasetmembers</code>를 <strong>같은 테이블인데 조회는 일반 멤버도 하고 있었습니다</strong>(데이터 등록 시 커넥터 드롭다운, API 실행 시 자격증명 참조 등). 그래서 <strong>조회=테넌트 멤버 전체, 쓰기(생성/수정/삭제)=매니저만</strong>으로 SELECT/쓰기 정책을 분리했습니다. <code>project_datasets</code>는 한 겹 더 있어서 <code>is_directdatauid=true</code>(일반 멤버의 프로젝트-데이터 직접 연결)는 멤버 쓰기도 허용, <code>false</code>(매니저가 만드는 명명된 데이터셋 그룹 연결)는 매니저만 허용하도록 조건을 나눴습니다. <code>datasets</code>(그룹 자체)만 코드상 <code>datas.py</code>가 아예 안 건드려서 순수 매니저 전용으로 남겼습니다.</p>
+    <div class="incident" style="background:var(--danger-bg);border:1px solid var(--danger-bd);border-radius:10px;padding:14px 16px;margin:0 0 12px;">
+      <h3 style="margin:0 0 6px;font-size:13.5px;font-weight:650;color:var(--danger-fg);">⚠ 배포 전 실측으로 잡은 문제 — <code>datas</code> 뷰가 하부 테이블 RLS를 우회</h3>
+      <p style="margin:0 0 8px;font-size:13.5px;line-height:1.65;"><code>datas</code>는 <code>dataunits</code>를 그대로 비추는 <strong>뷰</strong>였습니다(<code>ALTER TABLE sdoc.datas ENABLE ROW LEVEL SECURITY</code>가 실제로 "datas is not a table" 에러로 실패해 확인). <code>dataunits</code>에 정책을 걸어도, <code>security_invoker</code> 옵션이 없는 뷰는 <strong>조회하는 사람이 아니라 뷰를 만든 소유자(RLS를 우회하는 관리자 계정)의 권한으로</strong> 하부 테이블의 RLS를 평가합니다 — 그래서 다른 테넌트 사용자가 <code>datas</code>를 거쳐 조회하면 실제로 다 보이는 걸 테스트로 확인했습니다.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.65;">수정: <code>ALTER VIEW sdoc.datas SET (security_invoker = true);</code> 한 줄로 해결 — 뷰가 조회자 본인의 권한으로 <code>dataunits</code>의 RLS를 그대로 물려받게 됨(별도 정책 불필요). 재검증 결과 <code>dataunits</code> insert가 뷰에 즉시 반영되면서도 다른 테넌트에겐 정상 차단됨을 확인. <span class="notepill ok">해결됨</span></p>
+    </div>
+    <p class="desc">31개 체크(교차 테넌트 차단 11개, 일반 멤버 조회 8개, 매니저 전용 쓰기 차단 4개, <code>project_datasets</code> 조건부 쓰기 2개, 매니저 정상 동작 2개, <code>datas</code> 뷰 관련 3개, service-role 대조군 1개) 전부 통과.</p>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 — <code>chat_*</code>/<code>insight_*</code> 세션 탈취 취약점 조사 및 수정 (원인은 서로 다름)</h2>
+    <p class="desc">"chat_*/insight_*도 이제 해도 되나"는 사용자 요청으로 코드부터 조사. 둘 다 <strong>인증된 사용자가 다른 사용자/조직의 대화·보고서 이력을 통째로 읽을 수 있는 실제 취약점</strong>이 있었지만, 원인 구조가 완전히 달라 수정 수단도 다릅니다. <code>chat_*</code>는 RLS 설계·적용까지 완료했고, <code>insight_*</code>는 RLS로 해결이 안 되는 구조라 조사만 완료한 상태로 남아있습니다(아래).</p>
+    <div class="incident" style="background:var(--safe-bg);border:1px solid var(--safe-bd);border-radius:10px;padding:14px 16px;margin:0 0 12px;">
+      <h3 style="margin:0 0 6px;font-size:13.5px;font-weight:650;color:var(--safe-fg);"><span class="tag fixed">해결됨</span><code>chat_*</code>(d2chat) — RLS 미적용이 직접 원인, RLS 적용으로 해결</h3>
+      <p style="margin:0 0 8px;font-size:13.5px;line-height:1.65;"><code>d2chat/history/supabase_storage.py</code>는 호출자(라우터)가 만든 사용자 JWT 클라이언트(<code>sb</code>)를 그대로 받아 쓰면서, 코드 주석에 "RLS(auth.uid())가 신원을 보장하므로 별도 인증 검증 없이 전달받는다"고 명시할 만큼 RLS 적용을 전제로 설계돼 있습니다. 그런데 RLS가 꺼져 있어서 <code>get_session_info</code>/<code>get_session_messages</code>/<code>update_session_title</code>/<code>get_snapshot_messages</code> 4개 함수가 <code>sessionuid</code>/<code>shareuid</code>만으로 조회 — Chat 구독 중인 인증된 사용자라면 누구나 <code>session_id</code>(UUID)만 알면 <code>GET /history/{session_id}</code>로 다른 조직/다른 사용자의 채팅 대화 전체를 그대로 읽을 수 있었습니다. <code>GET /snapshots/{share_uid}</code>도 동일 패턴.</p>
+      <p style="margin:0 0 8px;font-size:13.5px;line-height:1.65;">d2chat 전체에서 이 6개 테이블을 건드리는 곳이 <code>supabase_storage.py</code> 한 곳뿐이고 전부 사용자 JWT(<code>sb</code>)만 쓴다는 것, service-role 우회 경로나 프론트의 Supabase Realtime 직접 구독 경로가 전혀 없다는 것까지 재확인 후 RLS를 적용했습니다. <code>chat_sessions</code>/<code>chat_qas</code>/<code>chat_favorites</code>는 본인 소유(<code>creator = auth.uid()</code>) 전용, <code>chat_session_shares</code>는 발신자 전용(수신자는 코드상 이 테이블을 직접 안 읽음), <code>chat_session_share_users</code>는 발신자 insert/발신자+수신자 select/수신자만 update, <code>chat_snapshots</code>는 발신자 OR 수신자만 select — 수신자 판별에 신규 헬퍼 함수 <code>is_chat_snapshot_recipient(shareuid)</code> 사용. <code>content_purge.py</code>(서비스/테넌트 삭제 배치)는 전부 service-role이라 영향 없음도 확인.</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.65;">18개 체크(교차 사용자 차단, <code>update_session_title</code>/<code>get_session_messages</code>처럼 원래 코드에 creator 필터가 없던 함수의 실제 재현, 정당한 발신자/수신자 접근, 무관한 제3자의 <code>chat_snapshots</code> 접근 차단 — 원래 취약점의 정확한 재현+수정 확인, service-role 대조군) 전부 통과.</p>
+    </div>
+    <div class="incident" style="background:var(--danger-bg);border:1px solid var(--danger-bd);border-radius:10px;padding:14px 16px;margin:0;">
+      <h3 style="margin:0 0 6px;font-size:13.5px;font-weight:650;color:var(--danger-fg);">🔓 미수정 · <code>insight_*</code>(d2insight) — RLS로는 못 고침, 앱 레벨 소유자 검증 누락이 원인</h3>
+      <p style="margin:0 0 8px;font-size:13.5px;line-height:1.65;"><code>d2insight/db/insight_storage.py</code>는 <code>sb</code> 파라미터 자체를 받지 않고 항상 모듈 전역 <strong>service-role</strong> 클라이언트(<code>_sc</code>)로만 접근합니다 — RLS를 걸어도 이 코드 경로엔 영향이 전혀 없습니다(service-role은 RLS를 무조건 우회). 라우터(<code>d2insight/chat/router.py</code>)의 <code>_check_owner(token, user_id)</code>는 <strong>경로의 user_id가 내 토큰과 일치하는지만</strong> 확인하고, <strong>그 session_id/qauid가 진짜 내 것인지는 검증하지 않습니다.</strong></p>
+      <p style="margin:0 0 8px;font-size:13.5px;line-height:1.65;">실제 익스플로잇 경로 3개 확인: ① <code>GET /insight/history/{내_user_id}/{남의_session_id}</code> — <code>_check_owner</code>는 내 user_id라 통과, <code>get_session_messages(session_id)</code>는 소유자 필터가 없어 남의 대화 이력 전체가 그대로 반환됨. ② <code>POST /insight/favorite/qa</code>(<code>body.qauid</code>) — <code>get_qa(qauid)</code>에 소유자 필터가 없어 남의 <code>qauid</code>를 넣으면 그 질문/답변 내용이 내 즐겨찾기로 <strong>복사되어 유출</strong>됨. ③ 정기 보고서 등록(<code>_resolve_schedule_origin</code> → <code>get_qa(qauid)</code>) — 같은 방식으로 남의 보고서를 내 정기 보고서로 등록 가능. (반대로 <code>delete_session</code>/<code>remove_favorite_qa</code>는 SQL에 <code>.eq("creator", creator)</code> 필터가 있어 안전함을 확인.)</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.65;">수정 수단은 SQL이 아니라 <strong><code>d2insight/db/insight_storage.py</code>의 Python 코드</strong> — <code>get_session</code>/<code>get_session_messages</code>/<code>get_qa</code>(즐겨찾기·정기보고서 등록 경로)에 호출자의 <code>creator</code>/<code>tenantid</code> 일치 검증을 추가해야 함. RLS는 이 앱의 실제 접근 경로엔 영향이 없으므로(방어심층 목적으로는 걸어둘 수 있음) 이 취약점 자체의 수정 수단은 아닙니다.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="h">2026-09-08 — 전체 재검증 (RLS + 애플리케이션 레벨 권한 체크, 세션 전체 대상)</h2>
+    <p class="desc">"chat_* 적용 완료 후 지금까지 작업한 사항 전체를 RLS뿐 아니라 앱 레벨 권한 체크까지 다시 검증해달라"는 요청으로, 이번 세션에서 만든 검증 스크립트 24개(RLS 15개 + 앱 레벨 권한 체크 6개 + 테넌트 해지/회원 탈퇴/Ch·In 콘텐츠 purge cascade 3개)를 전부 재실행했습니다. <strong>251개 체크 전부 통과, 회귀(regression) 0건.</strong> 3개 스크립트(<code>test_rls_doc_pipeline.py</code>/<code>test_tenant_cancel.py</code>/<code>test_tenant_users_authz_fix.py</code>)가 Windows 콘솔 인코딩(cp949가 em-dash 등 일부 문자 출력 실패) 문제로 중간에 멈췄으나, 이건 실제 실패가 아니라 인코딩 설정 문제라 <code>PYTHONIOENCODING=utf-8</code> 강제 후 재실행해 끝까지 확인 — 3개 다 정상 통과.</p>
+    <p class="desc" style="margin-top:10px;">범위: 이번 세션 전체에서 만든 RLS 정책(49개 테이블, <code>chat_*</code> 6개 포함) + 애플리케이션 레벨 권한 체크(<code>org.py</code>/<code>whitelists.py</code>/<code>connectors.py</code>/<code>llmkeys.py</code>/<code>settings.py</code>/<code>datasets.py</code>/<code>docgroups.py</code> 등) + 워커 service-role 전환 패턴(옛 패턴은 여전히 차단, 새 패턴은 정상 동작) + 테넌트 해지·회원 탈퇴·Ch/In 콘텐츠 purge cascade 흐름(전제조건 차단, 매니저 탈퇴 차단, 최종 잠금, 감사로그, 알림). 새로 발견된 문제는 없습니다.</p>
+  </div>
+
+  <footer class="note">
+    <strong>남은 작업</strong> — <a href="rls-audit.html">rls-audit.html</a> 기준 "적용 권장" 47개를 전부 처리했습니다: 49개 완료(핵심 아이덴티티 10 + 실시간 4 + 문서파이프라인 11 + 항목/콘텐츠 정의 6 + 마스터 데이터 소스 12 + <code>chat_*</code> 6) + 1개 재분류(<code>prompts</code>→적용 불필요). <code>insight_*</code>는 애초 "결정 필요" 등급이었지만 이번 조사로 <strong>RLS와 무관한 별도의 실제 앱 레벨 취약점</strong>(<code>d2insight/db/insight_storage.py</code>의 소유자 검증 누락 — <code>get_session</code>/<code>get_session_messages</code>/<code>get_qa</code> 경유)이 새로 확인되어 <strong>아직 미수정</strong>입니다 — RLS가 아니라 Python 코드 수정이 필요해 별도 착수가 필요합니다. 그 외 "결정 필요" 나머지 43개는 대부분 결제/구독/크레딧, 감사·시스템 로그 등 service-role 전용이라 RLS를 걸어도 이 앱의 실제 접근 경로는 안 바뀌는 방어심층 성격의 항목들이라, 우선순위는 낮게 보는 게 맞습니다.
+    <br><br>이번 작업에서 두 번(<code>accounts</code>/<code>tenants</code>)이나 "RLS를 걸고 나서야 실제 코드 접근 패턴과의 불일치가 드러났다"는 점, 문서생성 파이프라인의 데이터 품질(NULL 컬럼)과 워커의 부분 payload upsert, 그리고 <code>datas</code> 뷰의 security_invoker 누락까지 겹쳐서 터졌던 점을 감안하면, 앞으로 RLS를 걸 때는 매번 (1) 실제 화면이 어떤 클라이언트(<code>sb</code> vs <code>svc</code>)를 쓰는지, (2) 그 화면이 관리 전용인지 일반 멤버도 쓰는지(조회/쓰기 권한 레벨이 다를 수 있음), (3) RLS 조건에 쓰려는 컬럼의 실제 데이터 품질(NULL 비율)이 어떤지, (4) upsert처럼 부분 payload를 쓰는 곳이 있는지, (5) 뷰가 있다면 <code>security_invoker</code>가 설정돼 있는지 — 이 5가지를 먼저 확인하는 절차를 유지할 것. <strong>2026-09-08 조사에서 얻은 교훈</strong>: RLS(DB 레벨)만 감사해서는 안 되고, 애플리케이션 레벨 권한 체크 자체가 통째로 빠진 라우터가 있는지도 주기적으로 훑어야 한다 — 이번에 찾은 6개는 전부 RLS 감사표(rls-audit.html)의 "결정 필요"/"적용 불필요"에 걸쳐 있어 RLS 관점만으로는 절대 못 찾았을 것들이다.
+  </footer>
+</div>
+
+<script>
+const DONE = [
+["accounts", ["select_own_or_tenant_member (SELECT)"], "장애 발생→해결"],
+["tenants", ["select_own_tenant (SELECT)","update_own_tenant_as_manager (UPDATE)"], "관리자 화면 3곳 별도 수정"],
+["tenantusers", ["select_same_tenant (SELECT)","update_own_row (UPDATE)","manager_write_member_rows (ALL)"], "자가권한상승 방지 트리거"],
+["projects", ["tenant_member_all (ALL)"], ""],
+["projectusers", ["tenant_member_all (ALL)"], ""],
+["serviceusers", ["select_same_tenant (SELECT)","update_own_or_manager (UPDATE)","manager_insert (INSERT)","manager_delete (DELETE)"], "자가권한상승 방지 트리거"],
+["favorites", ["own_row_all (ALL)"], ""],
+["whitelists", ["manager_all (ALL)"], ""],
+["gendocs_realtimes", ["select_own (SELECT)"], "실시간 구독 우회 경로"],
+["genchapters_realtimes", ["select_own (SELECT)"], "실시간 구독 우회 경로"],
+["notifications", ["select_own (SELECT)","update_own (UPDATE)"], "실시간 구독 우회 경로"],
+["notification_users", ["select_own (SELECT)","update_own (UPDATE)"], "실시간 구독 우회 경로"],
+["users", ["select_own_row (SELECT)","update_own_row (UPDATE)"], "자가권한상승(roleid) 방지 트리거"],
+["accountservices", ["select_same_tenant (SELECT)"], "쓰기는 원래부터 service-role 전용"],
+["docs", ["tenant_member_all (ALL)"], ""],
+["chapters", ["tenant_member_all (ALL)"], "docid 경유"],
+["docparams", ["tenant_member_all (ALL)"], "docid 경유"],
+["docparamdtls", ["tenant_member_all (ALL)"], "docid 경유"],
+["doc_datas", ["tenant_member_all (ALL)"], "docid 경유"],
+["gendocs", ["tenant_member_all (ALL)"], "docid 경유(직접 tenantid 컬럼은 구행 다수 NULL이라 미사용)"],
+["genchapters", ["tenant_member_all (ALL)"], "docid 경유(직접 tenantid 컬럼은 구행 다수 NULL이라 미사용)"],
+["genobjects", ["tenant_member_all (ALL)"], "chapteruid 경유(docid 컬럼 자체가 없음)"],
+["gendoc_params", ["tenant_member_all (ALL)"], "gendocuid→docid 경유"],
+["gendoc_genchapters", ["tenant_member_all (ALL)"], "gendocuid→docid 경유"],
+["genlocks", ["tenant_member_all (ALL)"], "gendocuid→docid 경유, 워커 쓰기 방식도 같이 수정"],
+["objects", ["tenant_member_all (ALL)"], "chapteruid 경유"],
+["sentences", ["tenant_member_all (ALL)"], "chapteruid 경유"],
+["charts", ["tenant_member_all (ALL)"], "chapteruid 경유"],
+["tables", ["tenant_member_all (ALL)"], "chapteruid 경유"],
+["objectfilters", ["tenant_member_all (ALL)"], "chapteruid 경유"],
+["objectfiltermaps", ["tenant_member_all (ALL)"], "objectfilteruid→chapteruid 경유"],
+["dataunits", ["tenant_member_all (ALL)"], ""],
+["datas", ["tenant_member_all (ALL, 뷰)"], "뷰 — security_invoker=true 전환 필요했음"],
+["datacols", ["tenant_member_all (ALL)"], "datauid 경유"],
+["datacolvalues", ["tenant_member_all (ALL)"], "datauid 경유"],
+["data_api_params", ["tenant_member_all (ALL)"], "datauid 경유"],
+["data_chatmetas", ["tenant_member_all (ALL)"], "datauid 경유"],
+["datasets", ["manager_all (ALL)"], "매니저 전용"],
+["datasetmembers", ["select_same_tenant (SELECT)","manager_insert/update/delete"], "조회=멤버, 쓰기=매니저"],
+["project_datasets", ["select_same_tenant (SELECT)","write_manager_or_direct (INSERT/UPDATE/DELETE)"], "조회=멤버, 쓰기=매니저 또는 직접연결(is_directdatauid=true)"],
+["connectors", ["select_same_tenant (SELECT)","manager_insert/update/delete"], "조회=멤버, 쓰기=매니저"],
+["conn_apis", ["select_same_tenant (SELECT)","manager_insert/update/delete"], "조회=멤버, 쓰기=매니저"],
+["conn_api_credentials", ["select_same_tenant (SELECT)","manager_insert/update/delete"], "connuid 경유, 조회=멤버, 쓰기=매니저"],
+["chat_sessions", ["own_row_all (ALL)"], "d2chat, 세션 탈취 취약점 수정"],
+["chat_qas", ["own_row_all (ALL)"], "d2chat, 세션 탈취 취약점 수정"],
+["chat_favorites", ["own_row_all (ALL)"], "d2chat"],
+["chat_session_shares", ["own_row_all (ALL)"], "d2chat, 발신자 전용"],
+["chat_session_share_users", ["select_sender_or_recipient (SELECT)","insert_by_sender (INSERT)","update_by_recipient (UPDATE)"], "d2chat, 공유 수신자 판별"],
+["chat_snapshots", ["select_sender_or_recipient (SELECT)","insert_by_sender (INSERT)"], "d2chat, is_chat_snapshot_recipient() 헬퍼 신규"],
+];
+
+const VULNS = [
+["org.py", "save_tenant_user / delete_tenant_user", "body.tenantid를 그대로 신뢰 — 다른 조직 tenantid로 팀원 추가/삭제/역할변경 가능"],
+["org.py", "list_tenant_users", "Query tenantid를 그대로 신뢰 — 다른 조직 팀원 이메일/이름/역할 노출"],
+["org.py", "list_org_projects / save_org_project / delete_org_project", "tenantid 미검증 + 기존 프로젝트 소유권 재검증 누락 — 타 조직 프로젝트 생성/수정/삭제"],
+["org.py", "save_project_user / delete_project_user", "권한 체크 전무 — projectid만 알면 누구나 멤버 추가/삭제"],
+["org.py", "list_project_users", "?projects=<projectid> 소유권 미검증 — 타 조직 프로젝트 멤버(이메일 포함) 노출"],
+["org.py", "list_tenant_users", "?accountuid=<다른 조직> 신뢰 — 서비스 정원/현재인원 노출"],
+["org.py", "list_org_projects", "?accountuid=<다른 조직> 신뢰 — 구독 서비스 목록 노출"],
+["whitelists.py", "save_whitelist (UPDATE 분기)", "whitelistuid 소유권 미검증 — 다른 조직 IP 화이트리스트 항목 가로채기/조작(IDOR)"],
+];
+
+const SWEEP = [
+["r", "settings.py<br><span style='color:var(--text-faint);font-weight:400'>/settings/servers</span>", "DB 커넥터(자격증명 참조) 조회·생성·수정·삭제가 완전 무방비 — 매니저 체크 없음. 수정·삭제 시 대상 connuid의 소유권 미검증(IDOR)까지 겹쳐 있었음."],
+["r", "connectors.py", "API 커넥터(OAuth2 client secret/API key 자격증명) CRUD 완전 무방비, 동일한 IDOR 패턴도 존재. 덤으로 <code>delete_connector()</code>가 존재하지 않는 함수(<code>delete_secret</code>)를 import하고 있어 정당한 매니저가 호출해도 항상 500 에러로 완전히 고장나 있던(권한과 무관한) 버그도 같이 제거."],
+["r", "llmkeys.py", "LLM API 키 CRUD 무방비. <code>delete_llmkey()</code>는 tenantid 필터조차 없어 llmkeyuid만 알면(같은 화면에서 추측 가능) 무조건 삭제됐음 — 가장 심각한 케이스."],
+["r", "org.py<br><span style='color:var(--text-faint);font-weight:400'>/tenant-llms</span>", "권한 체크 전무. projectid(순차 정수라 추측 쉬움)만 알면 다른 조직 프로젝트에 자기 LLM API 키를 심을 수 있어, 그 프로젝트의 문서 생성이 공격자 소유 LLM 계정으로 흘러가 생성 내용을 그대로 들여다볼 수 있는 구조였음."],
+["y", "datasets.py", "데이터셋 그룹 10개 엔드포인트 전부 무방비(자격증명은 아님) — 다른 조직 데이터셋 그룹 조회/생성/수정/삭제 가능."],
+["y", "docgroups.py", "문서 그룹 CRUD 무방비 — Do 서비스 구독자라면 누구나 다른 조직 projectid로 문서 그룹 조회/생성/삭제 가능. require_doc_read/write 추가 + projectid 소속 테넌트 재검증."],
+];
+
+const tbSweep = document.getElementById('tbl-sweep');
+SWEEP.forEach(([sev, file, desc]) => {
+  const tr = document.createElement('tr');
+  const label = sev === 'r' ? '최고' : '중간';
+  tr.innerHTML = `<td><span class="pill-sev ${sev}">${label}</span></td><td class="tname">${file}</td><td class="reason">${desc}</td>`;
+  tbSweep.appendChild(tr);
+});
+
+const tbDone = document.getElementById('tbl-done');
+DONE.forEach(([name, policies, note]) => {
+  const tr = document.createElement('tr');
+  const pills = policies.map(p => `<span class="polpill">${p}</span>`).join(' ');
+  const noteHtml = note ? `<span class="notepill ${note.includes('장애') ? 'fixed' : 'ok'}">${note}</span>` : '';
+  tr.innerHTML = `<td class="tname">${name}</td><td class="num">${policies.length}</td><td>${pills}</td><td>${noteHtml}</td>`;
+  tbDone.appendChild(tr);
+});
+
+const tbVulns = document.getElementById('tbl-vulns');
+VULNS.forEach(([file, fn, desc]) => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="tname">${file}</td><td class="tname" style="font-weight:500">${fn}</td><td class="reason">${desc}</td>`;
+  tbVulns.appendChild(tr);
+});
+</script>
+</body>
+</html>
