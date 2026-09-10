@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>D2Doc icon — matching italic D glyph, clean front counter</title>
+
+  <rect x="0" y="0" width="512" height="512" rx="64" fill="#163E64"/>
+
+  <g transform="translate(-6.5,-14)">
+  <g transform="translate(256,256) scale(0.86) translate(-256,-256)">
+  <!-- back D (same italic glyph, smaller) -->
+  <g transform="translate(25,45) scale(0.42)">
+    <path fill-rule="nonzero" fill="#FFFF99" d="M213 67Q213 44 199.0 37.5Q185 31 140 25V0H430Q572 0 651.5 72.5Q731 145 731 273Q731 443 604.0 556.0Q477 669 286 669H0V644Q37 639 53.5 624.5Q70 610 80 572L201 126Q213 78 213 67ZM364 69 235 547Q223 593 223 601Q223 635 277 635Q417 635 496 522Q537 464 560.5 380.5Q584 297 584 212Q584 31 419 31Q374 31 364 69Z"/>
+  </g>
+
+  <!-- front D (same italic glyph, larger, overlapping) -->
+  <g transform="translate(115,145) scale(0.53)">
+    <!-- hole cover: exact counter shape of the front glyph, painted in background color -->
+    <path fill="#163E64" d="M364 69 235 547Q223 593 223 601Q223 635 277 635Q417 635 496 522Q537 464 560.5 380.5Q584 297 584 212Q584 31 419 31Q374 31 364 69Z"/>
+    <!-- full front glyph on top -->
+    <path fill-rule="nonzero" fill="#FFFF99" d="M213 67Q213 44 199.0 37.5Q185 31 140 25V0H430Q572 0 651.5 72.5Q731 145 731 273Q731 443 604.0 556.0Q477 669 286 669H0V644Q37 639 53.5 624.5Q70 610 80 572L201 126Q213 78 213 67ZM364 69 235 547Q223 593 223 601Q223 635 277 635Q417 635 496 522Q537 464 560.5 380.5Q584 297 584 212Q584 31 419 31Q374 31 364 69Z"/>
+  </g>
+  </g>
+  </g>
+
+</svg>
