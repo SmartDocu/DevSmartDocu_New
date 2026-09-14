@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { App, Modal, Popconfirm } from 'antd'
+import { App, Modal } from 'antd'
 import { useSearchParams } from 'react-router-dom'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOrgProjects, useSaveOrgProject, useDeleteOrgProject } from '@/hooks/useOrg'
@@ -58,7 +59,7 @@ export default function OrgProjectsPage() {
     if (!form.projectnm.trim()) { message.warning(t('msg.projectnm.required')); return }
     saveMutation.mutate(
       {
-        projectid:   form.projectid || null,
+        projectid:   form.projectid ? String(form.projectid) : null,
         tenantid:    tenantid?.toString() || null,
         projectnm:   form.projectnm,
         projectdesc: form.projectdesc || null,
@@ -68,7 +69,10 @@ export default function OrgProjectsPage() {
       },
       {
         onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+        },
       },
     )
   }
@@ -82,7 +86,10 @@ export default function OrgProjectsPage() {
         { projectid: form.projectid },
         {
           onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-          onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+          onError: (err) => {
+            const detail = err.response?.data?.detail
+            message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+          },
         },
       ),
     })
@@ -95,19 +102,38 @@ export default function OrgProjectsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{pageTitle}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측 패널: 목록 */}
-        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', projects.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
@@ -130,41 +156,46 @@ export default function OrgProjectsPage() {
                     <td>{serviceLabel(p.servicecd)}</td>
                     <td>{p.projectnm}</td>
                     <td style={{ whiteSpace: 'pre-wrap' }}>{p.projectdesc || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{p.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측 패널: 상세 */}
-        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-<button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
-                {t('btn.save')}
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending || deleteMutation.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
               {selectedRow && (
-                <Popconfirm
-                  title={t('msg.confirm.delete')}
-                  onConfirm={handleDelete}
-                  okText={t('btn.delete')}
-                  cancelText={t('btn.cancel')}
-                  okButtonProps={{ danger: true }}
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>
-                    {t('btn.delete')}
-                  </button>
-                </Popconfirm>
+                  <DeleteOutlined />
+                </button>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label>{t('lbl.servicecd')}:</label>
-            <select value={form.servicecd} onChange={(e) => setForm(f => ({ ...f, servicecd: e.target.value }))}>
+            <select value={form.servicecd} onChange={(e) => setForm(f => ({ ...f, servicecd: e.target.value }))} style={{ height: 38 }}>
               <option value="">{t('lbl.select')}</option>
               {serviceCodes.map((c) => (
                 <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
@@ -175,12 +206,12 @@ export default function OrgProjectsPage() {
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:</label>
             <input type="text" value={form.projectnm}
-              onChange={(e) => setForm(f => ({ ...f, projectnm: e.target.value }))} />
+              onChange={(e) => setForm(f => ({ ...f, projectnm: e.target.value }))} style={{ height: 38 }} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.desc_lbl')}:</label>
-            <textarea rows={3} value={form.projectdesc} style={{ resize: 'vertical' }}
+            <textarea value={form.projectdesc} style={{ resize: 'vertical', height: 250 }}
               onChange={(e) => setForm(f => ({ ...f, projectdesc: e.target.value }))} />
           </div>
 
@@ -192,6 +223,7 @@ export default function OrgProjectsPage() {
             </div>
           </div>
 
+          </div>
         </div>
       </div>
     </div>

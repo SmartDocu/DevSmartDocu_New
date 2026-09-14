@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useTenantSubscriptionInit, useCreateTenantSubscription } from '@/hooks/useSettings'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function TenantSubscriptionPage() {
   useLangStore((s) => s.translations)
@@ -54,7 +55,7 @@ export default function TenantSubscriptionPage() {
       message.success(t('msg.save.success'))
       navigate('/launcher')
     } catch (err) {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     }
   }
 

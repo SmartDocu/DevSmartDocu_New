@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { App, Modal } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus } from '@/hooks/useMenus'
 import {
@@ -8,6 +9,7 @@ import {
   useTestConnectorHealth, useTestConnectorAuth,
   useTestConnectorHealthInline, useTestConnectorAuthInline,
 } from '@/hooks/useSettings'
+import { getErrorDetail } from '@/utils/apiError'
 
 const EMPTY_FORM = {
   connuid: '', connnm: '', desc: '', useyn: true,
@@ -52,7 +54,7 @@ function MethodRow({ pathKey, methodKey, testFn, testPending, result, label, for
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <div style={{ width: 62, flexShrink: 0 }}>
           <select
-            style={{ width: '100%' }}
+            style={{ width: '100%', height: 38 }}
             value={form[methodKey]}
             onChange={(e) => setForm((f) => ({ ...f, [methodKey]: e.target.value }))}
           >
@@ -61,7 +63,7 @@ function MethodRow({ pathKey, methodKey, testFn, testPending, result, label, for
         </div>
         <input
           type="text"
-          style={{ flex: 1, width: 0, minWidth: 0 }}
+          style={{ flex: 1, width: 0, minWidth: 0, height: 38 }}
           value={form[pathKey]}
           placeholder={t('msg.placeholder.rel.path')}
           onChange={(e) => setForm((f) => ({ ...f, [pathKey]: e.target.value }))}
@@ -69,7 +71,7 @@ function MethodRow({ pathKey, methodKey, testFn, testPending, result, label, for
         <button
           className="btn btn-primary"
           type="button"
-          style={{ flexShrink: 0, padding: '4px 10px' }}
+          style={{ flexShrink: 0, padding: '4px 10px', height: 38 }}
           disabled={!form.baseurl || !form[pathKey] || testPending}
           onClick={testFn}
         >
@@ -192,7 +194,10 @@ export default function SettingsConnectorsPage() {
       refresh_token:       form.refresh_token       || null,
     }, {
       onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-      onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+      onError: (err) => {
+        const detail = err.response?.data?.detail
+        message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+      },
     })
   }
 
@@ -203,7 +208,10 @@ export default function SettingsConnectorsPage() {
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteConnector.mutate(selectedId, {
         onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+        },
       }),
     })
   }
@@ -214,7 +222,7 @@ export default function SettingsConnectorsPage() {
       { baseurl: form.baseurl, health: form.health, health_method: form.health_method },
       {
         onSuccess: (res) => setHealthResult(res),
-        onError: (err) => setHealthResult({ ok: false, status_code: 0, detail: t(err.response?.data?.detail) || err.message }),
+        onError: (err) => setHealthResult({ ok: false, status_code: 0, detail: getErrorDetail(err) || err.message }),
       }
     )
   }
@@ -236,7 +244,7 @@ export default function SettingsConnectorsPage() {
     if (selectedId && !_hasFormSecret()) {
       testAuth.mutate(selectedId, {
         onSuccess: (res) => setAuthResult(res),
-        onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: t(err.response?.data?.detail) || err.message }),
+        onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: getErrorDetail(err) || err.message }),
       })
     } else {
       testAuthInline.mutate(
@@ -252,7 +260,7 @@ export default function SettingsConnectorsPage() {
         },
         {
           onSuccess: (res) => setAuthResult(res),
-          onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: t(err.response?.data?.detail) || err.message }),
+          onError: (err) => setAuthResult({ ok: false, status_code: 0, detail: getErrorDetail(err) || err.message }),
         }
       )
     }
@@ -270,20 +278,39 @@ export default function SettingsConnectorsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 목록 */}
-        <div style={{ flex: 4, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', connectors.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
           </div>
-          <div className="table-container">
-            <table style={{ cursor: 'pointer' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+            <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
                   <th>{t('thd.connnm_thd')}</th>
@@ -300,34 +327,52 @@ export default function SettingsConnectorsPage() {
                   <tr
                     key={c.connuid}
                     className={selectedId === c.connuid ? 'selected-row' : ''}
+                    style={{ cursor: 'pointer' }}
                     onClick={() => handleRowClick(c)}
                   >
                     <td>{c.connnm}</td>
                     <td>{c.authtype || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{c.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{c.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 상세 */}
-        <div style={{ flex: 6, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveConnector.isPending || !canSave}>{t('btn.save')}</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveConnector.isPending || !canSave || deleteConnector.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+              </button>
               {selectedId && (
-                <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteConnector.isPending}>{t('btn.delete')}</button>
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteConnector.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <DeleteOutlined />
+                </button>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {/* ── 기본 정보 ── */}
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.connnm_lbl')}:</label>
-            <input type="text" value={form.connnm}
+            <input type="text" value={form.connnm} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, connnm: e.target.value }))} />
           </div>
 
@@ -350,13 +395,13 @@ export default function SettingsConnectorsPage() {
           {/* ── API 설정 ── */}
           <div className="form-group">
             <label>{t('lbl.baseurl_lbl')}:</label>
-            <input type="text" value={form.baseurl}
+            <input type="text" value={form.baseurl} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, baseurl: e.target.value }))} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.authtype_lbl')}:</label>
-            <select value={form.authtype}
+            <select value={form.authtype} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, authtype: e.target.value }))}>
               {authtypes.map((at) => <option key={at} value={at}>{at}</option>)}
             </select>
@@ -385,12 +430,12 @@ export default function SettingsConnectorsPage() {
                 <>
                   <div className="form-group">
                     <label>{t('lbl.api_key_name_lbl')}:</label>
-                    <input type="text" value={form.api_key_name}
+                    <input type="text" value={form.api_key_name} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, api_key_name: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.api_key_locationcd_lbl')}:</label>
-                    <select value={form.api_key_locationcd}
+                    <select value={form.api_key_locationcd} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, api_key_locationcd: e.target.value }))}>
                       {keylocations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
                     </select>
@@ -400,7 +445,7 @@ export default function SettingsConnectorsPage() {
                       {t('lbl.api_key_value_lbl')}:
                       <small style={{ color: '#888', marginLeft: 8, fontWeight: 'normal' }}>{t('inf.secret.hidden')}</small>
                     </label>
-                    <input type="password" value={form.api_key_value} autoComplete="new-password"
+                    <input type="password" value={form.api_key_value} autoComplete="new-password" style={{ height: 38 }}
                       placeholder={t('msg.placeholder.secret.change')}
                       onChange={(e) => setForm((f) => ({ ...f, api_key_value: e.target.value }))} />
                   </div>
@@ -412,15 +457,15 @@ export default function SettingsConnectorsPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {form.extra_headers.map((h, i) => (
                         <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <input type="text" style={{ flex: 1 }} value={h.name} placeholder="Authorization / Accept-Profile"
+                          <input type="text" style={{ flex: 1, height: 38 }} value={h.name} placeholder="Authorization / Accept-Profile"
                             onChange={(e) => updateExtraHeader(i, 'name', e.target.value)} />
-                          <input type="password" style={{ flex: 1 }} value={h.value} autoComplete="new-password" placeholder="Bearer ... / apqr"
+                          <input type="password" style={{ flex: 1, height: 38 }} value={h.value} autoComplete="new-password" placeholder="Bearer ... / apqr"
                             onChange={(e) => updateExtraHeader(i, 'value', e.target.value)} />
-                          <button type="button" className="btn btn-danger" style={{ padding: '4px 10px', flexShrink: 0 }}
+                          <button type="button" className="btn btn-danger" style={{ padding: '4px 10px', flexShrink: 0, height: 38 }}
                             onClick={() => removeExtraHeader(i)}>✕</button>
                         </div>
                       ))}
-                      <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start', padding: '4px 10px' }}
+                      <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start', padding: '4px 10px', height: 38 }}
                         onClick={addExtraHeader}>
                         {t('btn.add')}
                       </button>
@@ -433,7 +478,7 @@ export default function SettingsConnectorsPage() {
                 <>
                   <div className="form-group">
                     <label>{t('lbl.username_lbl')}:</label>
-                    <input type="text" value={form.username} autoComplete="off"
+                    <input type="text" value={form.username} autoComplete="off" style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} />
                   </div>
                   <div className="form-group">
@@ -441,7 +486,7 @@ export default function SettingsConnectorsPage() {
                       {t('lbl.password_lbl')}:
                       <small style={{ color: '#888', marginLeft: 8, fontWeight: 'normal' }}>{t('inf.secret.hidden')}</small>
                     </label>
-                    <input type="password" value={form.password} autoComplete="new-password"
+                    <input type="password" value={form.password} autoComplete="new-password" style={{ height: 38 }}
                       placeholder={t('msg.placeholder.secret.change')}
                       onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
                   </div>
@@ -452,7 +497,7 @@ export default function SettingsConnectorsPage() {
                 <>
                   <div className="form-group">
                     <label>{t('lbl.oauth_client_id_lbl')}:</label>
-                    <input type="text" value={form.oauth_client_id}
+                    <input type="text" value={form.oauth_client_id} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, oauth_client_id: e.target.value }))} />
                   </div>
                   <div className="form-group">
@@ -460,40 +505,40 @@ export default function SettingsConnectorsPage() {
                       {t('lbl.oauth_client_secret_lbl')}:
                       <small style={{ color: '#888', marginLeft: 8, fontWeight: 'normal' }}>{t('inf.secret.hidden')}</small>
                     </label>
-                    <input type="password" value={form.oauth_client_secret} autoComplete="new-password"
+                    <input type="password" value={form.oauth_client_secret} autoComplete="new-password" style={{ height: 38 }}
                       placeholder={t('msg.placeholder.secret.change')}
                       onChange={(e) => setForm((f) => ({ ...f, oauth_client_secret: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.token_endpoint_lbl')}:</label>
-                    <input type="text" value={form.token_endpoint}
+                    <input type="text" value={form.token_endpoint} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, token_endpoint: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.grant_type_lbl')}:</label>
-                    <select value={form.grant_type}
+                    <select value={form.grant_type} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, grant_type: e.target.value }))}>
                       {granttypes.map((g) => <option key={g} value={g}>{g}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.authorization_type_lbl')}:</label>
-                    <input type="text" value={form.authorization_type}
+                    <input type="text" value={form.authorization_type} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, authorization_type: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.redirect_url_lbl')}:</label>
-                    <input type="text" value={form.redirect_url}
+                    <input type="text" value={form.redirect_url} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, redirect_url: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.scope_lbl')}:</label>
-                    <input type="text" value={form.scope}
+                    <input type="text" value={form.scope} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>{t('lbl.refresh_token_lbl')}:</label>
-                    <input type="text" value={form.refresh_token}
+                    <input type="text" value={form.refresh_token} style={{ height: 38 }}
                       onChange={(e) => setForm((f) => ({ ...f, refresh_token: e.target.value }))} />
                   </div>
                 </>
@@ -508,6 +553,7 @@ export default function SettingsConnectorsPage() {
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
     </div>

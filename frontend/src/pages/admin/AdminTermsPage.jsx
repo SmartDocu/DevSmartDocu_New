@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { App, Input } from 'antd'
+import { useState, useEffect, useMemo } from 'react'
+import { App, Input, Pagination } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import {
   useAdminTerms,
@@ -10,6 +11,8 @@ import {
   useDeleteTermTranslation,
 } from '@/hooks/useTerms'
 import { useLanguages, useMenuCodes } from '@/hooks/useMenus'
+
+const PAGE_SIZE = 15
 
 const EMPTY_TERM = {
   termkey: '',
@@ -32,6 +35,17 @@ export default function AdminTermsPage() {
   const [form, setForm] = useState(EMPTY_TERM)
   const [transEdits, setTransEdits] = useState({})
   const [searchText, setSearchText] = useState('')
+  const [page, setPage] = useState(1)
+
+  const filteredTerms = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    if (!q) return terms
+    return terms.filter((term) =>
+      term.termkey?.toLowerCase().includes(q) || term.termgroupcd?.toLowerCase().includes(q)
+    )
+  }, [terms, searchText])
+  const pagedTerms = filteredTerms.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  useEffect(() => { setPage(1) }, [searchText])
 
   const { data: translations = [] } = useTermTranslations(selectedTerm?.termkey)
   const saveTerm = useSaveTerm()
@@ -109,67 +123,118 @@ export default function AdminTermsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.system.translation.terms')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
-
-        {/* 1열: 용어 목록 */}
-        <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleTermNew}>
-              {t('btn.new')}
-            </button>
-          </div>
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <div className="filter-item" style={{ width: '100%' }}>
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.search')}</label>
           <Input
             placeholder={`${t('thd.termkey_thd')} / ${t('thd.termgroupcd_thd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
-            style={{ marginBottom: 8 }}
+            style={{ height: 32, maxWidth: 480 }}
           />
-          <div className="table-container">
-            <table>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+
+        {/* 1열: 용어 목록 */}
+        <div className="panel-section" style={{ flex: 3.5, height: 'calc(100vh - 306px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', filteredTerms.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleTermNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
+          </div>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+            <table className="table table-bordered table-sm" style={{ cursor: 'pointer', tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th>{t('thd.termkey_thd')}</th>
-                  <th>{t('thd.termgroupcd_thd')}</th>
-                  <th>{t('thd.default_text_thd')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '28%' }}>{t('thd.termkey_thd')}</th>
+                  <th style={{ width: '16%' }}>{t('thd.termgroupcd_thd')}</th>
+                  <th style={{ width: '36%' }}>{t('thd.default_text_thd')}</th>
+                  <th style={{ width: '14%', textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
-                {terms.filter((term) => {
-                  const q = searchText.trim().toLowerCase()
-                  if (!q) return true
-                  return term.termkey?.toLowerCase().includes(q) || term.termgroupcd?.toLowerCase().includes(q)
-                }).map((term) => (
+                {pagedTerms.length === 0 ? (
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                ) : pagedTerms.map((term) => (
                   <tr
                     key={`${term.termkey}::${term.termgroupcd}`}
                     className={selectedTerm?.termkey === term.termkey && selectedTerm?.termgroupcd === term.termgroupcd ? 'selected-row' : ''}
-                    style={{ cursor: 'pointer' }}
                     onClick={() => handleTermSelect(term)}
                   >
-                    <td>{term.termkey}</td>
-                    <td>{term.termgroupcd}</td>
-                    <td>{term.default_text}</td>
-                    <td style={{ textAlign: 'center' }}>{term.useyn ? '✔' : ''}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={term.termkey}>{term.termkey}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{term.termgroupcd}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={term.default_text}>{term.default_text}</td>
+                    <td style={{ textAlign: 'center' }}>{term.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {filteredTerms.length > PAGE_SIZE && (
+            <div style={{ marginTop: 'auto', paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                current={page}
+                pageSize={PAGE_SIZE}
+                total={filteredTerms.length}
+                showSizeChanger={false}
+                onChange={setPage}
+              />
+            </div>
+          )}
         </div>
 
         {/* 2열: 용어 상세 폼 */}
-        <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 306px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleTermSave} disabled={saveTerm.isPending || deleteTerm.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+              </button>
+              {!isNew && (
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleTermDelete}
+                  disabled={deleteTerm.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <DeleteOutlined />
+                </button>
+              )}
+            </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label htmlFor="term-termkey"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.termkey_lbl')}:</label>
@@ -178,6 +243,7 @@ export default function AdminTermsPage() {
                 id="term-termkey"
                 type="text"
                 value={form.termkey}
+                style={{ height: 38 }}
                 onChange={(e) => setForm((f) => ({ ...f, termkey: e.target.value }))}
               />
             ) : (
@@ -189,6 +255,7 @@ export default function AdminTermsPage() {
             <select
               id="term-termgroupcd"
               value={form.termgroupcd}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, termgroupcd: e.target.value }))}
             >
               <option value="">-</option>
@@ -205,6 +272,7 @@ export default function AdminTermsPage() {
               id="term-default-text"
               type="text"
               value={form.default_text}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, default_text: e.target.value }))}
             />
           </div>
@@ -229,40 +297,39 @@ export default function AdminTermsPage() {
               />
             </div>
           </div>
+          </div>
         </div>
 
         {/* 3열: 번역 표 */}
-        <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 306px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleTermSave} disabled={saveTerm.isPending}>
-                {t('btn.save')}
-              </button>
-              <button className="btn btn-danger" type="button" onClick={handleTermDelete} disabled={deleteTerm.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
-            </div>
+            <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {(selectedTerm || isNew) ? (
-            <div className="table-container">
-              <table>
+            <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+              <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
-                    <th style={{ width: '22%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ width: '28%', padding: '4px 8px' }}>{t('thd.languagenm')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('thd.translated_text')}</th>
+                    <th style={{ width: '22%' }}>{t('thd.languagecd')}</th>
+                    <th style={{ width: '28%' }}>{t('thd.languagenm')}</th>
+                    <th>{t('thd.translated_text')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {languages.map((l) => (
                     <tr key={l.languagecd}>
-                      <td style={{ padding: '3px 8px' }}>{l.languagecd}</td>
-                      <td style={{ padding: '3px 8px' }}>{l.languagenm}</td>
-                      <td style={{ padding: '3px 4px' }}>
+                      <td>{l.languagecd}</td>
+                      <td>{l.languagenm}</td>
+                      <td>
                         <input
                           type="text"
-                          style={{ width: '100%', boxSizing: 'border-box' }}
+                          style={{ width: '100%', boxSizing: 'border-box', height: 38 }}
                           value={transEdits[l.languagecd] ?? ''}
                           onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: e.target.value }))}
                         />
@@ -275,6 +342,7 @@ export default function AdminTermsPage() {
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.term.select.trans')}</div>
           )}
+          </div>
         </div>
 
       </div>

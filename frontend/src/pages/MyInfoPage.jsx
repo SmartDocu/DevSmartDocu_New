@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
 import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
 import WithdrawAccountModal from '@/components/payment/WithdrawAccountModal'
+import { getErrorMessage } from '@/utils/apiError'
 
 const { Title } = Typography
 
@@ -102,7 +103,7 @@ export default function MyInfoPage() {
       { servicecd: cancelTarget, ...payload },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }
@@ -112,7 +113,7 @@ export default function MyInfoPage() {
       { servicecd },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }

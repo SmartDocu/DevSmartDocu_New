@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { App } from 'antd'
+import { SaveOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages } from '@/hooks/useI18n'
 import { useApps, useAppTranslations, useSaveAppTranslation, useDeleteAppTranslation } from '@/hooks/useApps'
@@ -55,25 +56,42 @@ export default function AdminAppsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.system.translation.apps')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* 좌측: 앱 목록 */}
-        <div style={{ flex: 4 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', apps.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container">
-            <table>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+            <table className="table table-bordered table-sm" style={{ tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th>{t('lbl.appcd')}</th>
-                  <th>{t('thd.appnm_thd')}</th>
+                  <th style={{ width: '40%' }}>{t('lbl.appcd')}</th>
+                  <th style={{ width: '60%' }}>{t('thd.appnm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -84,42 +102,48 @@ export default function AdminAppsPage() {
                     style={{ cursor: 'pointer' }}
                     onClick={() => handleAppSelect(app.appcd)}
                   >
-                    <td>{app.appcd}</td>
-                    <td>{app.appnm}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={app.appcd}>{app.appcd}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={app.appnm}>{app.appnm}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 번역 표 */}
-        <div style={{ flex: 6, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 6, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleSave} disabled={!selectedAppcd || saveTrans.isPending}>
-              {t('btn.save')}
+            <button className="btn btn-primary" type="button" onClick={handleSave} disabled={!selectedAppcd || saveTrans.isPending || deleteTrans.isPending}>
+              <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
             </button>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {selectedAppcd ? (
-            <div className="table-container">
-              <table>
+            <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+              <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
-                    <th style={{ width: '22%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ width: '28%', padding: '4px 8px' }}>{t('thd.languagenm')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('thd.translated_text')}</th>
+                    <th style={{ width: '22%' }}>{t('thd.languagecd')}</th>
+                    <th style={{ width: '28%' }}>{t('thd.languagenm')}</th>
+                    <th>{t('thd.translated_text')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {languages.map((l) => (
                     <tr key={l.languagecd}>
-                      <td style={{ padding: '3px 8px' }}>{l.languagecd}</td>
-                      <td style={{ padding: '3px 8px' }}>{l.languagenm}</td>
+                      <td>{l.languagecd}</td>
+                      <td>{l.languagenm}</td>
                       <td style={{ padding: '3px 4px' }}>
                         <input
                           type="text"
-                          style={{ width: '100%', boxSizing: 'border-box' }}
+                          style={{ width: '100%', boxSizing: 'border-box', height: 38 }}
                           value={transEdits[l.languagecd] ?? ''}
                           onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: e.target.value }))}
                         />
@@ -132,6 +156,7 @@ export default function AdminAppsPage() {
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.app.select.trans')}</div>
           )}
+          </div>
         </div>
 
       </div>

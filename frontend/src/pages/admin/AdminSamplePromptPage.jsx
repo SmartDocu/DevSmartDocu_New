@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { App, Input, Modal, Spin } from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { App, Input, Modal, Pagination, Spin } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, EditOutlined, EyeOutlined, CheckCircleFilled } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
@@ -14,6 +15,9 @@ import {
   useDeletePromptTranslation,
 } from '@/hooks/useAdmin'
 import { useLanguages } from '@/hooks/useMenus'
+import { getErrorMessage } from '@/utils/apiError'
+
+const PAGE_SIZE = 15
 
 const PROMPT_TYPE_OPTIONS = [
   { value: 'prm', label: 'Prompt' },
@@ -49,6 +53,7 @@ export default function AdminSamplePromptPage() {
   const [isNew, setIsNew] = useState(true)
   const [form, setForm] = useState(EMPTY_FORM)
   const [searchText, setSearchText] = useState('')
+  const [page, setPage] = useState(1)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalLang, setModalLang] = useState(null)
@@ -86,6 +91,19 @@ export default function AdminSamplePromptPage() {
       ta.focus()
     }, 0)
   }
+
+  const filteredPrompts = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    return prompts
+      .filter((p) => !q || p.promptkey?.toLowerCase().includes(q) || p.prompttypecd?.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const tc = (a.prompttypecd || '').localeCompare(b.prompttypecd || '')
+        if (tc !== 0) return tc
+        return (a.orderno ?? 0) - (b.orderno ?? 0)
+      })
+  }, [prompts, searchText])
+  const pagedPrompts = filteredPrompts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  useEffect(() => { setPage(1) }, [searchText])
 
   const { data: translations = [] } = usePromptTranslations(selectedPrompt?.promptkey)
   const savePrompt = useSavePrompt()
@@ -155,7 +173,7 @@ export default function AdminSamplePromptPage() {
       }, { timeout: 180000 })
       setPreviewResult(resp.data)
     } catch (e) {
-      setPreviewResult({ message_type: 'error', message: t(e?.response?.data?.detail) || t('msg.preview.error') })
+      setPreviewResult({ message_type: 'error', message: getErrorMessage(e, 'msg.preview.error') })
     } finally {
       setPreviewLoading(false)
     }
@@ -193,84 +211,121 @@ export default function AdminSamplePromptPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.system.translation.sample_prompt')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
-
-        {/* 1열: 프롬프트 목록 */}
-        <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handlePromptNew}>
-              {t('btn.new')}
-            </button>
-          </div>
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <div className="filter-item" style={{ width: '100%' }}>
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.search')}</label>
           <Input
             placeholder={`${t('thd.promptkey_thd')} / ${t('thd.prompttypecd_thd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
-            style={{ marginBottom: 8 }}
+            style={{ height: 32, maxWidth: 480 }}
           />
-          <div className="table-container">
-            <table>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+
+        {/* 1열: 프롬프트 목록 */}
+        <div className="panel-section" style={{ flex: 3.5, height: 'calc(100vh - 306px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', filteredPrompts.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handlePromptNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
+          </div>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+            <table className="table table-bordered table-sm" style={{ cursor: 'pointer', tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th>{t('thd.promptkey_thd')}</th>
-                  <th>{t('thd.prompttypecd_thd')}</th>
-                  <th>{t('thd.tag1_thd')}</th>
-                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '35%' }}>{t('thd.promptkey_thd')}</th>
+                  <th style={{ width: '16%' }}>{t('thd.prompttypecd_thd')}</th>
+                  <th style={{ width: '10%' }}>{t('thd.tag1_thd')}</th>
+                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
-                {prompts
-                  .filter((p) => {
-                    const q = searchText.trim().toLowerCase()
-                    if (!q) return true
-                    return p.promptkey?.toLowerCase().includes(q) || p.prompttypecd?.toLowerCase().includes(q)
-                  })
-                  .sort((a, b) => {
-                    const tc = (a.prompttypecd || '').localeCompare(b.prompttypecd || '')
-                    if (tc !== 0) return tc
-                    return (a.orderno ?? 0) - (b.orderno ?? 0)
-                  })
-                  .map((p) => (
-                    <tr
-                      key={p.promptkey}
-                      className={selectedPrompt?.promptkey === p.promptkey ? 'selected-row' : ''}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => handlePromptSelect(p)}
-                    >
-                      <td>{p.promptkey}</td>
-                      <td>{PROMPTTYPE_LABEL[p.prompttypecd] || p.prompttypecd}</td>
-                      <td>{p.tag1}</td>
-                      <td style={{ textAlign: 'center' }}>{p.orderno}</td>
-                      <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
-                    </tr>
-                  ))}
+                {pagedPrompts.length === 0 ? (
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                ) : pagedPrompts.map((p) => (
+                  <tr
+                    key={p.promptkey}
+                    className={selectedPrompt?.promptkey === p.promptkey ? 'selected-row' : ''}
+                    onClick={() => handlePromptSelect(p)}
+                  >
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.promptkey}>{p.promptkey}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{PROMPTTYPE_LABEL[p.prompttypecd] || p.prompttypecd}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tag1}</td>
+                    <td style={{ textAlign: 'center' }}>{p.orderno}</td>
+                    <td style={{ textAlign: 'center' }}>{p.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+          {filteredPrompts.length > PAGE_SIZE && (
+            <div style={{ marginTop: 'auto', paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                current={page}
+                pageSize={PAGE_SIZE}
+                total={filteredPrompts.length}
+                showSizeChanger={false}
+                onChange={setPage}
+              />
+            </div>
+          )}
         </div>
 
         {/* 2열: 프롬프트 상세 폼 */}
-        <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 2.5, height: 'calc(100vh - 306px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handlePromptSave} disabled={savePrompt.isPending}>
-                {t('btn.save')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handlePromptSave} disabled={savePrompt.isPending || deletePrompt.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
-              <button className="btn btn-danger" type="button" onClick={handlePromptDelete} disabled={deletePrompt.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
+              {!isNew && (
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handlePromptDelete}
+                  disabled={deletePrompt.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <DeleteOutlined />
+                </button>
+              )}
             </div>
           </div>
 
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="form-group">
             <label htmlFor="prompt-promptkey">
               <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.promptkey_lbl')}:
@@ -280,6 +335,7 @@ export default function AdminSamplePromptPage() {
                 id="prompt-promptkey"
                 type="text"
                 value={form.promptkey}
+                style={{ height: 38 }}
                 onChange={(e) => setForm((f) => ({ ...f, promptkey: e.target.value }))}
               />
             ) : (
@@ -293,6 +349,7 @@ export default function AdminSamplePromptPage() {
             <select
               id="prompt-prompttypecd"
               value={form.prompttypecd}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, prompttypecd: e.target.value }))}
             >
               <option value="">— {t('lbl.select')} —</option>
@@ -307,6 +364,7 @@ export default function AdminSamplePromptPage() {
               id="prompt-tag1"
               type="text"
               value={form.tag1}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, tag1: e.target.value }))}
             />
           </div>
@@ -316,6 +374,7 @@ export default function AdminSamplePromptPage() {
               id="prompt-tag2"
               type="text"
               value={form.tag2}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, tag2: e.target.value }))}
             />
           </div>
@@ -344,6 +403,7 @@ export default function AdminSamplePromptPage() {
             <select
               id="prompt-datauid"
               value={form.datauid}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, datauid: e.target.value }))}
             >
               <option value="">— {t('lbl.select')} —</option>
@@ -358,6 +418,7 @@ export default function AdminSamplePromptPage() {
               id="prompt-orderno"
               type="number"
               value={form.orderno}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
             />
           </div>
@@ -374,23 +435,29 @@ export default function AdminSamplePromptPage() {
               />
             </div>
           </div>
+          </div>
         </div>
 
         {/* 3열: 번역 언어 목록 */}
-        <div style={{ flex: 4, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 306px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {selectedPrompt ? (
-            <div className="table-container">
-              <table>
+            <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+              <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
                     <th style={{ width: '20%' }}>{t('thd.languagecd')}</th>
                     <th>{t('thd.languagenm')}</th>
-                    <th style={{ width: 60, textAlign: 'center' }}>{t('thd.configured_thd')}</th>
-                    <th style={{ width: 70, textAlign: 'center' }}>{t('thd.setting_thd')}</th>
+                    <th style={{ width: 80, textAlign: 'center' }}>{t('thd.configured_thd')}</th>
+                    <th style={{ width: 90, textAlign: 'center' }}>{t('thd.setting_thd')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -400,15 +467,15 @@ export default function AdminSamplePromptPage() {
                       <tr key={l.languagecd}>
                         <td>{l.languagecd}</td>
                         <td>{l.languagenm}</td>
-                        <td style={{ textAlign: 'center' }}>{hasTrans ? '✔' : ''}</td>
+                        <td style={{ textAlign: 'center' }}>{hasTrans && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.configured_thd')} />}</td>
                         <td style={{ textAlign: 'center' }}>
                           <button
-                            className="btn btn-primary"
+                            className="btn btn-secondary"
                             type="button"
-                            style={{ padding: '2px 10px', fontSize: 12 }}
+                            style={{ padding: '0 10px', height: 30, fontSize: 12 }}
                             onClick={() => handleOpenModal(l)}
                           >
-                            {t('btn.setting')}
+                            <EditOutlined style={{ marginRight: 4 }} />{t('btn.setting')}
                           </button>
                         </td>
                       </tr>
@@ -420,6 +487,7 @@ export default function AdminSamplePromptPage() {
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.prompt.select.trans')}</div>
           )}
+          </div>
         </div>
 
       </div>
@@ -464,7 +532,7 @@ export default function AdminSamplePromptPage() {
                   onClick={handleModalSave}
                   disabled={saveTrans.isPending || deleteTrans.isPending}
                 >
-                  {t('btn.save')}
+                  <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                 </button>
               ) : (
                 <button
@@ -473,7 +541,7 @@ export default function AdminSamplePromptPage() {
                   onClick={handlePreview}
                   disabled={previewLoading}
                 >
-                  {t('btn.preview_btn')}
+                  <EyeOutlined style={{ marginRight: 6 }} />{t('btn.preview_btn')}
                 </button>
               )}
             </div>
@@ -570,7 +638,7 @@ export default function AdminSamplePromptPage() {
                 onClick={handleModalSave}
                 disabled={saveTrans.isPending || deleteTrans.isPending}
               >
-                {t('btn.save')}
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 500, background: '#f9f9f9', border: '1px solid #e8e8e8', borderRadius: 6, padding: 16, overflowY: 'auto', position: 'relative' }}>

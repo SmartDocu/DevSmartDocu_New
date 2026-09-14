@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { App } from 'antd'
+import { PlusOutlined, SendOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useOrgInvitations, useSendInvitation } from '@/hooks/useOrg'
+import { getErrorMessage } from '@/utils/apiError'
 
 const EMPTY_FORM = { emails: [], servicecd: '' }
 
@@ -93,7 +95,7 @@ export default function OrgInviteMembersPage() {
       { emails: form.emails, servicecd: form.servicecd },
       {
         onSuccess: (data) => { message.success(data?.message || t('msg.invite.sent')); handleNew() },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }
@@ -102,19 +104,38 @@ export default function OrgInviteMembersPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.org.invite.members')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 초대 이력 */}
-        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', invitations.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
@@ -139,18 +160,23 @@ export default function OrgInviteMembersPage() {
                     <td>{inv.email}</td>
                     <td>{inv.servicecd}</td>
                     <td>{inv.createdts}</td>
-                    <td style={{ textAlign: 'center' }}>{inv.is_signup ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{inv.is_signup && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.is_signup_thd')} />}</td>
                     <td>{inv.signupdts || '-'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 초대 폼 */}
-        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {!selectedId && (
               <button
@@ -159,11 +185,12 @@ export default function OrgInviteMembersPage() {
                 onClick={handleSend}
                 disabled={sendMutation.isPending}
               >
-                {t('btn.invite.send')}
+                <SendOutlined style={{ marginRight: 6 }} />{t('btn.invite.send')}
               </button>
             )}
             {selectedId && <div />}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.invite.services')}:</label>
@@ -203,9 +230,11 @@ export default function OrgInviteMembersPage() {
                   onKeyDown={handleEmailKeyDown}
                   onPaste={handleEmailPaste}
                   placeholder={t('inf.invite.email.placeholder')}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, height: 38 }}
                 />
-                <button className="btn btn-primary" type="button" onClick={addEmail}>{t('btn.add')}</button>
+                <button className="btn btn-secondary" type="button" onClick={addEmail} style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+                  <PlusOutlined style={{ marginRight: 6 }} />{t('btn.add')}
+                </button>
               </div>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
@@ -234,6 +263,7 @@ export default function OrgInviteMembersPage() {
                 </span>
               ))}
             </div>
+          </div>
           </div>
         </div>
       </div>

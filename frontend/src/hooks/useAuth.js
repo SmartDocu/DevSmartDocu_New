@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useLogin() {
   const navigate = useNavigate()
@@ -22,7 +23,7 @@ export function useLogin() {
       navigate(from, { replace: true })
     },
     onError: (err) => {
-      const detail = t(err.response?.data?.detail) || t('msg.login.failed')
+      const detail = getErrorMessage(err, 'msg.login.failed')
       alert(detail)
     },
   })
@@ -49,7 +50,7 @@ export function useSendResetEmail() {
       apiClient.post('/auth/send-reset-email', { email }).then((r) => r.data),
     onSuccess: () => alert(t('msg.reset.sent')),
     onError: (err) => {
-      const detail = t(err.response?.data?.detail) || t('msg.reset.failed')
+      const detail = getErrorMessage(err, 'msg.reset.failed')
       alert(detail)
     },
   })
@@ -65,7 +66,7 @@ export function useRegister() {
       navigate('/')
     },
     onError: (err) => {
-      const detail = t(err.response?.data?.detail) || t('msg.register.failed')
+      const detail = getErrorMessage(err, 'msg.register.failed')
       alert(detail)
     },
   })

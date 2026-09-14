@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { App, Alert, Button, Radio, Space, Spin, Tag } from 'antd'
+import { App, Alert, Radio, Space, Spin, Tag } from 'antd'
+import { SaveOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function OrgSubscriptionManagePage() {
   const { message, modal } = App.useApp()
@@ -81,7 +83,7 @@ export default function OrgSubscriptionManagePage() {
                 promptCardRegistration()
                 return
               }
-              message.error(detail || t('msg.save.error'))
+              message.error(getErrorMessage(err, 'msg.save.error'))
             },
           },
         )
@@ -99,7 +101,7 @@ export default function OrgSubscriptionManagePage() {
       { servicecd: cancelTarget, ...payload },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }
@@ -110,7 +112,7 @@ export default function OrgSubscriptionManagePage() {
       { servicecd },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }
@@ -119,27 +121,44 @@ export default function OrgSubscriptionManagePage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.tenant.manage.subscription')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측(7): 현재 구독 중인 서비스 목록 */}
-        <div style={{ flex: 7, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', subscriptions.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer', tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '12%' }}>{t('lbl.service_name_lbl')}</th>
-                  <th style={{ width: '24%' }}>{t('lbl.product')}</th>
-                  <th style={{ width: '12%' }}>{t('lbl.plan')}</th>
-                  <th style={{ width: '16%' }}>{t('lbl.items')}</th>
-                  <th style={{ width: '36%' }} />
+                  <th style={{ width: '15%' }}>{t('lbl.service_name_lbl')}</th>
+                  <th style={{ width: '30%' }}>{t('lbl.product')}</th>
+                  <th style={{ width: '15%' }}>{t('lbl.plan')}</th>
+                  <th style={{ width: '22%' }}>{t('lbl.items')}</th>
+                  <th style={{ width: '18%' }} />
                 </tr>
               </thead>
               <tbody>
@@ -162,10 +181,10 @@ export default function OrgSubscriptionManagePage() {
                         s.cancel_reserved ? (
                           <Space direction="vertical" size={4} style={{ alignItems: 'flex-start' }}>
                             <Tag color="orange" style={{ whiteSpace: 'normal' }}>{t('lbl.pro.cancel.reserved')}{s.cancel_effective_date ? ` (${s.cancel_effective_date})` : ''}</Tag>
-                            <Button size="small" loading={cancelUndoMutation.isPending} onClick={(e) => handleCancelUndo(s.servicecd, e)}>{t('btn.pro.cancel.undo')}</Button>
+                            <button className="btn btn-secondary" type="button" style={{ height: 28, padding: '0 10px' }} disabled={cancelUndoMutation.isPending} onClick={(e) => handleCancelUndo(s.servicecd, e)}>{t('btn.pro.cancel.undo')}</button>
                           </Space>
                         ) : (
-                          <Button size="small" danger onClick={(e) => handleCancel(s.servicecd, e)}>{t('btn.subscription.cancel')}</Button>
+                          <button className="btn btn-danger" type="button" style={{ height: 28, padding: '0 10px' }} onClick={(e) => handleCancel(s.servicecd, e)}>{t('btn.subscription.cancel')}</button>
                         )
                       ) : '-'}
                     </td>
@@ -174,11 +193,16 @@ export default function OrgSubscriptionManagePage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측(3): 선택한 서비스의 Team/Enterprise 상품 선택 */}
-        <div style={{ flex: 3, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <button
               className="btn btn-primary"
@@ -186,9 +210,10 @@ export default function OrgSubscriptionManagePage() {
               onClick={handleSave}
               disabled={changeMutation.isPending || !selectedProductcd}
             >
-              {t('btn.save')}
+              <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
             </button>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {!selectedServicecd ? (
             <div style={{ color: '#999', padding: '40px 0', textAlign: 'center' }}>{t('msg.select.placeholder')}</div>
@@ -225,6 +250,7 @@ export default function OrgSubscriptionManagePage() {
               ))}
             </Radio.Group>
           )}
+          </div>
         </div>
       </div>
 

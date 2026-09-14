@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { App, Popconfirm } from 'antd'
+import { App } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLlmKeysInit, useLlmKeys, useSaveLlmKey, useDeleteLlmKey } from '@/hooks/useLlmKeys'
@@ -16,10 +17,11 @@ const EMPTY_FORM = {
   orderno: 0,
 }
 
-const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
+const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc', height: 38 }
+const editStyle = { height: 38 }
 
 export default function SettingsLlmKeysPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
   const { user } = useAuthStore()
   const isEditYn = user?.editbuttonyn === 'Y'
@@ -94,16 +96,28 @@ export default function SettingsLlmKeysPage() {
       },
       {
         onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+        },
       },
     )
   }
 
   const handleDelete = () => {
     if (!selectedId) return
-    deleteMutation.mutate(selectedId, {
-      onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-      onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutate(selectedId, {
+        onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+        },
+      }),
     })
   }
 
@@ -116,25 +130,44 @@ export default function SettingsLlmKeysPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('mnu.tenant_mgr.org.llm')}</div>
         </div>
       </div>
 
-      <div style={{ background: '#f9fbe7', padding: '4px 10px', borderRadius: 6, color: '#6a7d3c', marginBottom: 10 }}>
-        <span style={{ color: '#6a7d3c', fontSize: 13 }}>＊ {t('msg.llmkey.notice')}</span>
+      <div className="panel-section" style={{ background: '#f9fbe7', color: '#6a7d3c', fontSize: 13, marginBottom: 16, padding: '13px 18px' }}>
+        ＊ {t('msg.llmkey.notice')}
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 목록 */}
-        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 288px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', llmkeys.length)}
+              </span>
+            </div>
             {isEditYn && (
-              <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+              <button className="btn btn-primary" type="button" onClick={handleNew}>
+                <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+              </button>
             )}
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
@@ -160,40 +193,45 @@ export default function SettingsLlmKeysPage() {
                     <td>{row.llmvendornm}</td>
                     <td>{row.llmmodelnm}</td>
                     <td style={{ textAlign: 'center' }}>{row.orderno}</td>
-                    <td style={{ textAlign: 'center' }}>{row.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{row.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 상세 폼 */}
-        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 288px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {isEditYn && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
-                  {t('btn.save')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending || deleteMutation.isPending}>
+                  <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                 </button>
                 {selectedId && (
-                  <Popconfirm
-                    title={t('msg.confirm.delete')}
-                    onConfirm={handleDelete}
-                    okText={t('btn.delete')}
-                    cancelText={t('btn.cancel')}
-                    okButtonProps={{ danger: true }}
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteMutation.isPending}
+                    title={t('btn.delete')}
+                    style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>
-                      {t('btn.delete')}
-                    </button>
-                  </Popconfirm>
+                    <DeleteOutlined />
+                  </button>
                 )}
               </div>
             )}
             {!isEditYn && <div />}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {/* 서비스 */}
           <div className="form-group">
@@ -202,7 +240,7 @@ export default function SettingsLlmKeysPage() {
               value={form.servicecd}
               onChange={(e) => handleServiceChange(e.target.value)}
               disabled={!isEditYn}
-              style={!isEditYn ? roStyle : {}}
+              style={!isEditYn ? roStyle : editStyle}
             >
               <option value="">{t('lbl.select')}</option>
               {servicecodes.map((c) => (
@@ -220,7 +258,7 @@ export default function SettingsLlmKeysPage() {
               value={form.llmvendornm}
               onChange={(e) => handleVendorChange(e.target.value)}
               disabled={!isEditYn}
-              style={!isEditYn ? roStyle : {}}
+              style={!isEditYn ? roStyle : editStyle}
             >
               <option value="">{t('lbl.select')}</option>
               {vendors.map((v) => (
@@ -244,7 +282,7 @@ export default function SettingsLlmKeysPage() {
               value={form.apikey}
               onChange={(e) => setForm((f) => ({ ...f, apikey: e.target.value }))}
               disabled={!isEditYn}
-              style={!isEditYn ? roStyle : {}}
+              style={!isEditYn ? roStyle : editStyle}
               autoComplete="new-password"
             />
           </div>
@@ -256,7 +294,7 @@ export default function SettingsLlmKeysPage() {
               value={form.llmmodelnm}
               onChange={(e) => setForm((f) => ({ ...f, llmmodelnm: e.target.value }))}
               disabled={!isEditYn || !form.llmvendornm}
-              style={(!isEditYn || !form.llmvendornm) ? roStyle : {}}
+              style={(!isEditYn || !form.llmvendornm) ? roStyle : editStyle}
             >
               <option value="">{t('lbl.select')}</option>
               {filteredModels.map((m) => (
@@ -274,7 +312,7 @@ export default function SettingsLlmKeysPage() {
                   value={form.llmmodelnm_smart}
                   onChange={(e) => setForm((f) => ({ ...f, llmmodelnm_smart: e.target.value }))}
                   disabled={!isEditYn || !form.llmvendornm}
-                  style={(!isEditYn || !form.llmvendornm) ? roStyle : {}}
+                  style={(!isEditYn || !form.llmvendornm) ? roStyle : editStyle}
                 >
                   <option value="">{t('lbl.select')}</option>
                   {filteredModels.map((m) => (
@@ -289,7 +327,7 @@ export default function SettingsLlmKeysPage() {
                   value={form.llmmodelnm_expert}
                   onChange={(e) => setForm((f) => ({ ...f, llmmodelnm_expert: e.target.value }))}
                   disabled={!isEditYn || !form.llmvendornm}
-                  style={(!isEditYn || !form.llmvendornm) ? roStyle : {}}
+                  style={(!isEditYn || !form.llmvendornm) ? roStyle : editStyle}
                 >
                   <option value="">{t('lbl.select')}</option>
                   {filteredModels.map((m) => (
@@ -308,7 +346,7 @@ export default function SettingsLlmKeysPage() {
               value={form.orderno}
               onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
               disabled={!isEditYn}
-              style={!isEditYn ? roStyle : {}}
+              style={!isEditYn ? roStyle : editStyle}
             />
           </div>
 
@@ -323,6 +361,7 @@ export default function SettingsLlmKeysPage() {
                 disabled={!isEditYn}
               />
             </div>
+          </div>
           </div>
         </div>
       </div>

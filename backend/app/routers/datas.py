@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_login
 from backend.app.schemas.datas import (
     AiDataSaveRequest, AiPreviewRequest, DataColItem, DataColsResponse,
     DbConnectorsResponse, DbDataSaveRequest, DatasListResponse,
@@ -136,7 +136,7 @@ def _delete_storage(sb, url: str):
 
 # ── Projects ───────────────────────────────────────────────────────────────────
 
-@router.get("/projects", dependencies=[Depends(require_doc_read)])
+@router.get("/projects", dependencies=[Depends(require_login)])
 def list_datas_projects(servicecd: Optional[str] = None, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -170,7 +170,7 @@ class MyProjectRequest(BaseModel):
     myprojectid: str
     servicecd: str
 
-@router.post("/myproject", dependencies=[Depends(require_doc_write)])
+@router.post("/myproject", dependencies=[Depends(require_login)])
 def update_my_project(body: MyProjectRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -195,7 +195,7 @@ _DATASOURCE_LABEL = {
 }
 
 
-@router.get("/by-project", dependencies=[Depends(require_doc_read)])
+@router.get("/by-project", dependencies=[Depends(require_login)])
 def list_datas_by_project(
     projectid: Optional[str] = None,
     docid: Optional[str] = None,
@@ -338,7 +338,7 @@ def list_datas_by_project(
     return {"items": items}
 
 
-@router.get("/{datauid}/detail", dependencies=[Depends(require_doc_read)])
+@router.get("/{datauid}/detail", dependencies=[Depends(require_login)])
 def get_data_detail(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -435,7 +435,7 @@ def get_data_detail(datauid: str, token: str = Depends(get_token)):
 
 # ── DB Connectors ──────────────────────────────────────────────────────────────
 
-@router.get("/dbconnectors", response_model=DbConnectorsResponse, dependencies=[Depends(require_doc_read)])
+@router.get("/dbconnectors", response_model=DbConnectorsResponse, dependencies=[Depends(require_login)])
 def list_dbconnectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -450,7 +450,7 @@ def list_dbconnectors(token: str = Depends(get_token), tenantid: Optional[str] =
 
 # ── API Connectors ─────────────────────────────────────────────────────────────
 
-@router.get("/api-connectors", response_model=ApiConnectorsResponse, dependencies=[Depends(require_doc_read)])
+@router.get("/api-connectors", response_model=ApiConnectorsResponse, dependencies=[Depends(require_login)])
 def list_apiconnectors(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -466,7 +466,7 @@ def list_apiconnectors(token: str = Depends(get_token), tenantid: Optional[str] 
 
 # ── Datas List ──────────────────────────────────────────────────────────────────
 
-@router.get("", dependencies=[Depends(require_doc_read)])
+@router.get("", dependencies=[Depends(require_login)])
 def list_datas(
     datasourcecd: Optional[str] = None,
     chapteruid: Optional[str] = None,
@@ -649,7 +649,7 @@ def list_datas(
 
 # ── Source datas list (for AI page) ────────────────────────────────────────────
 
-@router.get("/source", dependencies=[Depends(require_doc_read)])
+@router.get("/source", dependencies=[Depends(require_login)])
 def list_source_datas(projectid: int = None, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """DB / API / Excel 데이터소스 목록 (AI 데이터 연결용)"""
     user = _get_user(token)
@@ -692,7 +692,7 @@ def list_source_datas(projectid: int = None, token: str = Depends(get_token), te
 
 # ── DB Data Save ────────────────────────────────────────────────────────────────
 
-@router.post("/db", dependencies=[Depends(require_doc_write)])
+@router.post("/db", dependencies=[Depends(require_login)])
 def save_db_data(body: DbDataSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -737,7 +737,7 @@ def save_db_data(body: DbDataSaveRequest, request: Request, token: str = Depends
 
 # ── Excel Data Save ─────────────────────────────────────────────────────────────
 
-@router.post("/ex", dependencies=[Depends(require_doc_write)])
+@router.post("/ex", dependencies=[Depends(require_login)])
 async def save_ex_data(
     request: Request,
     datanm: str = Form(...),
@@ -823,7 +823,7 @@ async def save_ex_data(
 
 # ── AI Data Save ────────────────────────────────────────────────────────────────
 
-@router.post("/ai", dependencies=[Depends(require_doc_write)])
+@router.post("/ai", dependencies=[Depends(require_login)])
 def save_ai_data(body: AiDataSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -865,7 +865,7 @@ def _snapshot_api_data(sb, datauid: Optional[str]) -> Optional[dict]:
     return {"dataunits": unit, "data_api_params": params}
 
 
-@router.post("/api", dependencies=[Depends(require_doc_write)])
+@router.post("/api", dependencies=[Depends(require_login)])
 def save_api_data(body: ApiDataSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -921,7 +921,7 @@ def save_api_data(body: ApiDataSaveRequest, request: Request, token: str = Depen
 
 # ── API Params Get ──────────────────────────────────────────────────────────────
 
-@router.get("/apiparams", dependencies=[Depends(require_doc_read)])
+@router.get("/apiparams", dependencies=[Depends(require_login)])
 def get_apiparams(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -935,7 +935,7 @@ def get_apiparams(datauid: str, token: str = Depends(get_token)):
 
 # ── DF/DFV List ────────────────────────────────────────────────────────────────
 
-@router.get("/df-list", dependencies=[Depends(require_doc_read)])
+@router.get("/df-list", dependencies=[Depends(require_login)])
 def list_df_datas(projectid: int, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -974,7 +974,7 @@ def list_df_datas(projectid: int, token: str = Depends(get_token)):
 
 # ── AI Preview ─────────────────────────────────────────────────────────────────
 
-@router.post("/ai-preview", dependencies=[Depends(require_doc_write)])
+@router.post("/ai-preview", dependencies=[Depends(require_login)])
 def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -1000,7 +1000,7 @@ def preview_ai_data(body: AiPreviewRequest, token: str = Depends(get_token)):
 
 # ── DF Save ────────────────────────────────────────────────────────────────────
 
-@router.post("/df", dependencies=[Depends(require_doc_write)])
+@router.post("/df", dependencies=[Depends(require_login)])
 def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -1042,7 +1042,7 @@ def save_df_data(body: DfDataSaveRequest, token: str = Depends(get_token), tenan
 
 # ── DFV Save ───────────────────────────────────────────────────────────────────
 
-@router.post("/dfv", dependencies=[Depends(require_doc_write)])
+@router.post("/dfv", dependencies=[Depends(require_login)])
 def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -1084,7 +1084,7 @@ def save_dfv_data(body: DfvDataSaveRequest, token: str = Depends(get_token), ten
 
 # ── Delete ──────────────────────────────────────────────────────────────────────
 
-@router.delete("/{datauid}", dependencies=[Depends(require_doc_write)])
+@router.delete("/{datauid}", dependencies=[Depends(require_login)])
 def delete_data(datauid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -1121,7 +1121,7 @@ def delete_data(datauid: str, request: Request, token: str = Depends(get_token),
 
 # ── DataCols ────────────────────────────────────────────────────────────────────
 
-@router.get("/datacols", response_model=DataColsResponse, dependencies=[Depends(require_doc_read)])
+@router.get("/datacols", response_model=DataColsResponse, dependencies=[Depends(require_login)])
 def get_datacols(datauid: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -1164,7 +1164,7 @@ def _extract_json_columns(data) -> list:
     return result
 
 
-@router.post("/datacols/create", dependencies=[Depends(require_doc_write)])
+@router.post("/datacols/create", dependencies=[Depends(require_login)])
 def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """쿼리를 실행해 컬럼을 자동 생성한다."""
     user = _get_user(token)
@@ -1376,7 +1376,7 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
     return {"message": "컬럼이 생성되었습니다.", "columns": cols}
 
 
-@router.get("/rows", dependencies=[Depends(require_doc_read)])
+@router.get("/rows", dependencies=[Depends(require_login)])
 def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional[str] = None):
     """데이터 미리보기 — 최대 15행 반환"""
     _get_user(token)
@@ -1402,7 +1402,7 @@ def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional
         raise HTTPException(status_code=500, detail=f"데이터 조회 오류: {e}")
 
 
-@router.post("/datacols", dependencies=[Depends(require_doc_write)])
+@router.post("/datacols", dependencies=[Depends(require_login)])
 def save_datacols(cols: list[DataColItem], request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
-import { App, Modal, Popconfirm } from 'antd'
+import { App, Modal } from 'antd'
 import { useSearchParams } from 'react-router-dom'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOrgTenantUsers, useSaveTenantUser, useDeleteTenantUser } from '@/hooks/useOrg'
@@ -103,7 +104,10 @@ export default function OrgTenantUsersPage() {
       },
       {
         onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+        },
       },
     )
   }
@@ -122,7 +126,10 @@ export default function OrgTenantUsersPage() {
         },
         {
           onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-          onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+          onError: (err) => {
+            const detail = err.response?.data?.detail
+            message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+          },
         },
       ),
     })
@@ -132,87 +139,125 @@ export default function OrgTenantUsersPage() {
     ? `${t('ttl.tenant.users')}: ${tenantnm}` : t('ttl.tenant.users')
 
   return (
-    <div>
-      <div className="page-title">
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 171px)', overflow: 'hidden' }}>
+      <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{pageTitle}</div>
         </div>
-        {user?.tenantmanager === 'Y' && (
-          <button
-            className="btn btn-primary"
-            type="button"
-            onClick={() => openInTab('org/invite-members')}
-          >
-            {t('btn.invite.members.manage')}
-          </button>
-        )}
       </div>
 
       {/* 필터 */}
-      <div className="form-filter-group">
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap', flexShrink: 0, marginBottom: 16 }}>
         <div className="filter-item">
-          <label>{t('lbl.status')}:</label>
-          {[['all', t('cod.filter_all')], ['active', t('cod.status_active')], ['inactive', t('cod.status_inactive')]].map(([v, lbl]) => (
-            <span key={v}>
-              <input type="radio" id={`status_${v}`} name="statusFilter" value={v}
-                checked={statusFilter === v} onChange={() => setStatusFilter(v)} />
-              <label className="radio-label" htmlFor={`status_${v}`}>{lbl}</label>
-            </span>
-          ))}
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.status')}</label>
+          <div className="segmented" style={{ height: 32 }}>
+            {[['all', t('cod.filter_all')], ['active', t('cod.status_active')], ['inactive', t('cod.status_inactive')]].map(([v, lbl]) => (
+              <button
+                key={v}
+                type="button"
+                className={`segmented-item${statusFilter === v ? ' active' : ''}`}
+                style={{ padding: '0 14px', display: 'flex', alignItems: 'center' }}
+                onClick={() => setStatusFilter(v)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="filter-item">
-          <label>{t('lbl.rolecd_lbl')}:</label>
-          {[['all', t('cod.filter_all')], ['M', t('cod.rolecd_M')], ['U', t('cod.rolecd_U')]].map(([v, lbl]) => (
-            <span key={v}>
-              <input type="radio" id={`role_${v}`} name="roleFilter" value={v}
-                checked={roleFilter === v} onChange={() => setRoleFilter(v)} />
-              <label className="radio-label" htmlFor={`role_${v}`}>{lbl}</label>
-            </span>
-          ))}
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.rolecd_lbl')}</label>
+          <div className="segmented" style={{ height: 32 }}>
+            {[['all', t('cod.filter_all')], ['M', t('cod.rolecd_M')], ['U', t('cod.rolecd_U')]].map(([v, lbl]) => (
+              <button
+                key={v}
+                type="button"
+                className={`segmented-item${roleFilter === v ? ' active' : ''}`}
+                style={{ padding: '0 14px', display: 'flex', alignItems: 'center' }}
+                onClick={() => setRoleFilter(v)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="filter-item">
-          <label>{t('lbl.servicecd')}:</label>
-          {serviceCodes.map((c) => (
-            <span key={c.codevalue}>
-              <input type="checkbox" id={`svcf_${c.codevalue}`}
-                checked={serviceFilters.includes(c.codevalue)}
-                onChange={() => toggleServiceFilter(c.codevalue)} />
-              <label className="radio-label" htmlFor={`svcf_${c.codevalue}`}>{t(c.term_key) || c.default_name}</label>
-            </span>
-          ))}
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.servicecd')}</label>
+          <div className="segmented" style={{ height: 32 }}>
+            {serviceCodes.map((c) => (
+              <button
+                key={c.codevalue}
+                type="button"
+                className={`segmented-item${serviceFilters.includes(c.codevalue) ? ' active' : ''}`}
+                style={{ padding: '0 14px', display: 'flex', alignItems: 'center' }}
+                onClick={() => toggleServiceFilter(c.codevalue)}
+              >
+                {t(c.term_key) || c.default_name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {service_summary.length > 0 && (
-        <div className="form-filter-group">
-          <div className="filter-item">
-            <label style={{ width: 'auto', marginRight: 16 }}>{t('lbl.service.usage')}:</label>
-            {serviceCodes.map((svc) => {
-              const s = service_summary.find((r) => r.servicecd === svc.codevalue)
-              if (!s) return null
-              const label = t(svc.term_key) || svc.default_name
-              const countText = s.total_users != null
-                ? t('inf.service.usage.count').replace('{current}', s.current_users).replace('{total}', s.total_users)
-                : t('inf.service.usage.nolimit').replace('{current}', s.current_users)
-              return (
-                <span key={s.servicecd} className="radio-label" style={{ marginRight: 24 }}>
-                  {label} {countText}
-                </span>
-              )
-            })}
-          </div>
+        <div className="panel-section" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 24, flexShrink: 0, marginBottom: 16, fontSize: 13 }}>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.service.usage')}: </span>
+          {serviceCodes.map((svc) => {
+            const s = service_summary.find((r) => r.servicecd === svc.codevalue)
+            if (!s) return null
+            const label = t(svc.term_key) || svc.default_name
+            const countText = s.total_users != null
+              ? t('inf.service.usage.count').replace('{current}', s.current_users).replace('{total}', s.total_users)
+              : t('inf.service.usage.nolimit').replace('{current}', s.current_users)
+            return (
+              <span key={s.servicecd}>
+                {label} {countText}
+              </span>
+            )
+          })}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ flex: 1, display: 'flex', gap: 24, minHeight: 0 }}>
         {/* 좌측 패널: 목록 */}
-        <div style={{ flex: 6, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', filteredUsers.length)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {user?.tenantmanager === 'Y' && (
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => openInTab('org/invite-members')}
+                  >
+                    {t('btn.invite.members.manage')}<ExportOutlined style={{ marginLeft: 6 }} />
+                  </button>
+                  <span style={{ color: '#d9d9d9' }}>|</span>
+                </>
+              )}
+              <button className="btn btn-primary" type="button" onClick={handleNew}>
+                <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+              </button>
+            </div>
           </div>
-          <div className="table-container">
+          <div className="table-container" style={{ flex: 1, height: 'auto', overflowY: 'auto' }}>
             <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
@@ -236,7 +281,7 @@ export default function OrgTenantUsersPage() {
                     <td>{u.email}</td>
                     <td>{u.usernm}</td>
                     <td>{u.rolecd === 'M' ? t('cod.rolecd_M') : t('cod.rolecd_U')}</td>
-                    <td style={{ textAlign: 'center' }}>{u.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{u.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                     <td>{serviceLabels(u.servicecds)}</td>
                   </tr>
                 ))}
@@ -246,38 +291,42 @@ export default function OrgTenantUsersPage() {
         </div>
 
         {/* 우측 패널: 상세 */}
-        <div style={{ flex: 4, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>
-                {t('btn.save')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending || deleteMutation.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
               {selectedUid && (
-                <Popconfirm
-                  title={t('msg.confirm.delete')}
-                  onConfirm={handleDelete}
-                  okText={t('btn.delete')}
-                  cancelText={t('btn.cancel')}
-                  okButtonProps={{ danger: true }}
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>
-                    {t('btn.delete')}
-                  </button>
-                </Popconfirm>
+                  <DeleteOutlined />
+                </button>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.email')}:</label>
             <input type="text" value={form.email}
-              onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} />
+              onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} style={{ height: 38 }} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.usernm')}:</label>
-            <input type="text" value={form.usernm} disabled style={roStyle} />
+            <input type="text" value={form.usernm} disabled style={{ ...roStyle, height: 38 }} />
           </div>
 
           <div className="form-group">
@@ -322,6 +371,7 @@ export default function OrgTenantUsersPage() {
             </div>
           </div>
 
+          </div>
         </div>
       </div>
     </div>

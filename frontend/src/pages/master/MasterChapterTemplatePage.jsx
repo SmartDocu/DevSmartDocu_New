@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { App, Spin, Select, Modal } from 'antd'
+import { SaveOutlined, SearchOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { getErrorMessage } from '@/utils/apiError'
 
 // ──────────────────────────────────────────────
 // objecttypecd → React 라우트 매핑
@@ -1132,7 +1134,7 @@ export default function MasterChapterTemplatePage() {
     },
     onError: (err) => {
       setSaveLoading(false)
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 
@@ -1249,53 +1251,57 @@ export default function MasterChapterTemplatePage() {
       {/* 페이지 타이틀 */}
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
-          <div>{t('ttl.master_data.chapters.chapter-template')}</div>
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
+          <div>{t('ttl.master_data.chapters.chapter-template')}{user?.docnm ? ` - ${user.docnm}` : ''}</div>
         </div>
         <div />
       </div>
 
       {/* 챕터 선택 + 버튼 행 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13, color: '#555' }}>{t('thd.chapternm')}</span>
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 16 }}>
+        <div className="filter-item" style={{ gap: 8 }}>
+          <label style={{ fontWeight: 'bold' }}>{t('thd.chapternm')}</label>
           <Select
             value={chapteruid}
             onChange={(uid) => navigate(`/app/${appcd}/master/chapter-template?chapteruid=${uid}&docid=${docid || ''}`)}
-            style={{ width: 200 }}
-            size="small"
+            style={{ width: 220 }}
             options={chaptersList.map(c => ({ value: c.chapteruid, label: c.chapternm }))}
           />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn-query"
+            style={{ height: 32 }}
             onClick={extractFormats}
             disabled={readLoading}
           >
-            {t('btn.extract.objects')}
+            <SearchOutlined />{t('btn.extract.objects')}
           </button>
           {editYn && (
             <button
               type="button"
               className="btn btn-primary"
+              style={{ height: 32, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onClick={handleSave}
               disabled={saveLoading}
             >
-              {t('btn.save')}
+              <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
             </button>
           )}
         </div>
       </div>
 
       {/* 에디터 레이아웃 — 항상 렌더링 (로딩 중에도 div를 DOM에 유지해야 CKEditor ref가 유효) */}
-      <div style={{ display: 'flex', gap: 20, height: 'calc(100% - 48px)', position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', height: 'calc(100% - 130px)', position: 'relative' }}>
 
         {/* 로딩 오버레이 */}
         {isLoading && (
           <div style={{
-            position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)',
+            position: 'absolute', inset: 0, background: 'rgba(245, 245, 245, 0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10,
           }}>
             <Spin />
@@ -1303,32 +1309,31 @@ export default function MasterChapterTemplatePage() {
         )}
 
         {/* ─── 좌측: 에디터 ─── */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="panel-section" style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* 툴바 호스트 — CKEditor가 여기에 toolbar element를 append */}
-          <div ref={toolbarHostRef} />
+          <div ref={toolbarHostRef} style={{ margin: '-16px -18px 12px', borderBottom: '1px solid var(--border-color, #e3e6eb)' }} />
 
           {/* CKEditor editable 래퍼 */}
           <div
             ref={editorContainerCallbackRef}
             spellCheck={false}
             style={{
-              border: '2px solid #4CAF50',
-              height: 600,
+              border: '1px solid var(--border-color, #e3e6eb)',
+              flex: 1,
               overflowY: 'auto',
               backgroundColor: 'white',
-              // flex: 1,
             }}
           />
         </div>
 
         {/* ─── 우측: 변수/서식 패널 ─── */}
-        <div style={{ flex:0.4, minWidth: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="panel-section" style={{ flex: 0.4, minWidth: 280, flexShrink: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
           {/* 단일행 변수 + 테이블 변수 */}
           <div style={{ display: 'flex', gap: 12 }}>
             {/* 단일행 변수 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: 12, margin: '9px 0' }}>{t('lbl.single.var')}</h2>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '9px 0' }}>{t('lbl.single.var')}</h4>
               {sca_params.length > 0 ? (
                 <div style={{ height: 120, overflowY: 'auto' }}>
                   {sca_params.flatMap((p) =>
@@ -1364,7 +1369,7 @@ export default function MasterChapterTemplatePage() {
 
             {/* 다중행 변수 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: 12, margin: '9px 0' }}>{t('lbl.multi.var')}</h2>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '9px 0' }}>{t('lbl.multi.var')}</h4>
               {tbl_params.length > 0 ? (
                 <div style={{ height: 120, overflowY: 'auto' }}>
                   {tbl_params.map((p, i) => (
@@ -1402,7 +1407,7 @@ export default function MasterChapterTemplatePage() {
 
           {/* 항목 관리 */}
           <div>
-            <h2 style={{ fontSize: 12, margin: '9px 0' }}>{t('btn.object.manage')}</h2>
+            <h4 style={{ fontSize: 13, fontWeight: 600, margin: '9px 0' }}>{t('btn.object.manage')}</h4>
 
 
             {/* 항목 목록 */}
@@ -1559,6 +1564,7 @@ export default function MasterChapterTemplatePage() {
           background-color: #f0f7ff; color: #3a7bd5; cursor: pointer; font-weight: bold;
         }
         .var-insert-btn:hover { background-color: #3a7bd5; color: white; }
+        .ck.ck-toolbar { border: none; }
       `}</style>
     </div>
   )

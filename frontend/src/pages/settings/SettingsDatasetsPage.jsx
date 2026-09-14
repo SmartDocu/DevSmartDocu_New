@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { App } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenuCodes } from '@/hooks/useMenus'
@@ -93,29 +94,46 @@ export default function SettingsDatasetsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.db.datas')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* 좌측: Dataset 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', datasets.length)}
+              </span>
+            </div>
             {canEdit && (
               <button className="btn btn-primary" type="button" onClick={handleNew}>
-                {t('btn.new')}
+                <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
               </button>
             )}
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
                   <th>{t('thd.datasetnm_thd')}</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: 90, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -129,31 +147,44 @@ export default function SettingsDatasetsPage() {
                     onClick={() => selectDataset(ds)}
                   >
                     <td>{ds.datasetnm}</td>
-                    <td style={{ textAlign: 'center' }}>{ds.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{ds.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: Dataset 상세 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {canEdit && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveAll.isPending}>
-                  {t('btn.save')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveAll.isPending || deleteDataset.isPending}>
+                  <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                 </button>
                 {form.datasetuid && (
-                  <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteDataset.isPending}>
-                    {t('btn.delete')}
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteDataset.isPending}
+                    title={t('btn.delete')}
+                    style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <DeleteOutlined />
                   </button>
                 )}
               </div>
             )}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label htmlFor="ds-datasetnm"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datasetnm')}:</label>
@@ -161,6 +192,7 @@ export default function SettingsDatasetsPage() {
               id="ds-datasetnm"
               type="text"
               value={form.datasetnm}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, datasetnm: e.target.value }))}
             />
           </div>
@@ -194,7 +226,7 @@ export default function SettingsDatasetsPage() {
                   <h4 style={{ margin: 0 }}>{t('ttl.dataset.members')}</h4>
                   <div />
                 </div>
-                <div className="table-container">
+                <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
                   <table className="table table-bordered table-sm">
                     <thead>
                       <tr>
@@ -237,7 +269,7 @@ export default function SettingsDatasetsPage() {
                   <h4 style={{ margin: 0 }}>{t('ttl.dataset.projects')}</h4>
                   <div />
                 </div>
-                <div className="table-container">
+                <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
                   <table className="table table-bordered table-sm">
                     <thead>
                       <tr>
@@ -273,6 +305,7 @@ export default function SettingsDatasetsPage() {
               </div>
 
             </div>
+          </div>
         </div>
 
       </div>

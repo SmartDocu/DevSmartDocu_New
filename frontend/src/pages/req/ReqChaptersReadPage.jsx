@@ -2,8 +2,8 @@
  * ReqChaptersReadPage — 챕터 목록
  */
 import { useRef, useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
 import { App, Select, Spin } from 'antd'
+import { RedoOutlined, ExportOutlined, DownloadOutlined, UploadOutlined, CheckCircleFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
 import apiClient from '@/api/client'
@@ -11,6 +11,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useReqStore } from '@/stores/reqStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { getErrorDetail } from '@/utils/apiError'
 
 const TODAY = dayjs().format('YYYY-MM-DD')
 const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
@@ -19,8 +21,7 @@ export default function ReqChaptersReadPage() {
   useLangStore((s) => s.translations)
 
   const { message } = App.useApp()
-  const navigate = useNavigate()
-  const { appcd } = useParams()
+  const openInTab = useOpenInTab()
   const { accessToken, user } = useAuthStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
 
@@ -179,7 +180,7 @@ export default function ReqChaptersReadPage() {
       setRewriting(true)
       message.success(t('msg.chapter.write.started'))
     } catch (e) {
-      message.error(t('msg.server.error') + ': ' + (t(e.response?.data?.detail) || e.message))
+      message.error(t('msg.server.error') + ': ' + (getErrorDetail(e) || e.message))
     } finally {
       setRequestLoading(false)
     }
@@ -198,7 +199,8 @@ export default function ReqChaptersReadPage() {
       })
       message.success(t('msg.save.success'))
       refetch()
-      if (viewType === 'upload') loadContent(selectedChap.genchapteruid, 'upload')
+      setViewType('upload')
+      loadContent(selectedChap.genchapteruid, 'upload')
     } catch { message.error(t('msg.save.error')) }
     finally {
       setUploadLoading(false)
@@ -207,17 +209,36 @@ export default function ReqChaptersReadPage() {
   }
 
   // ── 다운로드 ─────────────────────────────────────────────────────────────────
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!content?.file_path) return
-    const a = document.createElement('a')
+    const docName = gendocs.find((g) => g.gendocuid === selectedGendocuid)?.gendocnm || ''
+    const chapterName = selectedChap?.chapternm || ''
+    const fileName = `${[docName, chapterName].filter(Boolean).join(' - ')}.docx`
+
     if (content.inmemoryyn) {
+      const a = document.createElement('a')
       a.href = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${content.file_path}`
-    } else {
-      a.href = content.file_path
-      a.target = '_blank'
+      a.download = fileName
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      return
     }
-    a.download = content.file_name || 'chapter.docx'
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+
+    // 원격(스토리지) 파일은 <a download>가 cross-origin URL의 파일명을 무시하고
+    // 서버가 저장한 UUID 파일명을 그대로 쓰는 문제가 있어, blob으로 받아 다시 내려준다.
+    try {
+      const res = await fetch(content.file_path)
+      const blob = await res.blob()
+      const objUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objUrl
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(objUrl)
+      document.body.removeChild(a)
+    } catch {
+      window.open(content.file_path, '_blank')
+    }
   }
 
   // ── 문서 일괄 작성 (SQS 비동기) ─────────────────────────────────────────────
@@ -241,7 +262,7 @@ export default function ReqChaptersReadPage() {
       setGenerating(true)
       message.success(t('msg.doc.write.started'))
     } catch (e) {
-      message.error(t('msg.server.error') + ': ' + (t(e.response?.data?.detail) || e.message))
+      message.error(t('msg.server.error') + ': ' + (getErrorDetail(e) || e.message))
     } finally {
       setRequestLoading(false)
     }
@@ -249,45 +270,79 @@ export default function ReqChaptersReadPage() {
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 135px)', overflow: 'hidden' }}>
 
       {/* 페이지 타이틀 */}
       <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.chapter.list')}</div>
         </div>
-        {/* 문서 셀렉트박스 */}
+      </div>
+
+      {/* 필터 — req/list와 동일한 위치/형태 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', gap: 24, flexShrink: 0, marginBottom: 16 }}>
         <Select
-          style={{ width: 280 }}
+          style={{ width: 280, flexShrink: 0 }}
           value={selectedGendocuid}
           onChange={(val) => setSelectedGendocuid(val)}
           options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
           placeholder={t('msg.select')}
         />
-      </div>
-
-      {/* gendocs 요약 정보 */}
-      <div className="form-filter-group" style={{ flexShrink: 0, marginBottom: 10 }}>
-        <div className="filter-item">
-          <label style={{ width: 80 }}>{t('lbl.paramnm_lbl')}: </label>
-          <label>{gendoc.finalnm_joined || ''}</label>
-        </div>
-        <div className="filter-item">
-          <label style={{ width: 120 }}>{t('lbl.doc.create.dts')}: </label>
-          <label style={{ width: 140 }}>{gendoc.createfiledts || ''}</label>
-        </div>
-        <div className="filter-item">
-          <label style={{ width: 120 }}>{t('lbl.doc.upload.dts')}: </label>
-          <label style={{ width: 140 }}>{gendoc.updatefiledts || ''}</label>
+        <span style={{ color: '#d9d9d9', flexShrink: 0 }}>|</span>
+        <div style={{ display: 'flex', alignItems: 'center', fontSize: 13, flex: 1, minWidth: 0 }}>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.paramnm_lbl')}: </span>
+          <span
+            title={gendoc.finalnm_joined || '-'}
+            style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 10 }}
+          >
+            {gendoc.finalnm_joined || '-'}
+          </span>
+          <span style={{ margin: '0 10px', color: '#d9d9d9', flexShrink: 0 }}>|</span>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.doc.create.dts')}: </span>
+          <span style={{ flexShrink: 0 }}>{gendoc.createfiledts || '-'}</span>
+          <span style={{ margin: '0 10px', color: '#d9d9d9', flexShrink: 0 }}>|</span>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.doc.upload.dts')}: </span>
+          <span style={{ flexShrink: 0 }}>{gendoc.updatefiledts || '-'}</span>
         </div>
       </div>
 
       {/* 2패널 */}
-      <div style={{ flex: 1, display: 'flex', gap: 10, minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', gap: 24, minHeight: 0 }}>
 
-        {/* 좌측: 챕터 목록 + 하단 버튼 */}
-        <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        {/* 좌측: 챕터 목록 */}
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.chapter.list')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {editbuttonyn && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={closeyn || generating}
+                  onClick={handleDocRewrite}
+                >
+                  <RedoOutlined style={{ marginRight: 6 }} />
+                  {generating ? t('msg.doc.writing') : t('btn.doc.write.all')}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => openInTab('req/write', `?gendocs=${selectedGendocuid}`, t('btn.doc.write.combine'))}
+              >
+                {t('btn.doc.write.combine')}<ExportOutlined style={{ marginLeft: 6 }} />
+              </button>
+            </div>
+          </div>
 
           <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
             <table className="table table-bordered table-sm">
@@ -299,7 +354,7 @@ export default function ReqChaptersReadPage() {
                   <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.new.chapter')}</th>
                   <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.updateuser')}</th>
                   <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.updatefiledts')}</th>
-                  <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.new.upload')}</th>
+                  <th style={{ width: '8%', textAlign: 'center', whiteSpace: 'pre-line' }}>{t('thd.new.upload')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -317,88 +372,61 @@ export default function ReqChaptersReadPage() {
                     <td>{row.chapternm}</td>
                     <td style={{ textAlign: 'center' }}>{row.createuser || ''}</td>
                     <td style={{ textAlign: 'center' }}>{row.createfiledts || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.new_chapteryn ? '√' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {row.new_chapteryn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.new.chapter')} />}
+                    </td>
                     <td style={{ textAlign: 'center' }}>{row.updateuser || ''}</td>
                     <td style={{ textAlign: 'center' }}>{row.updatefiledts || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.new_uploadyn ? '√' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {row.new_uploadyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.new.upload')} />}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
-          {/* 하단 버튼 */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10, flexShrink: 0 }}>
-            {editbuttonyn && (
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={closeyn || generating}
-                onClick={handleDocRewrite}
-              >
-                {generating ? t('msg.doc.writing') : t('btn.doc.write.all')}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => navigate(`/app/${appcd}/req/write?gendocs=${selectedGendocuid}`)}
-            >
-              {t('btn.doc.write.combine')}
-            </button>
-          </div>
         </div>
 
         {/* 우측: 챕터 내용 */}
-        <div style={{ flex: 1, marginLeft: 10, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
           {selectedChap ? (
             <>
-            {/* 조회 유형 카드 */}
-            <div className="form-group-left" style={{ justifyContent: 'center', marginBottom: 10, gap: 25, flexShrink: 0 }}>
-              <div style={{ width: '48%', textAlign: 'center' }}>
-                <div
-                  className={`chapter-card${viewType === 'auto' ? ' selected' : ''}`}
+            {/* 조회 유형 + 액션 버튼 */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+              margin: '-16px -18px 16px', padding: '16px 18px 12px',
+              borderBottom: '1px solid var(--border-color, #e3e6eb)',
+            }}>
+              <div className="segmented">
+                <button
+                  type="button"
+                  className={`segmented-item${viewType === 'auto' ? ' active' : ''}`}
                   onClick={() => handleViewTypeChange('auto')}
                 >
-                  {t('lbl.authored.chapter')}
-                </div>
-              </div>
-              <div style={{ width: '48%', textAlign: 'center' }}>
-                <div
-                  className={`chapter-card${viewType === 'upload' ? ' selected' : ''}`}
+                  {t('btn.authored.view')}
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-item${viewType === 'upload' ? ' active' : ''}`}
                   onClick={() => handleViewTypeChange('upload')}
                 >
-                  {t('lbl.uploaded.chapter')}
-                </div>
+                  {t('btn.uploaded.view')}
+                </button>
               </div>
-            </div>
 
-            {/* 액션 버튼 */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10, gap: 8, flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {editbuttonyn && (
                   <button
                     type="button"
-                    className="btn btn-primary"
+                    className="btn btn-secondary"
                     disabled={closeyn || rewriting}
                     onClick={handleRewrite}
                   >
+                    <RedoOutlined style={{ marginRight: 6 }} />
                     {rewriting ? t('msg.chapter.writing') : t('btn.chapter.rewrite')}
                   </button>
                 )}
-              </div>
-
-              <span style={{ color: '#d9d9d9', margin: '0 4px', alignSelf: 'center' }}>|</span>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 4, flex: 1 }}>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={!content?.file_path}
-                  onClick={handleDownload}
-                >
-                  {viewType === 'upload' ? t('btn.download.modified.chapter') : t('btn.download.chapter')}
-                </button>
+                <span style={{ color: '#d9d9d9' }}>|</span>
                 {editbuttonyn && (
                   <>
                     <input
@@ -407,14 +435,22 @@ export default function ReqChaptersReadPage() {
                     />
                     <button
                       type="button"
-                      className="btn btn-primary"
+                      className="btn btn-secondary"
                       disabled={closeyn || uploadLoading}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      {t('btn.upload.chapter')}
+                      <UploadOutlined style={{ marginRight: 6 }} />{t('btn.upload')}
                     </button>
                   </>
                 )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!content?.file_path}
+                  onClick={handleDownload}
+                >
+                  <DownloadOutlined style={{ marginRight: 6 }} />{t('btn.download')}
+                </button>
               </div>
             </div>
 
@@ -431,8 +467,8 @@ export default function ReqChaptersReadPage() {
         </div>
       </div>
 
-      {/* 로딩 오버레이 — 문서/챕터 작성 요청 접수까지만 표시 */}
-      {requestLoading && (
+      {/* 로딩 오버레이 — 문서/챕터 작성 요청 접수, 업로드 중일 때 표시 */}
+      {(requestLoading || uploadLoading) && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
           background: 'rgba(0,0,0,0.5)',
@@ -446,7 +482,7 @@ export default function ReqChaptersReadPage() {
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
             <Spin />
-            <span>{requestLoadingMsg}</span>
+            <span>{uploadLoading ? t('msg.loading.upload') : requestLoadingMsg}</span>
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Modal, Popconfirm, Spin } from 'antd'
+import { App, Modal, Spin } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/authStore'
 import apiClient from '@/api/client'
@@ -14,7 +14,7 @@ const EMPTY_FORM = {
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
 export default function QnaPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const openInTab = useOpenInTab()
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.roleid === 7
@@ -36,7 +36,10 @@ export default function QnaPage() {
   const saveMutation = useMutation({
     mutationFn: (body) => apiClient.post('/misc/qnas', body).then((r) => r.data),
     onSuccess: () => { message.success(t('msg.saved')); qc.invalidateQueries({ queryKey: ['qnas'] }) },
-    onError:   (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+    },
   })
 
   const deleteMutation = useMutation({
@@ -46,7 +49,10 @@ export default function QnaPage() {
       qc.invalidateQueries({ queryKey: ['qnas'] })
       setSelectedUid(null); setForm(EMPTY_FORM)
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+    },
   })
 
   const answerSaveMutation = useMutation({
@@ -56,7 +62,10 @@ export default function QnaPage() {
       qc.invalidateQueries({ queryKey: ['qnas'] })
       setAnswerModal(false)
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+    },
   })
 
   const handleRowClick = (q) => {
@@ -85,7 +94,13 @@ export default function QnaPage() {
 
   const handleDelete = () => {
     if (!form.qnauid) { message.warning(t('msg.select.delete')); return }
-    deleteMutation.mutate(form.qnauid)
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutate(form.qnauid),
+    })
   }
 
   const openAnswerModal = () => {
@@ -99,7 +114,13 @@ export default function QnaPage() {
   }
 
   const handleAnswerDelete = () => {
-    answerSaveMutation.mutate({ qnauid: form.qnauid, answer: null })
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => answerSaveMutation.mutate({ qnauid: form.qnauid, answer: null }),
+    })
   }
 
   const hasAnswer = !!form.answer
@@ -182,18 +203,9 @@ export default function QnaPage() {
                   {t('btn.save')}
                 </button>
                 {selectedUid && (
-                  <Popconfirm
-                    title={t('msg.confirm.delete')}
-                    onConfirm={handleDelete}
-                    okText={t('btn.delete')}
-                    cancelText={t('btn.cancel')}
-                    okButtonProps={{ danger: true }}
-                    disabled={!form.qnauid}
-                  >
-                    <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>
-                      {t('btn.delete')}
-                    </button>
-                  </Popconfirm>
+                  <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteMutation.isPending}>
+                    {t('btn.delete')}
+                  </button>
                 )}
               </div>
             )}

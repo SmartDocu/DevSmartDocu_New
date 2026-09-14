@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { App, Select, Spin } from 'antd'
+import { RedoOutlined, CheckOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
@@ -7,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useReqStore } from '@/stores/reqStore'
 import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
+import { getErrorDetail } from '@/utils/apiError'
 
 const TODAY = dayjs().format('YYYY-MM-DD')
 const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
@@ -92,7 +94,6 @@ export default function ReqChapterObjectsPage() {
 
   const {
     objects = [],
-    chapternm = '',
     closeyn = false,
   } = data
 
@@ -115,7 +116,7 @@ export default function ReqChapterObjectsPage() {
       message.success(t('msg.object.write.complete'))
       setSelectedRow((prev) => prev)
     } catch (err) {
-      message.error(t('msg.server.error') + ': ' + (t(err.response?.data?.detail) || err.message))
+      message.error(t('msg.server.error') + ': ' + (getErrorDetail(err) || err.message))
     } finally {
       setShowLoading(false)
       setLoadingText('')
@@ -132,7 +133,7 @@ export default function ReqChapterObjectsPage() {
           await applyMutation.mutateAsync()
           message.success(t('msg.object.apply.complete'))
         } catch (err) {
-          message.error(t('msg.server.error') + ': ' + (t(err.response?.data?.detail) || err.message))
+          message.error(t('msg.server.error') + ': ' + (getErrorDetail(err) || err.message))
         } finally {
           setShowLoading(false)
           setLoadingText('')
@@ -143,49 +144,58 @@ export default function ReqChapterObjectsPage() {
 
   return (
     <div>
-      {/* 페이지 타이틀 + 셀렉트박스 */}
+      {/* 페이지 타이틀 */}
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
-          <div>{t('ttl.chapter.objects')}{chapternm ? `: ${chapternm}` : ''}</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Select
-            style={{ width: 240 }}
-            value={selectedGendocuid}
-            onChange={(val) => setSelectedGendocuid(val)}
-            options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
-            placeholder={t('msg.select')}
-          />
-          <Select
-            style={{ width: 200 }}
-            value={selectedGenchapteruid}
-            onChange={(val) => setSelectedGenchapteruid(val)}
-            options={chapters.map((c) => ({ value: c.genchapteruid, label: c.chapternm }))}
-            placeholder={t('msg.select.chapter')}
-          />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
+          <div>{t('ttl.chapter.objects')}</div>
         </div>
       </div>
 
-      {/* 메타 정보 */}
-      {data.createfiledts !== undefined && (
-        <div className="form-filter-group">
-          <div className="filter-item">
-            <label style={{ width: 160 }}>{t('lbl.chapter.create.dts')}: </label>
-            <label style={{ width: 200 }}>{data.createfiledts || ''}</label>
-          </div>
-        </div>
-      )}
+      {/* 필터 — req/list와 동일한 위치/형태 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+        <Select
+          style={{ width: 240, flexShrink: 0 }}
+          value={selectedGendocuid}
+          onChange={(val) => setSelectedGendocuid(val)}
+          options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
+          placeholder={t('msg.select')}
+        />
+        <Select
+          style={{ width: 200, flexShrink: 0 }}
+          value={selectedGenchapteruid}
+          onChange={(val) => setSelectedGenchapteruid(val)}
+          options={chapters.map((c) => ({ value: c.genchapteruid, label: c.chapternm }))}
+          placeholder={t('msg.select.chapter')}
+        />
+        {data.createfiledts !== undefined && (
+          <>
+            <span style={{ color: '#d9d9d9', flexShrink: 0 }}>|</span>
+            <div style={{ fontSize: 13, flexShrink: 0 }}>
+              <span style={{ color: '#888' }}>{t('lbl.chapter.create.dts')}: </span>
+              <span>{data.createfiledts || '-'}</span>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* 본문 */}
-      <div style={{ display: 'flex', gap: 20 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* 좌측: 항목 목록 */}
-        <div style={{ flex: 1.5, overflowY: 'auto', maxHeight: 'calc(100vh - 264px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.chapter.objects')}</h3>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.object.list')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {isLoading ? (
             <div style={{ padding: 20, textAlign: 'center' }}>{t('msg.loading')}</div>
           ) : (
@@ -196,10 +206,10 @@ export default function ReqChapterObjectsPage() {
                   <th style={{ width: '16%' }}>{t('thd.objectdesc_thd')}</th>
                   <th style={{ width: '8%' }}>{t('thd.objecttypecd_thd')}</th>
                   <th style={{ width: '18%' }}>{t('thd.filterjson')}</th>
-                  <th style={{ width: '10%' }}>{t('thd.obj.setting.dts')}</th>
-                  <th style={{ width: '8%' }}>{t('thd.new.object.yn')}</th>
-                  <th style={{ width: '12%' }}>{t('thd.obj.write.dts')}</th>
-                  <th style={{ width: '10%' }}>{t('thd.new.genobject.yn')}</th>
+                  <th style={{ width: '11%' }}>{t('thd.obj.setting.dts')}</th>
+                  <th style={{ width: '8%', whiteSpace: 'pre-line' }}>{t('thd.new.object.yn')}</th>
+                  <th style={{ width: '11%' }}>{t('thd.obj.write.dts')}</th>
+                  <th style={{ width: '10%', whiteSpace: 'pre-line' }}>{t('thd.new.genobject.yn')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -227,29 +237,38 @@ export default function ReqChapterObjectsPage() {
                       })()}
                     </td>
                     <td className="info">{obj.objcreatedts || ''}</td>
-                    <td className="info">{obj.new_objectyn ? '√' : ''}</td>
+                    <td className="info">
+                      {obj.new_objectyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.new.object.yn')} />}
+                    </td>
                     <td className="info">{obj.genobjcreatedts || ''}</td>
-                    <td className="info">{obj.new_genobjectyn ? '√' : ''}</td>
+                    <td className="info">
+                      {obj.new_genobjectyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.new.genobject.yn')} />}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          </div>
         </div>
 
         {/* 우측: 항목 내용 */}
-        <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 264px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.object.detail')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {editbuttonyn && selectedRow && (
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn btn-secondary"
                   disabled={closeyn || rewriteMutation.isPending}
                   onClick={() => handleRewrite(selectedRow)}
                 >
-                  {t('btn.object.rewrite')}
+                  <RedoOutlined style={{ marginRight: 6 }} />{t('btn.object.rewrite')}
                 </button>
               )}
               {editbuttonyn && (
@@ -259,11 +278,12 @@ export default function ReqChapterObjectsPage() {
                   disabled={closeyn || applyMutation.isPending}
                   onClick={handleApply}
                 >
-                  {t('btn.object.apply')}
+                  <CheckOutlined style={{ marginRight: 6 }} />{t('btn.object.apply')}
                 </button>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {selectedRow && (
             <div className="contents" style={{ whiteSpace: 'pre-line' }}>
@@ -274,6 +294,7 @@ export default function ReqChapterObjectsPage() {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
 

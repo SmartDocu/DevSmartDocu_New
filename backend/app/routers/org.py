@@ -337,19 +337,6 @@ def delete_tenant_user(
 #  TENANT LLMs
 # ══════════════════════════════════════════════════════
 
-def _get_llmmodel_info(sb, llmmodelnm: str) -> dict:
-    """llmmodels 테이블에서 활성 여부 조회"""
-    if not llmmodelnm:
-        return {"llmmodelfullnm": "", "llmmodelactiveyn": False}
-    try:
-        rows = sb.schema(SUPABASE_SCHEMA).table("llmmodels").select("useyn").eq("llmmodelnm", llmmodelnm).execute().data
-        if rows:
-            return {"llmmodelfullnm": llmmodelnm, "llmmodelactiveyn": rows[0].get("useyn", False)}
-    except Exception:
-        pass
-    return {"llmmodelfullnm": llmmodelnm, "llmmodelactiveyn": False}
-
-
 @router.get("/tenant-llms")
 def list_tenant_llms(
     token: str = Depends(get_token),
@@ -390,13 +377,7 @@ def _list_tenant_llms_impl(token: str, accountuid: Optional[str]):
     )
     projects = []
     for p in rows:
-        if p.get("llmmodelnm"):
-            info = _get_llmmodel_info(sb, p["llmmodelnm"])
-            p["llmmodelfullnm"] = info["llmmodelfullnm"]
-            p["llmmodelactiveyn"] = info["llmmodelactiveyn"]
-        else:
-            p["llmmodelfullnm"] = ""
-            p["llmmodelactiveyn"] = False
+        p["llmmodelfullnm"] = p.get("llmmodelnm") or ""
         p.pop("encapikey", None)
         projects.append(p)
 

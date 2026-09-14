@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { App, Alert, Button, Space, Tag } from 'antd'
+import { App, Alert, Space, Tag } from 'antd'
+import { ExportOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -9,6 +10,7 @@ import {
 } from '@/hooks/useSettings'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import TenantCancelModal from '@/components/payment/TenantCancelModal'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function OrgTenantCancelPage() {
   const { message } = App.useApp()
@@ -41,20 +43,14 @@ export default function OrgTenantCancelPage() {
         message.success(t('msg.tenant_cancel.reserved'))
         setModalOpen(false)
       },
-      onError: (err) => {
-        const detail = err.response?.data?.detail
-        message.error(detail ? t(detail) : t('msg.save.error'))
-      },
+      onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
     })
   }
 
   const handleUndo = () => {
     undoMutation.mutate(undefined, {
       onSuccess: () => { message.success(t('msg.tenant_cancel.undo.success')) },
-      onError: (err) => {
-        const detail = err.response?.data?.detail
-        message.error(detail ? t(detail) : t('msg.save.error'))
-      },
+      onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
     })
   }
 
@@ -62,7 +58,10 @@ export default function OrgTenantCancelPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.tenant_cancel')}</div>
         </div>
       </div>
@@ -75,7 +74,9 @@ export default function OrgTenantCancelPage() {
           message={(
             <Space>
               <Tag color="orange">{t('lbl.tenant_cancel.reserved')}{tenantCancelRequestedDt ? ` (${tenantCancelRequestedDt})` : ''}</Tag>
-              <Button size="small" loading={undoMutation.isPending} onClick={handleUndo}>{t('btn.tenant_cancel.undo')}</Button>
+              <button className="btn btn-secondary" type="button" style={{ height: 28, padding: '0 10px' }} disabled={undoMutation.isPending} onClick={handleUndo}>
+                {t('btn.tenant_cancel.undo')}
+              </button>
             </Space>
           )}
         />
@@ -86,14 +87,14 @@ export default function OrgTenantCancelPage() {
           style={{ marginBottom: 16 }}
           message={t('msg.tenant_cancel.precondition_banner')}
           action={(
-            <Button size="small" onClick={() => openInTab('org/subscription-manage', '', t('ttl.tenant.manage.subscription'))}>
-              {t('btn.tenant_cancel.go_to_subscriptions')}
-            </Button>
+            <button className="btn btn-secondary" type="button" style={{ height: 28, padding: '0 10px' }} onClick={() => openInTab('org/subscription-manage', '', t('ttl.tenant.manage.subscription'))}>
+              {t('btn.tenant_cancel.go_to_subscriptions')}<ExportOutlined style={{ marginLeft: 6 }} />
+            </button>
           )}
         />
       ) : null}
 
-      <div className="table-container">
+      <div className="panel-section table-container" style={{ height: 'auto', overflowY: 'visible' }}>
         <table className="table table-bordered table-sm" style={{ tableLayout: 'fixed', width: '100%' }}>
           <thead>
             <tr>
@@ -129,13 +130,14 @@ export default function OrgTenantCancelPage() {
       </div>
 
       <div style={{ marginTop: 20, textAlign: 'right' }}>
-        <Button
-          danger
+        <button
+          className="btn btn-danger"
+          type="button"
           disabled={!canRequestCancel || !!tenantCancelRequested}
           onClick={() => setModalOpen(true)}
         >
           {t('btn.tenant_cancel')}
-        </Button>
+        </button>
       </div>
 
       <TenantCancelModal

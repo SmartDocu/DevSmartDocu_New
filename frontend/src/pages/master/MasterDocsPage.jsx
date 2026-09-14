@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { App, Tag } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { useDocs, useProjects, useSaveDoc, useDeleteDoc } from '@/hooks/useDocs'
 import { useLangStore, t } from '@/stores/langStore'
 import { useDataParams } from '@/hooks/useDataParams'
@@ -77,27 +78,45 @@ export default function MasterDocsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.master_data.docs.base')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* Left: doc list */}
-        <div style={{ flex: 4, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', docs.length)}
+              </span>
+            </div>
             <button className="btn btn-primary" type="button" onClick={handleDocNew}>
-              {t('btn.new')}
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
             </button>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="table-container">
-            <table className="table table-bordered table-sm">
+            <table className="table table-bordered table-sm" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '40%' }}>{t('lbl.docnm')}</th>
-                  <th style={{ width: '30%' }}>{t('lbl.projectnm_lbl')}</th>
-                  <th style={{ width: '30%' }}>{t('lbl.docgroupnm')}</th>
+                  <th style={{ width: '20%' }}>{t('lbl.docnm')}</th>
+                  <th style={{ width: '28%' }}>{t('lbl.projectnm_lbl')}</th>
+                  <th style={{ width: '18%' }}>{t('lbl.docgroupnm')}</th>
+                  <th style={{ width: '34%' }}>{t('lbl.desc_lbl')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -108,33 +127,50 @@ export default function MasterDocsPage() {
                     style={{ cursor: 'pointer' }}
                     onClick={() => selectDoc(doc)}
                   >
-                    <td>{doc.docnm}</td>
-                    <td>{doc.projectnm}</td>
-                    <td>{doc.docgroupnm || ''}</td>
+                    <td style={{ wordBreak: 'break-word' }}>{doc.docnm}</td>
+                    <td style={{ wordBreak: 'break-word' }}>{doc.projectnm}</td>
+                    <td style={{ wordBreak: 'break-word' }}>{doc.docgroupnm || ''}</td>
+                    <td style={{ wordBreak: 'break-word' }}>{doc.docdesc || ''}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* Right: doc detail */}
-        <div style={{ flex: 6, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {canEdit && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" onClick={handleDocSave} disabled={docSaving || saveDoc.isPending}>
-                  {t('btn.save')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleDocSave} disabled={docSaving || saveDoc.isPending || deleteDoc.isPending}>
+                  <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                 </button>
                 {selectedDoc && (
-                  <button className="btn btn-danger" type="button" onClick={handleDocDelete} disabled={deleteDoc.isPending}>
-                    {t('btn.delete')}
-                  </button>
+                  <>
+                    <span style={{ color: '#d9d9d9' }}>|</span>
+                    <button
+                      className="btn btn-danger"
+                      type="button"
+                      onClick={handleDocDelete}
+                      disabled={deleteDoc.isPending}
+                      title={t('btn.delete')}
+                      style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <DeleteOutlined />
+                    </button>
+                  </>
                 )}
               </div>
             )}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="form-group">
             <label htmlFor="doc-projectid"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:</label>
             {docForm.docid ? (
@@ -146,6 +182,7 @@ export default function MasterDocsPage() {
                 id="doc-projectid"
                 value={docForm.projectid}
                 onChange={(e) => setDocForm((f) => ({ ...f, projectid: e.target.value }))}
+                style={{ height: 38 }}
               >
                 <option value="">{t('msg.select.project')}</option>
                 {projects.map((p) => <option key={p.projectid} value={p.projectid}>{p.projectnm}</option>)}
@@ -183,6 +220,7 @@ export default function MasterDocsPage() {
               type="text"
               value={docForm.docnm}
               onChange={(e) => setDocForm((f) => ({ ...f, docnm: e.target.value }))}
+              style={{ height: 38 }}
             />
           </div>
           <div className="form-group">
@@ -199,10 +237,10 @@ export default function MasterDocsPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
-                className="icon-btn"
+                className="btn btn-secondary"
                 onClick={() => document.getElementById('doc-template-input').click()}
               >
-                <img src="/icons/upload.svg" title={t('lbl.upload_lbl')} className="icon-img new-icon" alt={t('lbl.upload_lbl')} />
+                <UploadOutlined style={{ marginRight: 6 }} />{t('btn.upload')}
               </button>
               <input
                 id="doc-template-input"
@@ -273,6 +311,7 @@ export default function MasterDocsPage() {
               </div>
             )
           })()}
+          </div>
         </div>
       </div>
 

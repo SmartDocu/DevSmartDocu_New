@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
+from backend.app.dependencies import get_token, get_sb as _sb, get_user as _get_user, require_login
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 from utilsPrj.audit_log import log_work_action, get_client_ip
 
@@ -27,7 +27,7 @@ class SentencePreviewRequest(BaseModel):
     template_text: str
 
 
-@router.get("", dependencies=[Depends(require_doc_read)])
+@router.get("", dependencies=[Depends(require_login)])
 def get_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)):
     _get_user(token)
     sb = _sb(token)
@@ -42,7 +42,7 @@ def get_sentence(chapteruid: str, objectnm: str, token: str = Depends(get_token)
     return {"sentence": rows[0]}
 
 
-@router.post("", dependencies=[Depends(require_doc_write)])
+@router.post("", dependencies=[Depends(require_login)])
 def save_sentence(body: SentenceSaveRequest, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -92,7 +92,7 @@ def save_sentence(body: SentenceSaveRequest, request: Request, token: str = Depe
     return {"message": "저장되었습니다."}
 
 
-@router.delete("", dependencies=[Depends(require_doc_write)])
+@router.delete("", dependencies=[Depends(require_login)])
 def delete_sentence(chapteruid: str, objectnm: str, request: Request, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -111,7 +111,7 @@ def delete_sentence(chapteruid: str, objectnm: str, request: Request, token: str
     return {"message": "삭제되었습니다."}
 
 
-@router.post("/preview", dependencies=[Depends(require_doc_write)])
+@router.post("/preview", dependencies=[Depends(require_login)])
 def preview_sentence(body: SentencePreviewRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)

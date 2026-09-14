@@ -89,6 +89,19 @@ require_insight_read = _require_service_permission("In", "read")
 require_insight_write = _require_service_permission("In", "write")
 
 
+def require_login(token: str = Depends(get_token)) -> None:
+    """로그인 여부만 확인 — 서비스(Do/Ch/In) 구독·결제 상태와 무관하게 통과시킨다.
+
+    마스터(MGR) 앱은 apps.servicecd가 null이라 특정 서비스 구독 여부와 무관하게 접근 가능하도록
+    설계되어 있는데(canSeeApp()의 !rolecd 분기 참고), 정작 마스터 화면들이 쓰는 datas/docs/chapters/
+    objects/tables/sentences/charts 라우터가 require_doc_read/write(= Do 서비스 구독 확인)에 걸려
+    있어서 Do 서비스를 구독하지 않은 테넌트는 마스터 앱에 들어와도 데이터를 못 읽는 문제가 있었다
+    (2026-09-09). 이 라우터들은 실제 문서 생성(req/* → gendocs.py, docgroups.py)과는 분리된 마스터
+    데이터 관리 기능이므로, 여기서는 로그인 여부만 확인한다.
+    """
+    get_user(token)
+
+
 def get_supabase(token: str = Depends(get_token)):
     """
     요청별 Supabase 클라이언트를 반환한다.

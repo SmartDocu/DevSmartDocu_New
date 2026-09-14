@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { App, InputNumber, Modal } from 'antd'
 import * as PortOne from '@portone/browser-sdk/v2'
+import { ReloadOutlined, CreditCardOutlined, DeleteOutlined, CheckCircleFilled, DollarOutlined } from '@ant-design/icons'
 import { t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -167,16 +168,18 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{pageTitle}</div>
         </div>
       </div>
 
       {(billingStatus.billing_status === 'PastDue' || billingStatus.billing_status === 'Suspended') && (
-        <div style={{
+        <div className="panel-section" style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
-          border: '1px solid #ffccc7', background: '#fff2f0', borderRadius: 6,
-          padding: '12px 16px', marginBottom: 16,
+          background: '#fff2f0', borderColor: '#ffccc7', marginBottom: 16,
         }}>
           <div style={{ color: '#cf1322' }}>
             {billingStatus.billing_status === 'PastDue'
@@ -189,19 +192,32 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
             disabled={retryMutation.isPending}
             onClick={handleRetryBilling}
           >
-            {t('btn.retry_billing')}
+            <ReloadOutlined style={{ marginRight: 6 }} />{t('btn.retry_billing')}
           </button>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측(7): 등록된 결제수단 목록 */}
-        <div style={{ flex: 7, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 7, overflowY: 'auto', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', methods.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container">
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -226,10 +242,15 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
                     <td>{row.expiry_month ? `${row.expiry_month}/${row.expiry_year}` : '-'}</td>
                     <td>{statusLabel(row.payment_method_status)}</td>
                     <td style={{ textAlign: 'center' }}>
-                      {row.is_default ? t('lbl.default') : row.payment_method_status === 'Active' && (
+                      {row.is_default ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#2f7d4f', fontWeight: 600 }}>
+                          <CheckCircleFilled />{t('lbl.default')}
+                        </span>
+                      ) : row.payment_method_status === 'Active' && (
                         <button
-                          className="btn btn-primary"
+                          className="btn btn-secondary"
                           type="button"
+                          style={{ height: 28, padding: '0 10px' }}
                           disabled={setDefaultMutation.isPending}
                           onClick={() => handleSetDefault(row)}
                         >
@@ -239,21 +260,23 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button
-                        className="btn btn-primary"
+                        className="btn btn-secondary"
                         type="button"
+                        style={{ height: 28, padding: '0 10px' }}
                         onClick={() => { setChargeTarget(row); setChargeAmount(1000) }}
                       >
-                        {t('btn.payment.test_charge')}
+                        <DollarOutlined style={{ marginRight: 4 }} />{t('btn.payment.test_charge')}
                       </button>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button
                         className="btn btn-danger"
                         type="button"
+                        style={{ height: 28, padding: '0 10px' }}
                         disabled={deleteMutation.isPending}
                         onClick={() => handleDelete(row)}
                       >
-                        {t('btn.delete')}
+                        <DeleteOutlined style={{ marginRight: 4 }} />{t('btn.delete')}
                       </button>
                     </td>
                   </tr>
@@ -264,8 +287,12 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
         </div>
 
         {/* 우측(3): 결제수단 등록 */}
-        <div style={{ flex: 3, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, overflowY: 'auto', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div />
           </div>
@@ -277,7 +304,7 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
               disabled={issuing || saveMutation.isPending}
               onClick={handleAddBillingKey}
             >
-              {t('btn.payment.register')}
+              <CreditCardOutlined style={{ marginRight: 6 }} />{t('btn.payment.register')}
             </button>
           </div>
         </div>

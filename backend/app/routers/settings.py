@@ -1,12 +1,10 @@
 """Settings router — Servers, Projects, Tenants, MyInfo"""
 import json
-import os
 import uuid
 from datetime import date, timedelta, timezone
 from typing import Optional
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, status
 from postgrest.utils import sanitize_param
 from pydantic import BaseModel
 
@@ -17,10 +15,7 @@ from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbuck
 from utilsPrj.notifications import create_notification
 from utilsPrj.user_lookup import get_usernm_email
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
-from utilsPrj.private_storage import (
-    resolve_user_accountuid, build_private_path, upload_private_file,
-    delete_private_file, is_private_path, resolve_display_url,
-)
+from utilsPrj.private_storage import resolve_display_url
 from backend.app.routers.admin import _require_admin
 
 router = APIRouter()
@@ -83,25 +78,6 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(raw)
-
-
-def _save_tenant_icon(sb_service, file: UploadFile, accountuid: str, existing_url: Optional[str] = None) -> tuple:
-    """기업 아이콘을 private storage(Users/{accountuid}/Master/tenant-icon/...)에 업로드하고 (파일명, 경로)를 반환."""
-    if existing_url:
-        if is_private_path(existing_url):
-            delete_private_file(sb_service, existing_url)
-        else:
-            try:
-                parsed = urlparse(existing_url)
-                prefix = "/storage/v1/object/public/d2doc/"
-                if prefix in parsed.path:
-                    sb_service.storage.from_("d2doc").remove([parsed.path.split(prefix)[-1]])
-            except Exception:
-                pass
-    ext = os.path.splitext(file.filename)[1]
-    storage_path = build_private_path(accountuid, "Master", "tenant-icon", f"{uuid.uuid4()}{ext}")
-    upload_private_file(sb_service, storage_path, file.file.read(), file.content_type)
-    return file.filename, storage_path
 
 
 # ══════════════════════════════════════════════════════
@@ -419,7 +395,6 @@ async def save_tenant(
     languagecd: Optional[str] = Form(None),
     timezone: Optional[str] = Form(None),
     issystemtenant: str = Form("false"),
-    iconfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
 ):
     # 테넌트 생성/수정은 시스템 관리자(roleid=7)만 가능해야 한다.
@@ -448,17 +423,7 @@ async def save_tenant(
     if tenantid:
         existing = svc.table("tenants").select("*").eq("tenantid", tenantid).execute().data
         if existing:
-            svc_root = get_service_client()
-            # 아이콘 업로드 전에 accounts row 존재를 보장해야 accountuid를 해석할 수 있다
             _save_tenant_contact(int(tenantid), email, telno, str(user.id))
-            if iconfile and iconfile.filename:
-                existing_url = existing[0].get("iconfileurl")
-                accountuid = resolve_user_accountuid(svc_root, int(tenantid), str(user.id))
-                if not accountuid:
-                    raise HTTPException(status_code=400, detail="msg.required.account")
-                icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid, existing_url)
-                tenant_data["iconfilenm"] = icon_nm
-                tenant_data["iconfileurl"] = icon_url
             svc.table("tenants").update(tenant_data).eq("tenantid", tenantid).execute()
             after = svc.table("tenants").select("*").eq("tenantid", tenantid).execute().data
             log_work_action(
@@ -472,18 +437,7 @@ async def save_tenant(
     resp = svc.table("tenants").insert({**tenant_data, "disptenantnm": tenantnm}).execute()
     new_tenantid = resp.data[0]["tenantid"] if resp.data else None
     if new_tenantid:
-        svc_root = get_service_client()
-        # 아이콘 업로드 전에 accounts row 존재를 보장해야 accountuid를 해석할 수 있다
         _save_tenant_contact(int(new_tenantid), email, telno, str(user.id))
-        if iconfile and iconfile.filename:
-            accountuid = resolve_user_accountuid(svc_root, int(new_tenantid), str(user.id))
-            if not accountuid:
-                raise HTTPException(status_code=400, detail="msg.required.account")
-            icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid)
-            svc.table("tenants").update({
-                "iconfilenm": icon_nm,
-                "iconfileurl": icon_url,
-            }).eq("tenantid", new_tenantid).execute()
         _save_default_tenant_configs(int(new_tenantid), str(user.id))
     after = svc.table("tenants").select("*").eq("tenantid", new_tenantid).execute().data if new_tenantid else []
     log_work_action(
@@ -3125,11 +3079,10 @@ async def save_tenant_manage_basic_info(
     timezone: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     telno: Optional[str] = Form(None),
-    iconfile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
 ):
-    """[테넌트 기본 정보 설정] 화면: tenants(아이콘·표현기업명·언어·타임존) + accounts(담당자 연락처) 저장.
+    """[테넌트 기본 정보 설정] 화면: tenants(표현기업명·언어·타임존) + accounts(담당자 연락처) 저장.
 
     tenants의 select/update만 호출자 JWT(sb)로 수행 — 이유는 get_tenant_manage_tenant_info()
     주석 참고(2026-09-07). accounts update는 아직 RLS 정책이 없어(전체 차단) service-role 유지."""
@@ -3153,14 +3106,6 @@ async def save_tenant_manage_basic_info(
         tenant_payload["languagecd"] = languagecd
     if timezone:
         tenant_payload["timezone"] = timezone
-    if iconfile and iconfile.filename:
-        if not accountuid:
-            raise HTTPException(status_code=400, detail="msg.required.account")
-        existing = sb.table("tenants").select("iconfileurl").eq("tenantid", int(tenantid)).maybe_single().execute()
-        existing_url = existing.data.get("iconfileurl") if existing and existing.data else None
-        icon_nm, icon_url = _save_tenant_icon(svc_root, iconfile, accountuid, existing_url)
-        tenant_payload["iconfilenm"] = icon_nm
-        tenant_payload["iconfileurl"] = icon_url
     if tenant_payload:
         sb.table("tenants").update(tenant_payload).eq("tenantid", int(tenantid)).execute()
 

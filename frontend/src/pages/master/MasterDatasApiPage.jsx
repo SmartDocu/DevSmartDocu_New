@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { App, Spin } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
@@ -24,6 +25,7 @@ export default function MasterDatasApiPage() {
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
   const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
+  const languageCd = useLangStore((s) => s.languageCd)
 
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -158,20 +160,39 @@ export default function MasterDatasApiPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* ── 왼쪽: 목록 ── */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', datas.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
           </div>
-          <div className="table-container" style={{ height: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -186,12 +207,8 @@ export default function MasterDatasApiPage() {
                   <tr><td colSpan={2} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : datas.map((d) => (
                   <tr key={d.datauid}
-                    style={{
-                      cursor: 'pointer',
-                      background: selectedUid === d.datauid ? 'var(--selected-row-bg)' : '',
-                      color: selectedUid === d.datauid ? 'var(--selected-row)' : '',
-                      fontWeight: selectedUid === d.datauid ? 600 : 'normal',
-                    }}
+                    className={selectedUid === d.datauid ? 'selected-row' : ''}
+                    style={{ cursor: 'pointer' }}
                     onClick={() => handleRowClick(d)}
                   >
                     <td>{d.connnm || ''}</td>
@@ -201,31 +218,45 @@ export default function MasterDatasApiPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* ── 가운데: 상세 폼 + 파라미터 ── */}
-        <div style={{ flex: 4, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {isEditYn && (
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button className="btn btn-primary" type="button" onClick={handleSave}
-                  disabled={saveData.isPending || createCols.isPending}>
-                  {(saveData.isPending || createCols.isPending) && <Spin size="small" style={{ marginRight: 4 }} />}
+                  disabled={saveData.isPending || createCols.isPending || deleteData.isPending}>
+                  {(saveData.isPending || createCols.isPending) ? <Spin size="small" style={{ marginRight: 6 }} /> : <SaveOutlined style={{ marginRight: 6 }} />}
                   {t('btn.save')}
                 </button>
                 {form.datauid && (
-                  <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteData.isPending}>
-                    {t('btn.delete')}
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteData.isPending}
+                    title={t('btn.delete')}
+                    style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <DeleteOutlined />
                   </button>
                 )}
               </div>
             )}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label>{t('lbl.connnm_lbl')}</label>
-            <select value={form.connuid} onChange={(e) => setForm((f) => ({ ...f, connuid: e.target.value }))}>
+            <select value={form.connuid} style={{ height: 38 }}
+              onChange={(e) => setForm((f) => ({ ...f, connuid: e.target.value }))}>
               <option value="">{t('msg.select.placeholder')}</option>
               {connectors.map((c) => (
                 <option key={c.connuid} value={c.connuid}>{c.connnm}</option>
@@ -235,12 +266,13 @@ export default function MasterDatasApiPage() {
 
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}</label>
-            <input type="text" value={form.datanm} onChange={(e) => setForm((f) => ({ ...f, datanm: e.target.value }))} />
+            <input type="text" value={form.datanm} style={{ height: 38 }}
+              onChange={(e) => setForm((f) => ({ ...f, datanm: e.target.value }))} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.endpoint_lbl')}</label>
-            <input type="text" value={form.endpoint} placeholder="/v1/users"
+            <input type="text" value={form.endpoint} placeholder="/v1/users" style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, endpoint: e.target.value }))} />
           </div>
 
@@ -264,12 +296,12 @@ export default function MasterDatasApiPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
             <h4 style={{ margin: 0 }}>{t('ttl.api.params')}</h4>
             {isEditYn && (
-              <button className="btn btn-primary" type="button" style={{ padding: '2px 10px' }} onClick={addParam}>
+              <button className="btn btn-primary" type="button" style={{ padding: '4px 10px', height: 32 }} onClick={addParam}>
                 {t('btn.add')}
               </button>
             )}
           </div>
-          <div className="table-container" style={{ height: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -325,27 +357,35 @@ export default function MasterDatasApiPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* ── 오른쪽: 컬럼 정보 ── */}
-        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.col.info')}</h3>
             {isEditYn && (
               <button className="btn btn-primary" type="button" onClick={handleSaveCols}
                 disabled={saveCols.isPending || colsLocal.length === 0}>
-                {saveCols.isPending && <Spin size="small" style={{ marginRight: 4 }} />}
+                {saveCols.isPending ? <Spin size="small" style={{ marginRight: 6 }} /> : <SaveOutlined style={{ marginRight: 6 }} />}
                 {t('btn.savecols')}
               </button>
             )}
           </div>
-          <div className="table-container" style={{ height: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
                   <th>{t('thd.querycolnm')}</th>
                   <th>{t('thd.dispcolnm')}</th>
-                  <th style={{ width: '18%' }}>{t('thd.datatypecd')}</th>
+                  <th style={{ width: '18%', whiteSpace: 'pre-line' }}>
+                    {languageCd === 'ko' ? '데이터\n타입' : t('thd.datatypecd')}
+                  </th>
                   <th style={{ width: '9%' }}>{t('thd.measureyn')}</th>
                   <th style={{ width: '9%' }}>{t('thd.useyn_thd')}</th>
                   <th>{t('thd.field_path_thd')}</th>
@@ -389,6 +429,7 @@ export default function MasterDatasApiPage() {
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useChapters(docid) {
   return useQuery({
@@ -24,7 +25,7 @@ export function useSaveChapter() {
       qc.invalidateQueries({ queryKey: ['chapters', Number(docid)] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 }
@@ -40,7 +41,7 @@ export function useDeleteChapter() {
       qc.invalidateQueries({ queryKey: ['chapters', docid] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.delete.error'))
+      message.error(getErrorMessage(err, 'msg.delete.error'))
     },
   })
 }

@@ -1,8 +1,7 @@
-import { Suspense } from 'react'
+import { Suspense, lazy } from 'react'
 import { Outlet, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { Layout, Typography, Space, theme, Tabs, Select, Badge, Dropdown, App, Modal, Popover, Input, Spin } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
-import QRCode from 'qrcode'
 import apiClient from '@/api/client'
 import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
 import { GlobalOutlined, BellOutlined, UserOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
@@ -12,9 +11,6 @@ import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
 import { useMe } from '@/hooks/useAuth'
 import { useConfigs } from '@/hooks/useConfigs'
 import { useMenus } from '@/hooks/useMenus'
-import DocSelectModal from '@/components/DocSelectModal/DocSelectModal'
-import RegisterModal from '@/components/RegisterModal/RegisterModal'
-import LoginModal from '@/components/LoginModal/LoginModal'
 import AppSidebar from '@/components/Layout/AppSidebar'
 import { useState, useEffect } from 'react'
 import { useTabStore } from '@/stores/tabStore'
@@ -22,6 +18,11 @@ import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
 import { useApps } from '@/hooks/useApps'
 import { useNotifications, navigateToNotificationTarget, translateNotification } from '@/hooks/useNotifications'
+
+// 대부분의 방문에서 열리지 않는 모달 — 실제로 열릴 때만 청크를 내려받도록 지연 로드
+const DocSelectModal = lazy(() => import('@/components/DocSelectModal/DocSelectModal'))
+const RegisterModal = lazy(() => import('@/components/RegisterModal/RegisterModal'))
+const LoginModal = lazy(() => import('@/components/LoginModal/LoginModal'))
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -71,6 +72,9 @@ export default function AppLayout() {
   const { data: allMenus = [] } = useMenus(appcd)
   // helps.url은 관리자가 /app/{appcd} 접두사 없이 등록하므로(예: /master/docs) 검색 시에도 접두사를 떼어낸다
   const helpUrl = appcd ? (location.pathname.replace(`/app/${appcd}`, '') || '/') : location.pathname
+  // 헤더 로고 옆 텍스트 — 현재 앱명 (apps 테이블 appcd 기준: D2DOC/D2CHAT/D2INSIGHT/MGR/SYSADMIN)
+  const HEADER_APP_LABELS = { D2DOC: 'Doc', D2CHAT: 'Chat', D2INSIGHT: 'Insight', MGR: 'Admin', SYSADMIN: 'System Admin' }
+  const headerAppLabel = HEADER_APP_LABELS[appcd] || 'D2Doc'
   const { data: helpData } = useHelpSearch(helpUrl, languageCd || 'en')
   const helpItem = helpData?.help ?? null
   const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid, languagecd: languageCd })
@@ -286,7 +290,8 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (!mfaSetupData?.totp_uri) { setMfaSetupQr(''); return }
-    QRCode.toDataURL(mfaSetupData.totp_uri, { width: 160, margin: 2 })
+    import('qrcode')
+      .then(({ default: QRCode }) => QRCode.toDataURL(mfaSetupData.totp_uri, { width: 160, margin: 2 }))
       .then(setMfaSetupQr)
       .catch(() => setMfaSetupQr(''))
   }, [mfaSetupData])
@@ -336,20 +341,18 @@ export default function AppLayout() {
           <div
             className="sidebar-logo"
             onClick={() => navigate(isLoggedIn ? '/launcher' : '/')}
-            style={{ borderBottom: isDark ? '1px solid #1a5080' : '1px solid #e8e8e8' }}
+            style={{ background: headerBg, borderBottom: '1px solid rgba(255,255,255,.12)' }}
           >
-            {user?.tenanticonurl && (
-              <img
-                src={user.tenanticonurl}
-                alt=""
-                style={{ height: 28, width: 'auto', flexShrink: 0 }}
-              />
-            )}
+            <img
+              src="/d2doc_icon.svg"
+              alt=""
+              style={{ height: 28, width: 'auto', flexShrink: 0 }}
+            />
             {!siderCollapsed && (
               <Text
                 strong
                 style={{
-                  color: isDark ? '#fff' : '#163E64', fontSize: 16, whiteSpace: 'nowrap',
+                  color: '#fff', fontSize: 16, whiteSpace: 'nowrap',
                   overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: '1 1 0',
                 }}
                 title={user?.disptenantnm || user?.tenantnm || 'D2Doc'}
@@ -416,17 +419,21 @@ export default function AppLayout() {
           {/* 로고 + 이름 */}
           <div
             onClick={() => { clearTabs(); navigate(isLoggedIn ? '/launcher' : '/') }}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
           >
-            <img src="/D2Doc.svg" alt="" style={{ height: 32, width: 'auto' }} />
-            <Text strong style={{ color: '#fff', fontSize: 18 }}>D2Doc</Text>
+            <span style={{ width: 4, height: 20, borderRadius: 3, background: '#FFF3A3', flexShrink: 0 }} />
+            <Text strong style={{ color: '#fff', fontSize: 18 }}>{headerAppLabel}</Text>
           </div>
 
           {/* 사용자 영역 */}
           <div style={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
             {/* 테넌트 선택 (멀티테넌트 사용자만) */}
             {isLoggedIn && user?.tenants?.length >= 2 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 8 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 2, marginRight: 8,
+                height: 34, padding: '0 8px 0 12px',
+                background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+              }}>
                 <Select
                   value={user?.tenantid || undefined}
                   onChange={handleTenantChange}
@@ -462,16 +469,22 @@ export default function AppLayout() {
 
             {/* 문서 선택 */}
             {isLoggedIn && appcd === 'D2DOC' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 20 }}>
+              <div
+                onClick={() => setDocModalOpen(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, marginLeft: 20,
+                  height: 34, padding: '0 12px', cursor: 'pointer',
+                  background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+                }}
+              >
                 <img
                   src="/doc-select.svg"
                   alt={t('ttl.doc.select')}
                   title={t('ttl.doc.select')}
-                  onClick={() => setDocModalOpen(true)}
-                  style={{ width: 20, height: 20, cursor: 'pointer', filter: 'invert(100%) brightness(250%) contrast(150%)' }}
+                  style={{ width: 16, height: 16, filter: 'invert(100%) brightness(250%) contrast(150%)' }}
                 />
                 {user?.docnm && (
-                  <span style={{ color: '#fff', fontSize: 14, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ color: '#fff', fontSize: 13, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.docnm}
                   </span>
                 )}
@@ -479,15 +492,19 @@ export default function AppLayout() {
             )}
 
             {/* 언어 선택기 — 지구본 + Select 붙이기 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: isLoggedIn ? 30 : 0 }}>
-              <GlobalOutlined style={{ color: '#fff', fontSize: 16 }} />
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 2, marginLeft: isLoggedIn ? 20 : 0,
+              height: 34, padding: '0 8px 0 12px',
+              background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+            }}>
+              <GlobalOutlined style={{ color: '#fff', fontSize: 15 }} />
               {languages.length > 0 && (
                 <Select
                   value={languageCd || undefined}
                   onChange={handleLanguageChange}
                   size="small"
                   variant="borderless"
-                  style={{ minWidth: 80, color: '#fff' }}
+                  style={{ minWidth: 76, color: '#fff' }}
                   popupMatchSelectWidth={false}
                   options={languages.map((l) => ({ value: l.languagecd, label: l.languagenm }))}
                   className="lang-select"
@@ -548,7 +565,13 @@ export default function AppLayout() {
                     </div>
                   }
                 >
-                  <AppstoreOutlined style={{ color: '#fff', fontSize: 20, cursor: 'pointer', marginLeft: 20 }} />
+                  <div style={{
+                    width: 34, height: 34, marginLeft: 20, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+                  }}>
+                    <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
+                  </div>
                 </Popover>
 
                 {/* 알람 */}
@@ -607,9 +630,13 @@ export default function AppLayout() {
                     </div>
                   }
                 >
-                  <div style={{ marginLeft: 20 }}>
+                  <div style={{
+                    width: 34, height: 34, marginLeft: 8, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+                  }}>
                     <Badge count={unreadCount} size="small">
-                      <BellOutlined style={{ color: '#fff', fontSize: 18, cursor: 'pointer' }} />
+                      <BellOutlined style={{ color: '#fff', fontSize: 16 }} />
                     </Badge>
                   </div>
                 </Popover>
@@ -669,7 +696,13 @@ export default function AppLayout() {
                   trigger={['click']}
                   placement="bottomRight"
                 >
-                  <UserOutlined style={{ color: '#fff', fontSize: 20, cursor: 'pointer', marginLeft: 20 }} />
+                  <div style={{
+                    width: 34, height: 34, marginLeft: 8, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+                  }}>
+                    <UserOutlined style={{ color: '#fff', fontSize: 17 }} />
+                  </div>
                 </Dropdown>
               </>
             ) : (
@@ -811,7 +844,7 @@ export default function AppLayout() {
         )}
 
         <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: tabs.length > 0 ? 'calc(95vh - 104px)' : 'calc(95vh - 60px)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ background: cssToken.colorBgContainer, borderRadius: cssToken.borderRadius, padding: '12px 24px 24px', flex: 1, position: 'relative' }}>
+          <div style={{ background: 'var(--body-background-color, #f5f5f5)', borderRadius: cssToken.borderRadius, flex: 1, position: 'relative' }}>
             {helpItem && (
               <div style={{ position: 'absolute', top: 21, right: 2, zIndex: 1 }}>
                 <QuestionCircleOutlined
@@ -832,9 +865,11 @@ export default function AppLayout() {
         </Content>
       </Layout>
 
-      <DocSelectModal open={docModalOpen} onClose={() => setDocModalOpen(false)} />
-      <RegisterModal open={registerModalOpen} onClose={() => setRegisterModalOpen(false)} />
-      <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+      <Suspense fallback={null}>
+        {docModalOpen && <DocSelectModal open onClose={() => setDocModalOpen(false)} />}
+        {registerModalOpen && <RegisterModal open onClose={() => setRegisterModalOpen(false)} />}
+        {loginModalOpen && <LoginModal open onClose={() => setLoginModalOpen(false)} />}
+      </Suspense>
 
       {/* 테넌트 전환 진행 중 오버레이 — MFA 모달이 닫힌 뒤 실제 전환까지의 공백 구간 안내 */}
       {tenantSwitching && (

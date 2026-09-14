@@ -7,6 +7,7 @@ import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations } from '@/hooks/useI18n'
 import { useConfigs } from '@/hooks/useConfigs'
+import { getErrorMessage } from '@/utils/apiError'
 
 const { Title, Text } = Typography
 
@@ -72,7 +73,7 @@ export default function PasswordResetPage() {
       setTimeout(() => navigate('/', { replace: true }), 1500)
     },
     onError: (err) => {
-      const detail = t(err.response?.data?.detail) || t('msg.password.change.failed')
+      const detail = getErrorMessage(err, 'msg.password.change.failed')
       message.error(detail)
     },
   })

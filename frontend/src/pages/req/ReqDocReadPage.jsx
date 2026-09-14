@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Select, Spin, Upload } from 'antd'
+import { UploadOutlined, DownloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -72,7 +73,8 @@ export default function ReqDocReadPage() {
       await apiClient.post(`/gendocs/${selectedGendocuid}/upload`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      loadContent(selectedGendocuid, selectedType)
+      setSelectedType('upload')
+      loadContent(selectedGendocuid, 'upload')
     } catch (e) {
       console.error(e)
     } finally {
@@ -109,27 +111,42 @@ export default function ReqDocReadPage() {
   const isEditYn = user?.editbuttonyn === 'Y'
   const canDownload = !!content?.file_path
 
-  const cardStyle = (type) => ({
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '10px 14px',
-    border: `1px solid ${selectedType === type ? 'var(--primary-color, #5c6bc0)' : '#ddd'}`,
-    borderRadius: 6,
-    cursor: 'pointer',
-    background: selectedType === type ? 'var(--primary-bg, #e8eaf6)' : '#fff',
-    marginBottom: 0,
-  })
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+      {/* 로딩 오버레이 */}
+      {uploadLoading && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{t('msg.loading.upload')}</span>
+          </div>
+        </div>
+      )}
 
       {/* 페이지 타이틀 */}
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.doc.read_ttl')}</div>
         </div>
+      </div>
+
+      {/* 필터 — req/list와 동일한 위치/형태 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
         <Select
           style={{ width: 280 }}
           value={selectedGendocuid}
@@ -137,56 +154,63 @@ export default function ReqDocReadPage() {
           options={gendocs.map((g) => ({ value: g.gendocuid, label: g.gendocnm }))}
           placeholder={t('msg.select')}
         />
+        <div className="segmented">
+          <button
+            type="button"
+            className={`segmented-item${selectedType === 'auto' ? ' active' : ''}`}
+            onClick={() => handleCardClick('auto')}
+          >
+            {t('btn.authored.view')}
+          </button>
+          <button
+            type="button"
+            className={`segmented-item${selectedType === 'upload' ? ' active' : ''}`}
+            onClick={() => handleCardClick('upload')}
+          >
+            {t('btn.uploaded.view')}
+          </button>
+        </div>
       </div>
 
       {/* 안내 */}
-      <div style={{ background: '#f9fbe7', padding: '4px 10px', borderRadius: 6, color: '#6a7d3c', marginBottom: 10 }}>
-        <span style={{ color: '#6a7d3c', fontSize: 13 }}>＊ {t('inf.doc.preview.notice')}</span>
+      <div className="panel-section" style={{ background: '#fdfdf0', color: '#6a7d3c', marginBottom: 16, padding: '13px 18px' }}>
+        <span style={{ fontSize: 13 }}>＊ {t('inf.doc.preview.notice')}</span>
       </div>
 
-      {/* 요약 통계 */}
-      <div style={{ display: 'flex', gap: 24, padding: '6px 10px', background: '#f5f5f5', borderRadius: 6, marginBottom: 10, fontSize: 13 }}>
-        <span>
-          <span style={{ color: '#888' }}>{t('lbl.total.chapters')}: </span>
-          <strong>{totalChapters}</strong>
-        </span>
-        <span>
-          <span style={{ color: '#888' }}>{t('lbl.unreflected.chapters')}: </span>
-          <strong style={{ color: unreflectedChapters > 0 ? 'orange' : undefined }}>{unreflectedChapters}</strong>
-        </span>
-        <span>
-          <span style={{ color: '#888' }}>{t('lbl.unreflected.objects')}: </span>
-          <strong style={{ color: unreflectedObjects > 0 ? 'red' : undefined }}>{unreflectedObjects}</strong>
-        </span>
-      </div>
-
-      {/* 본문 */}
-      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
-
-        {/* 좌측 카드 패널 */}
-        <div style={{ width: 220, flexShrink: 0 }}>
-          <div style={cardStyle('auto')} onClick={() => handleCardClick('auto')}>
-            <div style={{ fontSize: 13 }}>
-              <div><span style={{ color: '#888' }}>{t('thd.createuser')}: </span><span>{docInfo.createuser || '-'}</span></div>
-              <div><span style={{ color: '#888' }}>{t('thd.createfiledts')}: </span><span>{docInfo.createfiledts || '-'}</span></div>
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, textAlign: 'right' }}>{t('lbl.authored.doc')}</div>
+      {/* 본문 — 메인 콘텐츠 */}
+      <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60,
+          margin: '-16px -18px 16px', padding: '16px 18px 12px',
+          borderBottom: '1px solid var(--border-color, #e3e6eb)',
+        }}>
+          <div style={{ fontSize: 13 }}>
+            <span style={{ color: '#888' }}>{t('thd.createuser')}: </span>
+            <span>{docInfo.createuser || '-'}</span>
+            <span style={{ margin: '0 10px', color: '#d9d9d9' }}>|</span>
+            <span style={{ color: '#888' }}>{t('thd.createfiledts')}: </span>
+            <span>{docInfo.createfiledts || '-'}</span>
+            <span style={{ margin: '0 10px', color: '#d9d9d9' }}>|</span>
+            <span style={{ color: '#888' }}>{t('thd.updateuser')}: </span>
+            <span>{docInfo.updateuser || '-'}</span>
+            <span style={{ margin: '0 10px', color: '#d9d9d9' }}>|</span>
+            <span style={{ color: '#888' }}>{t('thd.updatefiledts')}: </span>
+            <span>{docInfo.updatefiledts || '-'}</span>
+            {selectedType !== 'upload' && (
+              <>
+                <span style={{ margin: '0 10px', color: '#d9d9d9' }}>|</span>
+                <span style={{ color: '#888' }}>{t('lbl.total.chapters')}: </span>
+                <strong>{totalChapters}</strong>
+                <span style={{ margin: '0 10px', color: '#d9d9d9' }}>|</span>
+                <span style={{ color: '#888' }}>{t('lbl.unreflected.chapters')}: </span>
+                <strong style={{ color: unreflectedChapters > 0 ? 'orange' : undefined }}>{unreflectedChapters}</strong>
+                <span style={{ margin: '0 10px', color: '#d9d9d9' }}>|</span>
+                <span style={{ color: '#888' }}>{t('lbl.unreflected.objects')}: </span>
+                <strong style={{ color: unreflectedObjects > 0 ? 'red' : undefined }}>{unreflectedObjects}</strong>
+              </>
+            )}
           </div>
-
-          <div style={{ borderTop: '1px solid #ddd', margin: '10px 0' }} />
-
-          <div style={cardStyle('upload')} onClick={() => handleCardClick('upload')}>
-            <div style={{ fontSize: 13 }}>
-              <div><span style={{ color: '#888' }}>{t('thd.updateuser')}: </span><span>{docInfo.updateuser || '-'}</span></div>
-              <div><span style={{ color: '#888' }}>{t('thd.updatefiledts')}: </span><span>{docInfo.updatefiledts || '-'}</span></div>
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, textAlign: 'right' }}>{t('lbl.uploaded.doc')}</div>
-          </div>
-        </div>
-
-        {/* 우측 콘텐츠 */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {isEditYn && (
               <Upload
                 beforeUpload={() => false}
@@ -194,8 +218,8 @@ export default function ReqDocReadPage() {
                 showUploadList={false}
                 accept=".docx"
               >
-                <button className="btn btn-primary" disabled={docInfo?.closeyn || uploadLoading}>
-                  {t('btn.upload.modified')}
+                <button className="btn btn-secondary" disabled={docInfo?.closeyn || uploadLoading}>
+                  <UploadOutlined style={{ marginRight: 6 }} />{t('btn.upload')}
                 </button>
               </Upload>
             )}
@@ -204,19 +228,19 @@ export default function ReqDocReadPage() {
               disabled={!canDownload}
               onClick={handleDownload}
             >
-              {selectedType === 'upload' ? t('btn.download.modified') : t('btn.download.doc')}
+              <DownloadOutlined style={{ marginRight: 6 }} />{t('btn.download')}
             </button>
           </div>
+        </div>
 
-          <div className="a4-frame" style={{ flex: 1 }}>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: 48 }}>
-                <Spin />
-              </div>
-            ) : content ? (
-              <div dangerouslySetInnerHTML={{ __html: content.contents }} />
-            ) : null}
-          </div>
+        <div className="a4-frame" style={{ flex: 1 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 48 }}>
+              <Spin />
+            </div>
+          ) : content ? (
+            <div dangerouslySetInnerHTML={{ __html: content.contents }} />
+          ) : null}
         </div>
       </div>
     </div>

@@ -35,7 +35,10 @@ export default function DocGroupSelectModal({ open, onClose, projectid, onSelect
       onOk: () =>
         deleteDocGroup.mutate(
           { docgroupid: group.docgroupid, projectid },
-          { onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')) }
+          { onError: (err) => {
+            const detail = err.response?.data?.detail
+            message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+          } }
         ),
     })
   }

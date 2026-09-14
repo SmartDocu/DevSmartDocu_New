@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File, status
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_doc_read, require_doc_write
+from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user, require_login
 from backend.app.schemas.auth import MessageResponse
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
@@ -70,7 +70,7 @@ def _fmt_dt(raw, offsetminutes: Optional[int] = None) -> str:
 
 # ─── 프로젝트 목록 (문서 생성 폼용) ──────────────────────────────────────────
 
-@router.get("/projects", response_model=ProjectsResponse, dependencies=[Depends(require_doc_read)])
+@router.get("/projects", response_model=ProjectsResponse, dependencies=[Depends(require_login)])
 def list_projects(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -97,7 +97,7 @@ def list_projects(token: str = Depends(get_token), tenantid: Optional[str] = Dep
 
 # ─── 문서 목록 (문서 선택 모달용) ─────────────────────────────────────────────
 
-@router.get("", response_model=DocsListResponse, dependencies=[Depends(require_doc_read)])
+@router.get("", response_model=DocsListResponse, dependencies=[Depends(require_login)])
 def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -267,7 +267,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
 
 # ─── 문서 선택 저장 (Django docs_save에 해당) ─────────────────────────────────
 
-@router.post("/select", response_model=DocSelectResponse, dependencies=[Depends(require_doc_write)])
+@router.post("/select", response_model=DocSelectResponse, dependencies=[Depends(require_login)])
 def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
     user = _get_user(token)
     sb = _sb(token)
@@ -343,7 +343,7 @@ def select_doc(body: DocSelectRequest, token: str = Depends(get_token)):
 
 # ─── 문서 저장 (신규/수정) ────────────────────────────────────────────────────
 
-@router.post("", response_model=DocSaveResponse, dependencies=[Depends(require_doc_write)])
+@router.post("", response_model=DocSaveResponse, dependencies=[Depends(require_login)])
 async def save_doc(
     request: Request,
     projectid: int = Form(...),
@@ -443,7 +443,7 @@ async def save_doc(
 
 # ─── 문서 삭제 ───────────────────────────────────────────────────────────────
 
-@router.delete("/{docid}", response_model=MessageResponse, dependencies=[Depends(require_doc_write)])
+@router.delete("/{docid}", response_model=MessageResponse, dependencies=[Depends(require_login)])
 def delete_doc(docid: int, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -506,7 +506,7 @@ class ParamSaveRequest(BaseModel):
     ordercolnm: Optional[str] = None
 
 
-@router.get("/{docid}/params", dependencies=[Depends(require_doc_read)])
+@router.get("/{docid}/params", dependencies=[Depends(require_login)])
 def list_params(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
     rows = (
@@ -526,7 +526,7 @@ def list_params(docid: int, token: str = Depends(get_token)):
     return {"params": rows}
 
 
-@router.post("/params", dependencies=[Depends(require_doc_write)])
+@router.post("/params", dependencies=[Depends(require_login)])
 def save_param(body: ParamSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -565,7 +565,7 @@ def save_param(body: ParamSaveRequest, request: Request, token: str = Depends(ge
     return {"ok": True, "param": res.data[0]}
 
 
-@router.delete("/params/{paramuid}", dependencies=[Depends(require_doc_write)])
+@router.delete("/params/{paramuid}", dependencies=[Depends(require_login)])
 def delete_param(paramuid: str, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
@@ -579,7 +579,7 @@ def delete_param(paramuid: str, request: Request, token: str = Depends(get_token
     return {"ok": True}
 
 
-@router.get("/{docid}/condition-datas", dependencies=[Depends(require_doc_read)])
+@router.get("/{docid}/condition-datas", dependencies=[Depends(require_login)])
 def list_condition_datas(docid: int, token: str = Depends(get_token)):
     sb = _sb(token)
     doc = (
@@ -613,7 +613,7 @@ def list_condition_datas(docid: int, token: str = Depends(get_token)):
 
 # ─── 매개변수 설정(docparamdtls) ─────────────────────────────────────────────
 
-@router.get("/{docid}/doc-params", dependencies=[Depends(require_doc_read)])
+@router.get("/{docid}/doc-params", dependencies=[Depends(require_login)])
 def get_doc_params(docid: int, token: str = Depends(get_token)):
     """문서 데이터셋 관리 초기 데이터 (datas, datacols, docparams, doc_datas, docparamdtls)"""
     from utilsPrj.supabase_client import get_service_client
@@ -722,7 +722,7 @@ class DocParamSaveRequest(BaseModel):
     records: list[dict]   # [{ datauid, paramuid, querycolnm }]
 
 
-@router.post("/{docid}/doc-params", dependencies=[Depends(require_doc_write)])
+@router.post("/{docid}/doc-params", dependencies=[Depends(require_login)])
 def save_doc_params(docid: int, body: DocParamSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """doc_datas 선택 및 docparamdtls 매핑 저장"""
     sb = _sb(token)

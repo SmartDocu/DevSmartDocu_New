@@ -144,7 +144,7 @@ function toAntItems(nodes, favoriteSet, onStarClick, searchKeyword, collapsed = 
           <span
             className="sidebar-star"
             onClick={(e) => { e.stopPropagation(); onStarClick(node.menucd) }}
-            style={{ marginLeft: 4, color: isFav ? '#faad14' : '#ccc', flexShrink: 0 }}
+            style={{ marginLeft: 4, color: isFav ? '#faad14' : '#8c8c8c', flexShrink: 0 }}
           >
             {isFav ? <StarFilled /> : <StarOutlined />}
           </span>
@@ -169,14 +169,21 @@ function filterByKeyword(nodes, keyword) {
     .filter(Boolean)
 }
 
-/* ── 현재 경로에 해당하는 menucd 찾기 ── */
+/* ── 현재 경로에 해당하는 menucd 찾기 ──
+   route_path가 pathname의 부분 문자열인 메뉴 중, 가장 긴(=가장 구체적인) route_path를
+   가진 메뉴를 선택한다. 배열 순서상 먼저 나온 것을 그냥 반환하면(과거 구현) 상위 메뉴의
+   route_path("org/tenant-manage")가 하위 메뉴("org/tenant-manage/whitelist")보다 먼저
+   매칭돼 하위 화면에서도 상위 메뉴가 계속 활성화되는 버그가 있었다(2026-09-14 발견). */
 function findSelectedKey(menus, pathname) {
+  let best = null
   for (const m of menus) {
     if (m.route_path && pathname.includes(m.route_path)) {
-      return m.menucd
+      if (!best || m.route_path.length > best.route_path.length) {
+        best = m
+      }
     }
   }
-  return null
+  return best ? best.menucd : null
 }
 
 export default function AppSidebar({ collapsed = false, isDark = false, appcd = null }) {

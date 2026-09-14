@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { App } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMenus } from '@/hooks/useMenus'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useChapters, useSaveChapter, useDeleteChapter } from '@/hooks/useChapters'
@@ -106,20 +107,37 @@ export default function MasterChaptersPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* Left: chapter cards */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', chapters.length)}
+              </span>
+            </div>
             <button className="btn btn-primary" type="button" onClick={handleNew}>
-              {t('btn.new')}
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
             </button>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
             {chapters.length === 0 ? (
               <div style={{ padding: 24, color: '#888', textAlign: 'center' }}>{t('msg.no.chapter')}</div>
@@ -134,49 +152,62 @@ export default function MasterChaptersPage() {
               </div>
             ))}
           </div>
+          </div>
         </div>
 
         {/* Right: chapter detail */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {selectedChap && (
                 <>
                   <button
-                    className="btn btn-primary"
+                    className="btn btn-secondary"
                     type="button"
                     onClick={() => {
                       sessionStorage.setItem('chapter_object_chapteruid', selectedChap.chapteruid)
                       openInTab('master/object', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)
                     }}
                   >
-                    {t('btn.object.manage')}
+                    {t('btn.object.manage')}<ExportOutlined style={{ marginLeft: 6 }} />
                   </button>
                   <button
-                    className="btn btn-primary"
+                    className="btn btn-secondary"
                     type="button"
                     onClick={() => openInTab('master/chapter-template', `?chapteruid=${selectedChap.chapteruid}&docid=${selectedDocid}`)}
                   >
-                    {t('btn.template.edit')}
+                    {t('btn.template.edit')}<ExportOutlined style={{ marginLeft: 6 }} />
                   </button>
                   <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
                 </>
               )}
               {isEditYn && (
                 <>
-                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving}>
-                    {t('btn.save')}
+                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving || deleteChapter.isPending}>
+                    <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                   </button>
                   {selectedChap && (
-                    <button className="btn btn-danger" type="button" onClick={handleDelete}>
-                      {t('btn.delete')}
+                    <button
+                      className="btn btn-danger"
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={deleteChapter.isPending}
+                      title={t('btn.delete')}
+                      style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <DeleteOutlined />
                     </button>
                   )}
                 </>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('thd.chapternm')}:</label>
@@ -184,6 +215,7 @@ export default function MasterChaptersPage() {
               type="text"
               value={form.chapternm}
               onChange={(e) => setForm((f) => ({ ...f, chapternm: e.target.value }))}
+              style={{ height: 38 }}
             />
           </div>
           <div className="form-group">
@@ -192,6 +224,7 @@ export default function MasterChaptersPage() {
               type="number"
               value={form.chapterno}
               onChange={(e) => setForm((f) => ({ ...f, chapterno: e.target.value }))}
+              style={{ height: 38 }}
             />
           </div>
           <div className="form-group">
@@ -209,10 +242,10 @@ export default function MasterChaptersPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
-                className="icon-btn"
+                className="btn btn-secondary"
                 onClick={() => document.getElementById('chap-template-input').click()}
               >
-                <img src="/icons/upload.svg" title={t('lbl.upload_lbl')} className="icon-img new-icon" alt={t('lbl.upload_lbl')} />
+                <UploadOutlined style={{ marginRight: 6 }} />{t('btn.upload')}
               </button>
               <input
                 id="chap-template-input"
@@ -248,6 +281,7 @@ export default function MasterChaptersPage() {
             </div>
           </div>
 
+          </div>
         </div>
       </div>
     </div>

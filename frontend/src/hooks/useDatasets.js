@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useDatasets() {
   return useQuery({
@@ -21,7 +22,7 @@ export function useSaveDataset() {
       qc.invalidateQueries({ queryKey: ['datasets'] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 }
@@ -36,7 +37,7 @@ export function useDeleteDataset() {
       qc.invalidateQueries({ queryKey: ['datasets'] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.delete.error'))
+      message.error(getErrorMessage(err, 'msg.delete.error'))
     },
   })
 }
@@ -59,7 +60,7 @@ export function useSaveDatasetMembers(datasetuid) {
       qc.invalidateQueries({ queryKey: ['dataset-members', datasetuid] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 }
@@ -82,7 +83,7 @@ export function useSaveDatasetProjects(datasetuid) {
       qc.invalidateQueries({ queryKey: ['dataset-projects', datasetuid] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 }
@@ -134,7 +135,7 @@ export function useSaveDatasetAll() {
       }
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { App, Alert, Modal, Select, Input, InputNumber, Tag, Button, Switch, Spin } from 'antd'
+import { App, Alert, Modal, Select, Input, InputNumber, Tag, Switch, Spin } from 'antd'
+import { ShoppingCartOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -12,6 +13,7 @@ import {
   useSaveTenantManageMfaConfig,
 } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function OrgOtherSubscriptionManagePage() {
   const { message, modal } = App.useApp()
@@ -72,7 +74,7 @@ export default function OrgOtherSubscriptionManagePage() {
                 promptCardRegistration()
                 return
               }
-              message.error(detail || t('msg.save.error'))
+              message.error(getErrorMessage(err, 'msg.save.error'))
             },
           },
         )
@@ -100,7 +102,7 @@ export default function OrgOtherSubscriptionManagePage() {
                 promptCardRegistration()
                 return
               }
-              message.error(detail || t('msg.save.error'))
+              message.error(getErrorMessage(err, 'msg.save.error'))
             },
           },
         )
@@ -123,7 +125,7 @@ export default function OrgOtherSubscriptionManagePage() {
             onSuccess: (res) => {
               message.success(t('msg.quantity.decrease.scheduled').replace('{qty}', delta).replace('{date}', res.effective_date || ''))
             },
-            onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+            onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
           },
         )
       },
@@ -146,7 +148,7 @@ export default function OrgOtherSubscriptionManagePage() {
       },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.reserved')); setCancelTarget(null) },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }
@@ -156,7 +158,7 @@ export default function OrgOtherSubscriptionManagePage() {
       { subscriptionuid },
       {
         onSuccess: () => { message.success(t('msg.subscription.cancel.undo.success')) },
-        onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }
@@ -165,17 +167,15 @@ export default function OrgOtherSubscriptionManagePage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.tenant.manage.other_subscription')}</div>
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          border: '1px solid #eee', borderRadius: 6, padding: '12px 16px', marginBottom: 20, marginRight: 10,
-        }}
-      >
+      <div className="panel-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <div style={{ fontWeight: 600 }}>{t('lbl.tenant.mfa.enable')}</div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{t('inf.mfa.free.notice')}</div>
@@ -187,14 +187,28 @@ export default function OrgOtherSubscriptionManagePage() {
         />
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측(7): 보유 중인 User/Feature 상품 목록 */}
-        <div style={{ flex: 7, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 320px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', owned.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -220,17 +234,21 @@ export default function OrgOtherSubscriptionManagePage() {
                       {row.producttype === 'User' ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Button
-                              size="small"
+                            <button
+                              className="btn btn-secondary"
+                              type="button"
+                              style={{ height: 28, width: 28, padding: 0 }}
                               disabled={row.cancel_reserved || quantityMutation.isPending || (deltaQty[row.subscriptionuid] || 1) > row.quantity - row.pending_decrease_qty}
                               onClick={() => handleQuantityDecrease(row)}
-                            >-</Button>
+                            >-</button>
                             <span style={{ minWidth: 28, textAlign: 'center', fontWeight: 600 }}>{row.quantity}</span>
-                            <Button
-                              size="small"
+                            <button
+                              className="btn btn-secondary"
+                              type="button"
+                              style={{ height: 28, width: 28, padding: 0 }}
                               disabled={row.cancel_reserved || quantityMutation.isPending}
                               onClick={() => handleQuantityIncrease(row)}
-                            >+</Button>
+                            >+</button>
                             <InputNumber
                               size="small"
                               min={1}
@@ -261,9 +279,9 @@ export default function OrgOtherSubscriptionManagePage() {
                           <Tag color="orange">
                             {t('lbl.pro.cancel.reserved')}{row.cancel_effective_date ? ` (${row.cancel_effective_date})` : ''}
                           </Tag>
-                          <Button size="small" loading={cancelUndoMutation.isPending} onClick={() => handleCancelUndo(row.subscriptionuid)}>
+                          <button className="btn btn-secondary" type="button" style={{ height: 28, padding: '0 10px' }} disabled={cancelUndoMutation.isPending} onClick={() => handleCancelUndo(row.subscriptionuid)}>
                             {t('btn.pro.cancel.undo')}
-                          </Button>
+                          </button>
                         </div>
                       ) : row.producttype === 'User' ? (
                         // Add User는 전체 행을 몰수 취소하는 버튼 대신 수량(-) 조정으로 0까지 줄이도록 유도 — 혼동 방지
@@ -283,14 +301,20 @@ export default function OrgOtherSubscriptionManagePage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측(3): 구매 가능 상품 목록 (즉시 구매) */}
-        <div style={{ flex: 3, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 320px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {products.some((p) => p.currencycd === 'USD') && (
             <Alert type="info" showIcon message={t('inf.pricing.usd_notice')} style={{ marginBottom: 10 }} />
@@ -333,11 +357,12 @@ export default function OrgOtherSubscriptionManagePage() {
                   disabled={purchaseMutation.isPending}
                   onClick={() => handlePurchase(p)}
                 >
-                  {t('btn.purchase')}
+                  <ShoppingCartOutlined style={{ marginRight: 6 }} />{t('btn.purchase')}
                 </button>
               </div>
             </div>
           ))}
+          </div>
         </div>
       </div>
 

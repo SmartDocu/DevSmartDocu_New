@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { App, Popconfirm, Spin } from 'antd'
+import { App, Modal, Spin } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useLanguages } from '@/hooks/useI18n'
 import { useLangStore, t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 const EMPTY_FORM = { helpuid: '', help: '', url: '', desc: '', languagecd: 'en' }
 
@@ -26,6 +28,7 @@ export default function AdminHelpsPage() {
   })
 
   const { data: languages = [] } = useLanguages()
+  const languageLabel = (cd) => languages.find((l) => l.languagecd === cd)?.languagenm || cd || 'en'
 
   const saveMutation = useMutation({
     mutationFn: (body) => apiClient.post('/admin/helps', body).then((r) => r.data),
@@ -34,7 +37,7 @@ export default function AdminHelpsPage() {
       qc.invalidateQueries({ queryKey: ['admin-helps'] })
       handleNew()
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 
   const deleteMutation = useMutation({
@@ -44,7 +47,7 @@ export default function AdminHelpsPage() {
       qc.invalidateQueries({ queryKey: ['admin-helps'] })
       handleNew()
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 
   const selectHelp = (h) => {
@@ -71,131 +74,178 @@ export default function AdminHelpsPage() {
     })
   }
 
+  const handleDelete = () => {
+    if (!selected?.helpuid) return
+    Modal.confirm({
+      title: t('btn.delete'),
+      content: t('msg.confirm.delete'),
+      okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutate(selected.helpuid),
+    })
+  }
+
   return (
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('mnu.system.help')}</div>
         </div>
       </div>
 
-      {isLoading ? (
-        <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>
-      ) : (
-        <div style={{ display: 'flex', gap: 20 }}>
-          {/* 좌측: 도움말 목록 */}
-          <div style={{ width: 280, flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-              <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-              <div />
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+        {/* 좌측: 도움말 목록 */}
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', helps.length)}
+              </span>
             </div>
-            <div className="chapter-card-container" style={{ flexDirection: 'column', maxHeight: 600 }}>
-              {helps.length === 0 ? (
-                <div style={{ padding: 16, color: '#888', textAlign: 'center' }}>{t('msg.no.data')}</div>
-              ) : helps.map((h) => (
-                <div
-                  key={h.helpuid}
-                  className={`chapter-card${selected?.helpuid === h.helpuid ? ' selected' : ''}`}
-                  onClick={() => selectHelp(h)}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ flex: 1, fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {h.url || ''}
-                    </div>
-                    <span style={{ fontSize: 11, color: '#fff', background: '#1677ff', borderRadius: 3, padding: '1px 6px', marginLeft: 6, flexShrink: 0 }}>
-                      {h.languagecd || 'en'}
-                    </span>
-                  </div>
-                  <div className="card-title" style={{ marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {h.help || t('msg.no.title')}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
           </div>
-
-          {/* 우측: 편집 영역 */}
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-              <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
-                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending}>{t('btn.save')}</button>
-                {selected?.helpuid && (
-                  <Popconfirm
-                    title={t('msg.confirm.delete')}
-                    onConfirm={() => deleteMutation.mutate(selected.helpuid)}
-                    okText={t('btn.delete')} cancelText={t('btn.cancel')} okButtonProps={{ danger: true }}
-                  >
-                    <button className="btn btn-danger" type="button" disabled={deleteMutation.isPending}>{t('btn.delete')}</button>
-                  </Popconfirm>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 16 }}>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label><span style={{ color: 'red', marginRight: 2 }}>*</span>URL</label>
-                <input
-                  type="text"
-                  value={form.url}
-                  placeholder={t('inf.help.url_placeholder')}
-                  onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-                />
-              </div>
-              <div className="form-group" style={{ width: 120 }}>
-                <label>{t('thd.languagenm')}</label>
-                <select
-                  value={form.languagecd}
-                  onChange={(e) => setForm((f) => ({ ...f, languagecd: e.target.value }))}
-                >
-                  {languages.map((l) => (
-                    <option key={l.languagecd} value={l.languagecd}>{l.languagenm}</option>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          {isLoading ? (
+            <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>
+          ) : (
+            <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+              <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
+                <thead>
+                  <tr>
+                    <th>{t('lbl.subject')}</th>
+                    <th style={{ width: '40%' }}>URL</th>
+                    <th style={{ width: '15%' }}>{t('thd.languagenm')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {helps.length === 0 ? (
+                    <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  ) : helps.map((h) => (
+                    <tr
+                      key={h.helpuid}
+                      className={selected?.helpuid === h.helpuid ? 'selected-row' : ''}
+                      onClick={() => selectHelp(h)}
+                    >
+                      <td>{h.help || t('msg.no.title')}</td>
+                      <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={h.url || ''}>{h.url || ''}</td>
+                      <td>{languageLabel(h.languagecd)}</td>
+                    </tr>
                   ))}
-                </select>
-              </div>
+                </tbody>
+              </table>
             </div>
+          )}
+          </div>
+        </div>
 
-            <div className="form-group">
-              <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.subject')}</label>
-              <input
-                type="text"
-                value={form.help}
-                placeholder={t('inf.help.title_placeholder')}
-                onChange={(e) => setForm((f) => ({ ...f, help: e.target.value }))}
-              />
-            </div>
-
-            <div className="form-group">
-              <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{t('lbl.desc_lbl')}</span>
+        {/* 우측: 편집 영역 */}
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveMutation.isPending || deleteMutation.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+              </button>
+              {selected?.helpuid && (
                 <button
+                  className="btn btn-danger"
                   type="button"
-                  className="btn btn-primary"
-                  onClick={() => setPreview((p) => !p)}
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  {preview ? t('btn.setting') : t('btn.preview_btn')}
+                  <DeleteOutlined />
                 </button>
-              </label>
-              {preview ? (
-                <div
-                  style={{ border: '1px solid #d9d9d9', borderRadius: 4, padding: 12, minHeight: 300, background: '#fff', overflowY: 'auto' }}
-                  dangerouslySetInnerHTML={{ __html: form.desc }}
-                />
-              ) : (
-                <textarea
-                  rows={14}
-                  value={form.desc}
-                  placeholder={t('inf.help.desc_placeholder')}
-                  onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
-                  style={{ fontFamily: 'monospace', fontSize: 12 }}
-                />
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label><span style={{ color: 'red', marginRight: 2 }}>*</span>URL</label>
+              <input
+                type="text"
+                value={form.url}
+                placeholder={t('inf.help.url_placeholder')}
+                style={{ height: 38 }}
+                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+              />
+            </div>
+            <div className="form-group" style={{ width: 120 }}>
+              <label>{t('thd.languagenm')}</label>
+              <select
+                value={form.languagecd}
+                style={{ height: 38 }}
+                onChange={(e) => setForm((f) => ({ ...f, languagecd: e.target.value }))}
+              >
+                {languages.map((l) => (
+                  <option key={l.languagecd} value={l.languagecd}>{l.languagenm}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.subject')}</label>
+            <input
+              type="text"
+              value={form.help}
+              placeholder={t('inf.help.title_placeholder')}
+              style={{ height: 38 }}
+              onChange={(e) => setForm((f) => ({ ...f, help: e.target.value }))}
+            />
+          </div>
+
+          <div className="form-group">
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{t('lbl.desc_lbl')}</span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setPreview((p) => !p)}
+              >
+                {preview ? <EditOutlined style={{ marginRight: 6 }} /> : <EyeOutlined style={{ marginRight: 6 }} />}
+                {preview ? t('btn.setting') : t('btn.preview_btn')}
+              </button>
+            </label>
+            {preview ? (
+              <div
+                style={{ border: '1px solid #d9d9d9', borderRadius: 4, padding: 12, minHeight: 300, background: '#fff', overflowY: 'auto' }}
+                dangerouslySetInnerHTML={{ __html: form.desc }}
+              />
+            ) : (
+              <textarea
+                rows={14}
+                value={form.desc}
+                placeholder={t('inf.help.desc_placeholder')}
+                onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
+                style={{ fontFamily: 'monospace', fontSize: 12 }}
+              />
+            )}
+          </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

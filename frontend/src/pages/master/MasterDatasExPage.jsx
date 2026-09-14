@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { App } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
@@ -14,6 +15,7 @@ const EMPTY_COLS = []
 export default function MasterDatasExPage() {
   const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
+  const languageCd = useLangStore((s) => s.languageCd)
 
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
 
@@ -131,19 +133,38 @@ export default function MasterDatasExPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 데이터 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', datas.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
           </div>
-          <div className="table-container" style={{ height: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -157,7 +178,8 @@ export default function MasterDatasExPage() {
                   <tr
                     key={d.datauid}
                     onClick={() => selectData(d)}
-                    style={{ cursor: 'pointer', background: selectedData?.datauid === d.datauid ? '#e6f4ff' : '' }}
+                    className={selectedData?.datauid === d.datauid ? 'selected-row' : ''}
+                    style={{ cursor: 'pointer' }}
                   >
                     <td>{d.datanm}</td>
                   </tr>
@@ -165,23 +187,36 @@ export default function MasterDatasExPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 중간: 데이터 상세 */}
-        <div style={{ flex: 4, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving || saveData.isPending}>
-                {t('btn.save')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving || saveData.isPending || deleteData.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
               {form.datauid && (
-                <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteData.isPending}>
-                  {t('btn.delete')}
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteData.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <DeleteOutlined />
                 </button>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label htmlFor="ex-datanm">
@@ -191,6 +226,7 @@ export default function MasterDatasExPage() {
               id="ex-datanm"
               type="text"
               value={form.datanm}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, datanm: e.target.value }))}
             />
           </div>
@@ -205,7 +241,7 @@ export default function MasterDatasExPage() {
                 className="btn btn-primary"
                 onClick={() => document.getElementById('ex-file-input').click()}
               >
-                {t('btn.upload_btn')}
+                <UploadOutlined style={{ marginRight: 6 }} />{t('btn.upload_btn')}
               </button>
               <input
                 id="ex-file-input"
@@ -241,25 +277,33 @@ export default function MasterDatasExPage() {
               )}
             </div>
           </div>
+          </div>
         </div>
 
         {/* 우측: 데이터 컬럼 */}
-        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.datacols')}</h3>
             {editCols.length > 0 && (
               <button className="btn btn-primary" type="button" onClick={handleSaveCols} disabled={saveCols.isPending}>
-                {t('btn.save')}
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
             )}
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
                   <th>{t('thd.querycolnm')}</th>
                   <th>{t('thd.dispcolnm')}</th>
-                  <th style={{ width: 80 }}>{t('thd.datatypecd')}</th>
+                  <th style={{ width: 80, whiteSpace: 'pre-line' }}>
+                    {languageCd === 'ko' ? '데이터\n타입' : t('thd.datatypecd')}
+                  </th>
                   <th style={{ width: 60 }}>{t('thd.measureyn')}</th>
                 </tr>
               </thead>
@@ -298,6 +342,7 @@ export default function MasterDatasExPage() {
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       </div>

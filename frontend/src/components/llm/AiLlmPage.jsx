@@ -10,12 +10,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { App, Modal, Spin, Table } from 'antd'
+import { BulbOutlined, EyeOutlined, RedoOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useObjectFilterDatauid } from '@/hooks/useTables'
 import { useChapterDatas } from '@/hooks/useDatas'
 import { CSS_COLORS, CONTINUOUS_COLORMAPS, CATEGORICAL_COLORMAPS } from '@/utils/colorData'
+import { getErrorMessage, getErrorDetail } from '@/utils/apiError'
 
 
 export default function AiLlmPage({ objecttypecd, pageTitle }) {
@@ -90,7 +92,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       if (ex.displaytype !== undefined) setSelectedDisplayType(ex.displaytype || '')
       if (ex.gptq !== undefined)        setPromptText(ex.gptq || '')
     }).catch((e) => {
-      const detail = t(e.response?.data?.detail) || e.message || t('msg.unknown.error')
+      const detail = getErrorDetail(e) || e.message || t('msg.unknown.error')
       message.error(`${t('msg.init.load.error')}: ${detail}`)
     })
       .finally(() => setInitLoading(false))
@@ -176,7 +178,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
         })
       }
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.preview.error'))
+      message.error(getErrorMessage(e, 'msg.preview.error'))
     } finally {
       setPreviewLoading(false)
     }
@@ -199,7 +201,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
       })
       message.success(t('msg.save.success'))
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(e, 'msg.save.error'))
     } finally {
       setSaveLoading(false)
     }
@@ -219,7 +221,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
           setSelectedDatauid('')
           setSelectedDisplayType('')
         } catch (e) {
-          message.error(t(e.response?.data?.detail) || t('msg.delete.error'))
+          message.error(getErrorMessage(e, 'msg.delete.error'))
         } finally {
           setDeleteLoading(false)
         }
@@ -230,29 +232,34 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
   // ─────────────────────────────────────────────────────────────────────────
   // 렌더
   // ─────────────────────────────────────────────────────────────────────────
-  const CONTENT_HEIGHT = 'calc(100vh - 100px)'
+  const CONTENT_HEIGHT = 'calc(100vh - 145px)'
 
   return (
     <div style={{ height: CONTENT_HEIGHT, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── 헤더 ── */}
-      <div className="page-title" style={{ flexShrink: 0, marginBottom: 6 }}>
+      <div className="page-title" style={{ flexShrink: 0, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t(pageTitle)}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
       </div>
 
       {/* ── 서브타이틀: 챕터명 | 항목명 ── */}
-      <div style={{ marginBottom: 16, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)', flexShrink: 0 }}>
-        {chapternm && <span>{t('thd.chapternm')}: {chapternm}</span>}
-        {chapternm && objectnm && <span style={{ margin: '0 14px', color: '#d9d9d9' }}>|</span>}
-        {objectnm && <span>{t('lbl.objectnm_lbl')}: {objectnm}</span>}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', fontSize: 13, marginBottom: 16, flexShrink: 0 }}>
+        <span style={{ color: '#888', flexShrink: 0 }}>{t('thd.chapternm')}: </span>
+        <span style={{ flexShrink: 0 }}>{chapternm || '-'}</span>
+        <span style={{ margin: '0 10px', color: '#d9d9d9', flexShrink: 0 }}>|</span>
+        <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.objectnm_lbl')}: </span>
+        <span style={{ flexShrink: 0 }}>{objectnm || '-'}</span>
       </div>
 
       {/* ── 필터 기본값 경고 배너 ── */}
       {isFilterDefault && (
-        <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, color: '#d46b08', fontSize: 13, flexShrink: 0 }}>
+        <div className="panel-section" style={{ marginBottom: 16, background: '#fff7e6', border: '1px solid #ffd591', color: '#d46b08', fontSize: 13, padding: '13px 18px', flexShrink: 0 }}>
           {t('msg.dataset.filter.readonly')}
         </div>
       )}
@@ -266,7 +273,46 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
       {/* ── 본문 (로딩 완료 후) ── */}
       {!initLoading && (
-        <>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+
+          {/* 카드 헤더: 액션 버튼 */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <h3 style={{ margin: 0 }}>{t('ttl.prompt_ttl')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(true)} disabled={prompts.length === 0}>
+                <BulbOutlined style={{ marginRight: 6 }} />{t('btn.sample.prompt')}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={handlePreview} disabled={previewLoading}>
+                <EyeOutlined style={{ marginRight: 6 }} />{t('btn.preview_btn')}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={handleReset}>
+                <RedoOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+              </button>
+              {isEditYn && (
+                <>
+                  <span style={{ color: '#d9d9d9' }}>|</span>
+                  <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveLoading}>
+                    <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleDelete}
+                    disabled={deleteLoading}
+                    title={t('btn.delete')}
+                    style={{ width: 32, height: 32, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden', minHeight: 0 }}>
 
             {/* ── 데이터 선택 행 ── */}
@@ -341,29 +387,17 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
               {/* 공유 타이틀 행 — 한 행으로 묶어 textarea / preview 시작 위치 통일 */}
-              <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
                 <div style={{ flex: 1 }}>
-                  <h3 style={{ margin: 0 }}>{t('ttl.prompt_ttl')}</h3>
+                  <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{t('ttl.prompt_ttl')}</h4>
                 </div>
-                <div style={{ flex: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0 }}>{t('ttl.preview.result')}</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)} disabled={prompts.length === 0}>{t('btn.sample.prompt')}</button>
-                    <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
-                    <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
-                    <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
-                    {isEditYn && (
-                      <>
-                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveLoading}>{t('btn.save')}</button>
-                        <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteLoading}>{t('btn.delete')}</button>
-                      </>
-                    )}
-                  </div>
+                <div style={{ flex: 1.5 }}>
+                  <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{t('ttl.preview.result')}</h4>
                 </div>
               </div>
 
               {/* 내용 행 */}
-              <div style={{ flex: 1, display: 'flex', gap: 20, minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ flex: 1, display: 'flex', gap: 24, minHeight: 0, overflow: 'hidden' }}>
 
               {/* 왼쪽: 프롬프트 입력 */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
@@ -379,7 +413,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                     flex: 1,
                     width: '100%',
                     padding: 8,
-                    fontSize: '1rem',
+                    fontSize: 13,
                     boxSizing: 'border-box',
                     resize: 'none',
                     border: '1px solid #ccc',
@@ -397,6 +431,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                     flex: 1,
                     overflow: 'auto',
                     padding: 8,
+                    fontSize: 13,
                     border: '1px solid #ccc',
                     borderRadius: 4,
                     backgroundColor: '#f8f9fa',
@@ -416,11 +451,11 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
                 <div style={{ flexShrink: 0, marginTop: 8 }}>
                   <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}>
                     <label style={{ width: 60, fontSize: 13 }}>{t('lbl.color.ref')}</label>
-                    <button type="button" className="btn btn-primary" onClick={() => setShowColors((v) => !v)}>
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowColors((v) => !v)}>
                       {showColors ? t('btn.color.hide') : t('btn.color.show')}
                     </button>
                     {objecttypecd === 'CA' && (
-                      <button type="button" className="btn btn-primary" onClick={() => setShowColormap((v) => !v)}>
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowColormap((v) => !v)}>
                         {showColormap ? t('btn.colormap.hide') : t('btn.colormap.show')}
                       </button>
                     )}
@@ -469,7 +504,7 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
           </div>
 
-        </>
+        </div>
       )}
 
       {/* ── 미리보기 로딩 오버레이 ── */}

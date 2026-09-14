@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useMenus } from '@/hooks/useMenus'
 import { useDataColDatas, useDataCols, useDataColValues } from '@/hooks/useDataCols'
 import apiClient from '@/api/client'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function MasterChatColumnsPage() {
   const { message } = App.useApp()
@@ -133,7 +134,7 @@ export default function MasterChatColumnsPage() {
       setEditedValues({})
       message.success(t('msg.save.success'))
     } catch (err) {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     } finally {
       setIsSaving(false)
     }

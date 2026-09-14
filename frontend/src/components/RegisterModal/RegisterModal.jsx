@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function RegisterModal({ open, onClose }) {
   const [selectedProducts, setSelectedProducts] = useState([])
@@ -88,7 +89,7 @@ export default function RegisterModal({ open, onClose }) {
       alert(t('msg.register.success'))
       onClose()
     } catch (err) {
-      const detail = t(err.response?.data?.detail) || t('msg.register.failed')
+      const detail = getErrorMessage(err, 'msg.register.failed')
       alert(detail)
     } finally {
       setSaving(false)

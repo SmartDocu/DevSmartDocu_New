@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useObjects(chapteruid) {
   return useQuery({
@@ -21,7 +22,7 @@ export function useSaveObject() {
       qc.invalidateQueries({ queryKey: ['objects', body.chapteruid] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.save.error'))
+      message.error(getErrorMessage(err, 'msg.save.error'))
     },
   })
 }
@@ -37,7 +38,7 @@ export function useDeleteObject() {
       qc.invalidateQueries({ queryKey: ['objects', chapteruid] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.delete.error'))
+      message.error(getErrorMessage(err, 'msg.delete.error'))
     },
   })
 }

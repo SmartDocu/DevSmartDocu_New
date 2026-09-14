@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { App } from 'antd'
+import { SaveOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
@@ -107,19 +108,36 @@ export default function MasterDatasetPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10, height: 'calc(100vh - 224px)' }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 데이터 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 36, marginBottom: 8, flexShrink: 0 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', datas.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container">
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -153,11 +171,16 @@ export default function MasterDatasetPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 파라미터 매핑 그리드 */}
-        <div style={{ flex: 7, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 36, marginBottom: 8, flexShrink: 0 }}>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.dataset.mapping')}</h3>
             {canEdit && (
               <button
@@ -166,11 +189,12 @@ export default function MasterDatasetPage() {
                 onClick={handleSave}
                 disabled={saveMutation.isPending}
               >
-                {t('btn.save')}
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
             )}
           </div>
-          <div className="table-container" style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ overflowX: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -240,6 +264,7 @@ export default function MasterDatasetPage() {
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       </div>

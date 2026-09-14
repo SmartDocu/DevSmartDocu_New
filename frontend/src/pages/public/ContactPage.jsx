@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { App } from 'antd'
 import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 const leftBoxStyle = {
   border: '1px solid #d8dfeb',
@@ -43,7 +44,7 @@ export default function ContactPage() {
       message.success(t('msg.contact.success'))
       setForm(EMPTY)
     } catch (err) {
-      message.error(t(err.response?.data?.detail) || t('msg.server.error'))
+      message.error(getErrorMessage(err, 'msg.server.error'))
     } finally {
       setLoading(false)
     }

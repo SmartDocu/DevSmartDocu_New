@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { App, Spin } from 'antd'
+import { RedoOutlined } from '@ant-design/icons'
 import { useGenchapters } from '@/hooks/useGendocs'
 import apiClient from '@/api/client'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
+import { getErrorDetail } from '@/utils/apiError'
 
 // 라디오 초기값 계산: createfiledts vs updatefiledts 비교
 function getInitialMode(ch) {
@@ -109,16 +111,10 @@ export default function ReqDocWritePage() {
       setGenerating(true)
       message.success(t('msg.doc.write.started'))
     } catch (e) {
-      message.error(t('msg.server.error') + ': ' + (t(e.response?.data?.detail) || e.message))
+      message.error(t('msg.server.error') + ': ' + (getErrorDetail(e) || e.message))
     } finally {
       setRequestLoading(false)
     }
-  }
-
-  const handleBack = () => {
-    const stored = sessionStorage.getItem('chapter_read_gendocuid')
-    const target = stored || gendocuid
-    navigate(`/app/${appcd}/req/chapters-read?gendocs=${target}`)
   }
 
   return (
@@ -126,34 +122,53 @@ export default function ReqDocWritePage() {
       {/* 페이지 타이틀 */}
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.doc.write_ttl')}: {gendoc.gendocnm || ''}</div>
         </div>
-        <button type="button" className="btn btn-back" onClick={handleBack}>
-          {t('btn.back')}
-        </button>
       </div>
 
       {/* 메타 정보 */}
       {gendoc.gendocnm && (
-        <div className="form-filter-group">
-          <div className="filter-item">
-            <label style={{ width: 80 }}>{t('lbl.paramnm_lbl')}: </label>
-            <label style={{ width: 312 }}>{gendoc.paramvalue || ''}</label>
-          </div>
-          <div className="filter-item">
-            <label style={{ width: 120 }}>{t('lbl.doc.final.dts')}: </label>
-            <label style={{ width: 120 }}>{gendoc.finaldts || ''}</label>
-          </div>
-          <div className="filter-item">
-            <label style={{ width: 120 }}>{t('lbl.doc.upload.dts')}:</label>
-            <label style={{ width: 120 }}>{gendoc.updatefiledts || ''}</label>
-          </div>
+        <div className="panel-section" style={{ display: 'flex', alignItems: 'center', fontSize: 13, marginBottom: 16 }}>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.paramnm_lbl')}: </span>
+          <span
+            title={gendoc.finalnm_joined || '-'}
+            style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 10 }}
+          >
+            {gendoc.finalnm_joined || '-'}
+          </span>
+          <span style={{ margin: '0 10px', color: '#d9d9d9', flexShrink: 0 }}>|</span>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.doc.final.dts')}: </span>
+          <span style={{ flexShrink: 0 }}>{gendoc.finaldts || '-'}</span>
+          <span style={{ margin: '0 10px', color: '#d9d9d9', flexShrink: 0 }}>|</span>
+          <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.doc.upload.dts')}: </span>
+          <span style={{ flexShrink: 0 }}>{gendoc.updatefiledts || '-'}</span>
         </div>
       )}
 
-      {/* 챕터 목록 테이블 */}
-      <div style={{ height: '80%' }}>
+      {/* 챕터 목록 */}
+      <div className="panel-section">
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60,
+          margin: '-16px -18px 16px', padding: '16px 18px 12px',
+          borderBottom: '1px solid var(--border-color, #e3e6eb)',
+        }}>
+          <h3 style={{ margin: 0 }}>{t('ttl.chapter.list')}</h3>
+          {editbuttonyn && (
+            <button
+              id="docWriteBtn"
+              className="btn btn-primary"
+              disabled={gendoc.closeyn || generating}
+              onClick={handleCombine}
+            >
+              <RedoOutlined style={{ marginRight: 6 }} />
+              {generating ? t('msg.doc.writing') : t('btn.doc.write')}
+            </button>
+          )}
+        </div>
         {isLoading ? (
           <div style={{ padding: 20, textAlign: 'center' }}>{t('msg.loading')}</div>
         ) : chapters.length > 0 ? (
@@ -208,20 +223,6 @@ export default function ReqDocWritePage() {
           </table>
         ) : (
           <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</div>
-        )}
-      </div>
-
-      {/* 문서 조합 작성 버튼 */}
-      <div style={{ marginTop: 10, textAlign: 'center' }}>
-        {editbuttonyn && (
-          <button
-            id="docWriteBtn"
-            className="btn btn-primary"
-            disabled={gendoc.closeyn || generating}
-            onClick={handleCombine}
-          >
-            {generating ? t('msg.doc.writing') : t('btn.doc.write')}
-          </button>
         )}
       </div>
 

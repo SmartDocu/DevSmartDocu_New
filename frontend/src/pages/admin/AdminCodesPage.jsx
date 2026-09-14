@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { App, Input } from 'antd'
+import { useState, useEffect, useMemo } from 'react'
+import { App, Input, Pagination } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import {
   useAdminCodes,
@@ -10,6 +11,8 @@ import {
   useDeleteCodeTranslation,
 } from '@/hooks/useCodes'
 import { useLanguages } from '@/hooks/useMenus'
+
+const PAGE_SIZE = 10
 
 const EMPTY_CODE = {
   codegroupcd: '',
@@ -32,6 +35,17 @@ export default function AdminCodesPage() {
   const [form, setForm] = useState(EMPTY_CODE)
   const [transEdits, setTransEdits] = useState({})
   const [searchText, setSearchText] = useState('')
+  const [page, setPage] = useState(1)
+
+  const filteredCodes = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    if (!q) return codes
+    return codes.filter((code) =>
+      code.codegroupcd?.toLowerCase().includes(q) || code.codevalue?.toLowerCase().includes(q)
+    )
+  }, [codes, searchText])
+  const pagedCodes = filteredCodes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  useEffect(() => { setPage(1) }, [searchText])
 
   const { data: translations = [] } = useCodeTranslations(selectedCode?.codegroupcd, selectedCode?.codevalue)
   const saveCode = useSaveCode()
@@ -114,71 +128,122 @@ export default function AdminCodesPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.system.translation.codes')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
-
-        {/* 1열: 코드 목록 */}
-        <div style={{ flex: 3 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <button className="btn btn-primary" type="button" onClick={handleCodeNew}>
-              {t('btn.new')}
-            </button>
-          </div>
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <div className="filter-item" style={{ width: '100%' }}>
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.search')}</label>
           <Input
             placeholder={`${t('thd.codegroupcd_thd')} / ${t('thd.codevalue_thd')}`}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
-            style={{ marginBottom: 8 }}
+            style={{ height: 32, maxWidth: 480 }}
           />
-          <div className="table-container">
-            <table>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+
+        {/* 1열: 코드 목록 */}
+        <div className="panel-section" style={{ flex: 3.5, height: 'calc(100vh - 306px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', filteredCodes.length)}
+              </span>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={handleCodeNew}>
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+            </button>
+          </div>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+            <table className="table table-bordered table-sm" style={{ cursor: 'pointer', tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th>{t('thd.codegroupcd_thd')}</th>
-                  <th>{t('thd.codevalue_thd')}</th>
-                  <th>{t('thd.default_name_thd')}</th>
-                  <th style={{ width: 50, textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>{t('lbl.is_default_lbl')}</th>
+                  <th style={{ width: '24%' }}>{t('thd.codegroupcd_thd')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.codevalue_thd')}</th>
+                  <th style={{ width: '28%' }}>{t('thd.default_name_thd')}</th>
+                  <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
+                  <th style={{ width: '9%', textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: '9%', textAlign: 'center' }}>{t('lbl.is_default_lbl')}</th>
                 </tr>
               </thead>
               <tbody>
-                {codes.filter((code) => {
-                  const q = searchText.trim().toLowerCase()
-                  if (!q) return true
-                  return code.codegroupcd?.toLowerCase().includes(q) || code.codevalue?.toLowerCase().includes(q)
-                }).map((code) => (
+                {pagedCodes.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                ) : pagedCodes.map((code) => (
                   <tr
                     key={`${code.codegroupcd}__${code.codevalue}`}
                     className={selectedCode?.codegroupcd === code.codegroupcd && selectedCode?.codevalue === code.codevalue ? 'selected-row' : ''}
-                    style={{ cursor: 'pointer' }}
                     onClick={() => handleCodeSelect(code)}
                   >
-                    <td>{code.codegroupcd}</td>
-                    <td>{code.codevalue}</td>
-                    <td>{code.default_name}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={code.codegroupcd}>{code.codegroupcd}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{code.codevalue}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={code.default_name}>{code.default_name}</td>
                     <td style={{ textAlign: 'center' }}>{code.orderno}</td>
-                    <td style={{ textAlign: 'center' }}>{code.useyn ? '✔' : ''}</td>
-                    <td style={{ textAlign: 'center' }}>{code.is_default ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{code.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
+                    <td style={{ textAlign: 'center' }}>{code.is_default && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('lbl.is_default_lbl')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {filteredCodes.length > PAGE_SIZE && (
+            <div style={{ marginTop: 'auto', paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                current={page}
+                pageSize={PAGE_SIZE}
+                total={filteredCodes.length}
+                showSizeChanger={false}
+                onChange={setPage}
+              />
+            </div>
+          )}
         </div>
 
         {/* 2열: 코드 상세 폼 */}
-        <div style={{ flex: 3, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 2.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 306px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleCodeSave} disabled={saveCode.isPending || deleteCode.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+              </button>
+              {!isNew && (
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleCodeDelete}
+                  disabled={deleteCode.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <DeleteOutlined />
+                </button>
+              )}
+            </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label htmlFor="code-codegroupcd"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.codegroupcd_lbl')}:</label>
@@ -187,6 +252,7 @@ export default function AdminCodesPage() {
                 id="code-codegroupcd"
                 type="text"
                 value={form.codegroupcd}
+                style={{ height: 38 }}
                 onChange={(e) => setForm((f) => ({ ...f, codegroupcd: e.target.value }))}
               />
             ) : (
@@ -200,6 +266,7 @@ export default function AdminCodesPage() {
                 id="code-codevalue"
                 type="text"
                 value={form.codevalue}
+                style={{ height: 38 }}
                 onChange={(e) => setForm((f) => ({ ...f, codevalue: e.target.value }))}
               />
             ) : (
@@ -212,6 +279,7 @@ export default function AdminCodesPage() {
               id="code-default-name"
               type="text"
               value={form.default_name}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, default_name: e.target.value }))}
             />
           </div>
@@ -221,6 +289,7 @@ export default function AdminCodesPage() {
               id="code-orderno"
               type="number"
               value={form.orderno}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
             />
           </div>
@@ -237,48 +306,49 @@ export default function AdminCodesPage() {
           </div>
           <div className="form-group">
             <label htmlFor="code-is-default">{t('lbl.is_default_lbl')}:</label>
-            <input
-              id="code-is-default"
-              type="checkbox"
-              checked={!!form.is_default}
-              onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))}
-            />
+            <div style={{ paddingLeft: 60 }}>
+              <input
+                id="code-is-default"
+                type="checkbox"
+                checked={!!form.is_default}
+                onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))}
+              />
+            </div>
+          </div>
           </div>
         </div>
 
         {/* 3열: 번역 표 */}
-        <div style={{ flex: 4, padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 306px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleCodeSave} disabled={saveCode.isPending}>
-                {t('btn.save')}
-              </button>
-              <button className="btn btn-danger" type="button" onClick={handleCodeDelete} disabled={deleteCode.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
-            </div>
+            <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {(selectedCode || isNew) ? (
-            <div className="table-container">
-              <table>
+            <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+              <table className="table table-bordered table-sm">
                 <thead>
                   <tr>
-                    <th style={{ width: '15%', padding: '4px 8px' }}>{t('thd.languagecd')}</th>
-                    <th style={{ width: '20%', padding: '4px 8px' }}>{t('thd.languagenm')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('thd.translated_text')}</th>
-                    <th style={{ padding: '4px 8px' }}>{t('thd.translated_desc')}</th>
+                    <th style={{ width: '15%' }}>{t('thd.languagecd')}</th>
+                    <th style={{ width: '20%' }}>{t('thd.languagenm')}</th>
+                    <th>{t('thd.translated_text')}</th>
+                    <th>{t('thd.translated_desc')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {languages.map((l) => (
                     <tr key={l.languagecd}>
-                      <td style={{ padding: '3px 8px' }}>{l.languagecd}</td>
-                      <td style={{ padding: '3px 8px' }}>{l.languagenm}</td>
-                      <td style={{ padding: '3px 4px' }}>
+                      <td>{l.languagecd}</td>
+                      <td>{l.languagenm}</td>
+                      <td>
                         <input
                           type="text"
-                          style={{ width: '100%', boxSizing: 'border-box' }}
+                          style={{ width: '100%', boxSizing: 'border-box', height: 38 }}
                           value={transEdits[l.languagecd]?.translated_text ?? ''}
                           onChange={(e) => setTransEdits((prev) => ({
                             ...prev,
@@ -286,10 +356,10 @@ export default function AdminCodesPage() {
                           }))}
                         />
                       </td>
-                      <td style={{ padding: '3px 4px' }}>
+                      <td>
                         <input
                           type="text"
-                          style={{ width: '100%', boxSizing: 'border-box' }}
+                          style={{ width: '100%', boxSizing: 'border-box', height: 38 }}
                           value={transEdits[l.languagecd]?.translated_desc ?? ''}
                           onChange={(e) => setTransEdits((prev) => ({
                             ...prev,
@@ -305,6 +375,7 @@ export default function AdminCodesPage() {
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.code.select.trans')}</div>
           )}
+          </div>
         </div>
 
       </div>

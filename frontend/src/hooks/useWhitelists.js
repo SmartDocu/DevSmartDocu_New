@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useWhitelists() {
   return useQuery({
@@ -19,10 +20,7 @@ export function useSaveWhitelist() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['whitelists'] })
     },
-    onError: (err) => {
-      const detail = err.response?.data?.detail
-      message.error(detail ? t(detail) : t('msg.save.error'))
-    },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -35,10 +33,7 @@ export function useDeleteWhitelist() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['whitelists'] })
     },
-    onError: (err) => {
-      const detail = err.response?.data?.detail
-      message.error(detail ? t(detail) : t('msg.delete.error'))
-    },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }
 
@@ -58,9 +53,6 @@ export function useSaveWhitelistConfig() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['whitelist-config'] })
     },
-    onError: (err) => {
-      const detail = err.response?.data?.detail
-      message.error(detail ? t(detail) : t('msg.save.error'))
-    },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }

@@ -6,11 +6,13 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { App } from 'antd'
+import { EyeOutlined, RedoOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useChapterDatas, useDatacols } from '@/hooks/useDatas'
 import { useTable, useSaveTable, useDeleteTable, useObjectFilterDatauid } from '@/hooks/useTables'
+import { getErrorDetail } from '@/utils/apiError'
 
 const ALIGN_OPTIONS = ['left', 'center', 'right']
 
@@ -170,8 +172,11 @@ export default function MasterTablesPage() {
         coljson:   buildFinalColjson(),
       },
       {
-        onSuccess: () => message.success(t('msg.save.success')),
-        onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+        onSuccess: () => { message.success(t('msg.save.success')) },
+        onError: (err) => {
+          const detail = err.response?.data?.detail
+          message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+        },
       }
     )
   }
@@ -189,7 +194,10 @@ export default function MasterTablesPage() {
               setColjson({})
               setColOrder([])
             },
-            onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+            onError: (err) => {
+              const detail = err.response?.data?.detail
+              message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+            },
           }
         )
       },
@@ -215,7 +223,7 @@ export default function MasterTablesPage() {
       setPreviewHtml(resp.data.preview_html || '')
       setPreviewOpen(true)
     } catch (e) {
-      message.error(t('msg.preview.error') + ': ' + (t(e.response?.data?.detail) || e.message))
+      message.error(t('msg.preview.error') + ': ' + (getErrorDetail(e) || e.message))
     } finally {
       setPreviewLoading(false)
     }
@@ -227,33 +235,55 @@ export default function MasterTablesPage() {
     <div>
 
       {/* 헤더 */}
-      <div className="page-title" style={{ marginBottom: 6 }}>
+      <div className="page-title" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.table.manage')}{docnm ? ` - ${docnm}` : ''}</div>
         </div>
       </div>
-      <div style={{ marginBottom: 16, paddingLeft: 16, fontSize: 15, fontWeight: 500, color: 'var(--gray-700)' }}>
-        {chapternm && <span>{t('thd.chapternm')}: {chapternm}</span>}
-        {chapternm && objectnm && <span style={{ margin: '0 14px', color: '#d9d9d9' }}>|</span>}
-        {objectnm && <span>{t('lbl.objectnm_lbl')}: {objectnm}</span>}
+
+      {/* 챕터/항목 정보 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', fontSize: 13, marginBottom: 16 }}>
+        <span style={{ color: '#888', flexShrink: 0 }}>{t('thd.chapternm')}: </span>
+        <span style={{ flexShrink: 0 }}>{chapternm || '-'}</span>
+        <span style={{ margin: '0 10px', color: '#d9d9d9', flexShrink: 0 }}>|</span>
+        <span style={{ color: '#888', flexShrink: 0 }}>{t('lbl.objectnm_lbl')}: </span>
+        <span style={{ flexShrink: 0 }}>{objectnm || '-'}</span>
       </div>
+
       {isFilterDefault && (
-        <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, color: '#d46b08', fontSize: 13 }}>
+        <div className="panel-section" style={{ marginBottom: 16, background: '#fff7e6', border: '1px solid #ffd591', color: '#d46b08', fontSize: 13, padding: '13px 18px' }}>
           {t('msg.dataset.filter.readonly')}
         </div>
       )}
 
       {/* 3열 */}
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* 영역1: 데이터 목록 */}
-        <div style={{ flex: 2 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.data.list')}</h3>
+        <div className="panel-section" style={{ flex: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.data.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', allDatas.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="chapter-card-container" style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
             {datasLoading ? (
               <div style={{ fontSize: 12, color: '#aaa', padding: 8 }}>{t('msg.loading')}</div>
             ) : allDatas.length === 0 ? (
@@ -269,15 +299,21 @@ export default function MasterTablesPage() {
               </div>
             ))}
           </div>
+          </div>
         </div>
 
         {/* 영역2: 머리글 설정 + 정렬 */}
-        <div style={{ flex: 3, paddingLeft: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.header.settings')}</h3>
             <div />
           </div>
-          <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div>
             <div className="form-group-left">
               <label style={{ minWidth: 70 }}>{t('lbl.useyn_lbl')}:</label>
               <input type="checkbox" style={{ flex: '0 0 auto' }}
@@ -323,7 +359,7 @@ export default function MasterTablesPage() {
             <div style={{ marginTop: 20 }}>
               {[1, 2, 3].map((i) => (
                 <div key={i} className="form-group-left" style={{ marginBottom: 6 }}>
-                  <label style={{ minWidth: 50 }}>{t('lbl.sort')} {i}:</label>
+                  <label style={{ minWidth: 70 }}>{t('lbl.sort')} {i}:</label>
                   <select
                     value={tablejson[`sort_col_${i}`] || ''}
                     onChange={(e) => updateTablejson(`sort_col_${i}`, e.target.value)}
@@ -344,27 +380,49 @@ export default function MasterTablesPage() {
               ))}
             </div>
           </div>
+          </div>
         </div>
 
         {/* 영역3: 값 설정 */}
-        <div style={{ flex: 10, paddingLeft: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 9, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.value.settings')}</h3>
             {selectedDatauid && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" className="btn btn-primary" onClick={handlePreview} disabled={previewLoading}>{t('btn.preview_btn')}</button>
-                <button type="button" className="btn btn-primary" onClick={handleReset}>{t('btn.new')}</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button type="button" className="btn btn-secondary" onClick={handlePreview} disabled={previewLoading}>
+                  <EyeOutlined style={{ marginRight: 6 }} />{t('btn.preview_btn')}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={handleReset}>
+                  <RedoOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+                </button>
                 {isEditYn && (
                   <>
-                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveTable.isPending}>{t('btn.save')}</button>
-                    <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleteTable.isPending}>{t('btn.delete')}</button>
+                    <span style={{ color: '#d9d9d9' }}>|</span>
+                    <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveTable.isPending || deleteTable.isPending}>
+                      <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={handleDelete}
+                      disabled={deleteTable.isPending}
+                      title={t('btn.delete')}
+                      style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <DeleteOutlined />
+                    </button>
                   </>
                 )}
               </div>
             )}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
-          <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+          <div>
             {/* 기본값 행 */}
             <table style={{ fontSize: 12, tableLayout: 'fixed', marginBottom: 12 }}>
               <thead>
@@ -478,6 +536,7 @@ export default function MasterTablesPage() {
                 </tbody>
               </table>
             )}
+          </div>
           </div>
         </div>
 

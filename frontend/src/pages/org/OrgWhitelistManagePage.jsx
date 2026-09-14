@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { App } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import {
@@ -93,60 +94,75 @@ export default function OrgWhitelistManagePage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.tenant_mgr.whitelist')}</div>
         </div>
       </div>
 
       {/* IP 제한 적용 설정 */}
-      <div style={{ marginBottom: 24, paddingRight: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+      <div className="panel-section" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 12 }}>
           <h3 style={{ margin: 0 }}>{t('ttl.whitelist.config')}</h3>
           {isEditYn && (
             <button className="btn btn-primary" type="button" onClick={handleSaveConfig} disabled={saveConfig.isPending || configLoading}>
-              {t('btn.save')}
+              <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
             </button>
           )}
         </div>
-        <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, padding: '12px 16px' }}>
-          <div style={{ display: 'flex', gap: 32, marginBottom: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: isEditYn ? 'pointer' : 'default' }}>
-              <input
-                type="checkbox"
-                checked={configForm.is_manager_ip_allow}
-                disabled={!isEditYn || configLoading}
-                onChange={(e) => setConfigForm((f) => ({ ...f, is_manager_ip_allow: e.target.checked }))}
-              />
-              {t('lbl.whitelist.manager_ip_allow')}
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: isEditYn ? 'pointer' : 'default' }}>
-              <input
-                type="checkbox"
-                checked={configForm.is_user_ip_allow}
-                disabled={!isEditYn || configLoading}
-                onChange={(e) => setConfigForm((f) => ({ ...f, is_user_ip_allow: e.target.checked }))}
-              />
-              {t('lbl.whitelist.user_ip_allow')}
-            </label>
-          </div>
-          <div style={{ fontSize: 12, color: '#d46b08' }}>
-            {t('inf.whitelist.config.warning')}
-          </div>
+        <div style={{ display: 'flex', gap: 32, marginBottom: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: isEditYn ? 'pointer' : 'default' }}>
+            <input
+              type="checkbox"
+              checked={configForm.is_manager_ip_allow}
+              disabled={!isEditYn || configLoading}
+              onChange={(e) => setConfigForm((f) => ({ ...f, is_manager_ip_allow: e.target.checked }))}
+            />
+            {t('lbl.whitelist.manager_ip_allow')}
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: isEditYn ? 'pointer' : 'default' }}>
+            <input
+              type="checkbox"
+              checked={configForm.is_user_ip_allow}
+              disabled={!isEditYn || configLoading}
+              onChange={(e) => setConfigForm((f) => ({ ...f, is_user_ip_allow: e.target.checked }))}
+            />
+            {t('lbl.whitelist.user_ip_allow')}
+          </label>
+        </div>
+        <div style={{ fontSize: 12, color: '#d46b08' }}>
+          {t('inf.whitelist.config.warning')}
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 목록 */}
-        <div style={{ flex: 4, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 373px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', whitelists.length)}
+              </span>
+            </div>
             {isEditYn && (
               <button className="btn btn-primary" type="button" onClick={handleNew}>
-                {t('btn.new')}
+                <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
               </button>
             )}
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -171,31 +187,44 @@ export default function OrgWhitelistManagePage() {
                     <td>{row.iptype}</td>
                     <td>{row.ipvalue}</td>
                     <td>{row.desc || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{row.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 상세 */}
-        <div style={{ flex: 6, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 373px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {isEditYn && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveWhitelist.isPending}>
-                  {t('btn.save')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveWhitelist.isPending || deleteWhitelist.isPending}>
+                  <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                 </button>
                 {form.whitelistuid && (
-                  <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteWhitelist.isPending}>
-                    {t('btn.delete')}
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteWhitelist.isPending}
+                    title={t('btn.delete')}
+                    style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <DeleteOutlined />
                   </button>
                 )}
               </div>
             )}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label htmlFor="wl-iptype"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.iptype')}:</label>
@@ -203,6 +232,7 @@ export default function OrgWhitelistManagePage() {
               id="wl-iptype"
               value={form.iptype}
               disabled={!isEditYn}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, iptype: e.target.value }))}
             >
               {IPTYPES.map((v) => (
@@ -223,6 +253,7 @@ export default function OrgWhitelistManagePage() {
               type="text"
               value={form.ipvalue}
               disabled={!isEditYn}
+              style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, ipvalue: e.target.value }))}
             />
           </div>
@@ -250,6 +281,7 @@ export default function OrgWhitelistManagePage() {
                 onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
               />
             </div>
+          </div>
           </div>
         </div>
       </div>

@@ -373,6 +373,10 @@ def get_genchapters(gendocuid: str, token: str = Depends(get_token), tenantid: O
     gendoc_info = gendoc[0] if gendoc else {}
     doc_createfiledts_dt = _parse_ts(gendoc_info.get("createfiledts"))
 
+    # 조건명(매개변수 값) — fn_gendocs__r는 내려주지 않아 list_gendocs와 동일하게 별도 조회
+    params = sb.schema(SUPABASE_SCHEMA).rpc("fn_gendocs_params__r", {"p_gendocuid": gendocuid}).execute().data or []
+    gendoc_info["finalnm_joined"] = " / ".join(p.get("finalnm") or p.get("paramvalue") or "" for p in params if p.get("paramvalue"))
+
     chapters = sb.schema(SUPABASE_SCHEMA).rpc("fn_genchapters__r_gendocuid", {"p_gendocuid": gendocuid}).execute().data or []
     for c in chapters:
         # 신규작성/신규업로드 — 챕터가 문서 최종 병합(gendocs.createfiledts)보다 나중에

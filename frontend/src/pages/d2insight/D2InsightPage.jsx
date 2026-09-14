@@ -10,6 +10,7 @@ import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
 import '../d2shared/d2common.css'
 import './d2insight.css'
+import { getErrorMessage, getErrorDetail } from '@/utils/apiError'
 
 const CHAT_TIMEOUT = { timeout: 3600000 } // 보고서 생성 최대 6분
 
@@ -76,8 +77,6 @@ export default function D2InsightPage() {
   // 클릭 시 이 데이터를 옵션 JSON으로 실어 /chat에 실제 실행 요청. null이면 preview 없음.
   const [previewData, setPreviewData] = useState(null)
   const [previewOriginalMessage, setPreviewOriginalMessage] = useState('')
-  // 이 미리보기가 붙여넣은 JSON에서 만들어진 것인지 — 뒤따르는 문장으로 덮어쓰지 않기 위해.
-  const previewFromJsonRef = useRef(false)
 
   // 정기 보고서 공유(공유한/공유받은)
   const [sharesSentSchedule, setSharesSentSchedule] = useState([])
@@ -230,7 +229,7 @@ export default function D2InsightPage() {
   const handleSelectFavorite = (fav) => {
     setHistoryMessages([
       { role: 'user', content: fav.question, qauid: fav.qauid },
-      { role: 'assistant', content: fav.answer, fileurl: fav.fileurl, mdurl: fav.mdurl, reportPath: fav.filenm },
+      { role: 'assistant', content: fav.answer, fileurl: fav.fileurl, reportPath: fav.filenm },
     ])
     setHistoryLabel(t('msg.d2insight.favorite_report'))
     setViewingSessionId(null)
@@ -256,7 +255,7 @@ export default function D2InsightPage() {
       } catch { answerText = data.answer || '' }
       setHistoryMessages([
         { role: 'user', content: data.question || '' },
-        { role: 'assistant', content: answerText, fileurl: data.fileurl, mdurl: data.mdurl, reportPath: data.filenm, appliedSteps },
+        { role: 'assistant', content: answerText, fileurl: data.fileurl, reportPath: data.filenm, appliedSteps },
       ])
       setHistoryLabel(label || t('ttl.d2insight.shares_received'))
       setViewingSessionId(null)
@@ -321,7 +320,7 @@ export default function D2InsightPage() {
   const handleSelectScheduleTurn = (turn, session) => {
     setHistoryMessages([
       { role: 'user', content: turn.question, qauid: turn.qauid },
-      { role: 'assistant', content: turn.answer, reportPath: turn.filenm, fileurl: turn.fileurl, mdurl: turn.mdurl, qauid: turn.qauid, appliedSteps: turn.appliedSteps },
+      { role: 'assistant', content: turn.answer, reportPath: turn.filenm, fileurl: turn.fileurl, qauid: turn.qauid, appliedSteps: turn.appliedSteps },
     ])
     setHistoryLabel(turn.target_period ? `${session.title} · ${turn.target_period}` : session.title)
     setViewingSessionId(null)
@@ -337,7 +336,7 @@ export default function D2InsightPage() {
   const handleSelectSharedScheduleTurn = (turn, shareMeta) => {
     setHistoryMessages([
       { role: 'user', content: turn.question, qauid: turn.qauid },
-      { role: 'assistant', content: turn.answer, reportPath: turn.filenm, fileurl: turn.fileurl, mdurl: turn.mdurl, qauid: turn.qauid, appliedSteps: turn.appliedSteps },
+      { role: 'assistant', content: turn.answer, reportPath: turn.filenm, fileurl: turn.fileurl, qauid: turn.qauid, appliedSteps: turn.appliedSteps },
     ])
     setHistoryLabel(turn.target_period ? `${shareMeta.title} · ${turn.target_period}` : shareMeta.title)
     setViewingSessionId(null)
@@ -359,11 +358,11 @@ export default function D2InsightPage() {
       }
       fetchFavorites()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2insight.fav_error'))
+      message.error(getErrorMessage(e, 'msg.d2insight.fav_error'))
     }
   }
 
-  const handleContinue = async ({ question, answer, fileurl, mdurl, reportPath }) => {
+  const handleContinue = async ({ question, answer, fileurl, reportPath }) => {
     try {
       const { data } = await apiClient.post('/d2insight/session/inject', {
         session_id: sessionId,
@@ -376,7 +375,7 @@ export default function D2InsightPage() {
       setMessages((prev) => [
         ...prev,
         { role: 'user', content: question },
-        { role: 'assistant', content: answer, fileurl, mdurl, reportPath },
+        { role: 'assistant', content: answer, fileurl, reportPath },
       ])
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
@@ -385,7 +384,7 @@ export default function D2InsightPage() {
       setActiveReportIndex(null)
       setViewMode('chat')
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2insight.continue_error'))
+      message.error(getErrorMessage(e, 'msg.d2insight.continue_error'))
     }
   }
 
@@ -418,7 +417,6 @@ export default function D2InsightPage() {
           role: 'assistant',
           content: data.answer || '',
           fileurl: data.fileurl || null,
-          mdurl: data.mdurl || null,
           reportPath: data.report_path || null,
           qauid: data.qauid || null,
           appliedSteps: data.applied_steps || null,
@@ -428,7 +426,7 @@ export default function D2InsightPage() {
     } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (t(error.response?.data?.detail) || error.message) },
+        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (getErrorDetail(error) || error.message) },
       ])
     }
   }
@@ -450,7 +448,6 @@ export default function D2InsightPage() {
     } finally {
       setPreviewData(null)
       setPreviewOriginalMessage('')
-      previewFromJsonRef.current = false
       setIsLoading(false)
     }
   }
@@ -469,34 +466,22 @@ export default function D2InsightPage() {
   }
 
   // 스텝 카드 팝업 — 스텝 하나를 사람이 읽는 말로 풀어 보여준다(JSON 대신).
-  // 설명은 LLM이 만들므로 스텝 내용이 그대로면 같은 결과다. 내용으로 키를 만들어 캐시한다 —
-  // 모듈이 바뀌면 키가 달라져 저절로 다시 부른다.
-  const describeCacheRef = useRef(new Map())
-
   const handleDescribeStep = async (step) => {
-    const key = JSON.stringify([step?.step_id, step?.title, step?.modules || []])
-    const cached = describeCacheRef.current.get(key)
-    if (cached) return cached
-
     const { data } = await apiClient.post('/d2insight/report/describe_step', {
       step,
       user_id: userId,
       project_id: user?.myprojectid ?? null,
       account_uid: user?.accountuid ?? null,
     })
-    const modules = data.modules || []
-    describeCacheRef.current.set(key, modules)
-    return modules
+    return data.modules || []
   }
 
   // 팝업 '보내기' — 자연어 지시를 편집 연산으로 옮겨 그 스텝에 적용한다.
   // 스텝 하나만 고치지만 steps 전체를 주고받는다 — 모듈을 다 빼면 스텝이 사라지고,
   // 싱글턴 이름표가 다른 스텝과 부딪히는지도 전체를 봐야 알 수 있다(백엔드 주석 참고).
-  // steps를 넘겨받으면 그것을 기준으로 고친다 — 팝업에서 '보내기'를 여러 번 누르면 앞선
-  // 편집 위에 쌓여야 한다(저장 전까지는 바깥 preview에 반영되지 않으므로 팝업이 들고 있다).
-  const handleEditStep = async (stepId, instruction, steps) => {
+  const handleEditStep = async (stepId, instruction) => {
     const { data } = await apiClient.post('/d2insight/report/edit_step', {
-      steps: steps || previewData?.applied_steps || [],
+      steps: previewData?.applied_steps || [],
       step_id: stepId,
       instruction,
       scenario: previewData?.scenario,
@@ -505,12 +490,6 @@ export default function D2InsightPage() {
       project_id: user?.myprojectid ?? null,
       account_uid: user?.accountuid ?? null,
     })
-    // 편집 결과 설명을 그 스텝의 새 내용으로 캐시에 넣어둔다 — 다시 열 때 호출이 없다.
-    const edited = (data.steps || []).find((s) => s.step_id === stepId)
-    if (edited && data.modules) {
-      const key = JSON.stringify([edited.step_id, edited.title, edited.modules || []])
-      describeCacheRef.current.set(key, data.modules)
-    }
     return data
   }
 
@@ -524,45 +503,32 @@ export default function D2InsightPage() {
 
     // 1) 먼저 preview로 시나리오 매칭 시도 (단독앱 방식). 매칭되면 옵션 패널에 표시하고
     //    실제 /chat은 사용자가 "이대로 작성" 눌러야 실행. 매칭 안 되면 그대로 /chat 진행.
-    //    단, JSON을 붙여넣어 만든 미리보기는 뒤따르는 문장(기간 답변 등)으로 덮어쓰지 않는다 —
-    //    그 문장엔 JSON이 없어 시나리오 프리셋으로 다시 만들어지면 화면과 결과가 어긋난다.
-    const hasJson = text.includes('{')
-    const keepPreview = previewFromJsonRef.current && !hasJson
-    if (!keepPreview) {
-      try {
-        const previewResp = await apiClient.post('/d2insight/report/preview', {
-          message: text,
-          session_id: sessionIdRef.current,
-          user_id: userId,
-          project_id: user?.myprojectid ?? null,
-          account_uid: user?.accountuid ?? null,
-        })
-        if (previewResp.data?.applied_steps?.length) {
-          setPreviewData(previewResp.data)
-          setPreviewOriginalMessage(text)
-          previewFromJsonRef.current = hasJson
-          const scenarioMsg = previewResp.data.scenario
-            ? `'${previewResp.data.scenario}' 시나리오로 매칭됐어요.`
-            : '보고서 구성을 준비했어요.'
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `${scenarioMsg} 오른쪽 옵션 패널을 확인하고 '이대로 작성'을 눌러주세요.`,
-            },
-          ])
-          setIsLoading(false)
-          return
-        }
-        // 구성을 만들다 실패한 경우 — 조용히 다른 경로로 보고서를 만들지 않고 사유를 보여준다.
-        if (previewResp.data?.error) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: previewResp.data.error }])
-          setIsLoading(false)
-          return
-        }
-      } catch (_) {
-        // preview 실패해도 조용히 /chat 폴백
+    try {
+      const previewResp = await apiClient.post('/d2insight/report/preview', {
+        message: text,
+        session_id: sessionIdRef.current,
+        user_id: userId,
+        project_id: user?.myprojectid ?? null,
+        account_uid: user?.accountuid ?? null,
+      })
+      if (previewResp.data?.applied_steps?.length) {
+        setPreviewData(previewResp.data)
+        setPreviewOriginalMessage(text)
+        const scenarioMsg = previewResp.data.scenario
+          ? `'${previewResp.data.scenario}' 시나리오로 매칭됐어요.`
+          : '보고서 구성을 준비했어요.'
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `${scenarioMsg} 오른쪽 옵션 패널을 확인하고 '이대로 작성'을 눌러주세요.`,
+          },
+        ])
+        setIsLoading(false)
+        return
       }
+    } catch (_) {
+      // preview 실패해도 조용히 /chat 폴백
     }
 
     // 2) preview 매칭 없음 → 기존 /chat 흐름 그대로.
@@ -595,7 +561,6 @@ export default function D2InsightPage() {
           role: 'assistant',
           content: data.answer || '',
           fileurl: data.fileurl || null,
-          mdurl: data.mdurl || null,
           reportPath: data.report_path || null,
           qauid: data.qauid || null,
           appliedSteps: data.applied_steps || null,
@@ -605,7 +570,7 @@ export default function D2InsightPage() {
     } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (t(error.response?.data?.detail) || error.message) },
+        { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (getErrorDetail(error) || error.message) },
       ])
     } finally {
       setIsLoading(false)
@@ -647,17 +612,15 @@ export default function D2InsightPage() {
   const getScheduleShareUid = (sessionId2) =>
     Object.values(history).flat().find((s) => s.session_id === sessionId2)?.share_uid || null
 
-  const handleSidebarDelete = async (e, id) => {
-    e.stopPropagation()
-    setMenuOpenId(null)
+  const performSidebarDelete = async (id, section) => {
     try {
-      if (menuSection === 'favorites') {
+      if (section === 'favorites') {
         await apiClient.delete(`/d2insight/favorite/qa/${userId}/${id}`)
         fetchFavorites()
-      } else if (menuSection === 'sent') {
+      } else if (section === 'sent') {
         await apiClient.delete(`/d2insight/shares/sent/${id}/${userId}`)
         fetchShares()
-      } else if (menuSection === 'received') {
+      } else if (section === 'received') {
         await apiClient.delete(`/d2insight/shares/received/${id}/${userId}`)
         fetchShares()
       } else {
@@ -666,8 +629,21 @@ export default function D2InsightPage() {
         if (id === sessionId) handleNewChat()
       }
     } catch (e2) {
-      message.error(t(e2.response?.data?.detail) || t('msg.d2insight.delete_error'))
+      message.error(getErrorMessage(e2, 'msg.d2insight.delete_error'))
     }
+  }
+
+  const handleSidebarDelete = (e, id) => {
+    e.stopPropagation()
+    setMenuOpenId(null)
+    const section = menuSection
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => performSidebarDelete(id, section),
+    })
   }
 
   // ── 정기 보고서 공유 핸들러 ────────────────────────────────────
@@ -677,18 +653,26 @@ export default function D2InsightPage() {
       await apiClient.post(`/d2insight/schedule/${sid}/share`, { user_id: userId })
       fetchScheduleShares()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || '공유에 실패했습니다.')
+      message.error(getErrorDetail(e) || '공유에 실패했습니다.')
     }
   }
 
-  const handleUnshareSchedule = async (shareUid) => {
+  const handleUnshareSchedule = (shareUid) => {
     setMenuOpenId(null)
-    try {
-      await apiClient.delete(`/d2insight/schedule/share/${shareUid}/${userId}`)
-      fetchScheduleShares()
-    } catch (e) {
-      message.error(t(e.response?.data?.detail) || '공유 취소에 실패했습니다.')
-    }
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await apiClient.delete(`/d2insight/schedule/share/${shareUid}/${userId}`)
+          fetchScheduleShares()
+        } catch (e) {
+          message.error(getErrorDetail(e) || '공유 취소에 실패했습니다.')
+        }
+      },
+    })
   }
 
   // 회차(턴) 하드 삭제 — 되돌릴 수 없어 확인 팝업을 거친다.
@@ -704,20 +688,28 @@ export default function D2InsightPage() {
           await apiClient.delete(`/d2insight/schedule/turn/${qauid}/${userId}`)
           refresh?.()
         } catch (e) {
-          message.error(t(e.response?.data?.detail) || '삭제에 실패했습니다.')
+          message.error(getErrorDetail(e) || '삭제에 실패했습니다.')
         }
       },
     })
   }
 
-  const handleDeleteReceivedScheduleShare = async (shareUid) => {
+  const handleDeleteReceivedScheduleShare = (shareUid) => {
     setMenuOpenId(null)
-    try {
-      await apiClient.delete(`/d2insight/schedule/shares/received/${shareUid}/${userId}`)
-      fetchScheduleShares()
-    } catch (e) {
-      message.error(t(e.response?.data?.detail) || '삭제에 실패했습니다.')
-    }
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await apiClient.delete(`/d2insight/schedule/shares/received/${shareUid}/${userId}`)
+          fetchScheduleShares()
+        } catch (e) {
+          message.error(getErrorDetail(e) || '삭제에 실패했습니다.')
+        }
+      },
+    })
   }
 
   // ── 정기 보고서 등록/수정 핸들러(패널에서 호출) ───────────────
@@ -733,7 +725,7 @@ export default function D2InsightPage() {
       })
       return data
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || '정기 보고서 등록 확인에 실패했습니다.')
+      message.error(getErrorDetail(e) || '정기 보고서 등록 확인에 실패했습니다.')
       return null
     }
   }
@@ -758,7 +750,7 @@ export default function D2InsightPage() {
       setHistoryMessages((prev) => markTemplate(prev))
       fetchHistory()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || '정기 보고서 등록에 실패했습니다.')
+      message.error(getErrorDetail(e) || '정기 보고서 등록에 실패했습니다.')
     }
   }
 
@@ -772,7 +764,7 @@ export default function D2InsightPage() {
       })
       return data
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || '일정 변경 확인에 실패했습니다.')
+      message.error(getErrorDetail(e) || '일정 변경 확인에 실패했습니다.')
       return null
     }
   }
@@ -788,7 +780,7 @@ export default function D2InsightPage() {
       loadScheduleSettings(settings.session_id)
       fetchHistory()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || '일정 변경에 실패했습니다.')
+      message.error(getErrorDetail(e) || '일정 변경에 실패했습니다.')
     }
   }
 
@@ -1227,7 +1219,6 @@ export default function D2InsightPage() {
                           role={msg.role}
                           content={msg.content}
                           fileurl={msg.fileurl}
-                          mdurl={msg.mdurl}
                           reportPath={msg.reportPath}
                           starButton={starButton}
                           qauid={msg.qauid}
@@ -1321,7 +1312,6 @@ export default function D2InsightPage() {
                             role={msg.role}
                             content={msg.content}
                             fileurl={msg.fileurl}
-                            mdurl={msg.mdurl}
                             reportPath={msg.reportPath}
                             starButton={starButton}
                             qauid={msg.qauid}
@@ -1338,7 +1328,6 @@ export default function D2InsightPage() {
                                     question: msg.content,
                                     answer: nextMsg?.content || '',
                                     fileurl: nextMsg?.fileurl || null,
-                                    mdurl: nextMsg?.mdurl || null,
                                     reportPath: nextMsg?.reportPath || null,
                                   })
                                 }}
@@ -1369,11 +1358,7 @@ export default function D2InsightPage() {
           preview={previewData}
           previewGenerating={isLoading}
           onConfirmPreview={handleConfirmPreview}
-          onCancelPreview={() => {
-            setPreviewData(null)
-            setPreviewOriginalMessage('')
-            previewFromJsonRef.current = false
-          }}
+          onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage('') }}
           onReorderPreviewSteps={(newSteps) =>
             setPreviewData((prev) => (prev ? { ...prev, applied_steps: newSteps } : prev))
           }
@@ -1457,7 +1442,6 @@ function StepEditPopup({ step, readOnly = false, onDescribeStep, onEditStep, onS
   const [message, setMessage] = useState(null)
   const [draftSteps, setDraftSteps] = useState(null)  // 저장 전까지의 편집 결과
   const [stepRemoved, setStepRemoved] = useState(false)
-  const [title, setTitle] = useState(step?.title)
 
   const stepId = step?.step_id
 
@@ -1484,22 +1468,18 @@ function StepEditPopup({ step, readOnly = false, onDescribeStep, onEditStep, onS
     setSending(true)
     setMessage(null)
     try {
-      // 앞선 편집 결과(draftSteps)가 있으면 그 위에 이어서 고친다.
-      const data = await onEditStep?.(stepId, text, draftSteps)
+      const data = await onEditStep?.(stepId, text)
       if (!data) return
       if (data.message) {
-        // 아무것도 안 바뀌지 않은 경우. 추천이면 물어본 문장은 지우고, 못 알아들었거나
-        // 규칙에 걸린 경우엔 입력을 남겨 고쳐서 다시 보낼 수 있게 한다.
+        // 아무것도 안 바뀐 경우 — 못 알아들었거나 규칙에 걸렸다. 입력은 그대로 두어
+        // 사용자가 고쳐서 다시 보낼 수 있게 한다.
         setMessage(data.message)
-        if (data.suggestion) setInstruction('')
         return
       }
       setInstruction('')
       setDraftSteps(data.steps || null)
       setModules(data.modules || [])
       setStepRemoved(!!data.step_removed)
-      const edited = (data.steps || []).find((s) => s.step_id === stepId)
-      if (edited?.title) setTitle(edited.title)
       if ((data.notes || []).length) setMessage(data.notes.join(' '))
     } catch (e) {
       setMessage('수정 중 오류가 났습니다: ' + (t(e?.response?.data?.detail) || e.message))
@@ -1512,7 +1492,7 @@ function StepEditPopup({ step, readOnly = false, onDescribeStep, onEditStep, onS
     <div className="step-popup-backdrop">
       <div className="step-popup">
         <div className="step-popup-head">
-          <strong>{title}</strong>
+          <strong>{step?.title}</strong>
           <button type="button" className="step-popup-x" onClick={onClose}>✕</button>
         </div>
 
@@ -1765,17 +1745,7 @@ function ReportOptionsPanel({
           step={editingStep}
           onDescribeStep={onDescribeStep}
           onEditStep={onEditStep}
-          onSave={async (steps) => {
-            if (!steps) return
-            // JSON 원문 저장과 같은 통로 — 재검증을 거쳐야 "작성 불가" 표시가 제때 풀린다.
-            let resolved = steps
-            try {
-              resolved = (await onValidateSteps?.(steps)) || steps
-            } catch {
-              // 재검증 실패해도 편집 결과는 반영한다.
-            }
-            onReorderPreviewSteps?.(resolved)
-          }}
+          onSave={(steps) => { if (steps) onReorderPreviewSteps?.(steps) }}
           onClose={() => setEditingStep(null)}
         />
       )}
@@ -2073,7 +2043,7 @@ function ReportOptionsPanel({
                         const stepDef = catalog.steps[s.step_id]
                         return (
                           <li key={i} style={{ marginBottom: 4 }}>
-                            <strong>{stepDef?.title || s.title || s.step_id}</strong>
+                            <strong>{stepDef?.title || s.step_id}</strong>
                             <ul style={{ margin: '2px 0 0 16px', color: '#666', listStyle: 'circle' }}>
                               {(stepDef?.default_modules || []).map((m, j) => (
                                 <li key={j}>
@@ -2102,7 +2072,7 @@ function ReportOptionsPanel({
 // ─────────────────────────────────────────────────────────────────
 // 메시지 말풍선
 // ─────────────────────────────────────────────────────────────────
-function MessageBubble({ role, content, fileurl, mdurl, reportPath, starButton, qauid, onShare }) {
+function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, onShare }) {
   useLangStore((s) => s.translations)
   const [previewExpanded, setPreviewExpanded] = useState(false)
   const [previewContent, setPreviewContent] = useState('')
@@ -2113,10 +2083,13 @@ function MessageBubble({ role, content, fileurl, mdurl, reportPath, starButton, 
     setPreviewExpanded(false)
   }, [fileurl])
 
-  // 주소는 서버가 준 것만 쓴다 — 비공개 보관함 주소는 파일마다 열쇠가 달라, 확장자만 바꾼
-  // 주소로는 열리지 않는다. 미리보기는 md(HTML로 그림), 내려받기는 pdf.
-  const mdUrl = mdurl || null
-  const pdfUrl = fileurl || null
+  const isMdUrl = fileurl ? /\.md(\?|$)/.test(fileurl) : false
+  const mdUrl = fileurl
+    ? (isMdUrl ? fileurl : fileurl.replace(/\.pdf(\?.*)?$/, '.md$1'))
+    : null
+  const pdfUrl = fileurl
+    ? (isMdUrl ? fileurl.replace(/\.md(\?.*)?$/, '.pdf$1') : fileurl)
+    : null
   const displayName = pdfUrl
     ? decodeURIComponent(pdfUrl.split('/').pop().split('?')[0])
     : (reportPath || t('lbl.d2insight.default_report_name'))
@@ -2236,7 +2209,7 @@ function FolderPickerModal({ qauid, userId, onClose, onShared, message }) {
       onShared?.()
       onClose()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2insight.share_error'))
+      message.error(getErrorMessage(e, 'msg.d2insight.share_error'))
       setSharing(false)
     }
   }

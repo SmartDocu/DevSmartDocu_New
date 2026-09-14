@@ -6,6 +6,7 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function LoginModal({ open, onClose }) {
   const navigate = useNavigate()
@@ -139,7 +140,7 @@ export default function LoginModal({ open, onClose }) {
       const res = await apiClient.post('/auth/login', { email, password })
       _handleLoginStageResult(res.data)
     } catch (err) {
-      const detail = t(err.response?.data?.detail) || t('msg.login.failed')
+      const detail = getErrorMessage(err, 'msg.login.failed')
       setErrorMsg(detail)
     } finally {
       setLoading(false)
@@ -157,7 +158,7 @@ export default function LoginModal({ open, onClose }) {
       })
       _handleLoginStageResult(res.data)
     } catch (err) {
-      setErrorMsg(t(err.response?.data?.detail) || t('msg.login.failed'))
+      setErrorMsg(getErrorMessage(err, 'msg.login.failed'))
     } finally {
       setLoading(false)
     }
@@ -178,7 +179,7 @@ export default function LoginModal({ open, onClose }) {
       })
       _finalizeLogin(res.data)
     } catch (err) {
-      const detail = t(err.response?.data?.detail) || t('msg.mfa.code_invalid')
+      const detail = getErrorMessage(err, 'msg.mfa.code_invalid')
       setErrorMsg(detail)
       setMfaCode('')
       mfaInputRef.current?.focus()
@@ -208,12 +209,12 @@ export default function LoginModal({ open, onClose }) {
             })
             _handleLoginStageResult(res.data)
           } catch (err) {
-            setErrorMsg(t(err.response?.data?.detail) || t('msg.login.failed'))
+            setErrorMsg(getErrorMessage(err, 'msg.login.failed'))
           } finally {
             setLoading(false)
           }
         },
-        onError: (err) => { setMfaSetupCode(''); setErrorMsg(t(err.response?.data?.detail) || t('msg.mfa.code_invalid')) },
+        onError: (err) => { setMfaSetupCode(''); setErrorMsg(getErrorMessage(err, 'msg.mfa.code_invalid')) },
       },
     )
   }
@@ -251,7 +252,7 @@ export default function LoginModal({ open, onClose }) {
         handleClose()
       }, 2000)
     } catch (err) {
-      setResetMsg(t(err.response?.data?.detail) || t('msg.server.error'))
+      setResetMsg(getErrorMessage(err, 'msg.server.error'))
     }
   }
 

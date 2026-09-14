@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { App, DatePicker } from 'antd'
+import { App, DatePicker, Pagination } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, PictureOutlined, CheckCircleFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { marked } from 'marked'
 import { useLangStore, t } from '@/stores/langStore'
@@ -38,6 +39,8 @@ function renderMarkdownPreview(text) {
   return marked.parse(text || '')
 }
 
+const PAGE_SIZE = 10
+
 export default function AdminPopupsPage() {
   const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
@@ -52,8 +55,17 @@ export default function AdminPopupsPage() {
   const [form, setForm] = useState(EMPTY_POPUP)
   const [transEdits, setTransEdits] = useState({})
   const [searchText, setSearchText] = useState('')
+  const [page, setPage] = useState(1)
   const bodyTextareaRef = useRef(null)
   const imageInputRef = useRef(null)
+
+  const filteredPopups = popups.filter((p) => {
+    const q = searchText.trim().toLowerCase()
+    if (!q) return true
+    return p.title?.toLowerCase().includes(q)
+  })
+  const pagedPopups = filteredPopups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  useEffect(() => { setPage(1) }, [searchText])
 
   const { data: translations = [] } = usePopupTranslations(selectedPopup?.popupid)
   const savePopup = useSavePopup()
@@ -184,19 +196,35 @@ export default function AdminPopupsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.popup.manage')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* 좌측: 팝업 목록 */}
-        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 3, height: 'calc(100vh - 224px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', filteredPopups.length)}
+              </span>
+            </div>
             <button className="btn btn-primary" type="button" onClick={handleNew}>
-              {t('btn.new')}
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
             </button>
           </div>
           <input
@@ -204,48 +232,77 @@ export default function AdminPopupsPage() {
             placeholder={t('lbl.popup.title')}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            style={{ marginBottom: 8, width: '100%', boxSizing: 'border-box' }}
+            style={{ marginBottom: 8, width: '100%', boxSizing: 'border-box', height: 38, flexShrink: 0 }}
           />
-          <div className="table-container">
-            <table>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
+            <table className="table table-bordered table-sm" style={{ cursor: 'pointer' }}>
               <thead>
                 <tr>
                   <th>{t('lbl.popup.title')}</th>
-                  <th style={{ width: 40, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
+                  <th style={{ width: 72, textAlign: 'center' }}>{t('thd.useyn_thd')}</th>
                 </tr>
               </thead>
               <tbody>
-                {popups.filter((p) => {
-                  const q = searchText.trim().toLowerCase()
-                  if (!q) return true
-                  return p.title?.toLowerCase().includes(q)
-                }).map((p) => (
+                {pagedPopups.length === 0 ? (
+                  <tr><td colSpan={2} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                ) : pagedPopups.map((p) => (
                   <tr
                     key={p.popupid}
                     className={selectedPopup?.popupid === p.popupid ? 'selected-row' : ''}
-                    style={{ cursor: 'pointer' }}
                     onClick={() => handleSelect(p)}
                   >
                     <td>{p.title}</td>
-                    <td style={{ textAlign: 'center' }}>{p.useyn ? '✔' : ''}</td>
+                    <td style={{ textAlign: 'center' }}>{p.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {filteredPopups.length > PAGE_SIZE && (
+            <div style={{ marginTop: 'auto', paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                current={page}
+                pageSize={PAGE_SIZE}
+                total={filteredPopups.length}
+                showSizeChanger={false}
+                onChange={setPage}
+              />
+            </div>
+          )}
         </div>
 
         {/* 중앙: 상세 폼 */}
-        <div style={{ flex: 4, padding: '0 10px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={savePopup.isPending || deletePopup.isPending}>
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+              </button>
+              {!isNew && (
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deletePopup.isPending}
+                  title={t('btn.delete')}
+                  style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <DeleteOutlined />
+                </button>
+              )}
+            </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label htmlFor="popup-title"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.popup.title')}:</label>
             <input
-              id="popup-title" type="text" value={form.title}
+              id="popup-title" type="text" value={form.title} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
             />
           </div>
@@ -261,10 +318,10 @@ export default function AdminPopupsPage() {
               onChange={handleImageSelected}
             />
             <button
-              className="btn" type="button" style={{ marginTop: 6 }}
+              className="btn btn-secondary" type="button" style={{ marginTop: 6 }}
               onClick={handleImageButtonClick} disabled={uploadImage.isPending}
             >
-              {t('btn.popup.image.insert')}
+              <PictureOutlined style={{ marginRight: 6 }} />{t('btn.popup.image.insert')}
             </button>
             <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>{t('inf.popup.body.markdown.hint')}</div>
             <div style={{ marginTop: 6 }}>
@@ -281,7 +338,7 @@ export default function AdminPopupsPage() {
           <div className="form-group">
             <label htmlFor="popup-text-align">{t('lbl.popup.text_align')}:</label>
             <select
-              id="popup-text-align" value={form.text_align}
+              id="popup-text-align" value={form.text_align} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, text_align: e.target.value }))}
             >
               {textAlignCodes.map((c) => (
@@ -292,14 +349,14 @@ export default function AdminPopupsPage() {
           <div className="form-group">
             <label htmlFor="popup-button-text">{t('lbl.popup.button_text')}:</label>
             <input
-              id="popup-button-text" type="text" value={form.button_text}
+              id="popup-button-text" type="text" value={form.button_text} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, button_text: e.target.value }))}
             />
           </div>
           <div className="form-group">
             <label htmlFor="popup-button-url">{t('lbl.popup.button_url')}:</label>
             <input
-              id="popup-button-url" type="text" placeholder="https://..." value={form.button_url}
+              id="popup-button-url" type="text" placeholder="https://..." value={form.button_url} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, button_url: e.target.value }))}
             />
           </div>
@@ -308,7 +365,7 @@ export default function AdminPopupsPage() {
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="popup-startdts"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.popup.startdts')}:</label>
               <DatePicker
-                id="popup-startdts" showTime style={{ width: '100%' }}
+                id="popup-startdts" showTime style={{ width: '100%', height: 38 }}
                 value={form.startdts ? dayjs(form.startdts) : null}
                 onChange={(val) => setForm((f) => ({ ...f, startdts: val ? val.toISOString() : '' }))}
               />
@@ -316,7 +373,7 @@ export default function AdminPopupsPage() {
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="popup-enddts"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.popup.enddts')}:</label>
               <DatePicker
-                id="popup-enddts" showTime style={{ width: '100%' }}
+                id="popup-enddts" showTime style={{ width: '100%', height: 38 }}
                 value={form.enddts ? dayjs(form.enddts) : null}
                 onChange={(val) => setForm((f) => ({ ...f, enddts: val ? val.toISOString() : '' }))}
               />
@@ -326,28 +383,28 @@ export default function AdminPopupsPage() {
           <div style={{ display: 'flex', gap: 12 }}>
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="popup-width">{t('lbl.popup.width')}:</label>
-              <input id="popup-width" type="number" value={form.width} onChange={(e) => setForm((f) => ({ ...f, width: e.target.value }))} />
+              <input id="popup-width" type="number" value={form.width} style={{ height: 38 }} onChange={(e) => setForm((f) => ({ ...f, width: e.target.value }))} />
             </div>
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="popup-height">{t('lbl.popup.height')}:</label>
-              <input id="popup-height" type="number" value={form.height} onChange={(e) => setForm((f) => ({ ...f, height: e.target.value }))} />
+              <input id="popup-height" type="number" value={form.height} style={{ height: 38 }} onChange={(e) => setForm((f) => ({ ...f, height: e.target.value }))} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="popup-lefts">{t('lbl.popup.lefts')}:</label>
-              <input id="popup-lefts" type="number" value={form.lefts} onChange={(e) => setForm((f) => ({ ...f, lefts: e.target.value }))} />
+              <input id="popup-lefts" type="number" value={form.lefts} style={{ height: 38 }} onChange={(e) => setForm((f) => ({ ...f, lefts: e.target.value }))} />
             </div>
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="popup-top">{t('lbl.popup.top')}:</label>
-              <input id="popup-top" type="number" value={form.top} onChange={(e) => setForm((f) => ({ ...f, top: e.target.value }))} />
+              <input id="popup-top" type="number" value={form.top} style={{ height: 38 }} onChange={(e) => setForm((f) => ({ ...f, top: e.target.value }))} />
             </div>
           </div>
 
           <div className="form-group">
             <label htmlFor="popup-deactivateday">{t('lbl.popup.deactivateday')}:</label>
             <input
-              id="popup-deactivateday" type="number" value={form.deactivateday}
+              id="popup-deactivateday" type="number" value={form.deactivateday} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, deactivateday: e.target.value }))}
             />
           </div>
@@ -355,7 +412,7 @@ export default function AdminPopupsPage() {
           <div className="form-group">
             <label htmlFor="popup-mainlogin"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.popup.mainlogin')}:</label>
             <select
-              id="popup-mainlogin" value={form.mainlogin}
+              id="popup-mainlogin" value={form.mainlogin} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, mainlogin: e.target.value }))}
             >
               {mainloginCodes.map((c) => (
@@ -373,21 +430,20 @@ export default function AdminPopupsPage() {
               />
             </div>
           </div>
+          </div>
         </div>
 
         {/* 우측: 번역 표 */}
-        <div style={{ flex: 4, padding: '0 10px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.translations')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" type="button" onClick={handleSave} disabled={savePopup.isPending}>
-                {t('btn.save')}
-              </button>
-              <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deletePopup.isPending || isNew}>
-                {t('btn.delete')}
-              </button>
-            </div>
+            <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {(selectedPopup || isNew) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ fontSize: 12, color: '#999' }}>{t('inf.popup.body.markdown.hint')}</div>
@@ -398,7 +454,7 @@ export default function AdminPopupsPage() {
                   <div className="form-group">
                     <label>{t('lbl.popup.title')}:</label>
                     <input
-                      type="text" style={{ width: '100%', boxSizing: 'border-box' }}
+                      type="text" style={{ width: '100%', boxSizing: 'border-box', height: 38 }}
                       value={transEdits[l.languagecd]?.title ?? ''}
                       onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], title: e.target.value } }))}
                     />
@@ -425,7 +481,7 @@ export default function AdminPopupsPage() {
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>{t('lbl.popup.button_text')}:</label>
                     <input
-                      type="text" style={{ width: '100%', boxSizing: 'border-box' }}
+                      type="text" style={{ width: '100%', boxSizing: 'border-box', height: 38 }}
                       value={transEdits[l.languagecd]?.button_text ?? ''}
                       onChange={(e) => setTransEdits((prev) => ({ ...prev, [l.languagecd]: { ...prev[l.languagecd], button_text: e.target.value } }))}
                     />
@@ -436,6 +492,7 @@ export default function AdminPopupsPage() {
           ) : (
             <div style={{ color: '#aaa', fontSize: 13, paddingTop: 8 }}>{t('msg.popup.select.trans')}</div>
           )}
+          </div>
         </div>
 
       </div>

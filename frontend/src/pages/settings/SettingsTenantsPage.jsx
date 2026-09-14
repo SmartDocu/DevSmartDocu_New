@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { App } from 'antd'
+import { SaveOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useSettingsTenants, useSaveTenant } from '@/hooks/useSettings'
+import { getErrorMessage } from '@/utils/apiError'
 
 const EMPTY_FORM = {
   tenantid: '', tenantnm: '', useyn: true,
@@ -17,11 +19,6 @@ export default function SettingsTenantsPage() {
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedId, setSelectedId] = useState(null)
-
-  const iconFileRef = useRef(null)
-  const [iconFile, setIconFile] = useState(null)
-  const [iconFileNm, setIconFileNm] = useState('')
-  const [iconFileUrl, setIconFileUrl] = useState('')
 
   const [creatornm, setCreatornm] = useState('')
   const [createdts, setCreatedts] = useState('')
@@ -42,9 +39,6 @@ export default function SettingsTenantsPage() {
       timezone: row.timezone || '',
       issystemtenant: !!row.issystemtenant,
     })
-    setIconFile(null)
-    setIconFileNm(row.iconfilenm || '')
-    setIconFileUrl(row.iconfileurl || '')
     setCreatornm(row.creatornm || '')
     setCreatedts(row.createdts || '')
   }
@@ -61,45 +55,50 @@ export default function SettingsTenantsPage() {
     if (form.languagecd) fd.append('languagecd', form.languagecd)
     if (form.timezone) fd.append('timezone', form.timezone)
     fd.append('issystemtenant', form.issystemtenant ? 'true' : 'false')
-    if (iconFile) fd.append('iconfile', iconFile)
     saveTenant.mutate(fd, {
       onSuccess: () => { message.success(t('msg.save.success')) },
-      onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+      onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
     })
-  }
-
-  const handleIconUploadClick = () => iconFileRef.current?.click()
-
-  const handleIconFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setIconFile(file)
-      setIconFileNm(file.name)
-      setIconFileUrl('')
-    }
-    e.target.value = ''
   }
 
   return (
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('mnu.company.tenants')}</div>
         </div>
       </div>
-      <div style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>
-        ※ 이 화면은 기존 기업의 사용여부·연락처·명칭 등 정보 수정만 가능합니다. (신규 생성·삭제 불가)
+
+      <div className="panel-section" style={{ background: '#f9fbe7', color: '#6a7d3c', fontSize: 13, marginBottom: 16, padding: '13px 18px' }}>
+        ＊ 이 화면은 기존 기업의 사용여부·연락처·명칭 등 정보 수정만 가능합니다. (신규 생성·삭제 불가)
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측 패널: 기업 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 287px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', tenants.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             {isLoading ? (
               <div style={{ textAlign: 'center', padding: 32 }}><div className="spinner" /></div>
             ) : (
@@ -119,29 +118,35 @@ export default function SettingsTenantsPage() {
                       onClick={() => handleRowSelect(row)}
                     >
                       <td>{row.tenantnm}</td>
-                      <td style={{ textAlign: 'center' }}>{row.useyn ? '✔' : ''}</td>
+                      <td style={{ textAlign: 'center' }}>{row.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
           </div>
+          </div>
         </div>
 
         {/* 우측 패널: 기업 상세 */}
-        <div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 287px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveTenant.isPending || !selectedId}>
-                {t('btn.save')}
+                <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
               </button>
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.tenantnm')}:</label>
-            <input type="text" value={form.tenantnm}
+            <input type="text" value={form.tenantnm} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, tenantnm: e.target.value }))} />
           </div>
 
@@ -155,19 +160,19 @@ export default function SettingsTenantsPage() {
 
           <div className="form-group">
             <label>{t('lbl.email')}:</label>
-            <input type="text" value={form.email}
+            <input type="email" value={form.email} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
           </div>
 
           <div className="form-group">
             <label>{t('lbl.telno')}:</label>
-            <input type="text" value={form.telno}
+            <input type="text" value={form.telno} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, telno: e.target.value }))} />
           </div>
 
           <div className="form-group">
             <label>{t('thd.languagenm')}:</label>
-            <select value={form.languagecd}
+            <select value={form.languagecd} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, languagecd: e.target.value }))}>
               <option value="">{t('msg.select')}</option>
               {languages.map((lang) => (
@@ -178,7 +183,7 @@ export default function SettingsTenantsPage() {
 
           <div className="form-group">
             <label>{t('lbl.timezone')}:</label>
-            <select value={form.timezone}
+            <select value={form.timezone} style={{ height: 38 }}
               onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))}>
               <option value="">{t('msg.select')}</option>
               {timezones.map((tz) => (
@@ -195,25 +200,6 @@ export default function SettingsTenantsPage() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label>{t('lbl.tenant.icon')}:</label>
-            <input type="file" ref={iconFileRef} style={{ display: 'none' }}
-              accept="image/*" onChange={handleIconFileChange} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button type="button" className="btn btn-primary" onClick={handleIconUploadClick}>
-                {t('btn.upload_btn')}
-              </button>
-              <span
-                style={{
-                  cursor: iconFileUrl ? 'pointer' : 'default',
-                  textDecoration: iconFileUrl ? 'underline' : 'none',
-                  color: iconFileUrl ? 'blue' : 'black',
-                }}
-                onClick={() => iconFileUrl && window.open(iconFileUrl, '_blank')}
-              >
-                {iconFileNm || t('msg.no.image')}
-              </span>
-            </div>
           </div>
         </div>
       </div>

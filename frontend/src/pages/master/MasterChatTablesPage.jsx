@@ -90,8 +90,11 @@ export default function MasterChatTablesPage() {
     }
     const body = { datauid: selectedUid, ...form }
     saveDataMeta.mutate(body, {
-      onSuccess: () => message.success(t('msg.save.success')),
-      onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+      onSuccess: () => { message.success(t('msg.save.success')) },
+      onError: (err) => {
+        const detail = err.response?.data?.detail
+        message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+      },
     })
   }
 
@@ -106,7 +109,10 @@ export default function MasterChatTablesPage() {
             setSelectedUid(null)
             setForm(EMPTY_FORM)
           },
-          onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+          onError: (err) => {
+            const detail = err.response?.data?.detail
+            message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+          },
         })
       },
     })

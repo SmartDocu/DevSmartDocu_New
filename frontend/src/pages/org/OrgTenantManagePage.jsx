@@ -1,5 +1,5 @@
-import { Button, Card, Row, Col, Table, Space } from 'antd'
-import { CreditCardOutlined, HistoryOutlined } from '@ant-design/icons'
+import { Card, Row, Col, Table } from 'antd'
+import { CreditCardOutlined, HistoryOutlined, ExportOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
@@ -43,22 +43,24 @@ function TenantInfoCard({ openInTab }) {
       size="small"
       title={t('ttl.tenant.manage.tenant_info')}
       extra={(
-        <Space size={8}>
-          <Button
-            size="small"
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            style={{ height: 30, padding: '0 10px' }}
             onClick={() => openInTab('org/tenant-basic-info', '', t('ttl.tenant.manage.basic_info'))}
           >
-            {t('btn.setting')}
-          </Button>
-          <Button
-            size="small"
-            danger
-            type="text"
+            {t('btn.setting')}<ExportOutlined style={{ marginLeft: 6 }} />
+          </button>
+          <button
+            className="btn btn-danger"
+            type="button"
+            style={{ height: 30, padding: '0 10px' }}
             onClick={() => openInTab('org/tenant-cancel', '', t('ttl.tenant_cancel'))}
           >
             {t('btn.tenant_cancel')}
-          </Button>
-        </Space>
+          </button>
+        </div>
       )}
       loading={isLoading}
       style={{ height: '100%' }}
@@ -113,7 +115,10 @@ export default function OrgTenantManagePage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('mnu.tenant_mgr.manage.overview')}</div>
         </div>
       </div>
@@ -131,19 +136,22 @@ export default function OrgTenantManagePage() {
             title={t('ttl.tenant.manage.subscription')}
             extra={(
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Button
-                  size="small"
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  style={{ height: 30, padding: '0 10px' }}
                   onClick={() => openInTab('org/other-subscription-manage', '', t('ttl.tenant.manage.other_subscription'))}
                 >
-                  {t('btn.other.manage')}
-                </Button>
-                <span style={{ color: '#d9d9d9' }}>|</span>
-                <Button
-                  size="small"
+                  {t('btn.other.manage')}<ExportOutlined style={{ marginLeft: 6 }} />
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  style={{ height: 30, padding: '0 10px' }}
                   onClick={() => openInTab('org/subscription-manage', '', t('ttl.tenant.manage.subscription'))}
                 >
-                  {t('btn.product.manage')}
-                </Button>
+                  {t('btn.product.manage')}<ExportOutlined style={{ marginLeft: 6 }} />
+                </button>
               </div>
             )}
             style={{ height: '100%' }}
@@ -173,12 +181,14 @@ export default function OrgTenantManagePage() {
             size="small"
             title={t('ttl.tenant.manage.overview.services')}
             extra={(
-              <Button
-                size="small"
+              <button
+                className="btn btn-secondary"
+                type="button"
+                style={{ height: 30, padding: '0 10px' }}
                 onClick={() => openInTab('org/credit-manage', '', t('ttl.tenant.manage.credit'))}
               >
-                {t('btn.credit.manage')}
-              </Button>
+                {t('btn.credit.manage')}<ExportOutlined style={{ marginLeft: 6 }} />
+              </button>
             )}
             loading={overviewLoading}
           >

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useApps({ enabled = true, tenantid, languagecd } = {}) {
   return useQuery({
@@ -31,7 +32,7 @@ export function useSaveAppTranslation() {
       qc.invalidateQueries({ queryKey: ['app-translations', appcd] })
       qc.invalidateQueries({ queryKey: ['apps'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -46,6 +47,6 @@ export function useDeleteAppTranslation() {
       qc.invalidateQueries({ queryKey: ['app-translations', appcd] })
       qc.invalidateQueries({ queryKey: ['apps'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }

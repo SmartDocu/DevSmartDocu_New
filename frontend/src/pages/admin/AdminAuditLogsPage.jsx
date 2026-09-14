@@ -43,27 +43,35 @@ function JsonCell({ value }) {
 function useFilterState() {
   const [dates, setDates] = useState([dayjs().subtract(29, 'day'), dayjs()])
   const [email, setEmail] = useState('')
+  const [emailInput, setEmailInput] = useState('')
   const [page, setPage] = useState(1)
-  const pageSize = 20
-  return { dates, setDates, email, setEmail, page, setPage, pageSize }
+  const pageSize = 10
+  const commitEmailSearch = () => { setEmail(emailInput); setPage(1) }
+  return { dates, setDates, email, emailInput, setEmailInput, commitEmailSearch, page, setPage, pageSize }
 }
 
-function FilterBar({ dates, setDates, email, setEmail, onEmailSearch, extra }) {
+function FilterBar({ dates, setDates, emailInput, setEmailInput, commitEmailSearch, extra }) {
   return (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-      <RangePicker
-        value={dates}
-        onChange={(v) => setDates(v || [dayjs().subtract(29, 'day'), dayjs()])}
-        allowClear={false}
-      />
-      <Input.Search
-        placeholder={t('lbl.audit.search.email')}
-        style={{ width: 240 }}
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onSearch={onEmailSearch}
-        allowClear
-      />
+    <div className="panel-section" style={{ display: 'flex', gap: 20, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="filter-item">
+        <label style={{ fontWeight: 'bold' }}>{t('lbl.period')}</label>
+        <RangePicker
+          value={dates}
+          onChange={(v) => setDates(v || [dayjs().subtract(29, 'day'), dayjs()])}
+          allowClear={false}
+        />
+      </div>
+      <div className="filter-item">
+        <label style={{ fontWeight: 'bold' }}>{t('lbl.email')}</label>
+        <Input.Search
+          placeholder={t('lbl.audit.search.email')}
+          style={{ width: 240 }}
+          value={emailInput}
+          onChange={(e) => setEmailInput(e.target.value)}
+          onSearch={commitEmailSearch}
+          allowClear
+        />
+      </div>
       {extra}
     </div>
   )
@@ -106,29 +114,32 @@ function PrivacyConsentTab() {
     <div>
       <FilterBar
         {...f}
-        onEmailSearch={() => f.setPage(1)}
         extra={
-          <Select
-            allowClear
-            placeholder={t('thd.audit.consenttype')}
-            style={{ width: 220 }}
-            value={consenttypecd}
-            onChange={(v) => { setConsenttypecd(v); f.setPage(1) }}
-            options={CONSENT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
-          />
+          <div className="filter-item">
+            <label style={{ fontWeight: 'bold' }}>{t('thd.audit.consenttype')}</label>
+            <Select
+              allowClear
+              style={{ width: 220 }}
+              value={consenttypecd}
+              onChange={(v) => { setConsenttypecd(v); f.setPage(1) }}
+              options={CONSENT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+            />
+          </div>
         }
       />
-      <Table
-        rowKey="consentloguid"
-        columns={columns}
-        dataSource={data.items || []}
-        loading={isLoading}
-        pagination={{
-          current: f.page, pageSize: f.pageSize, total: data.total || 0,
-          onChange: f.setPage, showSizeChanger: false,
-        }}
-        size="small"
-      />
+      <div className="panel-section">
+        <Table
+          rowKey="consentloguid"
+          columns={columns}
+          dataSource={data.items || []}
+          loading={isLoading}
+          pagination={{
+            current: f.page, pageSize: f.pageSize, total: data.total || 0, position: ['bottomCenter'],
+            onChange: f.setPage, showSizeChanger: false,
+          }}
+          size="small"
+        />
+      </div>
     </div>
   )
 }
@@ -167,29 +178,33 @@ function AdminActionsTab() {
     <div>
       <FilterBar
         {...f}
-        onEmailSearch={() => f.setPage(1)}
         extra={
-          <Select
-            allowClear
-            placeholder={t('thd.audit.actioncd')}
-            style={{ width: 220 }}
-            value={actioncd}
-            onChange={(v) => { setActioncd(v); f.setPage(1) }}
-            options={ADMIN_ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
-          />
+          <div className="filter-item">
+            <label style={{ fontWeight: 'bold' }}>{t('thd.audit.actioncd')}</label>
+            <Select
+              allowClear
+              style={{ width: 220 }}
+              value={actioncd}
+              onChange={(v) => { setActioncd(v); f.setPage(1) }}
+              options={ADMIN_ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+            />
+          </div>
         }
       />
-      <Table
-        rowKey="adminloguid"
-        columns={columns}
-        dataSource={data.items || []}
-        loading={isLoading}
-        pagination={{
-          current: f.page, pageSize: f.pageSize, total: data.total || 0,
-          onChange: f.setPage, showSizeChanger: false,
-        }}
-        size="small"
-      />
+      <div className="panel-section" style={{ overflowX: 'auto' }}>
+        <Table
+          rowKey="adminloguid"
+          columns={columns}
+          dataSource={data.items || []}
+          loading={isLoading}
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            current: f.page, pageSize: f.pageSize, total: data.total || 0, position: ['bottomCenter'],
+            onChange: f.setPage, showSizeChanger: false,
+          }}
+          size="small"
+        />
+      </div>
     </div>
   )
 }
@@ -237,39 +252,45 @@ function WorkLogsTab() {
     <div>
       <FilterBar
         {...f}
-        onEmailSearch={() => f.setPage(1)}
         extra={
           <>
-            <Select
-              allowClear
-              placeholder={t('thd.audit.servicecd')}
-              style={{ width: 160 }}
-              value={servicecd}
-              onChange={(v) => { setServicecd(v); f.setPage(1) }}
-              options={WORK_SERVICE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
-            />
-            <Select
-              allowClear
-              placeholder={t('thd.audit.actioncd')}
-              style={{ width: 160 }}
-              value={actioncd}
-              onChange={(v) => { setActioncd(v); f.setPage(1) }}
-              options={WORK_ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
-            />
+            <div className="filter-item">
+              <label style={{ fontWeight: 'bold' }}>{t('thd.audit.servicecd')}</label>
+              <Select
+                allowClear
+                style={{ width: 160 }}
+                value={servicecd}
+                onChange={(v) => { setServicecd(v); f.setPage(1) }}
+                options={WORK_SERVICE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+              />
+            </div>
+            <div className="filter-item">
+              <label style={{ fontWeight: 'bold' }}>{t('thd.audit.actioncd')}</label>
+              <Select
+                allowClear
+                style={{ width: 160 }}
+                value={actioncd}
+                onChange={(v) => { setActioncd(v); f.setPage(1) }}
+                options={WORK_ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+              />
+            </div>
           </>
         }
       />
-      <Table
-        rowKey="workloguid"
-        columns={columns}
-        dataSource={data.items || []}
-        loading={isLoading}
-        pagination={{
-          current: f.page, pageSize: f.pageSize, total: data.total || 0,
-          onChange: f.setPage, showSizeChanger: false,
-        }}
-        size="small"
-      />
+      <div className="panel-section" style={{ overflowX: 'auto' }}>
+        <Table
+          rowKey="workloguid"
+          columns={columns}
+          dataSource={data.items || []}
+          loading={isLoading}
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            current: f.page, pageSize: f.pageSize, total: data.total || 0, position: ['bottomCenter'],
+            onChange: f.setPage, showSizeChanger: false,
+          }}
+          size="small"
+        />
+      </div>
     </div>
   )
 }
@@ -308,29 +329,32 @@ function LoginLogsTab() {
     <div>
       <FilterBar
         {...f}
-        onEmailSearch={() => f.setPage(1)}
         extra={
-          <Select
-            allowClear
-            placeholder={t('thd.audit.eventtype')}
-            style={{ width: 160 }}
-            value={eventtypecd}
-            onChange={(v) => { setEventtypecd(v); f.setPage(1) }}
-            options={EVENT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
-          />
+          <div className="filter-item">
+            <label style={{ fontWeight: 'bold' }}>{t('thd.audit.eventtype')}</label>
+            <Select
+              allowClear
+              style={{ width: 160 }}
+              value={eventtypecd}
+              onChange={(v) => { setEventtypecd(v); f.setPage(1) }}
+              options={EVENT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+            />
+          </div>
         }
       />
-      <Table
-        rowKey="login_logui"
-        columns={columns}
-        dataSource={data.items || []}
-        loading={isLoading}
-        pagination={{
-          current: f.page, pageSize: f.pageSize, total: data.total || 0,
-          onChange: f.setPage, showSizeChanger: false,
-        }}
-        size="small"
-      />
+      <div className="panel-section">
+        <Table
+          rowKey="login_logui"
+          columns={columns}
+          dataSource={data.items || []}
+          loading={isLoading}
+          pagination={{
+            current: f.page, pageSize: f.pageSize, total: data.total || 0, position: ['bottomCenter'],
+            onChange: f.setPage, showSizeChanger: false,
+          }}
+          size="small"
+        />
+      </div>
     </div>
   )
 }
@@ -351,7 +375,10 @@ export default function AdminAuditLogsPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('mnu.system.audit_logs')}</div>
         </div>
       </div>

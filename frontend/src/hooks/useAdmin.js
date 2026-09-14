@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
+import { getErrorMessage } from '@/utils/apiError'
 
 // ─── Help Search ──────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ export function useSaveSamplePrompt() {
         qc.invalidateQueries({ queryKey: ['admin-sample-prompts'] })
       }
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -55,7 +56,7 @@ export function useDeleteSamplePrompt() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-sample-prompts'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }
 
@@ -77,7 +78,7 @@ export function useRetryBillingRecovery() {
       message.success(t('msg.billing.retry.success'))
       qc.invalidateQueries({ queryKey: ['admin-billing-recovery'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.billing.retry.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.billing.retry.error')) },
   })
 }
 
@@ -99,7 +100,7 @@ export function useSaveUserRole() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-user-roles'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -137,7 +138,7 @@ export function useSavePrompt() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['admin-prompts'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -151,7 +152,7 @@ export function useDeletePrompt() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['admin-prompts'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }
 
@@ -166,7 +167,7 @@ export function useSavePromptTranslation() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['admin-prompt-translations', vars.promptkey] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -181,6 +182,6 @@ export function useDeletePromptTranslation() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['admin-prompt-translations', vars.promptkey] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }

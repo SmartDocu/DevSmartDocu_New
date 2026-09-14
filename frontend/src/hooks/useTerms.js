@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useAdminTerms() {
   return useQuery({
@@ -32,7 +33,7 @@ export function useSaveTerm() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -45,7 +46,7 @@ export function useDeleteTerm() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['terms-admin'] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }
 
@@ -58,7 +59,7 @@ export function useSaveTermTranslation() {
     onSuccess: (_data, { termkey }) => {
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
 }
 
@@ -72,6 +73,6 @@ export function useDeleteTermTranslation() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['term-translations', termkey] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.delete.error')) },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }

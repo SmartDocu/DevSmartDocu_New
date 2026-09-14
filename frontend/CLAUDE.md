@@ -112,25 +112,40 @@ TanStack Query v5의 mutation 내부 코드는 `await this.options.onError?.call
 
 ## 신규 화면 템플릿
 
-신규 마스터/관리 화면을 만들 때 **`frontend/src/pages/master/MasterDocsPage.jsx`** (frontend) 와 **`backend/app/routers/docs.py`** (backend) 를 표준으로 사용한다.
+**2026-09-09부터 신규 화면은 `frontend/src/pages/req/ReqDocListPage.jsx`("문서 관리" 화면)를 표준 템플릿으로 사용한다.** 아래 규칙은 이 화면에서 확정된 것 — 예전 `MasterDocsPage.jsx` 스타일(아이콘 없는 버튼, 테두리 없는 패널 등)로 새로 만들지 말 것. 구조(2열 목록+상세, `form-group`, 소제목 행)는 이어받되 시각 스타일이 아래처럼 바뀌었다.
 
 ### 화면 구조 규칙
 
 | 항목 | 규칙 |
 |------|------|
-| 레이아웃 | 2열 `flex:3` (목록) + `flex:7` (상세 폼) |
-| 신규 버튼 | 좌측 패널 제목행 우측 끝, `btn btn-primary` |
-| 저장·삭제 버튼 | 우측 패널 제목행 우측 끝, `btn btn-primary` / `btn btn-danger` |
-| 버튼 형식 | 아이콘 없이 텍스트만 (`btn` CSS 클래스, `icon-btn` 사용 금지) |
+| 레이아웃 | 2열 (목록 : 상세 = 대략 6:4, 화면 성격에 맞게 조정 가능) |
+| 영역 구분 | 목록/상세 패널 각각 `className="panel-section"` (흰 배경 + 테두리 + 12px 라운드 카드, index.css) — 제목 영역을 제외한 배경은 옅은 회색(`var(--body-background-color, #f5f5f5)`) |
+| 패널 헤더 구분선 | 카드 최상단 헤더 줄에 `margin:'-16px -18px 16px', padding:'16px 18px 12px', borderBottom:'1px solid var(--border-color, #e3e6eb)'`을 줘서 카드 폭 전체를 가로지르는 구분선을 만든다 (ReqDocListPage.jsx 참고) |
+| 페이지 제목(`page-title`) 앞 그래디언트 바 | `.page-title .gradient-bar`는 전역적으로 숨겨져 있다(`display:none`). 화면에 다시 넣고 싶으면 클래스에 기대지 말고 인라인 style로 직접 그린다(색/크기는 ReqDocListPage.jsx 참고) |
+| 목록 건수 · 매개변수 개수 등 카운트 표시 | 제목 옆 배지: `display:'inline-flex', alignItems:'center', lineHeight:1, font:"500 11px monospace", color:'#8d9199', background:'#f2efe9', borderRadius:6, padding:'5px 8px 4px'` — 문구는 `lbl.count.docs`/`lbl.count.items`(`{n}건`) 재사용, 새 도메인이면 같은 패턴으로 키 추가 |
+| 신규 버튼 | 좌측 패널 헤더 우측, `btn btn-primary` + 앞에 `<PlusOutlined style={{ marginRight: 6 }} />` |
+| 다른 화면으로 이동하는 버튼(문서 조회·챕터 조회 등) | `btn btn-secondary`, 텍스트 뒤에 `<ExportOutlined style={{ marginLeft: 6 }} />`. 이동은 `useOpenInTab`으로 앱 탭에 오픈 |
+| 저장·마감/마감해제·삭제 버튼 | **상세 패널 최상단 헤더**(제목 줄)에 모아 배치 — 순서는 [저장] [마감/마감해제 토글] `\|` [삭제(아이콘만)]. 하위 소제목(예: "매개변수 입력")에는 버튼을 두지 않고 제목 + 카운트 배지만 |
+| 저장 버튼 | `btn btn-primary` + `<SaveOutlined style={{ marginRight: 6 }} />`. `disabled`은 저장 mutation의 `isPending`뿐 아니라 **삭제 mutation의 `isPending`도 OR로 같이 걸 것**(삭제 진행 중 저장이 동시에 나가는 것 방지, 2026-09-11 확정) |
+| 마감류 토글 버튼 | `btn btn-secondary` + `<CheckOutlined/>`(마감) 또는 `<CloseOutlined/>`(마감 해제) |
+| 삭제 버튼 | `btn btn-danger`, 아이콘만(`<DeleteOutlined/>`), 38×38 정사각형(`padding:0, display:'flex', alignItems:'center', justifyContent:'center'`) — `.btn` 공용 클래스의 `height:38px`와 통일(2026-09-11, 이전엔 32×32였음) |
+| 조회(필터 실행) 버튼 | `.btn-query`(진한 파랑, 아이콘+텍스트 pill) — `.icon-btn`이나 아이콘만 있는 무테두리 버튼 금지 |
+| 필터의 프리셋/단일선택 그룹(기간 3개월·1년·전체, Doc/DocGroup 등) | 라디오·링크버튼 나열 금지. `.segmented`(트랙) + `.segmented-item`(pill, 선택 시 `.segmented-item.active`) 사용 |
+| 필터 라벨 뒤 콜론(`:`) | 붙이지 않는다 |
+| 검색/필터 입력창의 위치 | **목록 패널 안이 아니라 목록/상세 2패널 행 위쪽에 별도 `panel-section`(filter-bar)으로 분리할 것**(2026-09-14 확정, admin/ui-terms에서 "필터는 상단에 따로 두었으면 좋겠어"로 명시 요청). 단일 텍스트 검색이라도 `filter-item`+bold 라벨로 감쌀 것 — 목록 패널 헤더 바로 아래 인라인으로 두지 말 것 |
+| 버튼 색상 | 저장·신규 = 연한 파랑(`.btn-primary` → `--primary-btn`), 조회 = 진한 파랑(`.btn-query` → `--query-btn`), 그 외(마감/마감해제 등) = 흰색/회색(`.btn-secondary` → `--secondary-btn`), 삭제 = 흰 배경 + 빨간 텍스트(`.btn-danger` → `--danger-btn`) |
+| 버튼 형식 | AntD 아이콘 포함(위 항목 참고) — "아이콘 없이 텍스트만"이었던 예전 규칙은 폐기. 단 `icon-btn`(테두리 없는 순수 아이콘 버튼) 클래스는 여전히 쓰지 않는다 |
 | 다국어 | 모든 버튼·레이블·메시지·제목에 `t()` 사용. **`t()` 뒤에 `\|\| '한글기본값'` 절대 추가 금지** — 키 미등록 시 키 문자열이 그대로 노출되는 것이 의도된 동작 |
 | 언어 리렌더 | 컴포넌트 최상단 `useLangStore((s) => s.translations)` 구독 |
 | 편집 권한 | 저장·삭제는 `isEditYn` 조건부 렌더. **반드시 `user?.editbuttonyn === 'Y'`** 로 판단 — `editbuttonyn`은 항상 문자열 `"Y"` 또는 `"N"`이므로 `!!` truthy 체크 사용 금지 (`"N"`도 truthy) |
-| 폼 레이아웃 | `form-group` 클래스 사용. 라벨은 위 줄(`display:block` — CSS에 전역 적용됨), 입력은 아래 줄 |
+| 폼 레이아웃 | `form-group` 클래스 사용(라벨은 위 줄, 입력은 아래 줄). 옆으로 나란히 두는 `form-group-left`는 신규 화면에서 지양 |
+| 입력창 높이 | 최소 36~38px (기존 24~25px는 지양) |
 | 필수 필드 표시 | 라벨 앞에 `<span style={{ color: 'red', marginRight: 2 }}>*</span>` 삽입 |
 | description 필드 | `<textarea rows={3} style={{ resize: 'vertical' }}>` (기본 3줄, 세로 리사이즈 가능) |
 | number 입력 | `<input type="number">` |
 | 소제목 행 | 버튼 유무와 무관하게 높이 통일 — 항상 아래 구조 사용. 버튼 없는 경우 `<div />` placeholder 삽입 |
-| 패널 스크롤 | 좌·우측 패널 모두 `overflowY: 'auto'`, `maxHeight: 'calc(100vh - 224px)'` 적용해 브라우저 스크롤 방지 |
+| 패널 스크롤 | **패널 전체(헤더 포함)가 아니라 헤더 아래 본문 영역만 스크롤될 것(2026-09-14 확정)**. 패널 자체는 고정 `height`(또는 `maxHeight`) + `display:'flex', flexDirection:'column', overflow:'hidden'`로 감싸고, 헤더 div에 `flexShrink: 0`을 추가, 헤더 바로 아래에 본문 전체를 감싸는 `<div style={{ flex: 1, overflowY: 'auto' }}>...</div>` 래퍼를 하나 더 둔다 — 상세/폼/번역표처럼 세로로 길어질 수 있는 콘텐츠가 저장·삭제 버튼이 있는 헤더까지 같이 밀어 올리지 않도록 하기 위함(사용자가 admin/sample-prompts에서 "헤더 제외 하단만 스크롤"을 명시 요청, 이후 기존에 작업했던 화면 전체(35개 파일, 76개 패널)에 일괄 적용함). **주의**: `AppLayout.jsx`의 콘텐츠 wrapper에 있던 12px 상단 padding을 제거했으므로(2026-09-09) 224px는 더 이상 정확한 값이 아닐 수 있다 — 화면 하단이 잘리거나 남는 것 같으면 재계산할 것 |
+| 목록이 길어 페이지네이션이 필요한 경우 | **위치는 항상 중앙 정렬(2026-09-14 확정, 예외 없음)**. 직접 만든 `<Pagination>`(클라이언트 사이드 페이징, billing-history/admin·user-role/admin·products/admin·popups에서 쓴 패턴)은 감싸는 div에 `display:'flex', justifyContent:'center'`. AntD `<Table>` 내장 페이지네이션을 쓸 때는 `pagination={{ ..., position: ['bottomCenter'] }}`로 지정(기본값은 우측 정렬이라 반드시 명시할 것). 10건 넘을 때만 표시하는 클라이언트 사이드 페이징은 `marginTop:'auto'`로 패널 하단에 고정하는 패턴도 같이 적용(패널을 `display:'flex',flexDirection:'column'` 고정 높이로 만들고 테이블은 자연 높이, 페이지네이션만 하단 고정 — 목록 건수에 따라 페이지네이션 위치가 들쭉날쭉해지는 문제 방지) |
 
 #### 소제목 행 표준 패턴
 
@@ -138,7 +153,9 @@ TanStack Query v5의 mutation 내부 코드는 `await this.options.onError?.call
 ```jsx
 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
   <h3 style={{ margin: 0 }}>{t('ttl.xxx')}</h3>
-  <button className="btn btn-primary" type="button" onClick={handleNew}>{t('btn.new')}</button>
+  <button className="btn btn-primary" type="button" onClick={handleNew}>
+    <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+  </button>
 </div>
 ```
 
@@ -150,21 +167,34 @@ TanStack Query v5의 mutation 내부 코드는 `await this.options.onError?.call
 </div>
 ```
 
-#### 2열 패널 스크롤 표준 패턴
+#### 2열 패널(카드) 표준 패턴
 
 ```jsx
 {/* 좌측 패널 */}
-<div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-  ...
+<div className="panel-section" style={{ flex: 6, height: 'calc(100vh - 224px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+  <div style={{
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, minHeight: 32,
+    margin: '-16px -18px 16px', padding: '16px 18px 12px',
+    borderBottom: '1px solid var(--border-color, #e3e6eb)',
+  }}>
+    <h3 style={{ margin: 0 }}>{t('ttl.xxx')}</h3>
+    <div />
+  </div>
+  <div style={{ flex: 1, overflowY: 'auto' }}>
+    ...
+  </div>
 </div>
 
 {/* 우측 패널 */}
-<div style={{ flex: 7, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-  ...
+<div className="panel-section" style={{ flex: 4, height: 'calc(100vh - 224px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+  <div style={{ ...헤더... }}>...</div>
+  <div style={{ flex: 1, overflowY: 'auto' }}>
+    ...
+  </div>
 </div>
 ```
 
-> **224px 산출 근거**: Header(60) + Content marginTop(104) + inner padding-top(12) + page-title 높이(40) + page-title margin-bottom(20) + 하단 padding(48)
+> **224px 산출 근거(참고용, 위 "패널 스크롤" 주의사항 참고)**: Header(60) + Content marginTop(104) + page-title 높이(40) + page-title margin-bottom(20)
 
 ### 다국어 키 네이밍 규칙
 

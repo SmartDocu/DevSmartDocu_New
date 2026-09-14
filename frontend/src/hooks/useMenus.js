@@ -3,6 +3,7 @@ import { App } from 'antd'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { t } from '@/stores/langStore'
+import { getErrorMessage } from '@/utils/apiError'
 
 export function useMenus(appcd = null) {
   return useQuery({
@@ -35,7 +36,7 @@ export function useToggleFavorite() {
       qc.invalidateQueries({ queryKey: ['favorites'] })
     },
     onError: (err) => {
-      message.error(t(err.response?.data?.detail) || t('msg.favorite.error'))
+      message.error(getErrorMessage(err, 'msg.favorite.error'))
     },
   })
 }
@@ -85,7 +86,10 @@ export function useSaveMenu() {
       qc.invalidateQueries({ queryKey: ['menus-admin'] })
       qc.invalidateQueries({ queryKey: ['menus'] })
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+    },
   })
 }
 
@@ -99,7 +103,10 @@ export function useDeleteMenu() {
       qc.invalidateQueries({ queryKey: ['menus-admin'] })
       qc.invalidateQueries({ queryKey: ['menus'] })
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+    },
   })
 }
 
@@ -112,7 +119,10 @@ export function useSaveTranslation() {
     onSuccess: (_data, { menucd }) => {
       qc.invalidateQueries({ queryKey: ['menu-translations', menucd] })
     },
-    onError: (err) => { message.error(t(err.response?.data?.detail) || t('msg.save.error')) },
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+    },
   })
 }
 
@@ -126,6 +136,9 @@ export function useDeleteTranslation() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['menu-translations', menucd] })
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+    },
   })
 }

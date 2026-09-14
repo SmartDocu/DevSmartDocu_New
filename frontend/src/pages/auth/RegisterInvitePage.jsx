@@ -4,6 +4,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useInviteInfo, useRegisterInvite } from '@/hooks/useAuth'
 import { useLanguages, useTranslations } from '@/hooks/useI18n'
 import { useConfigs } from '@/hooks/useConfigs'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function RegisterInvitePage() {
   useLangStore((s) => s.translations)
@@ -84,7 +85,7 @@ export default function RegisterInvitePage() {
       alert(t('msg.register.success'))
       navigate('/')
     } catch (err) {
-      alert(t(err.response?.data?.detail) || t('msg.register.failed'))
+      alert(getErrorMessage(err, 'msg.register.failed'))
     } finally {
       setSaving(false)
     }

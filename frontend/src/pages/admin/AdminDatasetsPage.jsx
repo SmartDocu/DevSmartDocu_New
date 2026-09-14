@@ -1,4 +1,6 @@
 import { useLocation } from 'react-router-dom'
+import { Select } from 'antd'
+import { CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import { useDocs, useProjects } from '@/hooks/useDocs'
@@ -45,61 +47,86 @@ export default function AdminDatasetsPage() {
   }
 
   return (
-    <div>
-      <div className="page-title">
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 171px)', overflow: 'hidden' }}>
+      {/* 페이지 타이틀 */}
+      <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}</div>
         </div>
       </div>
 
-      <div style={{ height: 'calc(100vh - 224px)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ marginBottom: 12, padding: '8px 14px', background: '#f0f5ff', borderRadius: 4, fontSize: 13, color: '#555', flexShrink: 0 }}>
+      {/* 안내 */}
+      <div className="panel-section" style={{ flexShrink: 0, marginBottom: 16, background: '#f0f5ff', color: '#555', fontSize: 13, padding: '13px 18px' }}>
         {t('inf.dataset.scope')}
       </div>
 
-      <div style={{ display: 'flex', gap: 32, marginBottom: 20, alignItems: 'center', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label htmlFor="ds-projectid" style={{ whiteSpace: 'nowrap' }}>
-            <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:
+      {/* 필터 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', gap: 24, flexShrink: 0, marginBottom: 16 }}>
+        <div className="filter-item">
+          <label htmlFor="ds-projectid" style={{ fontWeight: 'bold' }}>
+            <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}
           </label>
-          <select id="ds-projectid" value={projectId} onChange={(e) => handleProjectChange(e.target.value)} style={{ minWidth: 200, minHeight: 25 }}>
-            <option value="">{t('msg.select.project')}</option>
-            {projects.map((p) => (
-              <option key={p.projectid} value={p.projectid}>{projectLabel(p)}</option>
-            ))}
-          </select>
+          <Select
+            id="ds-projectid"
+            value={projectId || undefined}
+            onChange={(val) => handleProjectChange(val || '')}
+            allowClear
+            style={{ width: 240 }}
+            placeholder={t('msg.select.project')}
+            options={projects.map((p) => ({ value: String(p.projectid), label: projectLabel(p) }))}
+          />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label htmlFor="ds-docid" style={{ whiteSpace: 'nowrap' }}>{t('lbl.docnm')}:</label>
-          <select id="ds-docid" value={docId} onChange={(e) => handleDocChange(e.target.value)} disabled={!projectId} style={{ minWidth: 200, minHeight: 25 }}>
-            <option value="">{t('msg.select.placeholder')}</option>
-            {projectDocs.map((d) => (
-              <option key={d.docid} value={d.docid}>{d.docnm}</option>
-            ))}
-          </select>
+        <div className="filter-item">
+          <label htmlFor="ds-docid" style={{ fontWeight: 'bold' }}>{t('lbl.docnm')}</label>
+          <Select
+            id="ds-docid"
+            value={docId || undefined}
+            onChange={(val) => handleDocChange(val || '')}
+            allowClear
+            disabled={!projectId}
+            style={{ width: 240 }}
+            placeholder={t('msg.select.placeholder')}
+            options={projectDocs.map((d) => ({ value: String(d.docid), label: d.docnm }))}
+          />
         </div>
       </div>
 
       {!projectId ? (
         <div style={{ padding: 24, color: '#888' }}>{t('msg.select.project')}</div>
       ) : (
-      <div style={{ display: 'flex', gap: 20, paddingRight: 10, flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', gap: 24, minHeight: 0 }}>
 
         {/* 좌측: 목록 */}
-        <div style={{ flex: 3, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', items.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
-            <table>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <table className="table table-bordered table-sm">
               <thead>
                 <tr>
                   <th>{t('lbl.datasourcecd_lbl')}</th>
                   <th>{t('lbl.connnm_lbl')}</th>
                   <th>{t('lbl.datanm_lbl')}</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>{t('thd.doc_use_yn')}</th>
+                  <th style={{ width: 76, textAlign: 'center', whiteSpace: 'pre-line' }}>{t('thd.doc_use_yn')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,7 +147,7 @@ export default function AdminDatasetsPage() {
                       <td>{item.datasource_label}</td>
                       <td>{item.connnm}</td>
                       <td>{item.datanm}</td>
-                      <td style={{ textAlign: 'center' }}>{item.doc_use_yn ? '✔' : ''}</td>
+                      <td style={{ textAlign: 'center' }}>{item.doc_use_yn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.doc_use_yn')} />}</td>
                     </tr>
                   ))
                 )}
@@ -130,8 +157,12 @@ export default function AdminDatasetsPage() {
         </div>
 
         {/* 우측: 상세 */}
-        <div style={{ flex: 4, padding: '0 10px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div />
           </div>
@@ -163,7 +194,7 @@ export default function AdminDatasetsPage() {
               </div>
               <div className="form-group">
                 <label>{t('lbl.useyn_lbl')}</label>
-                <span style={{ padding: '6px 4px' }}>{selectedItem.useyn ? '✔' : '-'}</span>
+                <span style={{ padding: '6px 4px' }}>{selectedItem.useyn ? <CheckCircleFilled style={{ color: '#2f7d4f' }} /> : '-'}</span>
               </div>
 
               {/* datasourcecd별 상세 */}
@@ -248,7 +279,7 @@ export default function AdminDatasetsPage() {
                     <div style={{ marginTop: 16 }}>
                       <h4 style={{ margin: '0 0 8px 0' }}>{t('ttl.datacols')}</h4>
                       <div>
-                        <table>
+                        <table className="table table-bordered table-sm">
                           <thead>
                             <tr>
                               <th>{t('thd.querycolnm')}</th>
@@ -264,7 +295,7 @@ export default function AdminDatasetsPage() {
                                 <td>{col.querycolnm}</td>
                                 <td>{col.dispcolnm}</td>
                                 <td>{col.datatypecd}</td>
-                                <td style={{ textAlign: 'center' }}>{col.measureyn ? '✔' : ''}</td>
+                                <td style={{ textAlign: 'center' }}>{col.measureyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} />}</td>
                                 <td style={{ textAlign: 'center' }}>{col.orderno}</td>
                               </tr>
                             ))}
@@ -284,7 +315,6 @@ export default function AdminDatasetsPage() {
 
       </div>
       )}
-      </div>
     </div>
   )
 }

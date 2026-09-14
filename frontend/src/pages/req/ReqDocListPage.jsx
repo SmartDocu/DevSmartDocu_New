@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from 'react'
 import { App, DatePicker, Spin } from 'antd'
+import { PlusOutlined, ExportOutlined, SaveOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import apiClient from '@/api/client'
 import { useGendocs, useDataparams, useCreateGendoc, useDeleteGendoc, useUpdateGendocParams, useCloseGendoc, useOpenGendoc } from '@/hooks/useGendocs'
@@ -12,6 +13,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useTabStore } from '@/stores/tabStore'
 import { useReqStore } from '@/stores/reqStore'
+import { useOpenInTab } from '@/hooks/useOpenInTab'
+import { getErrorMessage } from '@/utils/apiError'
 
 const { RangePicker } = DatePicker
 
@@ -26,7 +29,12 @@ function initDates() {
   const e = sessionStorage.getItem(SS_END)
   if (s && e) return [dayjs(s), dayjs(e)]
   const today = dayjs()
-  return [today.subtract(1, 'month'), today]
+  return [today.subtract(3, 'month'), today]
+}
+
+function initRangePreset() {
+  // 이전에 저장된 조회 기간이 없는 첫 진입/복귀 상태에서만 "3개월"을 기본 선택으로 표시
+  return (sessionStorage.getItem(SS_START) && sessionStorage.getItem(SS_END)) ? null : '3m'
 }
 
 /* ──────────────────────────────────────────────────────
@@ -156,10 +164,12 @@ export default function ReqDocListPage() {
   const { user } = useAuthStore()
   const tabs = useTabStore((s) => s.tabs)
   const { activeGendocuid, setActiveGendocuid } = useReqStore()
+  const openInTab = useOpenInTab()
   const editbuttonyn = user?.editbuttonyn === 'Y'
 
   const today = dayjs()
   const [dates,        setDates]        = useState(initDates)
+  const [rangePreset,  setRangePreset]  = useState(initRangePreset)  // null | '3m' | '1y' | 'all'
   const [appliedDates, setAppliedDates] = useState(initDates)
   const [searchBy,     setSearchBy]     = useState(() => sessionStorage.getItem(SS_SEARCH_BY) || 'Doc')
   const [docgroupid,   setDocgroupid]   = useState('')
@@ -247,21 +257,28 @@ export default function ReqDocListPage() {
     sessionStorage.setItem(SS_GENDOCUID, row.gendocuid)
   }
 
-  // 사용자 클릭 — UI 업데이트 + 관련 탭 동기화
-  const handleRowClick = (row) => {
-    selectRowUi(row)
-    if (row.gendocuid === activeGendocuid) return
+  // activeGendocuid(전역 — 문서 미리보기/챕터 목록 화면이 참조)를 targetGendocuid로 맞춘 뒤 onDone 실행.
+  // 관련 탭(챕터 목록/챕터 항목)이 이미 열려 있으면 그 탭이 갑자기 다른 문서로 바뀌는 걸 막기 위해 먼저 확인받는다.
+  const syncActiveGendocuid = (targetGendocuid, onDone) => {
+    if (targetGendocuid === activeGendocuid) { onDone?.(); return }
     const hasRelatedTabs = tabs.some(
       (tab) => tab.path?.startsWith('req/chapters-read') || tab.path?.startsWith('req/chapter-objects')
     )
     if (hasRelatedTabs) {
       modal.confirm({
         content: t('msg.confirm.gendoc.change'),
-        onOk: () => setActiveGendocuid(row.gendocuid),
+        onOk: () => { setActiveGendocuid(targetGendocuid); onDone?.() },
       })
     } else {
-      setActiveGendocuid(row.gendocuid)
+      setActiveGendocuid(targetGendocuid)
+      onDone?.()
     }
+  }
+
+  // 사용자 클릭 — UI 업데이트 + 관련 탭 동기화
+  const handleRowClick = (row) => {
+    selectRowUi(row)
+    syncActiveGendocuid(row.gendocuid)
   }
 
   // gendocs 로드 후 저장된 행 복원 (store 동기화 없음)
@@ -347,7 +364,7 @@ export default function ReqDocListPage() {
         doCreate()
       } catch (e) {
         hideLoading()
-        message.error(t(e.response?.data?.detail) || t('msg.server.error'))
+        message.error(getErrorMessage(e, 'msg.server.error'))
       }
     }
   }
@@ -393,6 +410,18 @@ export default function ReqDocListPage() {
         })
       },
     })
+  }
+
+  // 문서 조회 — 좌측에서 선택한 문서를 활성 문서로 맞춘 뒤 문서 미리보기 화면을 탭으로 오픈
+  const handleViewDoc = () => {
+    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
+    syncActiveGendocuid(selectedGendocuid, () => openInTab('req/doc-read', '', t('btn.doc.view')))
+  }
+
+  // 챕터 조회 — 좌측에서 선택한 문서를 활성 문서로 맞춘 뒤 챕터 목록 화면을 탭으로 오픈
+  const handleViewChapters = () => {
+    if (!selectedGendocuid) { message.warning(t('msg.doc.select')); return }
+    syncActiveGendocuid(selectedGendocuid, () => openInTab('req/chapters-read', '', t('btn.chapter.view')))
   }
 
   // 세션 저장
@@ -447,38 +476,60 @@ export default function ReqDocListPage() {
       {/* 페이지 타이틀 */}
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
-          <div>{t('lbl.doc')} - {docnm_base || t('msg.doc.not_selected')}</div>
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
+          <div>{t('ttl.doc.manage')} - {docnm_base || t('msg.doc.not_selected')}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
         </div>
       </div>
 
       {/* 날짜 필터 */}
-      <div className="page-title" style={{ marginBottom: 20 }}>
-        <div className="filter-item" style={{ gap: 12, flexWrap: 'wrap' }}>
-          <label style={{ fontWeight: 'bold', marginRight: 35 }}>{t('lbl.create.period')}:</label>
-          <RangePicker value={dates} onChange={setDates} />
-          <button className="btn btn-link" onClick={() => setDates([today.subtract(3, 'month'), today])}>{t('btn.3months')}</button>
-          <button className="btn btn-link" onClick={() => setDates([today.subtract(12, 'month'), today])}>{t('btn.1year')}</button>
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <div className="filter-item" style={{ gap: 12, flexWrap: 'wrap', width: '100%' }}>
+          <label style={{ fontWeight: 'bold', marginRight: 35 }}>{t('lbl.create.period')}</label>
+          <RangePicker
+            value={dates}
+            onChange={(v) => { setDates(v); setRangePreset(null) }}
+          />
+          <div className="segmented" style={{ height: 32 }}>
+            {[
+              { key: '3m',  label: t('btn.3months'), range: () => [today.subtract(3, 'month'), today] },
+              { key: '1y',  label: t('btn.1year'),    range: () => [today.subtract(12, 'month'), today] },
+              { key: 'all', label: t('btn.all'),      range: () => [today.subtract(10, 'year'), today] },
+            ].map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                className={`segmented-item${rangePreset === r.key ? ' active' : ''}`}
+                style={{ padding: '0 14px', display: 'flex', alignItems: 'center' }}
+                onClick={() => { setDates(r.range()); setRangePreset(r.key) }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
           <span style={{ color: '#d9d9d9', margin: '0 4px' }}>|</span>
-          <label style={{ fontWeight: 'bold' }}>{t('lbl.search.by')}:</label>
-          {['Doc', 'DocGroup'].map((v) => (
-            <label key={v} style={{ fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <input
-                type="radio"
-                name="searchBy"
-                value={v}
-                checked={searchBy === v}
-                onChange={() => {
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.search.by')}</label>
+          <div className="segmented" style={{ height: 32 }}>
+            {['Doc', 'DocGroup'].map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={`segmented-item${searchBy === v ? ' active' : ''}`}
+                style={{ padding: '0 14px', display: 'flex', alignItems: 'center' }}
+                onClick={() => {
                   setSearchBy(v)
                   setDocgroupid('')
                   sessionStorage.setItem(SS_SEARCH_BY, v)
                 }}
-              />
-              {v}
-            </label>
-          ))}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           {searchBy === 'DocGroup' && (
             <select
               value={docgroupid}
@@ -493,51 +544,71 @@ export default function ReqDocListPage() {
           )}
           <button
             type="button"
-            className="icon-btn"
+            className="btn-query"
+            style={{ marginLeft: 'auto', height: 32 }}
             onClick={() => {
               if (searchBy === 'DocGroup' && !docgroupid) { message.warning(t('msg.select')); return }
               setAppliedDates(dates)
             }}
-            title={t('btn.lookup')}
           >
-            <img src="/icons/search.svg" className="icon-img config-icon" alt={t('btn.lookup')} />
+            <img src="/icons/search.svg" className="icon-img-small icon-img-white" alt="" />
+            {t('btn.lookup')}
           </button>
         </div>
       </div>
 
       {/* 2패널 */}
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* 왼쪽: 문서 목록 */}
-        <div style={{ flex: 6, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.doc.list')}</h3>
-            {editbuttonyn && (
-              <button className="btn btn-primary" type="button" onClick={handleNew}>
-                {t('btn.new')}
+        <div className="panel-section" style={{ flex: 6, display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.doc.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', gendocs.length)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {editbuttonyn && (
+                <button className="btn btn-primary" type="button" onClick={handleNew}>
+                  <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+                </button>
+              )}
+              <button className="btn btn-secondary" type="button" onClick={handleViewDoc}>
+                {t('btn.doc.view')}<ExportOutlined style={{ marginLeft: 6 }} />
               </button>
-            )}
+              <button className="btn btn-secondary" type="button" onClick={handleViewChapters}>
+                {t('btn.chapter.view')}<ExportOutlined style={{ marginLeft: 6 }} />
+              </button>
+            </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div style={{ overflowX: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
-                  {searchBy === 'DocGroup' && <th style={{ width: '12%' }}>{t('lbl.docnm')}</th>}
-                  <th style={{ width: '18%' }}>{t('thd.gendocnm')}</th>
-                  <th style={{ width: '15%' }}>{t('thd.params')}</th>
-                  <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.createuser')}</th>
-                  <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.updateuser')}</th>
-                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.createfiledts')}</th>
-                  <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.updatefiledts')}</th>
-                  <th style={{ width:  '5%', textAlign: 'center' }}>{t('thd.closeyn')}</th>
-                  <th style={{ width:  '7%', textAlign: 'center' }}>{t('thd.closeuser')}</th>
+                  {searchBy === 'DocGroup' && <th style={{ width: '13%' }}>{t('lbl.docnm')}</th>}
+                  <th style={{ width: '27%' }}>{t('thd.gendocnm')}</th>
+                  <th style={{ width: '22%' }}>{t('thd.params')}</th>
+                  <th style={{ width: '13%', textAlign: 'center' }}>{t('thd.createuser')}</th>
+                  <th style={{ width: '17%', textAlign: 'center' }}>{t('thd.createfiledts')}</th>
+                  <th style={{ width: '8%', textAlign: 'center' }}>{t('thd.closeyn')}</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={searchBy === 'DocGroup' ? 9 : 8} style={{ textAlign: 'center', padding: 16 }}><Spin /></td></tr>
+                  <tr><td colSpan={searchBy === 'DocGroup' ? 6 : 5} style={{ textAlign: 'center', padding: 16 }}><Spin /></td></tr>
                 ) : gendocs.length === 0 ? (
-                  <tr><td colSpan={searchBy === 'DocGroup' ? 9 : 8} style={{ textAlign: 'center', padding: 16 }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={searchBy === 'DocGroup' ? 6 : 5} style={{ textAlign: 'center', padding: 16 }}>{t('msg.no.data')}</td></tr>
                 ) : gendocs.map((row) => (
                   <tr
                     key={row.gendocuid}
@@ -548,30 +619,79 @@ export default function ReqDocListPage() {
                     {searchBy === 'DocGroup' && <td>{row.docnm || ''}</td>}
                     <td>{row.gendocnm}</td>
                     <td>{row.finalnm_joined || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.createuser  || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.updateuser  || ''}</td>
+                    <td style={{ textAlign: 'center' }}>{row.createuser || ''}</td>
                     <td style={{ textAlign: 'center' }}>{row.createfiledts || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.updatefiledts || ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.closeyn ? '√' : ''}</td>
-                    <td style={{ textAlign: 'center' }}>{row.closeuser  || ''}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {row.closeyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.closeyn')} />}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 오른쪽: 문서 구성 + 매개변수 */}
-        <div style={{ flex: 4, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100vh - 224px)' }}>
 
           {/* 문서 구성 소제목 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.doc.config')}</h3>
-            <div />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {editbuttonyn && (
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!!editBlockedReason || deleteGendoc.isPending}
+                  title={editBlockedReason ? t(editBlockedReason) : undefined}
+                >
+                  <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+                </button>
+              )}
+              {editbuttonyn && selectedGendocuid && (
+                selectedGendocRow?.closeyn ? (
+                  <button className="btn btn-secondary" type="button" onClick={handleOpen} disabled={openGendoc.isPending}>
+                    <CloseOutlined style={{ marginRight: 6 }} />{t('btn.doc.open')}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={handleClose}
+                    disabled={closeGendoc.isPending || !selectedGendocRow?.createfiledts}
+                    title={!selectedGendocRow?.createfiledts ? t('msg.gendoc.close.needs.file') : undefined}
+                  >
+                    <CheckOutlined style={{ marginRight: 6 }} />{t('btn.doc.close')}
+                  </button>
+                )
+              )}
+              {editbuttonyn && selectedGendocuid && (
+                <>
+                  <span style={{ color: '#d9d9d9', margin: '0 4px' }}>|</span>
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteGendoc.isPending || selectedGendocRow?.closeyn}
+                    title={selectedGendocRow?.closeyn ? t('msg.gendoc.closed.readonly') : t('btn.delete')}
+                    style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
-          <div className="form-group-left">
-            <label style={{ width: 60 }}>{t('lbl.docnm')}</label>
+          <div className="form-group">
+            <label>{t('lbl.docnm')}</label>
             <input
               id="docnm"
               value={docnmInput}
@@ -579,7 +699,7 @@ export default function ReqDocListPage() {
               disabled={!canEditGendoc}
               title={editbuttonyn && editBlockedReason ? t(editBlockedReason) : undefined}
               placeholder={t('msg.ph.gendocnm')}
-              style={{ height: 25 }}
+              style={{ height: 38 }}
             />
           </div>
 
@@ -594,53 +714,17 @@ export default function ReqDocListPage() {
 
           {/* 매개변수 입력 소제목 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.param.input')}</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {editbuttonyn && (
-                <>
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    onClick={handleSave}
-                    disabled={!!editBlockedReason}
-                    title={editBlockedReason ? t(editBlockedReason) : undefined}
-                  >
-                    {t('btn.save')}
-                  </button>
-                  {selectedGendocuid && (
-                    <button
-                      className="btn btn-danger"
-                      type="button"
-                      onClick={handleDelete}
-                      disabled={deleteGendoc.isPending || selectedGendocRow?.closeyn}
-                      title={selectedGendocRow?.closeyn ? t('msg.gendoc.closed.readonly') : undefined}
-                    >
-                      {t('btn.delete')}
-                    </button>
-                  )}
-                </>
-              )}
-              {editbuttonyn && selectedGendocuid && (
-                <>
-                  <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
-                  {selectedGendocRow?.closeyn ? (
-                    <button className="btn btn-secondary" type="button" onClick={handleOpen} disabled={openGendoc.isPending}>
-                      {t('btn.doc.open')}
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-secondary"
-                      type="button"
-                      onClick={handleClose}
-                      disabled={closeGendoc.isPending || !selectedGendocRow?.createfiledts}
-                      title={!selectedGendocRow?.createfiledts ? t('msg.gendoc.close.needs.file') : undefined}
-                    >
-                      {t('btn.doc.close')}
-                    </button>
-                  )}
-                </>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.param.input')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.items').replace('{n}', displayParams.length)}
+              </span>
             </div>
+            <div />
           </div>
 
           <table className="table table-bordered table-sm" style={{ marginBottom: 12 }}>
@@ -702,6 +786,7 @@ export default function ReqDocListPage() {
             </tbody>
           </table>
 
+          </div>
         </div>
       </div>
     </div>

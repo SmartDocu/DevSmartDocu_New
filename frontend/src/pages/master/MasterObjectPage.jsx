@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
-import { App } from 'antd'
+import { App, Select } from 'antd'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useChapters } from '@/hooks/useChapters'
 import { useObjects, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
@@ -169,38 +170,54 @@ export default function MasterObjectPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
-          <div>{menuNm}</div>
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
+          <div>{menuNm}{user?.docnm ? ` - ${user.docnm}` : ''}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
-        {/* 좌측: 챕터 목록 */}
-        <div style={{ flex: 2, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.chapter.list')}</h3>
-            <div />
-          </div>
-          <div className="chapter-card-container" style={{ flexDirection: 'column' }}>
-            {chapters.map((ch) => (
-              <div
-                key={ch.chapteruid}
-                className={`chapter-card${selectedChapteruid === ch.chapteruid ? ' selected' : ''}`}
-                onClick={() => selectChapter(ch)}
-              >
-                <div className="card-title">{ch.chapternm}</div>
-              </div>
-            ))}
-          </div>
+      {/* 챕터 선택 필터 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <div className="filter-item">
+          <label style={{ fontWeight: 'bold' }}>{t('thd.chapternm')}</label>
+          <Select
+            style={{ width: 240 }}
+            value={selectedChapteruid}
+            onChange={(uid) => selectChapter(chapters.find((c) => c.chapteruid === uid))}
+            options={chapters.map((c) => ({ value: c.chapteruid, label: c.chapternm }))}
+            placeholder={t('msg.select.chapter')}
+          />
         </div>
+      </div>
 
-        {/* 중간: 항목 목록 */}
-        <div style={{ flex: 5, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
-            <div />
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+        {/* 좌측: 항목 목록 */}
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.items').replace('{n}', objects.length)}
+              </span>
+            </div>
+            {isEditYn && (
+              <button className="btn btn-primary" type="button" onClick={handleNew}>
+                <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
+              </button>
+            )}
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -234,45 +251,55 @@ export default function MasterObjectPage() {
                       <td style={{ textAlign: 'center' }}>{typeMap[obj.objecttypecd] || obj.objecttypecd || ''}</td>
                       <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{obj.objectdesc || ''}</td>
                       <td style={{ textAlign: 'center' }}>{obj.objectsettingyn ? t('cod.useyn_y') : t('cod.useyn_n')}</td>
-                      <td style={{ textAlign: 'center' }}>{obj.useyn ? '✔' : ''}</td>
+                      <td style={{ textAlign: 'center' }}>{obj.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 항목 상세 */}
-        <div style={{ flex: 3, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 264px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {selectedObj && (
                 <>
-                  <button className="btn btn-primary" type="button" onClick={handleConfig}>
-                    {t('btn.objectconfig')}
+                  <button className="btn btn-secondary" type="button" onClick={handleConfig}>
+                    {t('btn.objectconfig')}<ExportOutlined style={{ marginLeft: 6 }} />
                   </button>
                   <span style={{ color: '#d9d9d9', margin: '0 12px' }}>|</span>
                 </>
               )}
               {isEditYn && (
                 <>
-                  <button className="btn btn-primary" type="button" onClick={handleNew}>
-                    {t('btn.new')}
-                  </button>
-                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveObject.isPending}>
-                    {t('btn.save')}
+                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveObject.isPending || deleteObject.isPending}>
+                    <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                   </button>
                   {selectedObj && (
-                    <button className="btn btn-danger" type="button" onClick={handleDelete} disabled={deleteObject.isPending}>
-                      {t('btn.delete')}
+                    <button
+                      className="btn btn-danger"
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={deleteObject.isPending}
+                      title={t('btn.delete')}
+                      style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <DeleteOutlined />
                     </button>
                   )}
                 </>
               )}
             </div>
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           <div className="form-group">
             <label>{!form.objectuid && <span style={{ color: 'red', marginRight: 2 }}>*</span>}{t('lbl.objectnm_lbl')}:</label>
@@ -283,8 +310,7 @@ export default function MasterObjectPage() {
                 type="text"
                 value={form.objectnm}
                 onChange={(e) => setForm((f) => ({ ...f, objectnm: e.target.value }))}
-                // placeholder="항목명 입력 (예: Ch02_원형차트)"
-                style={{ width: '100%' }}
+                style={{ height: 38 }}
               />
             )}
           </div>
@@ -344,10 +370,11 @@ export default function MasterObjectPage() {
               type="number"
               value={form.orderno}
               onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
-              style={{ width: 80 }}
+              style={{ width: 80, height: 38 }}
             />
           </div>
 
+          </div>
         </div>
       </div>
     </div>

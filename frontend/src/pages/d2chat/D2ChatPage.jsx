@@ -9,6 +9,7 @@ import chatbotBot from '@/assets/icons/chatbot_bot.svg'
 import chatbotHuman from '@/assets/icons/chatbot_human.svg'
 import '../d2shared/d2common.css'
 import './d2chat.css'
+import { getErrorMessage, getErrorDetail } from '@/utils/apiError'
 
 const ASK_TIMEOUT = { timeout: 180000 }
 
@@ -50,7 +51,7 @@ const EXAMPLE_QUESTION_DEFS = [
 
 export default function D2ChatPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const user = useAuthStore((s) => s.user)
   const EXAMPLE_QUESTIONS = EXAMPLE_QUESTION_DEFS.map((d) => ({ label: t(d.labelKey), question: t(d.questionKey) }))
 
@@ -214,7 +215,7 @@ export default function D2ChatPage() {
       }
       fetchFavorites()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2chat.fav_error'))
+      message.error(getErrorMessage(e, 'msg.d2chat.fav_error'))
     }
   }
 
@@ -223,7 +224,7 @@ export default function D2ChatPage() {
       await apiClient.delete(`/d2chat/favorite/qa/${qauid}`)
       fetchFavorites()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2chat.fav_delete_error'))
+      message.error(getErrorMessage(e, 'msg.d2chat.fav_delete_error'))
     }
   }
 
@@ -263,7 +264,7 @@ export default function D2ChatPage() {
       setShowAutoTest(false)
       setViewMode('chat')
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2chat.continue_error'))
+      message.error(getErrorMessage(e, 'msg.d2chat.continue_error'))
     }
   }
 
@@ -320,7 +321,7 @@ export default function D2ChatPage() {
         addMessage('assistant', t('msg.d2chat.error_prefix') + (data.error || t('msg.d2chat.unknown_error')))
       }
     } catch (error) {
-      addMessage('assistant', t('msg.d2chat.chat_error_prefix') + (t(error.response?.data?.detail) || error.message))
+      addMessage('assistant', t('msg.d2chat.chat_error_prefix') + (getErrorDetail(error) || error.message))
     } finally {
       setIsLoading(false)
     }
@@ -365,16 +366,14 @@ export default function D2ChatPage() {
     setMenuSection(section)
   }
 
-  const handleSidebarDelete = async (e, id) => {
-    e.stopPropagation()
-    setMenuOpenId(null)
+  const performSidebarDelete = async (id, section) => {
     try {
-      if (menuSection === 'favorites') {
+      if (section === 'favorites') {
         await handleDeleteFavorite(id)
-      } else if (menuSection === 'sent') {
+      } else if (section === 'sent') {
         await apiClient.delete(`/d2chat/shares/sent/${id}`)
         fetchShares()
-      } else if (menuSection === 'received') {
+      } else if (section === 'received') {
         await apiClient.delete(`/d2chat/shares/received/${id}`)
         fetchShares()
       } else {
@@ -383,8 +382,21 @@ export default function D2ChatPage() {
         if (id === sessionId) handleNewChat()
       }
     } catch (e2) {
-      message.error(t(e2.response?.data?.detail) || t('msg.d2chat.delete_error'))
+      message.error(getErrorMessage(e2, 'msg.d2chat.delete_error'))
     }
+  }
+
+  const handleSidebarDelete = (e, id) => {
+    e.stopPropagation()
+    setMenuOpenId(null)
+    const section = menuSection
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => performSidebarDelete(id, section),
+    })
   }
 
   const handleShareOpen = (e, session) => {
@@ -851,7 +863,7 @@ function ShareModal({ sessionId, sessionTitle, onClose, onShared }) {
       onShared?.()
       onClose()
     } catch (e) {
-      message.error(t(e.response?.data?.detail) || t('msg.d2chat.share_error'))
+      message.error(getErrorMessage(e, 'msg.d2chat.share_error'))
       setSharing(false)
     }
   }

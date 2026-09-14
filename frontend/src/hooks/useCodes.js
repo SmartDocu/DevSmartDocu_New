@@ -30,7 +30,10 @@ export function useSaveCode() {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['codes-admin'] })
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.save.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
+    },
   })
 }
 
@@ -43,7 +46,10 @@ export function useDeleteCode() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['codes-admin'] })
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+    },
   })
 }
 
@@ -68,6 +74,9 @@ export function useDeleteCodeTranslation() {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['code-translations', codegroupcd, codevalue] })
     },
-    onError: (err) => message.error(t(err.response?.data?.detail) || t('msg.delete.error')),
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
+    },
   })
 }

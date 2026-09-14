@@ -88,12 +88,20 @@
 
   /* Button colors */
   --btn-text: #ffffff;
-  --primary-btn: #245F97;
-  --primary-btn-hover: #1A456F;
-  --secondary-btn: #454545;
-  --secondary-btn-hover: #262626;
-  --danger-btn: #dc3545;
-  --danger-btn-hover: #721c24;
+  --primary-btn: #E3EEFC;
+  --primary-btn-hover: #CFE2FA;
+  --primary-btn-text: #2456A6;
+  --primary-btn-border: #BBD4F5;
+  --query-btn: #2456A6;
+  --query-btn-hover: #1D4585;
+  --secondary-btn: #ffffff;
+  --secondary-btn-hover: #f2f2f2;
+  --secondary-btn-text: #4b5058;
+  --secondary-btn-border: #d9d5cd;
+  --danger-btn: #ffffff;
+  --danger-btn-hover: #fdecec;
+  --danger-btn-text: #c0392b;
+  --danger-btn-border: #f0d0ce;
   --back-btn: #cccccc;
   --back-btn-hover: #aaaaaa;
 
@@ -101,11 +109,11 @@
   --pagetitle-font-color: #3a3a3a;
 
   /* Table colors */
-  --table-header: #163E64;
-  --table-header-text: #ffffff;
-  --border-color: #ddd;
+  --table-header: #f8f9fb;
+  --table-header-text: #5c626c;
+  --border-color: #e3e6eb;
   --tbody-even: #E6EFF7;
-  --tbody-hover: #CCDFEF;
+  --tbody-hover: #EEF2FB;
   --tbody-font: #333333;
 
   --cardborder-color: #245F97;
@@ -122,8 +130,12 @@
   --spinner-color: #245F97;
   --loadingback-color: #fafae5;
 
-  --selected-row-bg: #99BFDF;
-  --selected-row: #245F97;
+  --selected-row-bg: #EAF1FC;
+  --selected-row: #2456A6;
+
+  /* Panel section (bordered card wrapper) */
+  --panel-bg: #ffffff;
+  --panel-border: #e3e6eb;
 }
 
 /* ── Sidebar ──────────────────────────────────────── */
@@ -143,6 +155,25 @@
 
 .sidebar-search {
   padding: 8px 12px 4px;
+}
+
+/* 메뉴 아이콘 시작 위치를 검색창(.sidebar-search padding-left: 12px) 시작 위치와 맞춘다 —
+   최상위(depth 0) 항목에만 적용, 하위 항목은 antd 기본 단계별 들여쓰기(inlineIndent)를 유지한다. */
+.app-sidebar .ant-menu-root > .ant-menu-item,
+.app-sidebar .ant-menu-root > .ant-menu-submenu > .ant-menu-submenu-title {
+  padding-inline-start: 12px !important;
+}
+
+/* 1단계 — 최상위 서브메뉴의 자식 */
+.app-sidebar .ant-menu-root > .ant-menu-submenu > .ant-menu-sub > .ant-menu-item,
+.app-sidebar .ant-menu-root > .ant-menu-submenu > .ant-menu-sub > .ant-menu-submenu > .ant-menu-submenu-title {
+  padding-inline-start: 24px !important;
+}
+
+/* 2단계 — 1단계 서브메뉴의 자식 */
+.app-sidebar .ant-menu-root > .ant-menu-submenu > .ant-menu-sub > .ant-menu-submenu > .ant-menu-sub > .ant-menu-item,
+.app-sidebar .ant-menu-root > .ant-menu-submenu > .ant-menu-sub > .ant-menu-submenu > .ant-menu-sub > .ant-menu-submenu > .ant-menu-submenu-title {
+  padding-inline-start: 36px !important;
 }
 
 .sidebar-search-dark input::placeholder {
@@ -347,12 +378,16 @@ h1, h2, h3, h4, h5, h6, p {
 }
 
 .page-title .gradient-bar {
-  width: 6px;
-  height: 40px;
-  background: linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%);
-  margin-right: 10px;
-  border-radius: 4px;
-  flex-shrink: 0;
+  display: none;
+}
+
+/* ── 패널 섹션 (제목 제외 영역 테두리) ─────────────── */
+.panel-section {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-sizing: border-box;
 }
 
 /* ── 테이블 (components.css) ──────────────────────── */
@@ -375,10 +410,6 @@ thead th {
   z-index: 1;
   padding: 6px 12px;
   border: 1px solid var(--border-color);
-}
-
-tbody tr:nth-child(even) {
-  background-color: var(--tbody-even);
 }
 
 tbody tr:hover {
@@ -463,6 +494,11 @@ table tr.selected-row {
   width: 20px !important;
 }
 
+.form-group input[type="radio"] {
+  width: auto !important;
+  margin: 0 !important;
+}
+
 .form-group-left {
   display: flex;
   align-items: center;
@@ -528,7 +564,12 @@ table tr.selected-row {
   font-weight: 600;
   white-space: nowrap;
   margin-right: 8px;
-  width: 80px;
+  width: auto;
+  min-width: 80px;
+  max-width: 130px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   display: inline-block;
 }
 
@@ -648,6 +689,7 @@ table tr.selected-row {
 
 /* ── 일반 버튼 공통 (base.css) ─────────────────────── */
 .btn {
+  height: 38px;
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
@@ -671,13 +713,13 @@ table tr.selected-row {
 }
 
 .btn-primary {
-  color: var(--btn-text);
+  color: var(--primary-btn-text);
   background-color: var(--primary-btn);
-  border: 1px solid var(--primary-btn);
+  border: 1px solid var(--primary-btn-border);
 }
 .btn-primary:hover {
   background-color: var(--primary-btn-hover);
-  border-color: var(--primary-btn-hover);
+  border-color: var(--primary-btn-border);
 }
 
 .btn:disabled {
@@ -686,23 +728,76 @@ table tr.selected-row {
 }
 
 .btn-secondary {
-  color: var(--btn-text);
+  color: var(--secondary-btn-text);
   background-color: var(--secondary-btn);
-  border: 1px solid var(--secondary-btn);
+  border: 1px solid var(--secondary-btn-border);
 }
 .btn-secondary:hover {
   background-color: var(--secondary-btn-hover);
-  border-color: var(--secondary-btn-hover);
+  border-color: var(--secondary-btn-border);
 }
 
 .btn-danger {
-  color: var(--btn-text);
+  color: var(--danger-btn-text);
   background-color: var(--danger-btn);
-  border: 1px solid var(--danger-btn);
+  border: 1px solid var(--danger-btn-border);
 }
 .btn-danger:hover {
   background-color: var(--danger-btn-hover);
-  border-color: var(--danger-btn-hover);
+  border-color: var(--danger-btn-border);
+}
+
+/* ── 조회 버튼 (필터 영역 전용, 진한 파란색) ───────── */
+.btn-query {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  background-color: var(--query-btn);
+  border: 1px solid var(--query-btn);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-query:hover {
+  background-color: var(--query-btn-hover);
+  border-color: var(--query-btn-hover);
+}
+.btn-query:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 어두운 배경 버튼 위에서 아이콘을 흰색으로 */
+.icon-img-white {
+  filter: brightness(0) invert(1);
+}
+
+/* ── 세그먼트 선택 (필터의 기간/조회기준 등 단일 선택 그룹) ── */
+.segmented {
+  display: inline-flex;
+  background: #f2efe9;
+  border: 1px solid #e6e2da;
+  border-radius: 9px;
+  padding: 2px;
+}
+.segmented-item {
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: 7px;
+  padding: 7px 14px;
+  color: #7b8088;
+  background: transparent;
+}
+.segmented-item.active {
+  color: #14161a;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(20, 22, 26, 0.1);
 }
 
 .btn-back {
@@ -762,6 +857,11 @@ input, select, textarea {
 /* 닫기 버튼 — 비활성 */
 .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-remove {
   color: #4a6070 !important;
+  font-size: 14px;
+}
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-remove svg {
+  width: 14px;
+  height: 14px;
 }
 /* 닫기 버튼 — 활성 */
 .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-remove {
@@ -773,6 +873,7 @@ input, select, textarea {
   width: auto;
   height: 59vh;
   overflow-y: auto;
+  overflow-x: hidden;
   background: #fff;
   border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;
@@ -782,8 +883,22 @@ input, select, textarea {
   padding: 8px;
 }
 
+/* Word→HTML 변환 결과에 인라인 width(px)가 박혀 있어 컨테이너보다 넓어지는 경우가 있어
+   표/이미지/최상위 블록은 컨테이너 폭에 맞춰 강제로 줄인다(가로 스크롤 방지) */
+.a4-frame table,
+.a4-frame > div,
+.a4-frame > p {
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box;
+}
+
+.a4-frame img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
 .a4-frame table {
-  width: 100%;
   border-collapse: separate !important;
   border-spacing: 0;
   table-layout: fixed;

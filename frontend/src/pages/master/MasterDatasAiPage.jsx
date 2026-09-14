@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { App, Spin } from 'antd'
+import { App, Spin, Select } from 'antd'
+import { PlusOutlined, EyeOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
@@ -31,6 +32,7 @@ export default function MasterDatasAiPage() {
   const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
   const translationVersion = useLangStore((s) => s.translationVersion)
+  const languageCd = useLangStore((s) => s.languageCd)
 
   const { data: datatypeOptions = [] } = useMenuCodes('keycoldatatypecd')
   const { data: serviceCodes = [] } = useMenuCodes('servicecd')
@@ -187,43 +189,62 @@ export default function MasterDatasAiPage() {
   const previewColKeys = previewRows.length > 0 ? Object.keys(previewRows[0]) : []
 
   return (
-    <div>
-      <div className="page-title">
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 171px)', overflow: 'hidden' }}>
+      {/* 페이지 타이틀 */}
+      <div className="page-title" style={{ flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{menuNm}{projectNm ? ` - ${projectNm}` : ''}</div>
         </div>
       </div>
 
-      <div className="form-group" style={{ maxWidth: 320, marginBottom: 20 }}>
-        <label htmlFor="df-projectid">
-          <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}:
-        </label>
-        <select
-          id="df-projectid"
-          value={projectId}
-          onChange={(e) => handleProjectChange(e.target.value)}
-        >
-          <option value="">{t('msg.select.project')}</option>
-          {projects.map((p) => (
-            <option key={p.projectid} value={p.projectid}>{projectLabel(p)}</option>
-          ))}
-        </select>
+      {/* 필터 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginBottom: 16 }}>
+        <div className="filter-item">
+          <label htmlFor="df-projectid" style={{ fontWeight: 'bold' }}>
+            <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.projectnm_lbl')}
+          </label>
+          <Select
+            id="df-projectid"
+            value={projectId || undefined}
+            onChange={(val) => handleProjectChange(val || '')}
+            allowClear
+            style={{ width: 280 }}
+            placeholder={t('msg.select.project')}
+            options={projects.map((p) => ({ value: String(p.projectid), label: projectLabel(p) }))}
+          />
+        </div>
       </div>
 
       {!projectId ? (
         <div style={{ padding: 24, color: '#888' }}>{t('msg.select.project')}</div>
       ) : (
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ flex: 1, display: 'flex', gap: 24, minHeight: 0 }}>
         {/* 좌측: 데이터 목록 */}
-        <div style={{ flex: 3.5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 3.5, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', datas.length)}
+              </span>
+            </div>
             <button className="btn btn-primary" type="button" onClick={handleNew}>
-              {t('btn.new')}
+              <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
             </button>
           </div>
-          <div className="table-container" style={{ height: 'auto' }}>
+          <div className="table-container" style={{ flex: 1, height: 'auto', overflowY: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
@@ -239,7 +260,8 @@ export default function MasterDatasAiPage() {
                   <tr
                     key={d.datauid}
                     onClick={() => handleSelect(d)}
-                    style={{ cursor: 'pointer', background: selected?.datauid === d.datauid ? 'var(--selected-row-bg)' : '', color: selected?.datauid === d.datauid ? 'var(--selected-row)' : '' }}
+                    className={selected?.datauid === d.datauid ? 'selected-row' : ''}
+                    style={{ cursor: 'pointer' }}
                   >
                     <td>{d.datanm}</td>
                     <td style={{ textAlign: 'center' }}>
@@ -258,22 +280,26 @@ export default function MasterDatasAiPage() {
         </div>
 
         {/* 중간: 입력 폼 */}
-        <div style={{ flex: 3.5, display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8, flexShrink: 0 }}>
+        <div className="panel-section" style={{ flex: 3.5, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <button
-              className="btn btn-primary"
+              className="btn btn-secondary"
               type="button"
               onClick={handlePreview}
               disabled={aiPreview.isPending}
             >
-              {aiPreview.isPending && <Spin size="small" style={{ marginRight: 4 }} />}
+              {aiPreview.isPending ? <Spin size="small" style={{ marginRight: 6 }} /> : <EyeOutlined style={{ marginRight: 6 }} />}
               {t('btn.preview_btn')}
             </button>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 10 }}>
             <label htmlFor="df-datanm">
               <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datanm_lbl')}:
             </label>
@@ -282,10 +308,11 @@ export default function MasterDatasAiPage() {
               type="text"
               value={form.datanm}
               onChange={(e) => setForm((f) => ({ ...f, datanm: e.target.value }))}
+              style={{ height: 38 }}
             />
           </div>
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 10 }}>
             <label htmlFor="df-datasourcecd">
               <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.datasourcecd_lbl')}:
             </label>
@@ -298,6 +325,7 @@ export default function MasterDatasAiPage() {
                 id="df-datasourcecd"
                 value={form.datasourcecd}
                 onChange={(e) => setForm((f) => ({ ...f, datasourcecd: e.target.value, dfv_docid: '' }))}
+                style={{ height: 38 }}
               >
                 <option value="df">{t('cod.datasourcecd_df')}</option>
                 <option value="dfv">{t('cod.datasourcecd_dfv')}</option>
@@ -306,7 +334,7 @@ export default function MasterDatasAiPage() {
           </div>
 
           {form.datasourcecd === 'dfv' && (
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 10 }}>
               <label htmlFor="df-dfvdoc">
                 <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.docnm')}:
               </label>
@@ -314,6 +342,7 @@ export default function MasterDatasAiPage() {
                 id="df-dfvdoc"
                 value={form.dfv_docid}
                 onChange={(e) => setForm((f) => ({ ...f, dfv_docid: e.target.value }))}
+                style={{ height: 38 }}
               >
                 <option value="">{t('msg.select.placeholder')}</option>
                 {projectDocs.map((d) => (
@@ -323,7 +352,7 @@ export default function MasterDatasAiPage() {
             </div>
           )}
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 10 }}>
             <label htmlFor="df-source">
               <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.source.data')}:
             </label>
@@ -331,6 +360,7 @@ export default function MasterDatasAiPage() {
               id="df-source"
               value={form.sourcedatauid}
               onChange={(e) => setForm((f) => ({ ...f, sourcedatauid: e.target.value }))}
+              style={{ height: 38 }}
             >
               <option value="">{t('msg.select.placeholder')}</option>
               {sourceDatas.map((s) => (
@@ -339,48 +369,51 @@ export default function MasterDatasAiPage() {
             </select>
           </div>
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 10 }}>
             <label>{t('lbl.dim.cols')}:</label>
             <div style={{ padding: '6px 4px', fontSize: 13, color: '#555' }}>
               {dimCols.map((c) => c.dispcolnm || c.querycolnm).join(', ') || '-'}
             </div>
           </div>
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 10 }}>
             <label>{t('lbl.measure.cols')}:</label>
             <div style={{ padding: '6px 4px', fontSize: 13, color: '#555' }}>
               {measureCols.map((c) => c.dispcolnm || c.querycolnm).join(', ') || '-'}
             </div>
           </div>
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 0 }}>
             <label htmlFor="df-gensentence">
               <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.prompt')}:
             </label>
             <textarea
               id="df-gensentence"
-              rows={13}
               value={form.gensentence}
               onChange={(e) => setForm((f) => ({ ...f, gensentence: e.target.value }))}
-              style={{ width: '100%', resize: 'vertical' }}
+              style={{ width: '100%', resize: 'vertical', fontSize: 13, lineHeight: '20px', height: 124 }}
             />
           </div>
           </div>
         </div>
 
         {/* 우측: 미리보기 결과 */}
-        <div style={{ flex: 3, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.preview_ttl')}</h3>
             {isEditYn && (
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   className="btn btn-primary"
                   type="button"
                   onClick={handleSave}
-                  disabled={isSaving}
+                  disabled={isSaving || deleteDf.isPending}
                 >
-                  {isSaving && <Spin size="small" style={{ marginRight: 4 }} />}
+                  {isSaving ? <Spin size="small" style={{ marginRight: 6 }} /> : <SaveOutlined style={{ marginRight: 6 }} />}
                   {t('btn.save')}
                 </button>
                 {!isNew && (
@@ -389,13 +422,16 @@ export default function MasterDatasAiPage() {
                     type="button"
                     onClick={handleDelete}
                     disabled={deleteDf.isPending}
+                    title={t('btn.delete')}
+                    style={{ width: 38, height: 38, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {t('btn.delete')}
+                    <DeleteOutlined />
                   </button>
                 )}
               </div>
             )}
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {form.datasourcecd === 'dfv' && (previewRows.length > 0 || previewCols.length > 0) && (
             <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 600 }}>
@@ -440,7 +476,9 @@ export default function MasterDatasAiPage() {
                     <tr>
                       <th>{t('thd.querycolnm')}</th>
                       <th>{t('thd.dispcolnm')}</th>
-                      <th style={{ width: 80 }}>{t('thd.datatypecd')}</th>
+                      <th style={{ width: 80, whiteSpace: 'pre-line' }}>
+                        {languageCd === 'ko' ? '데이터\n타입' : t('thd.datatypecd')}
+                      </th>
                       <th style={{ width: 60 }}>{t('thd.measureyn')}</th>
                     </tr>
                   </thead>
@@ -486,6 +524,7 @@ export default function MasterDatasAiPage() {
               {t('inf.preview.empty')}
             </div>
           )}
+          </div>
         </div>
       </div>
       )}

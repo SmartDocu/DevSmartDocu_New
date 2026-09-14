@@ -13,7 +13,7 @@ const PAGE_SIZE = 20
 
 export default function NotificationsPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const openInTab = useOpenInTab()
 
   const CATEGORY_OPTIONS = [
@@ -62,7 +62,13 @@ export default function NotificationsPage() {
 
   const handleDelete = (e, n) => {
     e.stopPropagation()
-    deleteNotification.mutate(n.notificationuid)
+    modal.confirm({
+      title: t('msg.confirm.delete'),
+      okText: t('btn.delete'),
+      cancelText: t('btn.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => deleteNotification.mutate(n.notificationuid),
+    })
   }
 
   const handleMarkAllRead = () => {
