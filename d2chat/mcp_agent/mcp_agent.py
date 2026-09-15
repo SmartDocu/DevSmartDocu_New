@@ -261,8 +261,8 @@ class MCPAgent:
 - execute_excel_query를 호출하지 않았거나, 호출 결과에 데이터가 없거나 오류인 경우, 절대로 임의의 수치·연도·항목을 지어내지 마세요.
 - 이 경우 "현재 등록된 데이터로는 답변할 수 없습니다" 또는 "해당 데이터를 찾을 수 없습니다"처럼 모른다고 명확히 답변하세요. 그럴듯하게 지어낸 답변은 심각한 문제를 일으킵니다.
 - 단, 이 규칙은 위 "데이터 관련 질문"에만 적용됩니다. 메타 질문/피드백까지 이 규칙으로 회피하지 마세요.
-- {num_to_text}
-""" + style_guide.replace("{query_tool}", "execute_excel_query")
+
+""" + style_guide.replace("{query_tool}", "execute_excel_query") +f"""- {num_to_text}"""
         else:
             available_data_list = [
                 f"- {table_name} ({info.get('description', table_name)}): {info.get('purpose', '데이터 저장')}"
@@ -304,8 +304,8 @@ class MCPAgent:
 - execute_query를 호출하지 않았거나, 호출 결과에 데이터가 없거나 오류인 경우, 절대로 임의의 수치·연도·항목을 지어내지 마세요.
 - 이 경우 "현재 데이터베이스로는 답변할 수 없습니다" 또는 "해당 데이터를 찾을 수 없습니다"처럼 모른다고 명확히 답변하세요. 그럴듯하게 지어낸 답변은 심각한 문제를 일으킵니다.
 - 단, 이 규칙은 위 "데이터 수치 관련 질문"에만 적용됩니다. 메타 질문/피드백까지 이 규칙으로 회피하지 마세요.
-- {num_to_text}
-""" + style_guide.replace("{query_tool}", "execute_query")
+
+""" + style_guide.replace("{query_tool}", "execute_query") + f"""- {num_to_text}"""
 
         # 프롬프트 캐싱(Anthropic 전용): 시스템 프롬프트(테이블 메타데이터 포함)는 세션 모드가
         # 같으면 내용이 거의 항상 동일하므로 캐시 대상으로 지정한다. langchain_anthropic은

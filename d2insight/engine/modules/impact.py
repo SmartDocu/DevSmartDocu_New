@@ -5,7 +5,7 @@
   - HHI           : Σ(|Δi|/Impact)² — 그 흔들림이 소수 항목에 몰렸는가(집중도)
   - Average_Z     : 평균 |Z|        — 항목 증감률이 평균에서 얼마나 벌어졌는가
   - DVI           : Impact × HHI × Average_Z — "크고, 몰렸고, 튄" 차원일수록 높다
-  - Shapley_Value : 차원 조합 기여 배분(합=1)
+  - Shapley_Share : 차원 조합 기여 배분(합=1)
 
 툴 선택(shapley/dvi)은 **순위 근거**를 고른다. 두 지표를 모두 계산해 표로 보여주되,
 정렬·상위 지목은 선택된 툴 기준으로 한다(계산은 같고 해석 기준만 다름).
@@ -22,12 +22,12 @@ from d2insight.engine.types import ModuleResult
 from d2insight.engine.pipeline.dataset_builder import build_by_item_summary_dataset
 
 # 툴 → 정렬 기준 컬럼
-_RANK_COLUMN = {"dvi": "DVI", "shapley": "Shapley_Value"}
+_RANK_COLUMN = {"dvi": "DVI", "shapley": "Shapley_Share"}
 
 # 표에 후보로 내놓는 컬럼 — DVI/HHI/평균Z 같은 내부 계산용 지표도 포함해 후보로 주고,
 # 실제로 표에 넣을지는 LLM이 고른다(dimension_stats 이름표 자체는 그대로 전체를 남겨
 # anomaly_detection/cross_drilldown이 재계산 없이 계속 쓴다).
-_RENDER_COLUMNS = ["Dimension_Logical_Name", "Count", "Impact_Score", "HHI", "Average_Z", "DVI", "Shapley_Value"]
+_RENDER_COLUMNS = ["Dimension_Logical_Name", "Count", "Impact_Score", "HHI", "Average_Z", "DVI", "Shapley_Share"]
 
 
 def run(ctx, params, tools) -> ModuleResult:

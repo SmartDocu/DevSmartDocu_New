@@ -16,15 +16,40 @@ import pandas as pd
 BIG_VALUE_THRESHOLD = 1000.0     # 이 이상이면 금액성 열로 보고 소수점을 버린다
 SMALL_DECIMALS = 4
 
+# 비율 열은 이름 끝이 항상 이 규칙을 따른다(불량률·성장률·전환율·기여율... / Rate·Ratio·
+# Share·Pct...) — 특정 보고서 단어를 나열한 목록이 아니라 비율을 가리키는 이름의 공통
+# 어미다. 여기 하나로 판정하면 어떤 모듈이 어떤 이름의 비율 열을 새로 만들어도 자동으로
+# %로 표시된다(2026-09-15 — 모듈마다 환산을 따로 챙기다 빠뜨린 사례가 있었다).
+_RATIO_SUFFIXES_EN = ("rate", "ratio", "share", "pct", "percentage")
+_RATIO_SUFFIXES_KO = ("율", "률", "비율", "비중")
 
-def _format_column(s: pd.Series) -> pd.Series:
+
+def _is_ratio_column(name) -> bool:
+    text = str(name).strip()
+    # "Z_" 접두는 표준편차 배수(Z-score)를 가리키는 별도의 고정 통계 표기다(anomaly.py의
+    # Z_rate·Z_amount 등) — 이름 끝이 "rate"와 겹쳐도 0~1 비율이 아니므로 %로 바꾸면 안 된다
+    # ("6.90표준편차"가 "690%"로 둔갑하는 사례가 있었다, 2026-09-15).
+    if text.startswith("Z_") or text == "Z":
+        return False
+    if any(text.endswith(suf) for suf in _RATIO_SUFFIXES_KO):
+        return True
+    lower = text.lower().replace(" ", "").replace("_", "")
+    return any(lower.endswith(suf) for suf in _RATIO_SUFFIXES_EN)
+
+
+def _format_column(s: pd.Series, name=None) -> pd.Series:
     """float뿐 아니라 int(예: groupby.sum() 결과)도 콤마 서식을 적용한다.
-    정수는 이미 소수점이 없으므로 큰 값이든 작은 값이든 콤마만 붙이면 된다."""
+    정수는 이미 소수점이 없으므로 큰 값이든 작은 값이든 콤마만 붙이면 된다.
+
+    name이 비율 열 이름 규칙(_is_ratio_column)에 맞으면 0~1 소수를 %로 바꿔 찍는다
+    (예: -1.1826 -> "-118.26%") — 이후 LLM이 ×100을 직접 계산할 필요가 없어진다."""
     if not pd.api.types.is_numeric_dtype(s) or pd.api.types.is_bool_dtype(s):
         return s
     valid = s.dropna()
     if valid.empty:
         return s
+    if name is not None and _is_ratio_column(name) and not pd.api.types.is_integer_dtype(s):
+        return s.map(lambda v: f"{v * 100:+.2f}%" if pd.notna(v) else "")
     if pd.api.types.is_integer_dtype(s):
         fmt = "{:,.0f}"
     else:
@@ -37,7 +62,7 @@ def format_table(df: pd.DataFrame) -> pd.DataFrame:
     """표시용 사본 — 실수 열을 사람이 읽는 문자열로 바꾼다(원본 불변)."""
     out = df.copy()
     for col in out.columns:
-        out[col] = _format_column(out[col])
+        out[col] = _format_column(out[col], name=col)
     return out
 
 
@@ -77,8 +102,7 @@ def to_korean_money(v) -> str:
     """금액을 억/만 단위 한글 표기로 변환한다(예: 3,842,356,350 -> "38억 4,236만원").
 
     LLM이 이 환산을 직접 하면 자릿수를 틀리는 사례가 있었다(예: 1.34억을 "134억"으로
-    100배 부풀림). 계산은 파이썬이 하고, LLM은 이 문자열을 그대로 옮겨 쓰기만 한다
-    (§핵심 원칙 — LLM은 계산하지 않는다).
+    100배 부풀림). 계산은 파이썬이 하고, LLM은 이 문자열을 그대로 옮겨 쓰기만 한다.
     """
     if pd.isna(v):
         return ""
@@ -96,27 +120,36 @@ def to_korean_money(v) -> str:
     return f"{sign}{' '.join(parts)}원"
 
 
-def korean_money_reference(df: pd.DataFrame) -> str:
+def korean_money_reference(df: pd.DataFrame, extra: dict | None = None) -> str:
     """금액성 열(BIG_VALUE_THRESHOLD 이상)의 억/만 표기를 미리 계산해 표로 만든다.
 
     LLM(모듈 해설·해설자·결론)이 억/만 단위로 쓸 때 직접 환산하면 자릿수를 틀린
     사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 파이썬이 계산한 값을
     프롬프트에 같이 주고 LLM은 그대로 옮기게 한다. 금액성 열이 없으면 빈 문자열.
+
+    extra: {표시 이름: 금액값} — 표에 행으로 없는 집계값(예: 전체 증감액)도 같은 참고표에
+    싣는다. 서술 지침이 "전체 대비"를 요구하는데 그 전체값이 표의 행이 아닐 때, 모듈이
+    이미 갖고 있는 그 값을 넘기지 않으면 LLM이 보이는 행들만으로 전체 규모를 암산하게 되고,
+    그 추정이 크게 틀어진 사례가 있었다(2026-09-15).
     """
-    if not isinstance(df, pd.DataFrame) or df.empty:
+    lines: list[str] = []
+    if isinstance(df, pd.DataFrame) and not df.empty:
+        money_cols = [
+            c for c in df.columns
+            if pd.api.types.is_numeric_dtype(df[c]) and not df[c].dropna().empty
+            and df[c].dropna().abs().max() >= BIG_VALUE_THRESHOLD
+        ]
+        if money_cols:
+            label_col = df.columns[0]
+            ref = pd.DataFrame({label_col: df[label_col]})
+            for c in money_cols:
+                ref[c] = df[c].map(to_korean_money)
+            lines.append(ref.to_markdown(index=False))
+    if extra:
+        lines += [f"- {k}: {to_korean_money(v)}" for k, v in extra.items() if pd.notna(v)]
+    if not lines:
         return ""
-    money_cols = [
-        c for c in df.columns
-        if pd.api.types.is_numeric_dtype(df[c]) and not df[c].dropna().empty
-        and df[c].dropna().abs().max() >= BIG_VALUE_THRESHOLD
-    ]
-    if not money_cols:
-        return ""
-    label_col = df.columns[0]
-    ref = pd.DataFrame({label_col: df[label_col]})
-    for c in money_cols:
-        ref[c] = df[c].map(to_korean_money)
     return (
         "\n[한글 단위 참고표 — 억/만으로 쓸 때는 반드시 이 값을 그대로 옮긴다. 직접 계산 금지]\n"
-        + ref.to_markdown(index=False)
+        + "\n".join(lines)
     )

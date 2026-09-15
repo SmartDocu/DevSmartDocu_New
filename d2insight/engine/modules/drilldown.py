@@ -150,14 +150,15 @@ def run(ctx, params, tools) -> ModuleResult:
     result = pd.DataFrame(rows)
     note = f" 교차 불가: {', '.join(skipped)}." if skipped else ""
 
-    display = result[["Outlier", "Cross_Dimension", "Cross_Item", "Comparison_Value",
-                      "Actual_Value", "Variance", "Share", "Factor"]]
+    display = result[["Outlier", "Outlier_Variance", "Cross_Dimension", "Cross_Item",
+                      "Comparison_Value", "Actual_Value", "Variance", "Share", "Factor"]]
     render = render_from_dataframe(
         display,
         purpose="이상 항목을 다른 차원으로 쪼개 원인을 찾는다.",
         narrative_hint=(
-            "이상 항목마다 어느 하위 항목이 그 변화를 얼마나 설명하는지(비중), 주요인(수량/ASP/할인/"
-            "신규유입/이탈)이 무엇인지 짚어라." + note
+            "이상 항목마다 어느 하위 항목이 그 변화를 얼마나 설명하는지(비중), 주요인이 무엇인지 짚어라. "
+            "주요인은 Factor 열의 값(수량/ASP/할인/신규유입/이탈)을 그대로 인용하라 — 뜻이 비슷해도 "
+            "다른 표현으로 바꿔 쓰지 마라." + note
         ),
         params={"이상 항목 수": result["Outlier"].nunique()}, label="cross_drilldown",
         cache=params.get("_llm_render_cache"),

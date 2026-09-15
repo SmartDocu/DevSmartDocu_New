@@ -249,6 +249,16 @@ def _run_from_upload(target_month: str, compare_type: str,
             error="업로드 데이터셋에 기간(period) 역할 컬럼이 없어 기간 비교를 할 수 없습니다.",
         )
 
+    # 이 스텝에 필요한 열만 남긴다(DB 경로와 동일). measure 미지정 시 대표 측정값을 대신 쓴다.
+    dims_needed = set(dimensions or [])
+    measures_needed = set(measures or [])
+    if (dims_needed or measures_needed) and not measures_needed and schema.measures:
+        measures_needed = {schema.key_measure}
+    needed = dims_needed | measures_needed
+    if needed:
+        needed.add(period_col)
+        raw_df = raw_df[[c for c in raw_df.columns if c in needed]]
+
     dataset_label = ", ".join(
         (datasets[k].get("filename") or k) for k in used_keys
     )

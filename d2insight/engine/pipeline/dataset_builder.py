@@ -585,7 +585,7 @@ def build_by_item_summary_dataset(
             "Rate_Median":   round(rate_median, 4),
             "σ":             round(sigma,       4),
             "Impact_Score":  round(impact_score, 2),
-            "Shapley_Value": shapley_share.get(dim, 0.0),
+            "Shapley_Share": shapley_share.get(dim, 0.0),
             "-3σ":           round(rate_mean - 3 * sigma, 4),
             "-2σ":           round(rate_mean - 2 * sigma, 4),
             "-1σ":           round(rate_mean - 1 * sigma, 4),
@@ -599,6 +599,6 @@ def build_by_item_summary_dataset(
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df.sort_values("Shapley_Value", ascending=False).reset_index(drop=True)
+        df = df.sort_values("Shapley_Share", ascending=False).reset_index(drop=True)
     return df
 

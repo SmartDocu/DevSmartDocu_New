@@ -1,8 +1,7 @@
 """모듈 공용 LLM 실행기 — 계산은 검증된 파이썬 함수가, 선택은 LLM이 한다.
 
-원칙(2026-08-27 재설계): LLM은 계산하지 않는다. 이미 검증된 계산 함수(build_by_item_dataset 등,
-d2insight/engine/pipeline/dataset_builder.py·_shared.py)가 만든 DataFrame에서 "무엇을 보여줄지"만
-고른다. 두 단계:
+이미 검증된 계산 함수(build_by_item_dataset 등, d2insight/engine/pipeline/dataset_builder.py·
+_shared.py)가 만든 DataFrame에서 LLM이 "무엇을 보여줄지"만 고른다. 두 단계:
   1. choose_params  — 계산 함수에 넘길 파라미터(차원 등) 중 스텝이 안 정해준 것만 후보 중에서 고름.
   2. render_from_dataframe — 계산 결과 DataFrame에서 표 열·차트·해설을 고름(열 개수 강제 없음).
 
@@ -24,6 +23,20 @@ from d2insight.engine.types import Render
 
 MAX_SAMPLE_ROWS = 30
 MAX_CHART_ROWS = 20
+
+
+def column_notes(df: pd.DataFrame | None, notes: dict | None) -> str:
+    """표 열 목록 + 열마다의 뜻(임시 메타).
+
+    모듈이 계산으로 만든 열(Variance, Share 등)은 이름만으로 뜻이 안 통한다. 실제로
+    sonnet이 Variance를 "1위와 2위의 격차"로 읽어 서술한 사례가 있다(2026-09-04). 등록 메타를
+    고치는 게 아니라, 그 표에 대해서만 유효한 설명을 모듈이 그때그때 붙여 여기로 넘긴다.
+    """
+    if df is None:
+        return ""
+    notes = notes or {}
+    lines = [f"- {c}" + (f"  {notes[c]}" if notes.get(c) else "") for c in df.columns]
+    return "[표 열]\n" + "\n".join(lines) + "\n"
 
 
 def _parse_json(text: str) -> dict:
@@ -99,6 +112,80 @@ def choose_params(
     return result
 
 
+_CALC_SYSTEM = """당신은 데이터 분석 보고서를 준비하는 애널리스트다.
+서술 지침이 표에 없는 계산된 값을 요구하는지 판단한다. 계산은 하지 않는다 — 필요하면
+판다스 수식만 만든다. 표에 있는 열 이름과 +, -, *, /, .cumsum(), .diff(), .shift(n), .mean(),
+.sum(), .rank() 같은 판다스 메서드만 쓴다.
+
+출력은 JSON 객체 하나.
+필요 없으면 {"needed": false}
+필요하면 {"needed": true, "formula": "판다스 수식", "new_column": "새 열 이름(한글)"}
+예: {"needed": true, "formula": "Contribution_Rate.cumsum()", "new_column": "누적 기여율"}
+다른 텍스트는 쓰지 마라."""
+
+
+def _decide_calc(df: pd.DataFrame, purpose: str, narrative_hint: str, label: str) -> dict | None:
+    """narrative_hint가 표에 없는 값을 요구하는지 판단해, 필요하면 수식을 받는다."""
+    if not narrative_hint:
+        return None
+    prompt = f"[분석 목적] {purpose}\n[서술 지침] {narrative_hint}\n[표 열 목록] {list(df.columns)}"
+    try:
+        text = chat([{"role": "user", "content": prompt}], grade="fast", system=_CALC_SYSTEM,
+                    label=f"{label}:calc", call_type="module_calc_select")
+        spec = _parse_json(text)
+    except Exception:
+        return None
+    return spec if spec.get("needed") else None
+
+
+def _apply_calc(df: pd.DataFrame, spec: dict | None) -> tuple[pd.DataFrame, dict]:
+    """LLM이 만든 수식을 판다스로 실행해 열 하나를 추가한다. 계산은 판다스가 한다. 실패하면 원본 그대로."""
+    if not spec:
+        return df, {}
+    formula, new_col = spec.get("formula"), spec.get("new_column")
+    if not formula or not new_col or new_col in df.columns:
+        return df, {}
+    try:
+        result = df.eval(formula, engine="python")
+        if not isinstance(result, pd.Series) or len(result) != len(df):
+            return df, {}
+        df = df.copy()
+        df[new_col] = result
+    except Exception:
+        return df, {}
+    return df, {new_col: formula}
+
+
+_DESCRIBE_SYSTEM = """당신은 데이터 분석 보고서를 준비하는 애널리스트다.
+표의 열 이름 중 뜻이 바로 안 통하는 것이 있으면 표시명과 설명을 붙인다. 열 이름 자체는
+바꾸지 않는다 — 그 옆에 붙일 정보만 만든다. 뜻이 이미 분명한 열(항목명, 차원 이름 등)은
+넣지 않는다.
+
+출력은 JSON 객체 하나. 키는 열 이름, 값은 {"표시명": "...", "설명": "..."}.
+다른 텍스트는 쓰지 마라."""
+
+
+def _describe_columns(df: pd.DataFrame, purpose: str, narrative_hint: str, label: str) -> dict:
+    """뜻이 안 통하는 열에 표시명·설명을 붙인다(열 이름은 그대로 둔다). 실패하면 빈 채로 진행."""
+    prompt = f"[분석 목적] {purpose}\n[서술 지침] {narrative_hint or '-'}\n[표 열 목록] {list(df.columns)}"
+    try:
+        text = chat([{"role": "user", "content": prompt}], grade="fast", system=_DESCRIBE_SYSTEM,
+                    label=f"{label}:describe", call_type="module_column_describe")
+        spec = _parse_json(text)
+    except Exception:
+        return {}
+    notes: dict[str, str] = {}
+    for col, desc in spec.items():
+        if col not in df.columns or not isinstance(desc, dict):
+            continue
+        name, explain = desc.get("표시명"), desc.get("설명")
+        if name and explain:
+            notes[col] = f"{name} — {explain}"
+        elif name or explain:
+            notes[col] = name or explain
+    return notes
+
+
 def _build_chart(c: dict | None, chart_source: pd.DataFrame, purpose: str):
     if not isinstance(c, dict) or c.get("x") not in chart_source.columns:
         return None
@@ -113,11 +200,18 @@ def render_from_dataframe(
     df: pd.DataFrame | None, *, purpose: str, narrative_hint: str, params: dict,
     label: str = "", empty_summary: str = "해당 조건에 표시할 데이터가 없습니다.",
     chart_df: pd.DataFrame | None = None, cache: dict | None = None,
+    columns: dict | None = None, extra_money: dict | None = None,
 ) -> Render:
     """계산이 끝난 DataFrame → LLM이 표 열·차트·서술을 고른 Render.
 
     chart_df: 표와 차트가 서로 다른 단위(예: 표는 차원별 집계, 차트는 개별 항목)일 때만
     지정한다 — 지정하면 차트 후보 열은 df 대신 이 DataFrame에서 고른다.
+
+    columns: {열이름: 뜻} — 이 표에만 해당하는 임시 메타. 등록 메타를 고치지 않는다.
+    계산으로 만든 열은 이름만으로 뜻이 안 통하므로 모듈이 붙여 보낸다(column_notes 참조).
+
+    extra_money: {표시 이름: 금액값} — 표의 행은 아니지만 서술에 필요한 집계값(예: 전체
+    증감액). 안 주면 LLM이 보이는 행만으로 전체 규모를 암산하게 된다(korean_money_reference 참조).
 
     cache: 정기 보고서 재실행용 — 이전에 이 함수가 고른 표열·차트 구성(Render.llm_spec)을
     그대로 주면 그 구성(형식)만 재사용하고 LLM에 다시 묻지 않는다. 서술(narrative/summary)은
@@ -126,6 +220,12 @@ def render_from_dataframe(
     """
     if df is None or df.empty:
         return Render(summary=empty_summary)
+
+    calc_spec = cache.get("calc") if cache else _decide_calc(df, purpose, narrative_hint, label)
+    df, calc_notes = _apply_calc(df, calc_spec)
+    describe_notes = cache.get("describe") if cache else _describe_columns(df, purpose, narrative_hint, label)
+    columns = {**(columns or {}), **calc_notes, **(describe_notes or {})}
+
     chart_source = chart_df if chart_df is not None else df
 
     if cache:
@@ -137,10 +237,11 @@ def render_from_dataframe(
         prompt = (
             f"[분석 목적] {purpose}\n[서술 지침] {narrative_hint or '-'}\n"
             f"[파라미터] {json.dumps(params, ensure_ascii=False, default=str)}\n"
-            f"[표]\n{table_to_markdown(sample)}"
+            + column_notes(table, columns)
+            + f"[표]\n{table_to_markdown(sample)}"
             + (f"\n(전체 {len(table):,}행 중 {MAX_SAMPLE_ROWS}행만 표시 — 요약은 전체 기준으로 서술)"
                if len(table) > MAX_SAMPLE_ROWS else "")
-            + korean_money_reference(sample)
+            + korean_money_reference(sample, extra=extra_money)
         )
         text = chat([{"role": "user", "content": prompt}], grade="balanced", system=_NARRATIVE_SYSTEM,
                     label=f"{label}:narrative", call_type="module_narrative")
@@ -148,7 +249,8 @@ def render_from_dataframe(
         narrative = str(n_spec.get("narrative") or "").strip()
         summary = str(n_spec.get("summary") or "").strip()
         # llm_spec은 구조(표열·차트)만 다음 회차로 넘긴다 — 서술은 캐시 대상이 아니므로 저장하지 않는다.
-        out_spec = {"table_columns": cache.get("table_columns"), "chart": cache.get("chart")}
+        out_spec = {"table_columns": cache.get("table_columns"), "chart": cache.get("chart"),
+                    "calc": cache.get("calc"), "describe": cache.get("describe")}
         return Render(summary=summary or narrative or empty_summary, table=table, chart=chart,
                      narrative=narrative or None, llm_spec=out_spec)
 
@@ -156,13 +258,13 @@ def render_from_dataframe(
     prompt = (
         f"[분석 목적] {purpose}\n[서술 지침] {narrative_hint or '-'}\n"
         f"[파라미터] {json.dumps(params, ensure_ascii=False, default=str)}\n"
-        f"[표 열 목록] {list(df.columns)}\n"
-        f"[데이터]\n{table_to_markdown(sample)}"
+        + column_notes(df, columns)
+        + f"[데이터]\n{table_to_markdown(sample)}"
         + (f"\n(전체 {len(df):,}행 중 {MAX_SAMPLE_ROWS}행만 표시 — 요약은 전체 기준으로 서술)"
            if len(df) > MAX_SAMPLE_ROWS else "")
         + (f"\n[차트용 데이터 열 목록] {list(chart_source.columns)}(차트는 이 열 중에서 고른다)"
            if chart_df is not None else "")
-        + korean_money_reference(sample)
+        + korean_money_reference(sample, extra=extra_money)
     )
     text = chat([{"role": "user", "content": prompt}], grade="balanced", system=_RENDER_SYSTEM,
                 label=f"{label}:render", call_type="module_render")
@@ -174,5 +276,7 @@ def render_from_dataframe(
 
     narrative = str(spec.get("narrative") or "").strip()
     summary = str(spec.get("summary") or "").strip()
+    spec["calc"] = calc_spec
+    spec["describe"] = describe_notes
     return Render(summary=summary or narrative or empty_summary, table=table, chart=chart,
                  narrative=narrative or None, llm_spec=spec)

@@ -130,7 +130,7 @@ def _facts(ctx) -> str:
         lines.append("")
 
     lines += _table_block("차원 영향도(상위)", ctx.get("dimension_stats"),
-                          ["Dimension_Logical_Name", "Impact_Score", "HHI", "DVI", "Shapley_Value"])
+                          ["Dimension_Logical_Name", "Impact_Score", "HHI", "DVI", "Shapley_Share"])
     lines += _table_block("차원 내 기여도(상위)", ctx.get("within_contribution"),
                           ["Item_Name", "Variance", "Rate", "Contribution_Rate"])
     lines += _table_block("이상징후(규모순)", ctx.get("outlier_result"),

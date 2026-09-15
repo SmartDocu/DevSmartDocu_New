@@ -30,7 +30,7 @@ def run(ctx, params, tools) -> ModuleResult:
         stats = ctx.get("dimension_stats")
         if stats is None or stats.empty:
             return ModuleResult(status="failed", error="params.dimension이 없고 dimension_stats도 없습니다.")
-        dimension = stats.sort_values("Shapley_Value", ascending=False)["Dimension_Logical_Name"].iloc[0]
+        dimension = stats.sort_values("Shapley_Share", ascending=False)["Dimension_Logical_Name"].iloc[0]
 
     schema = get_schema(ctx)
     key_measure = schema.key_measure
@@ -64,7 +64,9 @@ def run(ctx, params, tools) -> ModuleResult:
         .reset_index(drop=True)
     )
 
-    display = ranked[[c for c in _COLUMNS if c in ranked.columns]]
+    display = ranked[[c for c in _COLUMNS if c in ranked.columns]].copy()
+    display.insert(0, "순위", range(1, len(display) + 1))
+    display["누적 기여율"] = ranked["Contribution_Rate"].cumsum()
 
     # 상위 항목이 전체 증감을 얼마나 설명하는지 — "몇 개만 보면 되는가"에 대한 답.
     covered = float(ranked["Contribution_Rate"].sum())
@@ -77,9 +79,15 @@ def run(ctx, params, tools) -> ModuleResult:
         purpose="차원 안에서 어느 항목이 전체 증감을 얼마나 밀었는지 제시.",
         narrative_hint=(
             "증가를 이끈 항목과 그것을 깎아먹은 감소 항목을 함께 짚어라. 상위 항목이 전체 증감을 "
-            "얼마나 설명하는지(누적 기여율), 신규·단종 항목이 끼어 있는지도 언급하라."
+            "얼마나 설명하는지(누적 기여율), 신규·단종 항목이 끼어 있는지도 언급하라. "
+            "항목마다 Rate(그 항목 자체의 증감률)와 Contribution_Rate(전체 증감 대비 기여율)를 "
+            "같은 괄호 안에 나열하지 마라 — 어느 항목이든 형식을 통일해, Rate는 '(금액, 자체 "
+            "증감률)'로, Contribution_Rate는 '전체 증감의 N%를 차지/잠식'처럼 반드시 '전체 증감의'를 "
+            "붙여 뒤따로 밝혀라. \"상위 N개\"라고 개수를 말할 때는 직접 세지 말고 순위 열의 "
+            "값을 그대로 옮겨라 — 세다가 하나씩 밀린 사례가 있었다."
         ),
         params={"차원": dim_name, "상위 항목수": len(ranked)},
+        extra_money={"전체 증감액": total_variance["variance"]},
         label="within_contribution", cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
