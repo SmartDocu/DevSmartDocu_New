@@ -218,16 +218,16 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
             <div />
           </div>
           <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
-            <table className="table table-bordered table-sm">
+            <table className="table table-bordered table-sm" style={{ tableLayout: 'fixed', width: '100%' }}>
               <thead>
                 <tr>
-                  <th>{t('lbl.card_brand')}</th>
-                  <th>{t('lbl.card_no')}</th>
-                  <th>{t('lbl.expiry')}</th>
-                  <th>{t('lbl.status')}</th>
-                  <th>{t('lbl.default')}</th>
-                  <th style={{ textAlign: 'center' }}>{t('btn.payment.test_charge')}</th>
-                  <th style={{ textAlign: 'center' }}>{t('btn.delete')}</th>
+                  <th style={{ width: '16%' }}>{t('lbl.card_brand')}</th>
+                  <th style={{ width: '16%' }}>{t('lbl.card_no')}</th>
+                  <th style={{ width: '12%' }}>{t('lbl.expiry')}</th>
+                  <th style={{ width: '12%' }}>{t('lbl.status')}</th>
+                  <th style={{ width: '14%' }}>{t('lbl.default')}</th>
+                  <th style={{ width: '15%', textAlign: 'center' }}>{t('btn.payment.test_charge')}</th>
+                  <th style={{ width: '15%', textAlign: 'center' }}>{t('btn.delete')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,7 +237,7 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
                   <tr><td colSpan={7} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : methods.map((row) => (
                   <tr key={row.payment_methoduid}>
-                    <td>{row.display_nm || row.card_brand || '-'}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.display_nm || row.card_brand || '-'}>{row.display_nm || row.card_brand || '-'}</td>
                     <td>{'*'.repeat(Math.max(0, 4 - (row.card_last4?.length || 0))) + (row.card_last4 || '')}</td>
                     <td>{row.expiry_month ? `${row.expiry_month}/${row.expiry_year}` : '-'}</td>
                     <td>{statusLabel(row.payment_method_status)}</td>

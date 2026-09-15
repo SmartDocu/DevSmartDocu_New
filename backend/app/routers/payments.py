@@ -454,7 +454,9 @@ def save_billing_key(
     existing = sd.table("payment_methods").select("payment_methoduid").eq("billing_key", body.billing_key_id).execute().data
     before = _snapshot_payment_method(sd, existing[0]["payment_methoduid"]) if existing else None
     if existing:
-        sd.table("payment_methods").update(data).eq("payment_methoduid", existing[0]["payment_methoduid"]).execute()
+        # 삭제됐던 결제수단이 같은 billing_key로 재등록되는 경우(재구독 등) 삭제시각을 지워
+        # payment_method_status='Active'와 deleteddts가 동시에 남는 불일치를 방지한다.
+        sd.table("payment_methods").update({**data, "deleteddts": None}).eq("payment_methoduid", existing[0]["payment_methoduid"]).execute()
         new_methoduid = existing[0]["payment_methoduid"]
     else:
         res = sd.table("payment_methods").insert(data).execute()
@@ -486,6 +488,7 @@ def delete_payment_method(
     sd.table("payment_methods").update({
         "payment_method_status": "Deleted",
         "is_default": False,
+        "deleteddts": datetime.now(timezone.utc).isoformat(),
     }).eq("payment_methoduid", payment_methoduid).eq("tenantid", tenantid).execute()
 
     log_work_action(
