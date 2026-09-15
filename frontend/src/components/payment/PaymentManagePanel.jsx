@@ -90,6 +90,10 @@ export default function PaymentManagePanel({ pageTitle, customerInfo }) {
       message.error(t('msg.payment.config.missing'))
       return
     }
+    if (!customerInfo.email?.trim()) {
+      message.error(t('msg.payment.customer_email.required'))
+      return
+    }
 
     setIssuing(true)
     try {
