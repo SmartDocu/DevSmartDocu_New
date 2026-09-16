@@ -580,6 +580,17 @@ def list_datas(
         allowed_uids = {d["datauid"] for d in doc_datas_rows}
         rows = [r for r in rows if r["datauid"] in allowed_uids]
 
+        # datas는 dataunits를 그대로 비추는 뷰라 projectid 컬럼이 없다(ex/db/api는 project_datasets/
+        # datasetmembers 경유로만 프로젝트에 연결됨). 위 단계에서 쓴 .eq("projectid", single_pid)가
+        # 이런 datauid를 애초에 못 가져오므로, doc_datas에는 등록됐지만 아직 rows에 없는 datauid는
+        # 별도로 채워온다 (마스터 데이터셋 매핑 화면에서 그룹으로 연결한 엑셀 데이터가 이 경로에 해당).
+        missing_uids = allowed_uids - {r["datauid"] for r in rows}
+        if missing_uids:
+            extra_query = sb.schema(SUPABASE_SCHEMA).table("datas").select("*").in_("datauid", list(missing_uids))
+            if datasourcecd:
+                extra_query = extra_query.eq("datasourcecd", datasourcecd)
+            rows += extra_query.execute().data or []
+
     # AI로 만든 데이터(df/dfv)는 시스템 테넌트에서 본인이 등록한 것이면
     # doc_datas 등록 여부와 무관하게 노출 (master/datas/ai에서 아직 doc_datas에 매핑할 방법이 없음)
     if chapter_docid and (not datasourcecd or datasourcecd in ("df", "dfv")):
