@@ -543,6 +543,32 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AI 테이블 스타일(JSON) → React 인라인 style 변환
+// backend가 [양식지정] 프롬프트를 해석해 내려주는 컬럼별 스타일(bgcolor/color/
+// fontweight/fontsize/align)을 그대로 셀에 적용한다. 값이 없으면 undefined를
+// 반환해 AntD Table 기본 스타일을 그대로 쓰게 둔다.
+// ─────────────────────────────────────────────────────────────────────────────
+function sizeToCss(value) {
+  if (value === undefined || value === null || value === '') return undefined
+  const str = String(value).trim()
+  if (/^-?\d+(\.\d+)?(pt|px|em|rem|%)$/i.test(str)) return str
+  if (/^-?\d+(\.\d+)?$/.test(str)) return `${str}pt`
+  return undefined
+}
+
+function tableCellStyle(conf) {
+  if (!conf || typeof conf !== 'object') return undefined
+  const style = {}
+  if (conf.bgcolor) style.backgroundColor = conf.bgcolor
+  if (conf.color) style.color = conf.color
+  if (conf.fontweight) style.fontWeight = conf.fontweight
+  if (conf.align) style.textAlign = conf.align
+  const fontSize = sizeToCss(conf.fontsize)
+  if (fontSize) style.fontSize = fontSize
+  return style
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 미리보기 결과 표시
 // ─────────────────────────────────────────────────────────────────────────────
 function PreviewDisplay({ result }) {
@@ -565,9 +591,20 @@ function PreviewDisplay({ result }) {
   }
 
   if (result.message_type === 'table' && Array.isArray(result.data) && result.data.length > 0) {
-    const cols = Object.keys(result.data[0]).map((k) => ({
-      title: k, dataIndex: k, key: k, ellipsis: true, width: 120,
-    }))
+    let headerStyles = {}
+    let dataStyles = {}
+    try { headerStyles = JSON.parse(result.table_header_json || '{}') } catch { /* ignore */ }
+    try { dataStyles = JSON.parse(result.table_data_json || '{}') } catch { /* ignore */ }
+
+    const cols = Object.keys(result.data[0]).map((k) => {
+      const headerStyle = tableCellStyle(headerStyles[k])
+      const dataStyle = tableCellStyle(dataStyles[k])
+      return {
+        title: k, dataIndex: k, key: k, ellipsis: true, width: 120,
+        onHeaderCell: () => ({ style: headerStyle }),
+        onCell: () => ({ style: dataStyle }),
+      }
+    })
     return (
       <div style={{ width: '100%', overflow: 'hidden' }}>
         <Table
