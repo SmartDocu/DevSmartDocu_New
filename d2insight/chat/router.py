@@ -1101,13 +1101,30 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
     })
 
     inline_options = extract_inline_options(req.message)
-    matched = match_scenario(req.message)
 
     upload_dataset_key, source_id = _resolve_report_source(
         req.session_id, resolved_project_id, message=req.message,
     )
     if not upload_dataset_key and source_id is None:
         return {"scenario": None, "report_title": "", "applied_steps": []}
+
+    from d2insight.chat.intent_parser import parse_intent
+    from d2insight.engine.entry import has_data_for_period
+
+    target_month = parse_intent(
+        req.message, project_id=resolved_project_id, tenant_id=tenant_id,
+        user_uid=req.user_id, account_uid=req.account_uid,
+    ).get("target_month")
+    if target_month:
+        has_data, no_data_msg = has_data_for_period(
+            target_month, source_id=source_id,
+            upload_session_id=req.session_id if upload_dataset_key else None,
+            upload_dataset_key=upload_dataset_key,
+        )
+        if not has_data:
+            return {"scenario": None, "report_title": "", "applied_steps": [], "no_data_message": no_data_msg}
+
+    matched = match_scenario(req.message)
 
     # target_month는 이 트리 조립(스텝·모듈 구성) 자체엔 반영되지 않는다(실행 시점에
     # run_engine_report가 실제 값으로 다시 받음) — 여기선 필수 인자라 오늘 날짜로 채운다.

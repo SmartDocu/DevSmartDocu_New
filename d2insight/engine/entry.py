@@ -153,6 +153,68 @@ def _safe_type(report_type: str) -> str:
     return (report_type or "report").replace("/", "_").replace("\\", "_")
 
 
+def has_data_for_period(
+    target_month: str,
+    grain: str = "month",
+    source_id: str | None = None,
+    upload_session_id: str | None = None,
+    upload_dataset_key: str | None = None,
+) -> tuple[bool, str]:
+    """이 기간에 데이터가 있는지 시나리오 매칭보다 먼저 확인한다."""
+    if upload_session_id and upload_dataset_key:
+        return _upload_has_data_for_period(target_month, grain, upload_session_id, upload_dataset_key)
+    return _db_has_data_for_period(target_month, grain, source_id)
+
+
+def _no_data_message(target_month: str) -> str:
+    return f"{target_month} 기간에 해당하는 데이터가 없습니다. 분석 기준월을 다시 확인해 주세요."
+
+
+def _db_has_data_for_period(target_month: str, grain: str, source_id: str | None) -> tuple[bool, str]:
+    from d2insight import token_tracker
+    from d2insight.engine.pipeline.dataset_builder import query_step_dataset
+
+    try:
+        actual_df, _compare_df, _sql = query_step_dataset(
+            target_month, grain=grain, source_id=source_id or DEFAULT_SOURCE_ID,
+            log_ctx=token_tracker.get_log_ctx(),
+        )
+    except Exception as e:
+        print(f"[entry] 프리플라이트 확인 건너뜀: {type(e).__name__}: {e}")
+        return True, ""
+    return (True, "") if len(actual_df) > 0 else (False, _no_data_message(target_month))
+
+
+def _upload_has_data_for_period(target_month: str, grain: str,
+                                session_id: str, dataset_key: str) -> tuple[bool, str]:
+    import pandas as pd
+    from d2insight.engine.pipeline.dataset_builder import _actual_range
+    from d2insight.engine.schema import ROLE_PERIOD, Schema
+    from d2insight.report.excel_registry import get_excel_server
+
+    try:
+        datasets = get_excel_server().session_datasets.get(session_id) or {}
+        a_start, a_end = _actual_range(target_month, grain)
+        a_start_ts, a_end_ts = pd.Timestamp(a_start), pd.Timestamp(a_end)
+
+        for key in dataset_key.split("+"):
+            entry = datasets.get(key)
+            engine_meta = (entry or {}).get("engine_meta")
+            meta = (engine_meta or {}).get("meta_columns")
+            if entry is None or meta is None or not len(meta):
+                continue
+            period_col = Schema(meta).column(ROLE_PERIOD)
+            if not period_col or period_col not in entry["df"].columns:
+                continue
+            period_dt = pd.to_datetime(entry["df"][period_col], errors="coerce")
+            if ((period_dt >= a_start_ts) & (period_dt < a_end_ts)).any():
+                return True, ""
+    except Exception as e:
+        print(f"[entry] 업로드 프리플라이트 확인 건너뜀: {type(e).__name__}: {e}")
+        return True, ""
+    return False, _no_data_message(target_month)
+
+
 def resolve_report_plan(
     message: str,
     target_month: str,
