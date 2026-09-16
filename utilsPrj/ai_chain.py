@@ -57,21 +57,25 @@ def process_data_in_supabase(supabase, table_name: str, process_type: str, proce
     return data.data
 
 
-def _omits_temperature(vendor_name: str, model: str) -> bool:
-    """온도(temperature) 파라미터 자체를 거부하는 추론 전용 모델인지 판정합니다.
-    추론 모델은 내부적으로 온도가 고정되어 있어 클라이언트가 값을 얼마로 주든 (0 포함)
-    API가 400(invalid_request_error)으로 거부합니다. 
-    - "낮은 값으로"가 아니라 "아예 안 보냄"으로 대응해야 합니다.
+_reasoning_model_cache: dict[str, bool] = {}
+_reasoning_model_cache_lock = threading.Lock()
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """llmmodels.is_reasoning_model을 모델 하나 단위로 조회해 캐싱한다(테이블 전체는 안 읽음).
+
+    추론 모델은 temperature를 클라이언트가 얼마로 주든(0 포함) API가 400으로 거부하므로
+    "낮은 값으로"가 아니라 "아예 안 보냄"으로 대응해야 한다.
     """
-    m = model.lower()
-    if vendor_name == "Anthropic":
-        return "opus" in m or "fable" in m
-    if vendor_name == "OpenAI":
-        # o-series (o1, o3, o3-mini, o4-mini) 
-        return m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
-    if vendor_name == "Google":
-        return "thinking" in m
-    return False
+    with _reasoning_model_cache_lock:
+        if model in _reasoning_model_cache:
+            return _reasoning_model_cache[model]
+        rows = process_data_in_supabase(
+            get_service_client(), "llmmodels", "select", {}, {"llmmodelnm": model}, "is_reasoning_model"
+        )
+        is_reasoning = bool(rows[0]["is_reasoning_model"]) if rows else False
+        _reasoning_model_cache[model] = is_reasoning
+        return is_reasoning
 
 
 def build_langchain_llm(vendor_name: str, api_key: str, model: str):
@@ -80,11 +84,13 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
     d2shared.mcp_server, d2chat.mcp_agent 등에서 임포트해 공통 사용.
     """
 
-    skip_temperature = _omits_temperature(vendor_name, model)
+    skip_temperature = _is_reasoning_model(model)
 
     if vendor_name == "Anthropic":
         kwargs = dict(anthropic_api_key=api_key, model=model, max_tokens=8192)
-        if not skip_temperature:
+        if skip_temperature:
+            kwargs["thinking"] = {"type": "disabled"}
+        else:
             kwargs["temperature"] = 0
         return ChatAnthropic(**kwargs)
     if vendor_name == "OpenAI":
