@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -29,6 +30,7 @@ export default function HomePage() {
   useLangStore((s) => s.translations)
   const isLoggedIn = useAuthStore((s) => !!s.accessToken)
   const [loginOpen, setLoginOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: popups = [] } = usePopups('M')
   const [current, setCurrent] = useState(0)
   const timerRef = useRef(null)
@@ -49,6 +51,15 @@ export default function HomePage() {
     startTimer()
     return () => clearInterval(timerRef.current)
   }, [])
+
+  // 외부(D2Doc 소개 사이트)에서 ?login=1 로 들어오면 로그인 모달을 자동으로 연다.
+  useEffect(() => {
+    if (searchParams.get('login')) {
+      setLoginOpen(true)
+      searchParams.delete('login')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   return (
     <div>
