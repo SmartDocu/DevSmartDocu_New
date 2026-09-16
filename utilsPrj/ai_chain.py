@@ -738,6 +738,23 @@ DataFrame 컬럼: {all_columns}
         - 배경(background) 색상 : #ffffff
     - 제일 왼편 열 : 이 부분은 사용자가 요청하지 않으면 데이터(data) 영역의 스타일을 따릅니다
         - 첫 번째 컬럼("{first_column}")이 이 영역에 해당합니다.
+    - 테두리(border) : **사용자가 테두리/선 관련(색·모양·굵기) 요청을 한 경우에만** 적용하는 선택 항목입니다.
+        - 사용자 요구사항에 테두리·선 관련 언급이 전혀 없으면 JSON에 "border" 키 자체를 넣지 마세요(화면 기본 테두리를 그대로 씁니다).
+        - 사용자가 테두리 관련 요청을 했다면, 표의 선을 아래 4개 구간으로 나눠 지정하세요. 각 구간의 값은 {{"color": "#hex", "style": "...", "weight": "..."}} 객체입니다.
+            - outer      : 표 전체를 감싸는 바깥 테두리
+            - header_sep : 1행(헤더)과 2행(첫 데이터 행) 사이의 구분선
+            - col_sep    : 1열과 2열 사이의 구분선
+            - inner      : 위 세 가지를 제외한 나머지 내부 선(데이터 행 사이, 2열 이후 열 사이)
+        - 선 모양(style) — 3가지 중 하나:
+            - 실선: "solid" (기본값)
+            - 점선: "dashed"
+            - 두겹(이중선): "double"
+        - 선 굵기(weight) — 3단계 중 하나:
+            - 진하게: "thick"
+            - 보통: "normal" (기본값)
+            - 옅게: "thin"
+        - 사용자가 "테두리 색"처럼 색만 지정하고 구간·모양·굵기를 특정하지 않으면, outer/header_sep/col_sep/inner 4개 모두 그 색을 적용하고 style="solid", weight="normal"을 기본으로 채우세요.
+        - 사용자가 특정 구간만 지정(예: 바깥 테두리만, 또는 헤더 구분선만 점선으로)하면 그 구간만 값을 바꾸고, border 키 안의 나머지 구간은 기본값({{"color": "#000000", "style": "solid", "weight": "normal"}})으로 채우세요.
 
 2. 스타일은 아래 JSON 형식으로 지정하여 테이블에 적용합니다. **아래는 예시입니다. 이것을 지정하지 않은 부분에 적용하지 않습니다.**
     JSON 형식:
@@ -752,7 +769,14 @@ DataFrame 컬럼: {all_columns}
             "{all_columns[1]}": {{"bgcolor": "transparent", "align": "right", "color": "#000000", "fontweight": "normal", "fontsize": "12pt"}},
             ...
         }},
+        "border": {{
+            "outer": {{"color": "#000000", "style": "solid", "weight": "normal"}},
+            "header_sep": {{"color": "#000000", "style": "solid", "weight": "normal"}},
+            "col_sep": {{"color": "#000000", "style": "solid", "weight": "normal"}},
+            "inner": {{"color": "#000000", "style": "solid", "weight": "normal"}}
+        }}
     }}
+    (※ "border" 키는 사용자가 테두리를 요청했을 때만 포함하는 선택 항목입니다. 요청이 없으면 이 키를 아예 넣지 마세요.)
 
 3. 색상 표현:
     - 단색: "#cccccc" 형식 (회색 = #808080 또는 #cccccc)
@@ -770,9 +794,10 @@ DataFrame 컬럼: {all_columns}
 6. 글자 크기(fontsize):
     - 숫자만 (예: "14", "10")
 
-**중요:** 
+**중요:**
 - DataFrame의 실제 컬럼명만 사용하세요
 - 모든 컬럼에 대해 header와 data 스타일을 정의하세요
+- 테두리 요청이 없으면 "border" 키를 응답에서 완전히 생략하세요. 테두리 요청이 있을 때만 outer/header_sep/col_sep/inner 4개 키를 모두 채워 포함하세요 (요청받지 않은 구간은 {{"color": "#000000", "style": "solid", "weight": "normal"}})
 - 값은 모두 문자열로 표현하세요
 - 설명 없이 JSON만 출력하세요
 
@@ -1495,16 +1520,37 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
             table_header_json = json.dumps(style_dict.get("header", {}))
             table_data_json = json.dumps(style_dict.get("data", {}))
 
+            # 테두리: outer(바깥)/header_sep(헤더-데이터 구분선)/col_sep(1-2열 구분선)/inner(나머지),
+            # 각 구간은 {"color","style"(solid/dashed/double),"weight"(thin/normal/thick)} 객체.
+            # 사용자가 테두리를 요청하지 않았으면 LLM이 "border" 키 자체를 생략한다 — 그 경우
+            # table_border_json을 빈 문자열로 두어 프론트가 화면 기본 테두리를 그대로 쓰게 한다.
+            # 테두리를 요청했다면 지정되지 않은 구간/속성만 기본값(검정·실선·보통)으로 채운다.
+            def _normalize_border_entry(entry):
+                default = {"color": "#000000", "style": "solid", "weight": "normal"}
+                if isinstance(entry, str):
+                    return {**default, "color": entry}
+                if isinstance(entry, dict):
+                    return {**default, **{k: v for k, v in entry.items() if k in default and v}}
+                return default
+
+            raw_border = style_dict.get("border")
+            if isinstance(raw_border, dict) and raw_border:
+                border_dict = {key: _normalize_border_entry(raw_border.get(key)) for key in ("outer", "header_sep", "col_sep", "inner")}
+                table_border_json = json.dumps(border_dict)
+            else:
+                table_border_json = ""
+
             # NaN → None 변환 (JSON 직렬화 안전, std() 단일항목 등)
             df_result = df_result.where(pd.notnull(df_result), other=None)
             data = df_result.to_dict(orient="records")
-                
+
             return {
                 "result": data,
                 "status": "data_table",
                 "question": question,
                 "table_header_json": table_header_json,
                 "table_data_json": table_data_json,
+                "table_border_json": table_border_json,
                 "tokens": tokens
             }
         else:

@@ -460,6 +460,7 @@ def llm_preview(body: PreviewRequest, token: str = Depends(get_token)):
             "data": response.get("result", []),
             "table_header_json": response.get("table_header_json", ""),
             "table_data_json": response.get("table_data_json", ""),
+            "table_border_json": response.get("table_border_json", ""),
             "data_warnings": data_warnings,
         }
     elif status == "error":
@@ -721,6 +722,7 @@ def experience_preview(body: ExperiencePreviewRequest):
         return {"message_type": "table", "message": "",
                 "data": response.get("result", ""),
                 "table_header_json": response.get("table_header_json", ""),
-                "table_data_json": response.get("table_data_json", "")}
+                "table_data_json": response.get("table_data_json", ""),
+                "table_border_json": response.get("table_border_json", "")}
     else:
         return {"message_type": "error", "message": "알 수 없는 응답 형식입니다."}

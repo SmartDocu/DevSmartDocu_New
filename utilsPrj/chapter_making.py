@@ -400,16 +400,21 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 data = response.get("result", "")
                 table_header_json = response.get("table_header_json", "")
                 table_data_json = response.get("table_data_json", "")
-                
+                table_border_json = response.get("table_border_json", "")
+
                 header_json = json.loads(table_header_json)
                 data_json = json.loads(table_data_json)
+                try:
+                    border_json = json.loads(table_border_json) if table_border_json else {}
+                except (json.JSONDecodeError, ValueError):
+                    border_json = {}
 
                 if isinstance(data_json, list):
                     # print(f"WARNING: data_json is list, converting to dict")
                     # print(f"Original value: {data_json}")
                     data_json = {}  # 또는 적절한 변환 로직
 
-                final_result = render_preview_table(header_json, data_json, data)
+                final_result = render_preview_table(header_json, data_json, data, border_json)
                 final_result = final_result.replace('<div id="output-box"><table', '<table')
                 final_result = final_result.replace('</table></div>', '</table>')
 

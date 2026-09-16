@@ -164,6 +164,50 @@ def apply_cell_background(cell, styles):
         shd.set(qn('w:fill'),bg.lstrip('#'))
         tc_pr.append(shd)
 
+_BORDER_WORD_VAL = {'solid': 'single', 'dashed': 'dashed', 'double': 'double', 'dotted': 'dotted'}
+
+def apply_cell_borders(cell, styles):
+    """
+    cell 스타일의 border-top/bottom/left/right 선언("2px dashed #ff1493" 형식)에서
+    굵기(px)·모양(solid/dashed/double)·색상을 읽어 실제 docx 셀 테두리(w:tcBorders)에
+    적용한다. 지정 안 된 변은 건드리지 않고 테이블 기본 스타일('Table Grid')의 검정
+    실선을 그대로 둔다 — render_preview_table()이 outer/header_sep/col_sep/inner
+    4구간의 색·모양·굵기를 셀 단위 border-*로 이미 계산해 내려주므로 여기서는 그
+    값을 파싱해 옮겨 적용하기만 하면 된다.
+
+    px → w:sz(8분의 1pt) 변환은 1px ≈ 0.5pt 기준으로 sz = px * 4 를 사용한다.
+    """
+    sides = {'top': 'border-top', 'bottom': 'border-bottom', 'left': 'border-left', 'right': 'border-right'}
+    borders = {}
+    for side, key in sides.items():
+        val = styles.get(key, '')
+        color_m = re.search(r'#[0-9a-fA-F]{3,8}', val)
+        if not color_m:
+            continue
+        width_m = re.search(r'(\d+(?:\.\d+)?)px', val)
+        style_m = re.search(r'\b(solid|dashed|double|dotted)\b', val)
+        px = float(width_m.group(1)) if width_m else 1.0
+        word_val = _BORDER_WORD_VAL.get(style_m.group(1) if style_m else 'solid', 'single')
+        borders[side] = {
+            'color': color_m.group(0).lstrip('#').upper(),
+            'val': word_val,
+            'sz': max(2, round(px * 4)),
+        }
+    if not borders:
+        return
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_borders = tc_pr.find(qn('w:tcBorders'))
+    if tc_borders is None:
+        tc_borders = OxmlElement('w:tcBorders')
+        tc_pr.append(tc_borders)
+    for side, conf in borders.items():
+        el = OxmlElement(f'w:{side}')
+        el.set(qn('w:val'), conf['val'])
+        el.set(qn('w:sz'), str(conf['sz']))
+        el.set(qn('w:space'), '0')
+        el.set(qn('w:color'), conf['color'])
+        tc_borders.append(el)
+
 def set_cell_margins(cell, top=None,left=None,bottom=None,right=None):
     def pt_to_twips(pt): return int(round(pt*20))
     tc = cell._tc
@@ -302,6 +346,7 @@ def add_table_to_doc(doc, table_element):
             cell_styles = parse_css_style(cell.get('style', ''))
             merged_styles = merge_and_resolve_styles(row_styles, cell_styles)
             apply_cell_background(docx_cell, merged_styles)
+            apply_cell_borders(docx_cell, cell_styles)
             apply_column_width(docx_cell, cell_styles)
             
             t, l, b, r = parse_padding_to_pts(cell_styles, resolve_font_size_pt(merged_styles, 11.0))
