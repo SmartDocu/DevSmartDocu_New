@@ -511,6 +511,14 @@ export default function D2InsightPage() {
         project_id: user?.myprojectid ?? null,
         account_uid: user?.accountuid ?? null,
       })
+      if (previewResp.data?.no_data_message) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: previewResp.data.no_data_message },
+        ])
+        setIsLoading(false)
+        return
+      }
       if (previewResp.data?.applied_steps?.length) {
         setPreviewData(previewResp.data)
         setPreviewOriginalMessage(text)
