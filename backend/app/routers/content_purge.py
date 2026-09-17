@@ -256,3 +256,23 @@ def run_content_purge_cycle(request: Request):
         results.append({"accountuid": row["accountuid"], "servicecd": row["servicecd"], **result})
 
     return {"processed": len(results), "results": results}
+
+
+@router.post("/run-audit-log-purge")
+def run_audit_log_purge(request: Request):
+    """plan별 보관기간(config_plans.audit_log_keep_days)이 지난 work_logs/login_logs를
+    영구 삭제한다. 두 테이블 다 append-only 트리거가 걸려 있어 일반 DELETE로는 지울 수
+    없어서, Supabase에 등록해둔 sdoc.fn_purge_expired_audit_logs()(트리거를 이 함수
+    실행 중에만 비활성화하는 SECURITY DEFINER 함수, audit_log_retention_purge.sql 참고)를
+    RPC로 호출해 처리한다. admin_action_logs는 전사 로그라 이 plan별 정책 대상이 아니라
+    제외. AWS EventBridge Scheduler 전용 — 기본 DISABLED로 두고 최종 점검 전에는
+    트리거하지 않는다."""
+    secret = request.headers.get("x-purge-secret")
+    if not settings.PURGE_CRON_SECRET or secret != settings.PURGE_CRON_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    svc = get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+
+    result = sd.rpc("fn_purge_expired_audit_logs", {}).execute()
+    return {"result": "success", **(result.data or {})}
