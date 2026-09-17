@@ -1,8 +1,21 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
+from backend.app.utils import get_client_ip, get_country_code
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
 
 router = APIRouter()
+
+# 활성 언어(ko/en/ja) 기준 국가코드 → 언어코드 매핑. 매핑에 없는 국가는 en.
+_COUNTRY_LANG_MAP = {"KR": "ko", "JP": "ja"}
+
+
+@router.get("/geo-language")
+def get_geo_language(request: Request):
+    """접속 IP의 국가코드로 추정 언어를 반환한다 (비로그인 최초 방문자 기본 언어 추정용). 인증 불요."""
+    ip = get_client_ip(request)
+    countrycd = get_country_code(ip)
+    languagecd = _COUNTRY_LANG_MAP.get(countrycd, "en")
+    return {"languagecd": languagecd, "countrycd": countrycd}
 
 
 @router.get("/languages")

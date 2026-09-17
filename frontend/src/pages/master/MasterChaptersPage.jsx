@@ -238,7 +238,7 @@ export default function MasterChaptersPage() {
             </div>
           </div>
           <div className="form-group">
-            <label>{t('lbl.template.upload')}:</label>
+            <label>{t('lbl.chapter_template.bgformat')}:</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
@@ -273,10 +273,10 @@ export default function MasterChaptersPage() {
                     } catch { window.open(selectedChap.chaptertemplateurl, '_blank') }
                   }}
                 >
-                  {templateName || t('msg.template.none')}
+                  {templateName || t('msg.chapter_template.none')}
                 </a>
               ) : (
-                <span>{templateName || t('msg.template.none')}</span>
+                <span>{templateName || t('msg.chapter_template.none')}</span>
               )}
             </div>
           </div>

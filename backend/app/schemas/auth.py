@@ -81,6 +81,7 @@ class RegisterRequest(BaseModel):
     single: Optional[str] = None
     tenantid: Optional[str] = None
     products: Optional[list[str]] = None
+    languagecd: Optional[str] = None
 
 
 class RegisterInviteRequest(BaseModel):
@@ -92,6 +93,7 @@ class RegisterInviteRequest(BaseModel):
     userinfoyn: str = "Y"
     electronicfinancialtermsyn: str = "Y"
     marketingyn: str = "N"
+    languagecd: Optional[str] = None
 
 
 class SendResetEmailRequest(BaseModel):

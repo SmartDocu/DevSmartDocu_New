@@ -5,6 +5,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { getErrorMessage } from '@/utils/apiError'
 
 export default function RegisterModal({ open, onClose }) {
+  const languageCd = useLangStore((s) => s.languageCd)
   const [selectedProducts, setSelectedProducts] = useState([])
   const [usernm, setUsernm] = useState('')
   const [email, setEmail] = useState('')
@@ -85,6 +86,7 @@ export default function RegisterModal({ open, onClose }) {
         electronicfinancialtermsyn: electronicfinancialtermsyn ? 'Y' : 'N',
         marketingyn: marketingyn ? 'Y' : 'N',
         products: selectedProducts,
+        languagecd: languageCd,
       })
       alert(t('msg.register.success'))
       onClose()

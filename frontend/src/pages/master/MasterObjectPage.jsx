@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { App, Select } from 'antd'
-import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled } from '@ant-design/icons'
+import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled, CheckOutlined } from '@ant-design/icons'
 import { useChapters } from '@/hooks/useChapters'
 import { useObjects, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
@@ -250,7 +250,7 @@ export default function MasterObjectPage() {
                       <td>{obj.objectnm}</td>
                       <td style={{ textAlign: 'center' }}>{typeMap[obj.objecttypecd] || obj.objecttypecd || ''}</td>
                       <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{obj.objectdesc || ''}</td>
-                      <td style={{ textAlign: 'center' }}>{obj.objectsettingyn ? t('cod.useyn_y') : t('cod.useyn_n')}</td>
+                      <td style={{ textAlign: 'center' }}>{obj.objectsettingyn && <CheckOutlined />}</td>
                       <td style={{ textAlign: 'center' }}>{obj.useyn && <CheckCircleFilled style={{ color: '#2f7d4f' }} title={t('thd.useyn_thd')} />}</td>
                     </tr>
                   ))
@@ -331,8 +331,8 @@ export default function MasterObjectPage() {
             <label>{t('lbl.objecttypecd_lbl')}:</label>
             <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
               <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
-                <img src="/icons/make_ui.svg" className="icon-img-tbl" title="UI" alt="UI" style={{ height: 18 }} />
-                <img src="/icons/make_ai.svg" className="icon-img-tbl" title="AI" alt="AI" style={{ height: 18 }} />
+                <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>💻 UI</span>
+                <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>✨ AI</span>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}>
                 {objectTypes.map((ot) => (
@@ -364,7 +364,7 @@ export default function MasterObjectPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="obj-orderno">{t('lbl.orderno_lbl')}:</label>
+            <label htmlFor="obj-orderno">{t('lbl.object.orderno')}:</label>
             <input
               id="obj-orderno"
               type="number"

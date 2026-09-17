@@ -7,7 +7,7 @@ import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
 import { GlobalOutlined, BellOutlined, UserOutlined, LeftOutlined, RightOutlined, QuestionCircleOutlined, FolderOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
-import { useLanguages, useTranslations, useSetLanguage } from '@/hooks/useI18n'
+import { useLanguages, useTranslations, useSetLanguage, useGeoLanguage } from '@/hooks/useI18n'
 import { useMe } from '@/hooks/useAuth'
 import { useConfigs } from '@/hooks/useConfigs'
 import { useMenus } from '@/hooks/useMenus'
@@ -35,6 +35,9 @@ function canSeeApp(app, user, subscribedServicecds) {
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
+
+// 비로그인 게스트가 직접 고른 언어를 새로고침해도 유지하기 위한 localStorage 키
+const GUEST_LANG_KEY = 'guest_languagecd'
 
 export default function AppLayout() {
   const navigate = useNavigate()
@@ -160,20 +163,43 @@ export default function AppLayout() {
     openAppRouteInTab('notifications', '', t('ttl.notifications'))
   }
 
+  // 게스트 최초 언어 추정 순서: localStorage(이전 선택) → navigator.language(브라우저/OS 설정)
+  // → 접속 IP 국가 기반 추정 → configs.default_lang → languages[0]
+  // IP 조회는 앞의 두 단계로 지원 언어를 판별하지 못했을 때만 호출한다.
+  const [geoNeeded, setGeoNeeded] = useState(false)
+  const { data: geoData, isError: geoError } = useGeoLanguage(geoNeeded)
+
   // 언어 초기화
   // - 로그인 사용자: user.languagecd 항상 우선 적용 (로그인 시점에 덮어씌움)
-  // - 비로그인: 한 번 설정되면 유지, 미설정 시 configs.default_lang → languages[0]
+  // - 비로그인: 한 번 설정되면 유지, 미설정 시 아래 게스트 추정 순서를 따름
   useEffect(() => {
     if (user?.languagecd) {
       if (languageCd !== user.languagecd) setLanguageCd(user.languagecd)
       return
     }
     if (languageCd) return
-    const resolved =
-      configs?.default_lang ||
-      (languages.length > 0 ? languages[0].languagecd : '')
-    if (resolved) setLanguageCd(resolved)
-  }, [user, configs, languages, languageCd, setLanguageCd])
+    if (languages.length === 0) return
+
+    const supported = languages.map((l) => l.languagecd)
+    const fallback = configs?.default_lang || languages[0].languagecd
+
+    try {
+      const saved = localStorage.getItem(GUEST_LANG_KEY)
+      if (saved && supported.includes(saved)) { setLanguageCd(saved); return }
+    } catch { /* localStorage 접근 불가 시 무시 */ }
+
+    const browserLang = (navigator.language || '').slice(0, 2)
+    if (supported.includes(browserLang)) { setLanguageCd(browserLang); return }
+
+    if (geoNeeded) {
+      if (geoData || geoError) {
+        const guessed = geoData?.languagecd
+        setLanguageCd(guessed && supported.includes(guessed) ? guessed : fallback)
+      }
+      return
+    }
+    setGeoNeeded(true)
+  }, [user, configs, languages, languageCd, setLanguageCd, geoNeeded, geoData, geoError])
 
   // 번역 dict 로드 — { translations, defaults } 구조
   useEffect(() => {
@@ -191,7 +217,11 @@ export default function AppLayout() {
 
   const handleLanguageChange = (cd) => {
     setLanguageCd(cd)
-    if (user) updateUser({ languagecd: cd })  // effect 재실행 시 덮어씌움 방지
+    if (user) {
+      updateUser({ languagecd: cd })  // effect 재실행 시 덮어씌움 방지
+    } else {
+      try { localStorage.setItem(GUEST_LANG_KEY, cd) } catch { /* localStorage 접근 불가 시 무시 */ }
+    }
     setLanguageMutation.mutate(cd)
   }
 

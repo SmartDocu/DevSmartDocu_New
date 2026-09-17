@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid
+from backend.app.utils import get_client_ip, get_country_code
 from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SUPABASE_SCHEMA
 from utilsPrj.credit_helper import upsert_ba_creditbucket
 from utilsPrj.private_storage import resolve_display_url
@@ -41,13 +42,6 @@ router = APIRouter()
 
 
 # ─── 로그인 로그 헬퍼 ────────────────────────────────────────────────────────
-
-def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else ""
-
 
 def _get_tenant_config(tenantid: int, configcd: str) -> bool:
     """config_tenants.value == 'true' 여부를 반환한다."""
@@ -171,23 +165,6 @@ def _get_user_info_by_email(email: str) -> tuple[int, Optional[str]]:
         return 0, None
 
 
-def _get_country_code(ip: str) -> Optional[str]:
-    """ip-api.com으로 국가코드 조회 (2자리, 예: KR). 실패 시 None."""
-    if not ip or ip in ("127.0.0.1", "::1"):
-        return None
-    try:
-        import httpx
-        resp = httpx.get(
-            f"http://ip-api.com/json/{ip}",
-            params={"fields": "countryCode"},
-            timeout=3.0,
-        )
-        data = resp.json()
-        return data.get("countryCode") or None
-    except Exception:
-        return None
-
-
 def _insert_login_log(
     tenantid: int,
     useruid: Optional[str],
@@ -205,7 +182,7 @@ def _insert_login_log(
     eventtypecd: str = "login",
     roleid: Optional[int] = None,
 ):
-    countrycd = _get_country_code(ip)
+    countrycd = get_country_code(ip)
     try:
         svc = get_service_client()
         if roleid is None and useruid:
@@ -628,7 +605,7 @@ def login(body: LoginRequest, request: Request, background_tasks: BackgroundTask
     - MFA 미등록 → 즉시 토큰 + 사용자 컨텍스트 반환
     - MFA 등록됨 → mfa_required=True + 임시 토큰 반환 (2단계 필요)
     """
-    ip = _get_client_ip(request)
+    ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     ua_info = _parse_user_agent(ua)
     fingerprint = _device_fingerprint(ip, ua)
@@ -812,7 +789,7 @@ def select_tenant(body: SelectTenantRequest, request: Request):
     다중 테넌트 계정의 로그인 직후 테넌트 확정, 또는 강제 MFA 설정 완료 후 재개.
     임시 토큰(access_token_temp/refresh_token_temp) 기준으로 동작한다.
     """
-    ip = _get_client_ip(request)
+    ip = get_client_ip(request)
     user_client = _get_user_client(body.access_token_temp, body.refresh_token_temp)
 
     try:
@@ -874,7 +851,7 @@ def logout(request: Request, background_tasks: BackgroundTasks, token: str = Dep
             tenantid = int(tu_row.data["tenantid"]) if tu_row and tu_row.data else 0
         except Exception:
             tenantid = 0
-        ip = _get_client_ip(request)
+        ip = get_client_ip(request)
         ua_info = _parse_user_agent(request.headers.get("user-agent", ""))
         background_tasks.add_task(
             _insert_login_log,
@@ -1069,11 +1046,15 @@ def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional
         )
 
     # Supabase auth.sign_up (이메일 인증 발송)
+    # Confirm signup 메일 템플릿에서 {{ .Data.languagecd }}/{{ .Data.usernm }}로 참조할 수 있도록
+    # options.data에 언어코드·사용자명을 함께 전달한다 (언어는 현재 ko/en만 지원, 그 외는 en으로 처리).
+    signup_languagecd = "ko" if body.languagecd == "ko" else "en"
     try:
         anon_client = get_supabase_client()
         signup_result = anon_client.auth.sign_up({
             "email": body.email,
             "password": body.password,
+            "options": {"data": {"languagecd": signup_languagecd, "usernm": body.usernm}},
         })
         user_id = str(signup_result.user.id)
     except Exception as e:
@@ -1109,7 +1090,7 @@ def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional
             "termsofuse": body.termsofuseyn,
             "electronicfinancialterms": body.electronicfinancialtermsyn,
         },
-        ip=_get_client_ip(request),
+        ip=get_client_ip(request),
         useragent=request.headers.get("user-agent", ""),
     )
 
@@ -1504,7 +1485,7 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
     user_id = str(user_resp.user.id)
     sd = get_service_client().schema(SUPABASE_SCHEMA)
 
-    ip = _get_client_ip(request)
+    ip = get_client_ip(request)
     tu_row = (
         sd.table("tenantusers").select("rolecd, useyn")
         .eq("tenantid", body.tenantid).eq("useruid", user_id)
@@ -1743,6 +1724,7 @@ def register_invite(body: RegisterInviteRequest, request: Request):
         marketingyn=body.marketingyn,
         accounttype="U",
         products=productcds,
+        languagecd=body.languagecd,
     )
     register(register_body, request, _invite_tenantid=tenantid_invite)
 

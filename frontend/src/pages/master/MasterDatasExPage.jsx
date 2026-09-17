@@ -12,6 +12,17 @@ import {
 
 const EMPTY_COLS = []
 
+const DATATYPE_EMOJI = {
+  string: '🔤',
+  number: '🔢',
+  date: '📅',
+  datetime: '⏰',
+  currency: '💰',
+  boolean: '✅',
+  text: '📝',
+  identifier: '🗝️',
+}
+
 export default function MasterDatasExPage() {
   const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
@@ -87,6 +98,9 @@ export default function MasterDatasExPage() {
           } catch {
             message.warning(t('msg.save.col.warn'))
           }
+          setForm((f) => ({ ...f, datauid: newUid }))
+          setSelectedData({ datauid: newUid, datanm: form.datanm, excelnm: fileName, excelurl: form.excelurl })
+          setSelectedColDatauid(newUid)
         }
       } catch {
         // saveData의 onError에서 이미 메시지 처리함
@@ -143,7 +157,7 @@ export default function MasterDatasExPage() {
 
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 데이터 목록 */}
-        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 2.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -191,7 +205,7 @@ export default function MasterDatasExPage() {
         </div>
 
         {/* 중간: 데이터 상세 */}
-        <div className="panel-section" style={{ flex: 4, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 2.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -281,7 +295,7 @@ export default function MasterDatasExPage() {
         </div>
 
         {/* 우측: 데이터 컬럼 */}
-        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -319,15 +333,20 @@ export default function MasterDatasExPage() {
                           type="text"
                           value={col.dispcolnm || ''}
                           onChange={(e) => updateCol(idx, 'dispcolnm', e.target.value)}
-                          style={{ width: '100%', padding: '2px 4px' }}
+                          style={{ width: '100%', padding: '2px 4px', border: '1px solid #e4e4e4', borderRadius: 4 }}
                         />
                       </td>
                       <td>
                         <select
                           value={col.datatypecd || 'string'}
                           onChange={(e) => updateCol(idx, 'datatypecd', e.target.value)}
+                          style={{ border: '1px solid #e4e4e4', borderRadius: 4, padding: '2px 4px' }}
                         >
-                          {datatypeOptions.map((c) => <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>)}
+                          {datatypeOptions.map((c) => (
+                            <option key={c.codevalue} value={c.codevalue}>
+                              {DATATYPE_EMOJI[c.codevalue] || ''} {t(c.term_key) || c.default_name}
+                            </option>
+                          ))}
                         </select>
                       </td>
                       <td style={{ textAlign: 'center' }}>

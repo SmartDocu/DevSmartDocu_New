@@ -81,6 +81,7 @@ export default function RegisterInvitePage() {
         userinfoyn: userinfoyn ? 'Y' : 'N',
         electronicfinancialtermsyn: electronicfinancialtermsyn ? 'Y' : 'N',
         marketingyn: marketingyn ? 'Y' : 'N',
+        languagecd: languageCd,
       })
       alert(t('msg.register.success'))
       navigate('/')

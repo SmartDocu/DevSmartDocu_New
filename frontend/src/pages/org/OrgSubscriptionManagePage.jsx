@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { App, Alert, Radio, Space, Spin, Tag } from 'antd'
-import { SaveOutlined } from '@ant-design/icons'
+import { ShoppingCartOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
@@ -129,9 +129,13 @@ export default function OrgSubscriptionManagePage() {
         </div>
       </div>
 
+      <div className="panel-section" style={{ background: '#f9fbe7', color: '#6a7d3c', fontSize: 13, marginBottom: 16, padding: '13px 18px' }}>
+        ＊ {t('inf.subscription.invite_notice')}
+      </div>
+
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측(7): 현재 구독 중인 서비스 목록 */}
-        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 287px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -197,7 +201,7 @@ export default function OrgSubscriptionManagePage() {
         </div>
 
         {/* 우측(3): 선택한 서비스의 Team/Enterprise 상품 선택 */}
-        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 287px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -210,7 +214,7 @@ export default function OrgSubscriptionManagePage() {
               onClick={handleSave}
               disabled={changeMutation.isPending || !selectedProductcd}
             >
-              <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+              <ShoppingCartOutlined style={{ marginRight: 6 }} />{t('btn.subscribe')}
             </button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>

@@ -19,6 +19,16 @@ export function useTranslations(langCd) {
   })
 }
 
+export function useGeoLanguage(enabled) {
+  return useQuery({
+    queryKey: ['i18n', 'geo-language'],
+    queryFn: () => apiClient.get('/i18n/geo-language').then((r) => r.data),
+    enabled: !!enabled,
+    staleTime: Infinity,
+    retry: 0,
+  })
+}
+
 export function useSetLanguage() {
   const { isAuthenticated } = useAuthStore()
   return useMutation({
