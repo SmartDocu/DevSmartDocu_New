@@ -164,6 +164,28 @@ def run_report_from_spec(spec: dict, user_id: str | None = None,
                     session_id=session_id)
 
 
+_CHAT_MEMORY_TURNS = 12  # general chat이 참고하는 최근 대화 턴 수 (2026-09-17, 3턴→12턴 확장)
+
+
+def _recent_chat_only(history: list[dict]) -> list[dict]:
+    """대화 메모리(hist_text)에서 보고서가 생성된 턴(질문+답변 쌍)은 제외한다.
+
+    보고서 본문(마크다운 요약 포함)은 길어서 일반 대화 컨텍스트를 불필요하게 채우고, 이미
+    사이드바·세션 히스토리로 따로 조회할 수 있어 대화 메모리에 다시 넣을 필요가 없다.
+    get_session_messages()가 (user, assistant) 쌍으로 순서대로 쌓아주므로 두 개씩 훑는다.
+    """
+    filtered: list[dict] = []
+    i = 0
+    while i < len(history):
+        msg = history[i]
+        if msg.get("role") == "user" and i + 1 < len(history) and history[i + 1].get("reportPath"):
+            i += 2
+            continue
+        filtered.append(msg)
+        i += 1
+    return filtered
+
+
 def run_tool(
     tool: str,
     target_month: str | None,
@@ -200,7 +222,10 @@ def run_tool(
 
     # ── general chat ─────────────────────────────────────────────────────────
     if tool == "chat":
-        hist_text = "\n".join(f"{m['role']}: {m['content']}" for m in (history or [])[-6:])
+        hist_text = "\n".join(
+            f"{m['role']}: {m['content']}"
+            for m in _recent_chat_only(history or [])[-(_CHAT_MEMORY_TURNS * 2):]
+        )
         user_message = intent.get("original_message") or "도움이 필요합니다."
 
         try:
@@ -277,7 +302,7 @@ def run_tool(
                 # 대화·JSON 두 경로가 같은 형태로 수렴한다는 원칙(engine/entry.py) — 메시지에
                 # "적용된 옵션" JSON을 직접 붙여넣은 경우도 여기서 잡는다.
                 inline_options = extract_inline_options(user_request or "")
-                matched_scenario = match_scenario(user_request)
+                matched_scenario = None if intent.get("force_compose") else match_scenario(user_request)
 
             # 데이터 출처(DB/업로드)로 실행이 갈리지 않는다 — 가져오는 방법만 다르고 그 뒤는
             # 같다. 업로드 파일이 있으면 그 목록을, 없으면 등록된 DB 소스 목록을 넘긴다.
@@ -311,6 +336,7 @@ def run_tool(
                 eng = run_engine_report(
                     message=user_request or report_type,
                     target_month=target_month,
+                    grain=intent.get("grain"),
                     report_type=matched_scenario or report_type,
                     source_id=source_id,
                     user_id=user_id,

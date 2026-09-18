@@ -555,6 +555,16 @@ def update_analytic_template_schedule(template_uid: str, schedule_cron: str, sch
     )
 
 
+def update_analytic_template_name(template_uid: str, template_nm: str) -> None:
+    """정기 보고서 이름을 변경한다."""
+    (
+        _sc.table("analytictemplates")
+        .update({"templatenm": template_nm})
+        .eq("templateuid", template_uid)
+        .execute()
+    )
+
+
 def get_qa_count(session_uid: str) -> int:
     res = (
         _sc.table("insight_qas")

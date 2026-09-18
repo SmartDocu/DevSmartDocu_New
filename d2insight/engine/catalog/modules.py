@@ -191,9 +191,9 @@ _AGGREGATE = [
             "compare_type": {"type": "str", "required": False, "default": None,
                               "enum": ["MoM", "QoQ", "YoY"]},
             "months_back":  {"type": "int", "required": False, "default": 3},
-            # 기간 단위: month(기본)/quarter/year/week.
+            # 기간 단위: month(기본)/quarter/half/year/week.
             "grain":        {"type": "str", "required": False, "default": None,
-                              "enum": ["month", "quarter", "year", "week"]},
+                              "enum": ["month", "quarter", "half", "year", "week"]},
             # 스텝 단위 쿼리(2026-08-24) — resolve_dependencies가 같은 스텝의 다른 모듈들
             # 파라미터를 모아 자동으로 채운다(사용자가 직접 지정하는 값이 아니다).
             "dimensions":    {"type": "list", "required": False, "default": None},

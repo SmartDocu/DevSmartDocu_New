@@ -98,8 +98,8 @@ def _build_engine() -> Engine:
 # 그레인마다 "한 칸"의 뜻이 달라 하나의 산식으로 못 묶는다 — 월/분기/연은 정수 나눗셈,
 # 주는 ISO 주차 기준 실제 날짜 이동으로 계산한다.
 
-_PERIODS_PER_YEAR: dict[str, int] = {"month": 12, "quarter": 4, "week": 52, "year": 1}
-_UNITS_PER_YEAR: dict[str, int] = {"month": 12, "quarter": 4, "year": 1}   # week는 날짜 기반이라 제외
+_PERIODS_PER_YEAR: dict[str, int] = {"month": 12, "quarter": 4, "half": 2, "week": 52, "year": 1}
+_UNITS_PER_YEAR: dict[str, int] = {"month": 12, "quarter": 4, "half": 2, "year": 1}   # week는 날짜 기반이라 제외
 
 
 def _parse_period_id(grain: str, period_id: str) -> tuple[int, int]:
@@ -110,12 +110,15 @@ def _parse_period_id(grain: str, period_id: str) -> tuple[int, int]:
     if grain == "quarter":
         y, q = period_id.split("-Q")
         return int(y), int(q)
+    if grain == "half":
+        y, h = period_id.split("-H")
+        return int(y), int(h)
     if grain == "week":
         y, w = period_id.split("-W")
         return int(y), int(w)
     if grain == "year":
         return int(period_id), 1
-    raise ValueError(f"알 수 없는 grain: '{grain}' (month/quarter/year/week만 지원)")
+    raise ValueError(f"알 수 없는 grain: '{grain}' (month/quarter/half/year/week만 지원)")
 
 
 def _format_period_id(grain: str, year: int, unit: int) -> str:
@@ -123,11 +126,13 @@ def _format_period_id(grain: str, year: int, unit: int) -> str:
         return f"{year:04d}-{unit:02d}"
     if grain == "quarter":
         return f"{year:04d}-Q{unit}"
+    if grain == "half":
+        return f"{year:04d}-H{unit}"
     if grain == "week":
         return f"{year:04d}-W{unit:02d}"
     if grain == "year":
         return f"{year:04d}"
-    raise ValueError(f"알 수 없는 grain: '{grain}' (month/quarter/year/week만 지원)")
+    raise ValueError(f"알 수 없는 grain: '{grain}' (month/quarter/half/year/week만 지원)")
 
 
 def shift_period(grain: str, period_id: str, n: int) -> str:
@@ -155,6 +160,10 @@ def period_bounds(grain: str, period_id: str) -> tuple[date, date]:
         y, q = _parse_period_id(grain, period_id)
         ey, eq = _parse_period_id(grain, shift_period(grain, period_id, 1))
         return date(y, (q - 1) * 3 + 1, 1), date(ey, (eq - 1) * 3 + 1, 1)
+    if grain == "half":
+        y, h = _parse_period_id(grain, period_id)
+        ey, eh = _parse_period_id(grain, shift_period(grain, period_id, 1))
+        return date(y, (h - 1) * 6 + 1, 1), date(ey, (eh - 1) * 6 + 1, 1)
     if grain == "year":
         y, _u = _parse_period_id(grain, period_id)
         return date(y, 1, 1), date(y + 1, 1, 1)
@@ -162,7 +171,7 @@ def period_bounds(grain: str, period_id: str) -> tuple[date, date]:
         y, w = _parse_period_id(grain, period_id)
         start = date.fromisocalendar(y, w, 1)
         return start, start + timedelta(days=7)
-    raise ValueError(f"알 수 없는 grain: '{grain}' (month/quarter/year/week만 지원)")
+    raise ValueError(f"알 수 없는 grain: '{grain}' (month/quarter/half/year/week만 지원)")
 
 
 def compare_shift(grain: str, compare_type: str) -> int:
@@ -177,8 +186,10 @@ def compare_shift(grain: str, compare_type: str) -> int:
     month/quarter/week grain에선 비교 기간이 틀어진다).
     """
     normalized = (compare_type or "").strip().lower()
-    if grain == "month" and normalized == "qoq":
-        return -3
+    if normalized == "qoq":
+        if grain == "month":
+            return -3
+        raise ValueError(f"QoQ 비교는 month grain에서만 지원합니다 (현재 grain: '{grain}')")
     if normalized == "yoy":
         return -_PERIODS_PER_YEAR.get(grain, 1)
     return -1                           # MoM(기본) = 전 기간

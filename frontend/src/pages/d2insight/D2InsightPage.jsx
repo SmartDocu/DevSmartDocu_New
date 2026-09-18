@@ -14,6 +14,8 @@ import { getErrorMessage, getErrorDetail } from '@/utils/apiError'
 
 const CHAT_TIMEOUT = { timeout: 3600000 } // 보고서 생성 최대 6분
 
+const GRAIN_CYCLE_LABEL = { month: '매달', quarter: '매분기', half: '매반기', year: '매년' }
+
 function getInitialMessage() {
   return {
     role: 'assistant',
@@ -47,6 +49,9 @@ export default function D2InsightPage() {
   const [messages, setMessages] = useState([getInitialMessage()])
   const [isLoading, setIsLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
+  // AI 자유 보고서(compose) 토글 — ON이면 등록된 시나리오 매칭을 건너뛰고 LLM이 카탈로그를
+  // 그 자리에서 자유 조립한다(entry.py compose_scenario 경로 강제).
+  const [forceCompose, setForceCompose] = useState(false)
   const [viewMode, setViewMode] = useState('chat') // 'chat' | 'history'
   const [historyMessages, setHistoryMessages] = useState([])
   const [historyLabel, setHistoryLabel] = useState('')
@@ -510,6 +515,7 @@ export default function D2InsightPage() {
         user_id: userId,
         project_id: user?.myprojectid ?? null,
         account_uid: user?.accountuid ?? null,
+        force_compose: forceCompose,
       })
       if (previewResp.data?.no_data_message) {
         setMessages((prev) => [
@@ -543,7 +549,7 @@ export default function D2InsightPage() {
     try {
       const { data } = await apiClient.post(
         '/d2insight/chat',
-        { message: text, session_id: sessionIdRef.current, user_id: userId, project_id: user?.myprojectid ?? null, account_uid: user?.accountuid ?? null },
+        { message: text, session_id: sessionIdRef.current, user_id: userId, project_id: user?.myprojectid ?? null, account_uid: user?.accountuid ?? null, force_compose: forceCompose },
         CHAT_TIMEOUT,
       )
 
@@ -730,6 +736,7 @@ export default function D2InsightPage() {
         day_of_month: settings.day_of_month,
         hour: settings.hour,
         minute: settings.minute,
+        grain: settings.grain,
       })
       return data
     } catch (e) {
@@ -750,6 +757,8 @@ export default function D2InsightPage() {
         day_of_month: settings.day_of_month,
         hour: settings.hour,
         minute: settings.minute,
+        template_nm: settings.template_nm || null,
+        grain: settings.grain,
       })
       const markTemplate = (list) => list.map((m) => (
         m.role === 'assistant' && m.qauid === settings.qauid ? { ...m, isTemplate: true } : m
@@ -784,6 +793,7 @@ export default function D2InsightPage() {
         day_of_month: settings.day_of_month,
         hour: settings.hour,
         minute: settings.minute,
+        template_nm: settings.template_nm || null,
       })
       loadScheduleSettings(settings.session_id)
       fetchHistory()
@@ -1373,6 +1383,8 @@ export default function D2InsightPage() {
           onValidateSteps={handleValidateSteps}
           onDescribeStep={handleDescribeStep}
           onEditStep={handleEditStep}
+          forceCompose={forceCompose}
+          onToggleForceCompose={() => setForceCompose((v) => !v)}
         />
       </div>
 
@@ -1578,6 +1590,7 @@ function ReportOptionsPanel({
   onPreviewScheduleUpdate, onApplyScheduleUpdate,
   preview, previewGenerating, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
   onValidateSteps, onDescribeStep, onEditStep,
+  forceCompose, onToggleForceCompose,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
@@ -1677,20 +1690,25 @@ function ReportOptionsPanel({
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [scheduleDay, setScheduleDay] = useState(1)
   const [scheduleHour, setScheduleHour] = useState(9)
+  const [scheduleNm, setScheduleNm] = useState('')
+  const [scheduleGrain, setScheduleGrain] = useState('month')
   const [registering, setRegistering] = useState(false)
 
   const [showEditSchedule, setShowEditSchedule] = useState(false)
   const [editDay, setEditDay] = useState(1)
   const [editHour, setEditHour] = useState(9)
+  const [editNm, setEditNm] = useState('')
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     if (scheduleSettings) {
       setEditDay(scheduleSettings.day_of_month || 1)
       setEditHour(scheduleSettings.hour ?? 9)
+      setEditNm(scheduleSettings.template_nm || '')
     }
     setShowScheduleForm(false)
     setShowEditSchedule(false)
+    setScheduleNm('')
   }, [scheduleSettings, reportQauid])
 
   const handleRequestSaveSchedule = async () => {
@@ -1702,6 +1720,8 @@ function ReportOptionsPanel({
         day_of_month: scheduleDay,
         hour: scheduleHour,
         minute: 0,
+        template_nm: scheduleNm.trim() || null,
+        grain: scheduleGrain,
       }
       const res = await onPreviewRegisterSchedule?.(settings)
       if (!res) return
@@ -1724,7 +1744,13 @@ function ReportOptionsPanel({
     if (!scheduleSettings?.session_id) return
     setUpdating(true)
     try {
-      const settings = { session_id: scheduleSettings.session_id, day_of_month: editDay, hour: editHour, minute: 0 }
+      const settings = {
+        session_id: scheduleSettings.session_id,
+        day_of_month: editDay,
+        hour: editHour,
+        minute: 0,
+        template_nm: editNm.trim() || null,
+      }
       const res = await onPreviewScheduleUpdate?.(settings)
       if (!res) return
       modal.confirm({
@@ -1767,10 +1793,23 @@ function ReportOptionsPanel({
           onClose={() => setViewingStep(null)}
         />
       )}
-      <div className="options-panel-header">
+      <div className="options-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="options-panel-title">
           {preview ? '작성 전 확인 (preview)' : '적용된 옵션'}
         </span>
+        <button
+          type="button"
+          onClick={onToggleForceCompose}
+          title="켜면 등록된 시나리오를 무시하고 AI가 그 자리에서 카탈로그를 자유롭게 조립합니다."
+          style={{
+            padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
+            border: forceCompose ? '1px solid #e0a83a' : '1px solid #ccc',
+            background: forceCompose ? '#fff6e5' : '#f5f5f5',
+            color: forceCompose ? '#8a5a00' : '#666',
+          }}
+        >
+          {forceCompose ? 'AI 문서 자동생성 해제' : 'AI 문서 자동생성'}
+        </button>
       </div>
       <div className="options-panel-body">
         {/* preview 모드 — 사용자 요청에 대해 시나리오 매칭 결과 표시 + "이대로 작성" 버튼.
@@ -1928,7 +1967,19 @@ function ReportOptionsPanel({
                 </button>
                 {showScheduleForm && (
                   <div className="opt-schedule-form">
-                    <span>매달</span>
+                    <input
+                      type="text"
+                      value={scheduleNm}
+                      onChange={(e) => setScheduleNm(e.target.value)}
+                      placeholder="보고서 이름 (선택)"
+                      style={{ flex: '1 1 100%' }}
+                    />
+                    <select value={scheduleGrain} onChange={(e) => setScheduleGrain(e.target.value)}>
+                      <option value="month">매달</option>
+                      <option value="quarter">매분기</option>
+                      <option value="half">매반기</option>
+                      <option value="year">매년</option>
+                    </select>
                     <select value={scheduleDay} onChange={(e) => setScheduleDay(Number(e.target.value))}>
                       {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                         <option key={d} value={d}>{d}일</option>
@@ -1950,13 +2001,23 @@ function ReportOptionsPanel({
             {scheduleSettings && (
               <div className="opt-schedule">
                 <div className="opt-schedule-current">
-                  정기 보고서 작성 일시: 매달 {scheduleSettings.day_of_month}일 {scheduleSettings.hour}시
+                  {scheduleSettings.template_nm && (
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>📄 {scheduleSettings.template_nm}</div>
+                  )}
+                  정기 보고서 작성 일시: {GRAIN_CYCLE_LABEL[scheduleSettings.grain] || '매달'} {scheduleSettings.day_of_month}일 {scheduleSettings.hour}시
                 </div>
                 <button type="button" className="opt-schedule-toggle" onClick={() => setShowEditSchedule((v) => !v)}>
                   {showEditSchedule ? '수정 취소' : '수정'}
                 </button>
                 {showEditSchedule && (
                   <div className="opt-schedule-form">
+                    <input
+                      type="text"
+                      value={editNm}
+                      onChange={(e) => setEditNm(e.target.value)}
+                      placeholder="보고서 이름 (선택)"
+                      style={{ flex: '1 1 100%' }}
+                    />
                     <span>매달</span>
                     <select value={editDay} onChange={(e) => setEditDay(Number(e.target.value))}>
                       {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (

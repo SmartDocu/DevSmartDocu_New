@@ -355,6 +355,7 @@ def build_join_sql(sources: list[dict]) -> tuple[str, str, list[dict]]:
 _GRAIN_SQL_EXPR: dict[str, str] = {
     "month":   "FORMAT({date}, 'yyyy-MM')",
     "quarter": "CONCAT(YEAR({date}), '-Q', DATEPART(QUARTER, {date}))",
+    "half":    "CONCAT(YEAR({date}), '-H', CASE WHEN MONTH({date}) <= 6 THEN 1 ELSE 2 END)",
     "year":    "FORMAT({date}, 'yyyy')",
     # ISO 주차. SQL Server에 ISO_WEEK 번호는 있지만 ISO 주차 연도를 직접 주는 함수는 없어
     # DATEPART(YEAR, ...)로 근사한다 — 연말·연초 경계의 극소수 주만 어긋날 수 있다.
@@ -374,7 +375,7 @@ def build_agg_sql(sources: list[dict], meta: pd.DataFrame, grain: str = "month")
     결과 DataFrame에서 기간 축 컬럼을 찾을 때 쓴다.
     """
     if grain not in _GRAIN_SQL_EXPR:
-        raise DbMetaError(f"알 수 없는 grain: '{grain}' (month/quarter/year/week만 지원)")
+        raise DbMetaError(f"알 수 없는 grain: '{grain}' (month/quarter/half/year/week만 지원)")
     from_sql, date_ref, sources = build_join_sql(sources)
     period_expr = _GRAIN_SQL_EXPR[grain].format(date=date_ref)
 

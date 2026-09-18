@@ -6,7 +6,8 @@
 매달 5일 8시에 작성해주세요"처럼 문장으로 요청하는 경로도 지원한다 — 대화 목록(history)
 화면은 입력창 자체가 없어 이 경로를 탈 일이 없고, 실시간 대화 중에만 의미가 있다. 이 파일
 아래쪽의 _spec_store/advance_set_spec이 그 상태 머신이다(pr_module_insight의 schedule_set
-대화 흐름과 같은 원칙, 다만 이 앱은 월 단위 grain만 지원하므로 요일 분기는 두지 않는다).
+대화 흐름과 같은 원칙, 다만 이 대화형 경로는 월 단위 grain만 지원하므로 요일 분기는 두지
+않는다 — 오른쪽 패널 폼 경로는 month/quarter/half/year를 지원한다).
 """
 from __future__ import annotations
 
@@ -31,6 +32,8 @@ def compose_cron(grain: str, day_of_month: int | None, weekday: int | None,
     day_field = "28" if day_of_month == -1 else str(day_of_month)
     if grain == "quarter":
         return f"{minute} {hour} {day_field} 1,4,7,10 *"
+    if grain == "half":
+        return f"{minute} {hour} {day_field} 1,7 *"
     if grain == "year":
         return f"{minute} {hour} {day_field} 1 *"
     return f"{minute} {hour} {day_field} * *"
@@ -51,6 +54,8 @@ def parse_cron(cron: str) -> dict:
     day = int(day_s)
     if month_s == "1,4,7,10":
         grain = "quarter"
+    elif month_s == "1,7":
+        grain = "half"
     elif month_s == "1":
         grain = "year"
     else:
@@ -59,43 +64,53 @@ def parse_cron(cron: str) -> dict:
 
 
 def compute_target_month(grain: str, offset: int, run_date) -> str:
-    """grain 주기 기준으로 run_date가 속한 주기의 offset번째 이전 달을 "YYYY-MM"로 반환한다.
+    """grain 주기 기준으로 run_date가 속한 주기의 offset번째 이전 기간 식별자를 반환한다
+    (month면 "YYYY-MM", quarter면 "YYYY-Qn", half면 "YYYY-Hn", year면 "YYYY").
 
-    현재 등록 화면은 month grain만 제공하므로 month 기준으로 계산한다(offset은 항상 -1 —
-    실행 시점 기준 직전 달). scheduled_runner.run_scheduled_template의 실제 실행과
+    등록 화면이 지원하는 grain(month/quarter/half/year)마다 run_date가 속한 현재 주기를
+    구한 뒤, dataset_builder.shift_period로 offset칸 이동한다(offset은 항상 -1 — 실행
+    시점 기준 직전 주기). scheduled_runner.run_scheduled_template의 실제 실행과
     _register_schedule_for_qa의 "첫 실행이 원본 기간과 겹치는지" 사전 판정이 이 함수 하나를
     같이 쓴다 — 두 곳이 각자 계산하면 나중에 어긋날 수 있어서다.
     """
-    year, month = run_date.year, run_date.month
-    steps = -offset if offset < 0 else 0
-    for _ in range(steps):
-        month -= 1
-        if month < 1:
-            month = 12
-            year -= 1
-    return f"{year:04d}-{month:02d}"
+    from d2insight.engine.pipeline.dataset_builder import shift_period
+
+    if grain == "quarter":
+        q = (run_date.month - 1) // 3 + 1
+        current_period = f"{run_date.year:04d}-Q{q}"
+    elif grain == "half":
+        h = 1 if run_date.month <= 6 else 2
+        current_period = f"{run_date.year:04d}-H{h}"
+    elif grain == "year":
+        current_period = f"{run_date.year:04d}"
+    else:
+        current_period = f"{run_date.year:04d}-{run_date.month:02d}"
+    return shift_period(grain, current_period, offset)
 
 
-def next_run_avoiding_period(origin_period: str | None, day_of_month: int, hour: int, minute: int) -> datetime:
-    """다음 실행 시각 — 단, 그 실행이 만들 대상월이 origin_period(등록 기준이 된 원본 보고서의
-    대상월)와 같으면 한 주기 미룬다.
+def next_run_avoiding_period(origin_period: str | None, day_of_month: int, hour: int, minute: int,
+                              grain: str = "month") -> datetime:
+    """다음 실행 시각 — 단, 그 실행이 만들 대상 기간이 origin_period(등록 기준이 된 원본
+    보고서의 대상 기간)와 같으면 한 주기 미룬다.
 
     예: 8/4에 "지난달(7월)" 보고서를 만들고 "매달 5일"로 등록하면 다음 cron이 바로 내일(8/5)
     이라 실행 시점 기준 전월(여전히 7월)을 또 만들어 원본과 중복된다. "2026년 5월"처럼 특정
     과거월을 등록한 경우는 첫 실행(전월=7월)이 origin_period(5월)와 달라 이 조건에 안 걸리고
-    그대로 진행된다 — 대상월이 실제로 겹칠 때만 한 주기 미룬다. 등록(REST/대화 양쪽)과
+    그대로 진행된다 — 대상 기간이 실제로 겹칠 때만 한 주기 미룬다. 등록(REST/대화 양쪽)과
     등록 전 미리보기 문구가 같은 값을 보도록 계산을 한곳에 둔다.
     """
-    next_dt = next_occurrence("month", day_of_month, None, hour, minute, datetime.now(tz=KST))
-    if origin_period and compute_target_month("month", -1, next_dt.date()) == origin_period:
-        next_dt = next_occurrence("month", day_of_month, None, hour, minute, next_dt)
+    next_dt = next_occurrence(grain, day_of_month, None, hour, minute, datetime.now(tz=KST))
+    if origin_period and compute_target_month(grain, -1, next_dt.date()) == origin_period:
+        next_dt = next_occurrence(grain, day_of_month, None, hour, minute, next_dt)
     return next_dt
 
 
 def _next_month_grain_dates(grain: str) -> list[int]:
-    """quarter/year grain에서 실행 월 목록(1~12)."""
+    """quarter/half/year grain에서 실행 월 목록(1~12)."""
     if grain == "quarter":
         return [1, 4, 7, 10]
+    if grain == "half":
+        return [1, 7]
     if grain == "year":
         return [1]
     return list(range(1, 13))
@@ -132,7 +147,7 @@ def next_occurrence(grain: str, day_of_month: int | None, weekday: int | None,
 
 
 def _period_label(grain: str) -> str:
-    return {"week": "지난주", "month": "전월", "quarter": "전분기", "year": "전년"}.get(grain, "전월")
+    return {"week": "지난주", "month": "전월", "quarter": "전분기", "half": "전반기", "year": "전년"}.get(grain, "전월")
 
 
 def _time_label(hour: int, minute: int) -> str:
@@ -143,7 +158,7 @@ def _time_label(hour: int, minute: int) -> str:
 
 
 def _when_label(grain: str, day_of_month: int | None, weekday: int | None, hour: int, minute: int) -> str:
-    grain_label = {"week": "매주", "month": "매달", "quarter": "매분기", "year": "매년"}[grain]
+    grain_label = {"week": "매주", "month": "매달", "quarter": "매분기", "half": "매반기", "year": "매년"}[grain]
     time_label = _time_label(hour, minute)
     if grain == "week":
         return f"{grain_label} {WEEKDAY_NAMES[weekday]}요일 {time_label}"
@@ -174,6 +189,13 @@ def _period_bounds(grain: str, ref: datetime) -> tuple[datetime, datetime]:
         q_start_month = ((ref.month - 1) // 3) * 3 + 1
         start = ref.replace(month=q_start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
         end_month = q_start_month + 3
+        end = (start.replace(year=start.year + 1, month=end_month - 12) if end_month > 12
+               else start.replace(month=end_month))
+        return start, end
+    if grain == "half":
+        h_start_month = 1 if ref.month <= 6 else 7
+        start = ref.replace(month=h_start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_month = h_start_month + 6
         end = (start.replace(year=start.year + 1, month=end_month - 12) if end_month > 12
                else start.replace(month=end_month))
         return start, end

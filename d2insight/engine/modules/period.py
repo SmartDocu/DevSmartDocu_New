@@ -28,7 +28,7 @@ from d2insight.engine.pipeline.dataset_builder import (
 )
 
 
-_GRAIN_LABEL = {"month": "개월", "quarter": "분기", "year": "년", "week": "주"}
+_GRAIN_LABEL = {"month": "개월", "quarter": "분기", "half": "반기", "year": "년", "week": "주"}
 
 
 def _fill_count_measure(meta: pd.DataFrame, frames: dict) -> None:

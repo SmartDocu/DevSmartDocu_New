@@ -44,7 +44,7 @@ _PARAM_UI: dict[str, dict] = {
     "compare_type":     {"label": "비교 기준", "widget": "toggle", "choices": ["MoM", "YoY", "QoQ"]},
     "months_back":      {"label": "이력 개월수", "widget": "number", "min": 1},
     "grain":           {"label": "기간 단위", "widget": "toggle",
-                        "choices": ["month", "quarter", "year", "week"]},
+                        "choices": ["month", "quarter", "half", "year", "week"]},
     "plan_source":      {"label": "계획 데이터 소스", "widget": "text"},
 }
 
