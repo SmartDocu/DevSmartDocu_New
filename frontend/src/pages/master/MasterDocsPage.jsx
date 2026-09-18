@@ -130,7 +130,7 @@ export default function MasterDocsPage() {
                     <td style={{ wordBreak: 'break-word' }}>{doc.docnm}</td>
                     <td style={{ wordBreak: 'break-word' }}>{doc.projectnm}</td>
                     <td style={{ wordBreak: 'break-word' }}>{doc.docgroupnm || ''}</td>
-                    <td style={{ wordBreak: 'break-word' }}>{doc.docdesc || ''}</td>
+                    <td style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{doc.docdesc || ''}</td>
                   </tr>
                 ))}
               </tbody>

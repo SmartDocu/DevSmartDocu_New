@@ -64,21 +64,23 @@ export function useSaveOrgProject() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['org-projects', vars.tenantid, vars.accountuid] })
       qc.invalidateQueries({ queryKey: ['org-projects'] })
+      // master/docs 등 다른 화면의 프로젝트 드롭다운(다른 쿼리 키)도 즉시 갱신 —
+      // 안 하면 전역 staleTime(5분) 동안 새로 만든 프로젝트가 안 보이는 문제가 있었다(2026-09-18 발견).
+      qc.invalidateQueries({ queryKey: ['docs-projects'] })
+      qc.invalidateQueries({ queryKey: ['datas-projects'] })
     },
   })
 }
 
 export function useDeleteOrgProject() {
   const qc = useQueryClient()
-  const { message } = App.useApp()
   return useMutation({
     mutationFn: ({ projectid }) =>
       apiClient.delete(`/org/projects/${projectid}`).then((r) => r.data),
-    onSuccess: (_, vars) => {
-      message.success(t('msg.delete.success'))
+    // 성공/실패 안내 메시지는 호출부(OrgProjectsPage.jsx)에서 처리 — 여기서 같이 띄우면 중복 토스트가 뜬다.
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['org-projects'] })
     },
-    onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
 }
 

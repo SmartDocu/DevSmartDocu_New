@@ -28,6 +28,7 @@ from backend.app.schemas.auth import (
     RefreshRequest,
     RegisterInviteRequest,
     RegisterRequest,
+    SelectFreeServicesRequest,
     SelectTenantRequest,
     SendResetEmailRequest,
     SendSmsRequest,
@@ -997,6 +998,89 @@ def get_tenants():
     )
 
 
+def _subscribe_account_to_free_service(sb_service, tenantid, accountuid: str, user_id: str, product: dict) -> None:
+    """계정을 특정 서비스의 Free 요금제로 가입시킨다 (projects/projectusers 최초 1회 생성 +
+    subscriptions/accountservices/serviceusers insert + 기본 크레딧 버킷 지급).
+
+    회원가입(register())의 상품 선택과, 로그인 후 온보딩 게이트(select_free_services())가
+    공통으로 사용하는 헬퍼 — 두 곳에서 100% 동일하게 동작해야 하므로 반드시 이 함수를 거칠 것.
+    이미 해당 servicecd로 가입되어 있는지 여부는 호출부에서 먼저 확인해야 한다(멱등성 보장은
+    호출부 책임).
+    """
+    from dateutil.relativedelta import relativedelta
+
+    SCHEMA = SUPABASE_SCHEMA
+    servicecd = product["servicecd"]
+
+    proj_result = sb_service.schema(SCHEMA).table("projects").insert({
+        "tenantid": tenantid,
+        "accountuid": accountuid,
+        "projectnm": f"{accountuid}_{servicecd}",
+        "projectdesc": "계정에 따른 자동 생성된 프로젝트 입니다.",
+        "servicecd": servicecd,
+        "useyn": True,
+        "creator": user_id,
+    }).execute()
+    respon_projectid = proj_result.data[0]["projectid"]
+    sb_service.schema(SCHEMA).table("projectusers").insert({
+        "projectid": respon_projectid,
+        "useruid": user_id,
+        "rolecd": "M",
+        "useyn": True,
+        "creator": user_id,
+    }).execute()
+
+    sub_result = sb_service.schema(SCHEMA).table("subscriptions").insert({
+        "tenantid": tenantid,
+        "accountuid": accountuid,
+        "productcd": product["productcd"],
+        "plancd": product.get("plancd"),
+        "servicecd": product.get("servicecd"),
+        "billingtermcd": product.get("billingtermcd"),
+        "subscription_status": "Paid",
+        "creator": user_id,
+    }).execute()
+    subscriptionuid = sub_result.data[0]["subscriptionuid"]
+
+    sb_service.schema(SCHEMA).table("accountservices").insert({
+        "accountuid": accountuid,
+        "servicecd": product["servicecd"],
+        "tenantid": tenantid,
+        "subscriptionuid": subscriptionuid,
+        "servicestatus": "Active",
+        "productcd": product["productcd"],
+        "plancd": product.get("plancd"),
+        "is_customerAIKey": product.get("is_customeraikey", False),
+        "is_postpaid": False,
+        "included_users": product.get("users", 1),
+        "total_users": product.get("users", 1),
+        "is_autotopup": False,
+        "creator": user_id,
+    }).execute()
+
+    sb_service.schema(SCHEMA).table("serviceusers").insert({
+        "accountuid": accountuid,
+        "servicecd": product["servicecd"],
+        "useruid": user_id,
+        "tenantid": tenantid,
+        "useyn": True,
+        "creator": user_id,
+    }).execute()
+
+    now_utc = datetime.now(timezone.utc)
+    upsert_ba_creditbucket(
+        sb_service.schema(SCHEMA),
+        subscriptionuid=subscriptionuid,
+        tenantid=tenantid,
+        accountuid=accountuid,
+        servicecd=product["servicecd"],
+        chargecredit=product.get("credit", 0),
+        granteddts=now_utc.isoformat(),
+        expiredts=(now_utc + relativedelta(months=1)).isoformat(),
+        startdt=now_utc.date().isoformat(),
+    )
+
+
 @router.post("/register", response_model=MessageResponse)
 def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional[int] = None):
     """회원가입: Supabase auth + users 테이블 + 기본 권한 할당.
@@ -1005,7 +1089,6 @@ def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional
     초대 건만 가입완료 처리하기 위한 내부 파라미터 (공개 API에는 노출하지 않음).
     """
     from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
-    from dateutil.relativedelta import relativedelta
 
     SCHEMA = SUPABASE_SCHEMA
 
@@ -1150,83 +1233,16 @@ def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional
             )
             prod_map = {p["productcd"]: p for p in (prod_rows.data or [])}
 
-            created_service_projects: set[str] = set()
+            subscribed_servicecds: set[str] = set()
 
             for productcd in body.products:
                 product = prod_map.get(productcd)
                 if not product:
                     continue
-
-                servicecd = product["servicecd"]
-                if servicecd not in created_service_projects:
-                    proj_result = service.schema(SCHEMA).table("projects").insert({
-                        "tenantid": smartdoc_tenantid,
-                        "accountuid": accountuid,
-                        "projectnm": f"{body.email}_{servicecd}",
-                        "projectdesc": "계정에 따른 자동 생성된 프로젝트 입니다.",
-                        "servicecd": servicecd,
-                        "useyn": True,
-                        "creator": user_id,
-                    }).execute()
-                    respon_projectid = proj_result.data[0]["projectid"]
-                    service.schema(SCHEMA).table("projectusers").insert({
-                        "projectid": respon_projectid,
-                        "useruid": user_id,
-                        "rolecd": "M",
-                        "useyn": True,
-                        "creator": user_id,
-                    }).execute()
-                    created_service_projects.add(servicecd)
-
-                sub_result = service.schema(SCHEMA).table("subscriptions").insert({
-                    "tenantid": smartdoc_tenantid,
-                    "accountuid": accountuid,
-                    "productcd": product["productcd"],
-                    "plancd": product.get("plancd"),
-                    "servicecd": product.get("servicecd"),
-                    "billingtermcd": product.get("billingtermcd"),
-                    "subscription_status": "Paid",
-                    "creator": user_id,
-                }).execute()
-                subscriptionuid = sub_result.data[0]["subscriptionuid"]
-
-                service.schema(SCHEMA).table("accountservices").insert({
-                    "accountuid": accountuid,
-                    "servicecd": product["servicecd"],
-                    "tenantid": smartdoc_tenantid,
-                    "subscriptionuid": subscriptionuid,
-                    "servicestatus": "Active",
-                    "productcd": product["productcd"],
-                    "plancd": product.get("plancd"),
-                    "is_customerAIKey": product.get("is_customeraikey", False),
-                    "is_postpaid": False,
-                    "included_users": product.get("users", 1),
-                    "total_users": product.get("users", 1),
-                    "is_autotopup": False,
-                    "creator": user_id,
-                }).execute()
-
-                service.schema(SCHEMA).table("serviceusers").insert({
-                    "accountuid": accountuid,
-                    "servicecd": product["servicecd"],
-                    "useruid": user_id,
-                    "tenantid": smartdoc_tenantid,
-                    "useyn": True,
-                    "creator": user_id,
-                }).execute()
-
-                now_utc = datetime.now(timezone.utc)
-                upsert_ba_creditbucket(
-                    service.schema(SCHEMA),
-                    subscriptionuid=subscriptionuid,
-                    tenantid=smartdoc_tenantid,
-                    accountuid=accountuid,
-                    servicecd=product["servicecd"],
-                    chargecredit=product.get("credit", 0),
-                    granteddts=now_utc.isoformat(),
-                    expiredts=(now_utc + relativedelta(months=1)).isoformat(),
-                    startdt=now_utc.date().isoformat(),
-                )
+                if product["servicecd"] in subscribed_servicecds:
+                    continue
+                _subscribe_account_to_free_service(service, smartdoc_tenantid, accountuid, user_id, product)
+                subscribed_servicecds.add(product["servicecd"])
 
     except Exception as e:
         raise HTTPException(
@@ -1804,3 +1820,60 @@ def register_invite(body: RegisterInviteRequest, request: Request):
                                 }).execute()
 
     return MessageResponse(ok=True, message="회원가입이 완료되었습니다.\n이메일 인증 후 로그인 가능합니다.")
+
+
+@router.post("/select-free-services")
+def select_free_services(body: SelectFreeServicesRequest, token: str = Depends(get_token)):
+    """로그인 후 온보딩 게이트: 개인(시스템 테넌트) 계정이 구독 서비스가 하나도 없을 때
+    보여주는 화면에서, 선택한 서비스(들)을 Free 요금제로 가입시킨다.
+
+    이 화면은 시스템 테넌트 전용이라 조직 테넌트 소속 계정은 호출할 수 없도록 막는다
+    (프론트 게이트와 별개의 서버 측 방어)."""
+    if not body.servicecds:
+        raise HTTPException(status_code=400, detail="servicecds는 최소 1개 이상이어야 합니다.")
+
+    supabase = _get_user_client(token)
+    user_resp = supabase.auth.get_user(token)
+    if not user_resp or not user_resp.user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
+    user_id = str(user_resp.user.id)
+
+    svc = _get_service_client()
+    sd = svc.schema(SUPABASE_SCHEMA)
+
+    # 시스템 테넌트 여부 확인 — 개인 계정은 accounts를 useruid로 조회해야 한다
+    # (system tenant는 여러 개인 계정이 같은 tenantid를 공유하므로 tenantid만으로는 특정 불가).
+    acc = sd.table("accounts").select("accountuid, tenantid").eq("useruid", user_id).maybe_single().execute()
+    if not acc or not acc.data:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
+    accountuid = acc.data["accountuid"]
+    tenantid = acc.data["tenantid"]
+
+    tenant_row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
+    is_system_tenant = bool(tenant_row.data.get("issystemtenant")) if tenant_row and tenant_row.data else False
+    if not is_system_tenant:
+        raise HTTPException(status_code=403, detail="이 기능은 개인 계정에서만 사용할 수 있습니다.")
+
+    servicecds = list(dict.fromkeys(body.servicecds))  # 순서 유지 + 중복 제거
+    subscribed: list[str] = []
+
+    for servicecd in servicecds:
+        existing = (
+            sd.table("accountservices").select("servicecd")
+            .eq("accountuid", accountuid).eq("servicecd", servicecd)
+            .maybe_single().execute()
+        )
+        if existing and existing.data:
+            continue  # 이미 가입되어 있으면 건너뜀 (멱등 처리)
+
+        prod_rows = (
+            sd.table("products").select("productcd,plancd,servicecd,billingtermcd,users,credit,is_customeraikey")
+            .eq("servicecd", servicecd).eq("plancd", "Fr").eq("useyn", True)
+            .execute().data or []
+        )
+        if not prod_rows:
+            continue
+        _subscribe_account_to_free_service(svc, tenantid, accountuid, user_id, prod_rows[0])
+        subscribed.append(servicecd)
+
+    return {"ok": True, "subscribed": subscribed}

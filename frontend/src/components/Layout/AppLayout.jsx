@@ -12,7 +12,7 @@ import { useMe } from '@/hooks/useAuth'
 import { useConfigs } from '@/hooks/useConfigs'
 import { useMenus } from '@/hooks/useMenus'
 import AppSidebar from '@/components/Layout/AppSidebar'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
@@ -80,6 +80,42 @@ export default function AppLayout() {
   const headerAppLabel = HEADER_APP_LABELS[appcd] || 'D2Doc'
   const { data: helpData } = useHelpSearch(helpUrl, languageCd || 'en')
   const helpItem = helpData?.help ?? null
+
+  // ── 헬프 팝업 내용 표시용 RTE(CKEditor, 읽기 전용) ──────────────────────────
+  const helpEditorContainerRef = useRef(null)
+  const helpEditorInstanceRef = useRef(null)
+  const [helpEditorContainerMounted, setHelpEditorContainerMounted] = useState(false)
+  const helpEditorContainerCallbackRef = useCallback((node) => {
+    helpEditorContainerRef.current = node
+    if (node) setHelpEditorContainerMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!helpModalOpen || !helpEditorContainerMounted || helpEditorInstanceRef.current || !window.DecoupledEditor) return
+    let cancelled = false
+    window.DecoupledEditor.create(helpEditorContainerRef.current, {
+      toolbar: { items: [] },
+      language: languageCd || 'ko',
+    }).then((editor) => {
+      if (cancelled) { editor.destroy(); return }
+      helpEditorInstanceRef.current = editor
+      editor.setData(helpItem?.desc || '')
+      editor.enableReadOnlyMode('help-view')
+    }).catch((e) => console.error('CKEditor 초기화 실패:', e))
+
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [helpModalOpen, helpEditorContainerMounted])
+
+  // 모달 닫힐 때 에디터 정리(다음에 열 때 새로 생성 + helpItem 최신 내용 반영)
+  useEffect(() => {
+    if (helpModalOpen) return
+    if (helpEditorInstanceRef.current) {
+      helpEditorInstanceRef.current.destroy()
+      helpEditorInstanceRef.current = null
+    }
+    setHelpEditorContainerMounted(false)
+  }, [helpModalOpen])
   const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid, languagecd: languageCd })
   const currentServicecd = apps.find((a) => a.appcd === appcd)?.servicecd
   const { data: projectsData } = useDatasProjects({ enabled: !!user, servicecd: currentServicecd })
@@ -995,11 +1031,12 @@ export default function AppLayout() {
         open={helpModalOpen}
         onCancel={() => setHelpModalOpen(false)}
         footer={null}
-        width={640}
+        width={1400}
+        styles={{ body: { height: '72vh', overflowY: 'auto' } }}
       >
         <div
+          ref={helpEditorContainerCallbackRef}
           style={{ padding: '8px 0', lineHeight: 1.7 }}
-          dangerouslySetInnerHTML={{ __html: helpItem?.desc || '' }}
         />
       </Modal>
     </Layout>

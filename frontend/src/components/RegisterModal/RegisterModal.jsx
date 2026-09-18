@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
 import { getErrorMessage } from '@/utils/apiError'
 
 export default function RegisterModal({ open, onClose }) {
   const languageCd = useLangStore((s) => s.languageCd)
-  const [selectedProducts, setSelectedProducts] = useState([])
   const [usernm, setUsernm] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,22 +17,8 @@ export default function RegisterModal({ open, onClose }) {
   const [saving, setSaving] = useState(false)
   useLangStore((s) => s.translations)
 
-  const { data: productsData } = useQuery({
-    queryKey: ['auth-products'],
-    queryFn: () => apiClient.get('/auth/products').then((r) => r.data),
-    enabled: open,
-  })
-  const products = productsData?.products || []
-
-  const toggleProduct = (productcd) => {
-    setSelectedProducts(prev =>
-      prev.includes(productcd) ? prev.filter(v => v !== productcd) : [...prev, productcd]
-    )
-  }
-
   useEffect(() => {
     if (!open) return
-    setSelectedProducts([])
     setUsernm('')
     setEmail('')
     setPassword('')
@@ -72,7 +56,6 @@ export default function RegisterModal({ open, onClose }) {
     if (!password) { alert(t('msg.password.required')); return }
     if (password !== passwordConfirm) { alert(t('msg.password.mismatch')); return }
     if (password.length < 8) { alert(t('msg.password.minlength')); return }
-    if (selectedProducts.length === 0) { alert(t('msg.register.product.required')); return }
 
     setSaving(true)
     try {
@@ -85,7 +68,6 @@ export default function RegisterModal({ open, onClose }) {
         termsofuseyn: termsofuseyn ? 'Y' : 'N',
         electronicfinancialtermsyn: electronicfinancialtermsyn ? 'Y' : 'N',
         marketingyn: marketingyn ? 'Y' : 'N',
-        products: selectedProducts,
         languagecd: languageCd,
       })
       alert(t('msg.register.success'))
@@ -158,28 +140,6 @@ export default function RegisterModal({ open, onClose }) {
             placeholder={t('lbl.password.confirm')}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
-
-        {/* 요금 선택 */}
-        {products.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 90, textAlign: 'right', fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{t('lbl.services')}</span>
-              <div style={{ display: 'flex', gap: 16 }}>
-                {products.map(p => (
-                  <label key={p.productcd} style={{ display: 'flex', alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedProducts.includes(p.productcd)}
-                      onChange={() => toggleProduct(p.productcd)}
-                      style={{ marginRight: 6 }}
-                    />
-                    {p.productnm}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 전체 동의 */}
         <label style={{ display: 'block', marginBottom: 8, textAlign: 'left', fontSize: 14 }}>

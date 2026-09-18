@@ -96,6 +96,10 @@ class RegisterInviteRequest(BaseModel):
     languagecd: Optional[str] = None
 
 
+class SelectFreeServicesRequest(BaseModel):
+    servicecds: list[str]
+
+
 class SendResetEmailRequest(BaseModel):
     email: EmailStr
 

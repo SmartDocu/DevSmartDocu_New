@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useMenuCodes } from '@/hooks/useMenus'
+import { useSelectFreeServices } from '@/hooks/useApps'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
@@ -39,6 +40,8 @@ export default function MyInfoPage() {
   const { data: subsData, isLoading: subsLoading } = useMySubscriptions()
   const { data: otherSubData } = useTenantManageOtherSubscriptions()
   const { data: cancelReasonCodes = [] } = useMenuCodes('cancel_reasoncd')
+  const { data: serviceCodes = [] } = useMenuCodes('servicecd')
+  const selectFreeServiceMutation = useSelectFreeServices()
   const hasMfaFeature = (otherSubData?.owned || []).some((o) => o.productcd === 'mfa')
   const [editingName, setEditingName] = useState(false)
   const [editingTimezone, setEditingTimezone] = useState(false)
@@ -62,6 +65,30 @@ export default function MyInfoPage() {
   const isMfaEnabled = factorsData?.mfa_enabled ?? false
   const subscriptions = subsData?.subscriptions || []
   const isSystemTenant = tenant.issystemtenant === true
+
+  const serviceLabel = (scd) => {
+    const found = serviceCodes.find((c) => c.codevalue === scd)
+    return found ? (t(found.term_key) || found.default_name) : scd
+  }
+
+  // 개인(시스템 테넌트) 요금제 카드는 구독 중인 서비스만 보여주는 대신, Do/Ch/In 전부
+  // 항상 노출하고 미구독 서비스는 플레이스홀더 행 + "Free로 시작하기" 버튼으로 대체한다.
+  const subscribedServicecds = new Set(subscriptions.map((s) => s.servicecd))
+  const planRows = isSystemTenant
+    ? [
+        ...subscriptions,
+        ...serviceCodes
+          .filter((c) => !subscribedServicecds.has(c.codevalue))
+          .map((c) => ({
+            productcd: null,
+            productnm: serviceLabel(c.codevalue),
+            plancd: null,
+            servicecd: c.codevalue,
+            cancel_reserved: false,
+            cancel_effective_date: null,
+          })),
+      ]
+    : subscriptions
 
   // 크레딧 구매는 개인(시스템) 테넌트 전용 화면이라, 기업 테넌트에서는 애초에 요청하지 않는다
   // (백엔드가 403을 정상적으로 돌려주더라도, 전역 인터셉터가 GET 403마다 토스트를 띄우기 때문에
@@ -256,8 +283,8 @@ export default function MyInfoPage() {
             <Table
               size="small"
               pagination={false}
-              dataSource={subscriptions}
-              rowKey="productcd"
+              dataSource={planRows}
+              rowKey="servicecd"
               columns={[
                 { title: t('lbl.product'), dataIndex: 'productnm', key: 'productnm' },
                 {
@@ -265,6 +292,16 @@ export default function MyInfoPage() {
                   key: 'actions',
                   render: (_, row) => {
                     if (!isSystemTenant) return null
+                    if (!row.plancd) return (
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={selectFreeServiceMutation.isPending}
+                        onClick={() => selectFreeServiceMutation.mutate([row.servicecd])}
+                      >
+                        {t('btn.freeservice.start_single')}
+                      </Button>
+                    )
                     if (row.plancd === 'Fr') return (
                       <Button size="small" onClick={() => openInTab('upgrade', `?servicecd=${row.servicecd}&plancd=Pr`, t('ttl.upgrade.available'))}>{t('btn.upgrade.pro')}</Button>
                     )

@@ -635,7 +635,20 @@ def save_org_project(body: OrgProjectSaveRequest, request: Request, token: str =
         actioncd="create", targettype="org/projects", targetid=new_id, after=res.data[0] if res.data else None,
         ip=get_client_ip(request),
     )
-    return {"result": "success", "message": "프로젝트가 성공적으로 저장되었습니다."}
+
+    # 생성자를 프로젝트 멤버(매니저)로 자동 등록 — 안 하면 master/docs 등의 프로젝트 목록이
+    # projectusers 소속 여부로 필터링하기 때문에 만든 사람조차 자기 프로젝트를 못 보는 문제가 있었음
+    # (2026-09-18 발견).
+    if new_id:
+        sb.schema(SUPABASE_SCHEMA).table("projectusers").insert({
+            "projectid": new_id,
+            "useruid": user.id,
+            "useyn": True,
+            "rolecd": "M",
+            "creator": user.id,
+        }).execute()
+
+    return {"result": "success", "message": "프로젝트가 성공적으로 저장되었습니다.", "projectid": new_id}
 
 
 @router.delete("/projects/{projectid}")

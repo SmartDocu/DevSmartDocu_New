@@ -14,6 +14,19 @@ export function useApps({ enabled = true, tenantid, languagecd } = {}) {
   })
 }
 
+export function useSelectFreeServices() {
+  const qc = useQueryClient()
+  const { message } = App.useApp()
+  return useMutation({
+    mutationFn: (servicecds) => apiClient.post('/auth/select-free-services', { servicecds }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['apps'] })
+      qc.invalidateQueries({ queryKey: ['myinfo-subscriptions'] })
+    },
+    onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
+  })
+}
+
 export function useAppTranslations(appcd) {
   return useQuery({
     queryKey: ['app-translations', appcd],

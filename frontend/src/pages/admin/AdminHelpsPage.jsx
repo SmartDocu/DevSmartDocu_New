@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { App, Modal, Spin } from 'antd'
-import { PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons'
+import { PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useLanguages } from '@/hooks/useI18n'
@@ -16,7 +16,65 @@ export default function AdminHelpsPage() {
 
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [preview, setPreview] = useState(false)
+  // 선택 항목 전환/신규 때마다 증가 — helpuid가 null→null로 반복되는 경우(신규 저장 후 handleNew 등)에도
+  // 에디터 내용을 확실히 갱신하기 위한 카운터
+  const [resetToken, setResetToken] = useState(0)
+
+  // ── RTE(CKEditor) ──────────────────────────────────────────────
+  const toolbarHostRef = useRef(null)
+  const editorContainerRef = useRef(null)
+  const editorInstanceRef = useRef(null)
+  const [containerMounted, setContainerMounted] = useState(false)
+  const editorContainerCallbackRef = useCallback((node) => {
+    editorContainerRef.current = node
+    if (node) setContainerMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!containerMounted || editorInstanceRef.current || !window.DecoupledEditor) return
+    let cancelled = false
+    window.DecoupledEditor.create(editorContainerRef.current, {
+      toolbar: {
+        items: [
+          'heading', '|',
+          'bold', 'italic', 'underline', 'strikethrough', '|',
+          'link', 'bulletedList', 'numberedList', '|',
+          'outdent', 'indent', '|',
+          'blockQuote', 'insertTable', '|',
+          'undo', 'redo',
+        ],
+      },
+      language: 'ko',
+    }).then((editor) => {
+      if (cancelled) { editor.destroy(); return }
+      if (toolbarHostRef.current) {
+        toolbarHostRef.current.innerHTML = ''
+        toolbarHostRef.current.appendChild(editor.ui.view.toolbar.element)
+      }
+      editorInstanceRef.current = editor
+      editor.setData(form.desc || '')
+      editor.model.document.on('change:data', () => {
+        setForm((f) => ({ ...f, desc: editor.getData() }))
+      })
+    }).catch((e) => console.error('CKEditor 초기화 실패:', e))
+
+    return () => {
+      cancelled = true
+      if (editorInstanceRef.current) {
+        editorInstanceRef.current.destroy()
+        editorInstanceRef.current = null
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerMounted])
+
+  // 선택 항목 전환/신규 시에만 에디터 내용 갱신(타이핑 중엔 반영 안 함 — change:data 리스너가 form.desc를 갱신하므로)
+  useEffect(() => {
+    if (editorInstanceRef.current) {
+      editorInstanceRef.current.setData(form.desc || '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetToken])
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-helps'],
@@ -53,13 +111,13 @@ export default function AdminHelpsPage() {
   const selectHelp = (h) => {
     setSelected(h)
     setForm({ helpuid: h.helpuid, help: h.help || '', url: h.url || '', desc: h.desc || '', languagecd: h.languagecd || 'en' })
-    setPreview(false)
+    setResetToken((n) => n + 1)
   }
 
   const handleNew = () => {
     setSelected(null)
     setForm(EMPTY_FORM)
-    setPreview(false)
+    setResetToken((n) => n + 1)
   }
 
   const handleSave = () => {
@@ -153,7 +211,7 @@ export default function AdminHelpsPage() {
         </div>
 
         {/* 우측: 편집 영역 */}
-        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -217,31 +275,11 @@ export default function AdminHelpsPage() {
           </div>
 
           <div className="form-group">
-            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{t('lbl.desc_lbl')}</span>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setPreview((p) => !p)}
-              >
-                {preview ? <EditOutlined style={{ marginRight: 6 }} /> : <EyeOutlined style={{ marginRight: 6 }} />}
-                {preview ? t('btn.setting') : t('btn.preview_btn')}
-              </button>
-            </label>
-            {preview ? (
-              <div
-                style={{ border: '1px solid #d9d9d9', borderRadius: 4, padding: 12, minHeight: 300, background: '#fff', overflowY: 'auto' }}
-                dangerouslySetInnerHTML={{ __html: form.desc }}
-              />
-            ) : (
-              <textarea
-                rows={14}
-                value={form.desc}
-                placeholder={t('inf.help.desc_placeholder')}
-                onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
-                style={{ fontFamily: 'monospace', fontSize: 12 }}
-              />
-            )}
+            <label>{t('lbl.desc_lbl')}</label>
+            <div style={{ border: '1px solid var(--border-color, #e3e6eb)', borderRadius: 4, overflow: 'hidden' }}>
+              <div ref={toolbarHostRef} style={{ borderBottom: '1px solid var(--border-color, #e3e6eb)' }} />
+              <div ref={editorContainerCallbackRef} style={{ minHeight: 350, padding: '0 4px', background: '#fff' }} />
+            </div>
           </div>
           </div>
         </div>

@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { App, Modal } from 'antd'
+import { App } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useOrgProjects, useSaveOrgProject, useDeleteOrgProject } from '@/hooks/useOrg'
 import { useMenuCodes } from '@/hooks/useMenus'
+import { useUpdateMyProject } from '@/hooks/useDatas'
 
 const roStyle = { backgroundColor: '#f0f0f0', color: '#555', border: '1px solid #ccc' }
 
@@ -15,7 +16,7 @@ const EMPTY_FORM = {
 }
 
 export default function OrgProjectsPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
   useLangStore((s) => s.translations)
@@ -28,6 +29,7 @@ export default function OrgProjectsPage() {
   const { data: allServiceCodes = [] } = useMenuCodes('servicecd')
   const saveMutation = useSaveOrgProject()
   const deleteMutation = useDeleteOrgProject()
+  const updateMyProject = useUpdateMyProject()
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedRow, setSelectedRow] = useState(null)
@@ -57,6 +59,7 @@ export default function OrgProjectsPage() {
 
   const handleSave = () => {
     if (!form.projectnm.trim()) { message.warning(t('msg.projectnm.required')); return }
+    const isNew = !form.projectid
     saveMutation.mutate(
       {
         projectid:   form.projectid ? String(form.projectid) : null,
@@ -68,7 +71,22 @@ export default function OrgProjectsPage() {
         accountuid:  accountuid || null,
       },
       {
-        onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
+        onSuccess: (res) => {
+          message.success(t('msg.save.success'))
+          // 신규 생성 시엔 방금 만든 프로젝트를 그대로 선택 상태로 유지하고,
+          // 해당 서비스(Ch/In)의 "현재 프로젝트"로도 반영해 헤더의 프로젝트 선택기가
+          // 다음에 그 서비스를 열 때 새 프로젝트를 가리키도록 한다.
+          if (isNew && res?.projectid) {
+            const newRow = { ...form, projectid: res.projectid }
+            setSelectedRow(newRow)
+            setForm((f) => ({ ...f, projectid: String(res.projectid) }))
+            if (form.servicecd) {
+              updateMyProject.mutate({ myprojectid: String(res.projectid), servicecd: form.servicecd })
+            }
+          } else {
+            handleNew()
+          }
+        },
         onError: (err) => {
           const detail = err.response?.data?.detail
           message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
@@ -79,7 +97,7 @@ export default function OrgProjectsPage() {
 
   const handleDelete = () => {
     if (!form.projectid) { message.warning(t('msg.select.delete')); return }
-    Modal.confirm({
+    modal.confirm({
       title: t('btn.delete'), content: t('msg.confirm.delete'),
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteMutation.mutate(
