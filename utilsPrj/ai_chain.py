@@ -118,7 +118,20 @@ def build_langchain_llm(vendor_name: str, api_key: str, model: str):
     #         # 0(결정적 디코딩)으로 되돌린다 — 숫자 위주 보고서라 일관성이 더 중요하다.
     #         kwargs["temperature"] = 0
     #     return ChatOpenAI(**kwargs)
-    # ===================================================================
+
+    # # jeff deepseek test ===================================================================
+    # if vendor_name == "DeepSeek":
+    #     # DeepSeek 공식 API(https://api.deepseek.com) — OpenAI 호환 API.
+    #     from langchain_openai import ChatOpenAI
+    #     kwargs = dict(
+    #         model=model, api_key=api_key, max_tokens=8192,
+    #         base_url="https://api.deepseek.com",
+    #     )
+    #     if not skip_temperature:
+    #         kwargs["temperature"] = 0
+    #     return ChatOpenAI(**kwargs)
+    # # ===================================================================
+    
     elif vendor_name == "Google":
         from langchain_google_genai import ChatGoogleGenerativeAI
         kwargs = dict(model=model, google_api_key=api_key, max_output_tokens=8192)
@@ -230,22 +243,20 @@ def _fetch_llm_info(supabase, project_id, tenant_id, user_uid, service_code, acc
 
     캐싱은 하지 않는다(호출부 get_llm_info()가 락을 쥔 채로 담당) — 이 함수는 순수 조회만.
     """
-    # ===================================================================
-    # TEMP: 로컬 Together.ai 모델(Llama/DeepSeek) 품질 비교 테스트용 하드코딩 오버라이드 —
-    # 테스트 종료로 주석처리, 원래 Supabase 조회 로직으로 복원 (2026-08-20)
-    # 재활성화 시 아래 블록의 주석만 해제하면 된다. 모델 교체는 _TEST_MODEL_NAME 한 줄만
-    # 바꾸면 된다. d2insight("In")·d2chat("Ch")에만 적용 — d2doc("Do")는 그대로 Supabase 조회.
-    # _LLAMA_TEST_MODE = True
-    # _TEST_MODEL_NAME = "deepseek-ai/DeepSeek-V4-Pro-0813"
-    # if _LLAMA_TEST_MODE and service_code in ("In", "Ch"):
-    #     _test_api_key = os.getenv("LLAMA_API_KEY")  # .env: LLAMA_API_KEY (Together.ai 키, 평문 하드코딩 금지)
+    # # jeff deepseek test ===================================================================
+    # # TEMP: DeepSeek 모델 테스트용 하드코딩 오버라이드 — 테스트 종료 후 삭제(또는 주석처리)
+    # # 하고 원래 Supabase 조회 로직으로 복원할 것 (2026-09-17)
+    # _TEST_MODE = True
+    # _TEST_MODEL_NAME = "deepseek-v4-flash"
+    # _TEST_API_KEY = "sk-21551b9e1b2441fd8f86e7ffe92e55d2"
+    # if _TEST_MODE:
     #     if service_code == "In":
     #         return (
     #             {grade: _TEST_MODEL_NAME for grade in _GRADE_MODEL_COLUMNS},
-    #             _test_api_key, "Llama", True, account_uid,
+    #             _TEST_API_KEY, "DeepSeek", True, account_uid,
     #         )
-    #     return (_TEST_MODEL_NAME, _test_api_key, "Llama", True, account_uid)
-    # ===================================================================
+    #     return (_TEST_MODEL_NAME, _TEST_API_KEY, "DeepSeek", True, account_uid)
+    # # ===================================================================
 
     import random as _random
 

@@ -599,6 +599,15 @@
   border: 1px solid #ddd;
   border-radius: 4px;
 }
+.opt-schedule-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.opt-schedule-field label {
+  font-size: 11px;
+  color: #8a5a00;
+}
 .opt-schedule-submit {
   margin-left: auto;
   padding: 5px 12px;

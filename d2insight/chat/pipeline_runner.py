@@ -138,7 +138,8 @@ def _upload_engine_target(session_id: str | None) -> str | None:
 def run_report_from_spec(spec: dict, user_id: str | None = None,
                          project_id=None, tenant_id=None, account_uid=None,
                          session_id: str | None = None) -> dict:
-    """대화형 보고서 명세(ReportSpec)로부터 보고서를 생성한다."""
+    """spec 딕셔너리(target_month/report_type/months_back/scenario_options)로 보고서를
+    생성한다. scheduled_runner.run_scheduled_template이 정기 보고서 실행에 쓴다."""
     target_month = spec.get("target_month")
     months_back = spec.get("months_back") or 3
     report_type = spec.get("report_type") or "판매분석"
@@ -155,8 +156,7 @@ def run_report_from_spec(spec: dict, user_id: str | None = None,
             f"{target_month} {report_type} 보고서. "
             f"기준 데이터 {months_back}개월, 주요 품목 상위 {top_n}개, 이상치 기준 {threshold}."
         ),
-        # "이대로 작성" 확정 후 기준월을 나중에 물어본 경우, create_spec()에 실어뒀던 스텝
-        # 확정 옵션을 여기서 꺼내 넘긴다 — 없으면(자유 대화형) None 그대로.
+        # 등록 당시 스냅샷의 확정 스텝 — 없으면(옛 템플릿) None 그대로.
         "scenario_options": spec.get("scenario_options"),
     }
     return run_tool("report", target_month, months_back, intent=intent, user_id=user_id,
@@ -337,6 +337,8 @@ def run_tool(
                     message=user_request or report_type,
                     target_month=target_month,
                     grain=intent.get("grain"),
+                    compare_type=intent.get("compare_type"),
+                    file_title=intent.get("file_title"),
                     report_type=matched_scenario or report_type,
                     source_id=source_id,
                     user_id=user_id,

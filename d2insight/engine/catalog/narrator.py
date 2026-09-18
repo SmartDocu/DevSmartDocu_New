@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from d2insight.engine.format import korean_money_reference, table_to_markdown
+from d2insight.engine.format import compare_period_label, korean_money_reference, table_to_markdown
 from d2insight.engine._llm import chat
 
 MAX_TABLE_ROWS = 30          # 해설자에게 보여줄 표 최대 행수
@@ -61,9 +61,10 @@ def _table_text(table) -> str:
 
 def _build_prompt(step_label: str, items: list[dict], ctx) -> str:
     meta = ctx.meta or {}
+    compare_label = compare_period_label(meta.get("grain") or "month", meta.get("compare_type"))
     lines = [
         f"[보고서 공통] 기준월={meta.get('target_month', '미지정')}, "
-        f"비교유형={meta.get('compare_type', '미지정')}",
+        f"비교기준={compare_label}",
         f"[스텝] {step_label}",
         "",
     ]

@@ -153,3 +153,18 @@ def korean_money_reference(df: pd.DataFrame, extra: dict | None = None) -> str:
         "\n[한글 단위 참고표 — 억/만으로 쓸 때는 반드시 이 값을 그대로 옮긴다. 직접 계산 금지]\n"
         + "\n".join(lines)
     )
+
+
+# compare_type("MoM" 등)은 grain에 따라 뜻이 달라지는 내부 코드값이라, 그대로 LLM에 보여주면
+# 이름 그대로("MoM"→"전월") 잘못 서술한다(dataset_builder.compare_shift 참고).
+_PERIOD_COMPARE_LABEL = {"month": "전월", "quarter": "전분기", "half": "전반기", "year": "전년", "week": "전주"}
+_YOY_COMPARE_LABEL = {"month": "전년 동월", "quarter": "전년 동분기", "half": "전년 동반기", "year": "전년", "week": "전년 동주"}
+
+
+def compare_period_label(grain: str, compare_type: str | None) -> str:
+    normalized = (compare_type or "").strip().lower()
+    if normalized == "qoq":
+        return "전분기(3개월 전)"
+    if normalized == "yoy":
+        return _YOY_COMPARE_LABEL.get(grain, "전년 동기")
+    return _PERIOD_COMPARE_LABEL.get(grain, "전월")

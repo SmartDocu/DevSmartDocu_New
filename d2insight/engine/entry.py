@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from datetime import datetime
 
 import d2insight.config as config
@@ -215,6 +216,82 @@ def _upload_has_data_for_period(target_month: str, grain: str,
     return False, _no_data_message(target_month)
 
 
+# ── 데이터 세분성 사전 체크 (2026-09-17) ──────────────────────────────────
+# 지원 grain 중 week만 month보다 세밀하다 — month/quarter/half/year는 월 단위로 집계된
+# 데이터로도 항상 만들 수 있어 검사가 필요 없다(원본보다 큰 grain은 항상 허용). week를
+# 요청했을 때만, 원본 기간 컬럼이 실제로 일(day) 단위 값을 갖는지 요청 시점에 직접 확인한다
+# (CLAUDE.md 원칙: 데이터의 의미는 메타를 그때 읽어 판단, 코드에 사전으로 박지 않는다).
+# 판정 자체가 실패하면(연결 실패 등) 막지 않는다 — 다른 프리플라이트들과 같은 fail-open 원칙.
+
+def _period_is_day_level(
+    source_id: str | None, upload_session_id: str | None, upload_dataset_key: str | None,
+) -> bool | None:
+    """기간 컬럼이 실제로 일(day) 단위 값을 갖는지 판정한다. 판정 못 하면 None(막지 않음)."""
+    import pandas as pd
+    from d2insight.engine.schema import ROLE_PERIOD, Schema
+    from d2insight.report.excel_registry import get_excel_server
+
+    try:
+        if upload_session_id and upload_dataset_key:
+            datasets = get_excel_server().session_datasets.get(upload_session_id) or {}
+            for key in upload_dataset_key.split("+"):
+                entry = datasets.get(key)
+                meta = (entry or {}).get("engine_meta", {}).get("meta_columns")
+                if entry is None or meta is None or not len(meta):
+                    continue
+                period_col = Schema(meta).column(ROLE_PERIOD)
+                if not period_col or period_col not in entry["df"].columns:
+                    continue
+                dates = pd.to_datetime(entry["df"][period_col], errors="coerce").dropna()
+                if not dates.empty:
+                    return bool((dates.dt.day != 1).any())
+            return None
+
+        if not source_id:
+            return None
+
+        from d2insight.engine.datasource import build_meta_columns
+        from d2insight.engine.pipeline import db_meta as _db_meta
+        from d2insight.engine.pipeline import dataset_builder as _ds_builder
+
+        meta = build_meta_columns(source_id)
+        period_col = Schema(meta).column(ROLE_PERIOD)
+        if not period_col:
+            return None
+        period_row = meta.loc[meta["Physical_Name"] == period_col].iloc[0]
+        if (period_row.get("Data_Type") or "").lower() not in ("date", "datetime", "timestamp"):
+            # 날짜 타입이 아니면(예: 웹뜰 데이터셋처럼 년/월이 분리된 텍스트 컬럼) 월 단위가 이미 한계다.
+            return False
+
+        from sqlalchemy import text
+
+        sources = [_db_meta.fetch_registered_data(uid) for uid in source_id.split("+")]
+        from_sql, date_ref, _used = _db_meta.build_join_sql(sources)
+        sql = f"SELECT TOP 500 {date_ref} AS period_val {from_sql} ORDER BY {date_ref} DESC"
+        engine = _ds_builder._build_engine()
+        with engine.connect() as conn:
+            sample = pd.read_sql_query(text(sql), conn)
+        dates = pd.to_datetime(sample["period_val"], errors="coerce").dropna()
+        if dates.empty:
+            return None
+        return bool((dates.dt.day != 1).any())
+    except Exception as e:
+        print(f"[entry] 데이터 세분성 사전 체크 건너뜀: {type(e).__name__}: {e}")
+        return None
+
+
+def check_grain_feasibility(
+    grain: str, source_id: str | None,
+    upload_session_id: str | None = None, upload_dataset_key: str | None = None,
+) -> None:
+    """요청 grain이 원본 데이터의 실제 세분성보다 세밀하면 DataLoadError로 막는다."""
+    if grain != "week":
+        return
+    if _period_is_day_level(source_id, upload_session_id, upload_dataset_key) is False:
+        from d2insight.engine.runner import DataLoadError
+        raise DataLoadError("이 데이터셋은 월 단위로 집계되어 있어 주간 보고서를 작성할 수 없습니다.")
+
+
 def resolve_report_plan(
     message: str,
     target_month: str,
@@ -307,6 +384,7 @@ def resolve_report_plan(
         # 안 채우면 어느 기간·비교방식으로 돌았는지 로그에 안 남는다.
         resolved_compare_type = compare_type or config.COMPARE_TYPE
         resolved_grain = grain or "month"
+        check_grain_feasibility(resolved_grain, src_id, upload_session_id, upload_dataset_key)
         for step in applied_steps:
             for m in step.get("modules", []):
                 if m.get("module_id") == "period_dataset":
@@ -384,6 +462,7 @@ def run_engine_report(
     upload_dataset_key: str | None = None,
     matched_scenario=_UNRESOLVED,
     inline_options=_UNRESOLVED_INLINE,
+    file_title: str | None = None,
 ) -> dict:
     """채팅 요청 하나를 모듈화 엔진으로 실행해 보고서 마크다운을 만든다.
 
@@ -442,9 +521,16 @@ def run_engine_report(
     if applied_steps:
         _sync_failure_status(applied_steps, out["notes"])
 
-    # 파일명 — 옛 보고서와 같은 규칙(안전유형_기준월_타임스탬프.md)이라 저장 경로가 일관된다.
+    # 파일명 — 사용자가 미리보기에서 이름을 정했으면 그걸 쓰고, 없으면 옛 보고서와 같은
+    # 규칙(안전유형_기준월_타임스탬프.md)을 그대로 쓴다. 타임스탬프는 겹침 방지용으로 항상 붙인다.
+    # Supabase Storage가 키에 괄호·공백 등을 거부하므로(InvalidKey), 영문/숫자/한글/밑줄/하이픈/
+    # 마침표 외의 문자는 전부 밑줄로 바꾼다 — "기술분석(주간) 보고서" → "기술분석_주간_보고서".
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    md_filename = f"{_safe_type(report_type)}_{target_month}_{ts}.md"
+    if file_title:
+        safe_title = re.sub(r"[^\w\-.]+", "_", file_title).strip("_") or "보고서"
+        md_filename = f"{safe_title}_{ts}.md"
+    else:
+        md_filename = f"{_safe_type(report_type)}_{target_month}_{ts}.md"
 
     return {
         "md_text": out["markdown"],
@@ -567,6 +653,9 @@ def resolve_scheduled_period(period_json: dict, run_date=None) -> dict:
     elif grain == "quarter":
         q = (run_date.month - 1) // 3 + 1
         current_period = f"{run_date.year:04d}-Q{q}"
+    elif grain == "half":
+        h = 1 if run_date.month <= 6 else 2
+        current_period = f"{run_date.year:04d}-H{h}"
     elif grain == "year":
         current_period = f"{run_date.year:04d}"
     else:
@@ -575,7 +664,7 @@ def resolve_scheduled_period(period_json: dict, run_date=None) -> dict:
     target_month = shift_period(grain, current_period, offset)
 
     compare_base = (period_json.get("compare") or {}).get("base", "prev_period")
-    compare_type = "YoY" if compare_base == "prev_year" else "MoM"
+    compare_type = {"prev_period": "MoM", "prev_quarter": "QoQ", "prev_year": "YoY"}.get(compare_base, "MoM")
 
     return {
         "target_month": target_month,

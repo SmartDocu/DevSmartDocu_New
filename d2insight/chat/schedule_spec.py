@@ -7,7 +7,7 @@
 화면은 입력창 자체가 없어 이 경로를 탈 일이 없고, 실시간 대화 중에만 의미가 있다. 이 파일
 아래쪽의 _spec_store/advance_set_spec이 그 상태 머신이다(pr_module_insight의 schedule_set
 대화 흐름과 같은 원칙, 다만 이 대화형 경로는 월 단위 grain만 지원하므로 요일 분기는 두지
-않는다 — 오른쪽 패널 폼 경로는 month/quarter/half/year를 지원한다).
+않는다 — 오른쪽 패널 폼 경로는 month/quarter/half/year/week를 지원한다).
 """
 from __future__ import annotations
 
@@ -21,46 +21,75 @@ KST = ZoneInfo("Asia/Seoul")
 
 WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"]   # cron 관례(0=일요일)
 
+_GRAIN_NAME_LABEL = {"month": "월", "quarter": "분기", "half": "반기", "year": "년", "week": "주간"}
+
+
+def default_report_nm(base_nm: str | None, grain: str, target_period: str | None = None) -> str:
+    """시나리오/보고서유형 + grain → 기본 이름. target_period가 있으면 즉석 보고서용(대상
+    기간을 뒤에 붙임), 없으면 정기보고서 템플릿용(매번 다른 기간을 도니까 기간을 안 붙임)."""
+    label = _GRAIN_NAME_LABEL.get(grain, "월")
+    base = f"{base_nm or '보고서'}({label}) 보고서"
+    return f"{base}_{target_period.replace('-', '_')}" if target_period else base
+
+
+_DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
+def _last_day_of_month(year: int, month: int) -> int:
+    days = _DAYS_IN_MONTH[month - 1]
+    if month == 2 and ((year % 100 != 0 and year % 4 == 0) or year % 400 == 0):
+        days = 29
+    return days
+
+
+def _months_for_grain(grain: str, start_month: int = 1) -> list[int]:
+    """grain 주기가 실행되는 월 목록(1~12) — start_month부터 시작해 grain 간격(분기=3개월,
+    반기=6개월)만큼 돌며 순환한다. month/week는 매달이라 12개 전부."""
+    if grain == "quarter":
+        return [((start_month - 1 + 3 * k) % 12) + 1 for k in range(4)]
+    if grain == "half":
+        return [((start_month - 1 + 6 * k) % 12) + 1 for k in range(2)]
+    if grain == "year":
+        return [start_month]
+    return list(range(1, 13))
+
 
 def compose_cron(grain: str, day_of_month: int | None, weekday: int | None,
-                  hour: int, minute: int) -> str:
-    """5자리 cron(분 시 일 월 요일). 말일(-1)은 표준 cron에 없어 28일로 근사한다 — 모든 달에
-    안전하게 존재하는 마지막 날짜라, "말일 근처"를 놓치지 않는 가장 단순한 근사다.
+                  hour: int, minute: int, start_month: int = 1) -> str:
+    """5자리 cron(분 시 일 월 요일). 이 cron 문자열은 외부 크론 라이브러리 없이 compose_cron/
+    parse_cron만 읽고 쓰는 내부 전용 포맷이라, 말일은 그대로 "-1"로 저장한다(day_of_month의
+    sentinel 값과 동일) — next_occurrence/_occurrence_in_period가 그 달의 실제 마지막
+    날짜를 계산한다.
     """
     if grain == "week":
         return f"{minute} {hour} * * {weekday}"
-    day_field = "28" if day_of_month == -1 else str(day_of_month)
-    if grain == "quarter":
-        return f"{minute} {hour} {day_field} 1,4,7,10 *"
-    if grain == "half":
-        return f"{minute} {hour} {day_field} 1,7 *"
-    if grain == "year":
-        return f"{minute} {hour} {day_field} 1 *"
+    day_field = str(day_of_month)
+    if grain in ("quarter", "half", "year"):
+        months = ",".join(str(m) for m in _months_for_grain(grain, start_month))
+        return f"{minute} {hour} {day_field} {months} *"
     return f"{minute} {hour} {day_field} * *"
 
 
 def parse_cron(cron: str) -> dict:
-    """5자리 cron(분 시 일 월 요일) → {grain, day_of_month, weekday, hour, minute}.
+    """5자리 cron(분 시 일 월 요일) → {grain, day_of_month, weekday, hour, minute, start_month}.
 
     compose_cron의 역변환 — 일정 수정 화면에서 지금 설정값을 보여주고 편집 폼 기본값으로 쓴다.
-    말일(-1)은 "28"로 근사 저장되므로 역변환 시 28을 "말일"로 되살리지 못하고 28일 그대로
-    보여준다(pr_module_insight와 동일한 기존 한계).
+    월 목록의 첫 값을 start_month로 되살린다(_months_for_grain이 항상 start_month를 맨 앞에
+    두고 순서대로 만들기 때문).
     """
     minute_s, hour_s, day_s, month_s, weekday_s = cron.split()
     minute, hour = int(minute_s), int(hour_s)
     if day_s == "*" and weekday_s != "*":
         return {"grain": "week", "day_of_month": None, "weekday": int(weekday_s),
-                 "hour": hour, "minute": minute}
+                 "hour": hour, "minute": minute, "start_month": None}
     day = int(day_s)
-    if month_s == "1,4,7,10":
-        grain = "quarter"
-    elif month_s == "1,7":
-        grain = "half"
-    elif month_s == "1":
-        grain = "year"
-    else:
-        grain = "month"
-    return {"grain": grain, "day_of_month": day, "weekday": None, "hour": hour, "minute": minute}
+    if month_s == "*":
+        return {"grain": "month", "day_of_month": day, "weekday": None,
+                 "hour": hour, "minute": minute, "start_month": None}
+    months = [int(m) for m in month_s.split(",")]
+    grain = {4: "quarter", 2: "half", 1: "year"}.get(len(months), "month")
+    return {"grain": grain, "day_of_month": day, "weekday": None, "hour": hour,
+             "minute": minute, "start_month": months[0]}
 
 
 def compute_target_month(grain: str, offset: int, run_date) -> str:
@@ -75,7 +104,10 @@ def compute_target_month(grain: str, offset: int, run_date) -> str:
     """
     from d2insight.engine.pipeline.dataset_builder import shift_period
 
-    if grain == "quarter":
+    if grain == "week":
+        iso = run_date.isocalendar()
+        current_period = f"{iso[0]:04d}-W{iso[1]:02d}"
+    elif grain == "quarter":
         q = (run_date.month - 1) // 3 + 1
         current_period = f"{run_date.year:04d}-Q{q}"
     elif grain == "half":
@@ -88,8 +120,9 @@ def compute_target_month(grain: str, offset: int, run_date) -> str:
     return shift_period(grain, current_period, offset)
 
 
-def next_run_avoiding_period(origin_period: str | None, day_of_month: int, hour: int, minute: int,
-                              grain: str = "month") -> datetime:
+def next_run_avoiding_period(origin_period: str | None, day_of_month: int | None, hour: int, minute: int,
+                              grain: str = "month", start_month: int = 1,
+                              weekday: int | None = None) -> datetime:
     """다음 실행 시각 — 단, 그 실행이 만들 대상 기간이 origin_period(등록 기준이 된 원본
     보고서의 대상 기간)와 같으면 한 주기 미룬다.
 
@@ -99,26 +132,17 @@ def next_run_avoiding_period(origin_period: str | None, day_of_month: int, hour:
     그대로 진행된다 — 대상 기간이 실제로 겹칠 때만 한 주기 미룬다. 등록(REST/대화 양쪽)과
     등록 전 미리보기 문구가 같은 값을 보도록 계산을 한곳에 둔다.
     """
-    next_dt = next_occurrence(grain, day_of_month, None, hour, minute, datetime.now(tz=KST))
+    next_dt = next_occurrence(grain, day_of_month, weekday, hour, minute, datetime.now(tz=KST),
+                              start_month=start_month)
     if origin_period and compute_target_month(grain, -1, next_dt.date()) == origin_period:
-        next_dt = next_occurrence(grain, day_of_month, None, hour, minute, next_dt)
+        next_dt = next_occurrence(grain, day_of_month, weekday, hour, minute, next_dt, start_month=start_month)
     return next_dt
 
 
-def _next_month_grain_dates(grain: str) -> list[int]:
-    """quarter/half/year grain에서 실행 월 목록(1~12)."""
-    if grain == "quarter":
-        return [1, 4, 7, 10]
-    if grain == "half":
-        return [1, 7]
-    if grain == "year":
-        return [1]
-    return list(range(1, 13))
-
-
 def next_occurrence(grain: str, day_of_month: int | None, weekday: int | None,
-                     hour: int, minute: int, after: datetime) -> datetime:
-    """after 이후 가장 가까운 실행 시각."""
+                     hour: int, minute: int, after: datetime, start_month: int = 1) -> datetime:
+    """after 이후 가장 가까운 실행 시각. day_of_month가 그 달에 없는 날짜(예: 31일인데
+    4월)면 그 회차를 건너뛰지 않고 그 달의 마지막 날로 당겨서 실행한다."""
     if grain == "week":
         target_py_wd = (weekday - 1) % 7   # cron 0=일 → python Monday=0 기준으로 환산
         days_ahead = (target_py_wd - after.weekday()) % 7
@@ -128,17 +152,15 @@ def next_occurrence(grain: str, day_of_month: int | None, weekday: int | None,
             candidate += timedelta(days=7)
         return candidate
 
-    run_months = _next_month_grain_dates(grain)
+    run_months = _months_for_grain(grain, start_month)
     year, month = after.year, after.month
     for _ in range(24):   # 최대 2년 안에는 반드시 걸린다(연 단위 grain 대비 여유)
         if month in run_months:
-            try:
-                candidate = datetime(year, month, 28 if day_of_month == -1 else day_of_month,
-                                      hour, minute, tzinfo=after.tzinfo)
-                if candidate > after:
-                    return candidate
-            except ValueError:
-                pass   # 그 달에 없는 날짜(예: 2월 30일) — 다음 주기로 넘어간다
+            last_day = _last_day_of_month(year, month)
+            day_num = last_day if day_of_month == -1 else min(day_of_month, last_day)
+            candidate = datetime(year, month, day_num, hour, minute, tzinfo=after.tzinfo)
+            if candidate > after:
+                return candidate
         month += 1
         if month > 12:
             month = 1
@@ -177,30 +199,31 @@ def build_register_message(next_dt: datetime, grain: str, day_of_month: int | No
     )
 
 
-def _period_bounds(grain: str, ref: datetime) -> tuple[datetime, datetime]:
+def _period_bounds(grain: str, ref: datetime, start_month: int = 1) -> tuple[datetime, datetime]:
     """ref가 속한 주기의 [시작, 다음 주기 시작) — "이번 주기"와 "다음 주기"를 가르는 기준선.
-    cron 요일 관례(0=일요일)에 맞춰 주는 일요일에 시작한다.
+    cron 요일 관례(0=일요일)에 맞춰 주는 일요일에 시작한다. quarter/half/year는 start_month부터
+    도는 사용자 지정 주기를 기준으로 한다(기본값 1이면 달력 분기/반기/연도와 같다).
     """
     if grain == "week":
         cron_wd = (ref.weekday() + 1) % 7   # python Monday=0..Sunday=6 → cron Sunday=0..Saturday=6
         start = (ref - timedelta(days=cron_wd)).replace(hour=0, minute=0, second=0, microsecond=0)
         return start, start + timedelta(days=7)
-    if grain == "quarter":
-        q_start_month = ((ref.month - 1) // 3) * 3 + 1
-        start = ref.replace(month=q_start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
-        end_month = q_start_month + 3
-        end = (start.replace(year=start.year + 1, month=end_month - 12) if end_month > 12
-               else start.replace(month=end_month))
-        return start, end
-    if grain == "half":
-        h_start_month = 1 if ref.month <= 6 else 7
-        start = ref.replace(month=h_start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
-        end_month = h_start_month + 6
+    if grain in ("quarter", "half"):
+        interval = 3 if grain == "quarter" else 6
+        offset = (ref.month - start_month) % interval
+        cyc_month = ref.month - offset
+        year = ref.year
+        if cyc_month < 1:
+            cyc_month += 12
+            year -= 1
+        start = ref.replace(year=year, month=cyc_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_month = cyc_month + interval
         end = (start.replace(year=start.year + 1, month=end_month - 12) if end_month > 12
                else start.replace(month=end_month))
         return start, end
     if grain == "year":
-        start = ref.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        year = ref.year if ref.month >= start_month else ref.year - 1
+        start = ref.replace(year=year, month=start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
         return start, start.replace(year=start.year + 1)
     # month
     start = ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -247,18 +270,19 @@ def compute_schedule_update(old_settings: dict, new_settings: dict, now: datetim
            "effective_start": datetime}
     """
     grain = old_settings["grain"]
-    period_start, _ = _period_bounds(grain, now)
+    start_month = old_settings.get("start_month") or 1
+    period_start, _ = _period_bounds(grain, now, start_month=start_month)
     old_occurrence = _occurrence_in_period(old_settings, period_start)
 
     if now < old_occurrence:
         new_occurrence = _occurrence_in_period(new_settings, period_start)
         if new_occurrence > now:
             return {"immediate_run": False, "effective": "this_period", "effective_start": new_occurrence}
-        next_period_start = _period_bounds(grain, period_start)[1]
+        next_period_start = _period_bounds(grain, period_start, start_month=start_month)[1]
         return {"immediate_run": True, "effective": "next_period",
                 "effective_start": _occurrence_in_period(new_settings, next_period_start)}
 
-    next_period_start = _period_bounds(grain, period_start)[1]
+    next_period_start = _period_bounds(grain, period_start, start_month=start_month)[1]
     return {"immediate_run": False, "effective": "next_period",
             "effective_start": _occurrence_in_period(new_settings, next_period_start)}
 
@@ -281,8 +305,7 @@ def build_update_message(decision: dict, new_settings: dict) -> str:
 
 
 # ── 대화형 등록(schedule_set) 상태 머신 ──────────────────────────────
-# session_id → spec dict (인메모리, report_spec._spec_store와 같은 방식·같은 한계 — 서버
-# 재시작 시 진행 중이던 등록 대화는 사라진다).
+# session_id → spec dict (인메모리 — 서버 재시작 시 진행 중이던 등록 대화는 사라진다).
 _spec_store: dict[str, dict] = {}
 
 _EXTRACT_SYSTEM = """사용자 메시지에서 정기 보고서 작성 일자·시각 정보를 추출하여 JSON만

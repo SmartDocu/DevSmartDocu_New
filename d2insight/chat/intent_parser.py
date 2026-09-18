@@ -88,6 +88,15 @@ target_month 결정 규칙 (메시지 맨 앞의 "오늘 날짜: YYYY-MM-DD (요
   언급되면 그대로.
 - 기간 언급이 전혀 없으면 grain 무관하게 target_month는 null.
 
+compare_type 결정 규칙 (tool이 "report"일 때 — 무엇과 비교할지):
+- "전년 동기 대비", "작년 같은 기간과 비교", "전년 동월/동분기/동반기 대비" 등 1년 전과
+  비교하라는 언급 → "YoY"
+- grain="month"인데 "전분기 대비"(3개월 전과 비교)를 명시적으로 언급 → "QoQ"
+  (다른 grain에는 QoQ가 없음 — 그 경우는 아래 기본값 사용)
+- 비교 기준을 언급하지 않았거나 "전월 대비"/"전기 대비"/"직전 기간 대비"처럼 바로 전
+  주기와 비교하라는 뜻이면 → "MoM" (이름은 "월"이지만 grain에 따라 "바로 전 주기"라는
+  뜻이다 — quarter면 전분기, half면 전반기, year면 전년, week면 전주)
+
 months_back 결정 규칙 (tool이 "report"일 때):
 - 사용자가 "최근 N개월", "지난 N개월", "N개월 데이터로" 등 기간을 명시하면 그 숫자를 사용
 - 사용자가 "반년", "6개월"이면 6, "1년", "12개월"이면 12, "분기", "3개월"이면 3으로 파싱
@@ -100,22 +109,23 @@ mode 선택 기준 (tool이 "report"일 때):
 - "auto": "생성해줘", "만들어줘", "써줘", "작성해줘" 등 즉시 실행 명령 → 즉시 실행
 
 응답 JSON 형식:
-{{"tool": "도구명", "grain": "month/quarter/half/year/week", "target_month": "grain 형식에 맞는 값 또는 null", "months_back": 숫자, "report_type": "카테고리명 또는 null", "mode": "start 또는 auto 또는 null"}}
+{{"tool": "도구명", "grain": "month/quarter/half/year/week", "target_month": "grain 형식에 맞는 값 또는 null", "compare_type": "MoM/YoY/QoQ", "months_back": 숫자, "report_type": "카테고리명 또는 null", "mode": "start 또는 auto 또는 null"}}
 
 예시 (아래는 오늘이 2026-06-08(월요일)이라고 가정했을 때의 예시일 뿐입니다 — 실제 계산은
 매번 메시지 맨 앞에 주어지는 진짜 오늘 날짜를 기준으로 할 것):
-- "2013-03 판매실적 보고서 작성하려 합니다" → {{"tool": "report", "grain": "month", "target_month": "2013-03", "months_back": 3, "report_type": "판매분석", "mode": "start"}}
-- "판매 보고서 만들고 싶어요" → {{"tool": "report", "grain": "month", "target_month": null, "months_back": 3, "report_type": "판매분석", "mode": "start"}}
-- "2014-01 매출 보고서 생성해줘" → {{"tool": "report", "grain": "month", "target_month": "2014-01", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
-- "2024-01 서버 로그 분석 보고서" → {{"tool": "report", "grain": "month", "target_month": "2024-01", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
-- "지난 주 서버로그 분석 보고서를 작성해주세요" → {{"tool": "report", "grain": "week", "target_month": "2026-06-01", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
-- "5월 25일부터 5월 31일까지 주간 서버로그 분석 보고서를 작성해주세요" → {{"tool": "report", "grain": "week", "target_month": "2026-05-25", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
-- "1/4분기 판매실적 보고서 작성해줘" → {{"tool": "report", "grain": "quarter", "target_month": "2026-Q1", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
-- "상반기 재무분석 보고서 작성해줘" → {{"tool": "report", "grain": "half", "target_month": "2026-H1", "months_back": 3, "report_type": "재무분석", "mode": "auto"}}
-- "작년 리스크분석 보고서" → {{"tool": "report", "grain": "year", "target_month": "2025", "months_back": 3, "report_type": "리스크분석", "mode": "auto"}}
-- "서버 상태 확인" → {{"tool": "health", "grain": "month", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}
-- "이 보고서 매달 5일 08시에 작성해주세요" → {{"tool": "schedule_set", "grain": "month", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}
-- "어떤 분석을 할 수 있나요?" → {{"tool": "chat", "grain": "month", "target_month": null, "months_back": 3, "report_type": null, "mode": null}}"""
+- "2013-03 판매실적 보고서 작성하려 합니다" → {{"tool": "report", "grain": "month", "target_month": "2013-03", "compare_type": "MoM", "months_back": 3, "report_type": "판매분석", "mode": "start"}}
+- "판매 보고서 만들고 싶어요" → {{"tool": "report", "grain": "month", "target_month": null, "compare_type": "MoM", "months_back": 3, "report_type": "판매분석", "mode": "start"}}
+- "2014-01 매출 보고서 생성해줘" → {{"tool": "report", "grain": "month", "target_month": "2014-01", "compare_type": "MoM", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
+- "2024-01 서버 로그 분석 보고서" → {{"tool": "report", "grain": "month", "target_month": "2024-01", "compare_type": "MoM", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
+- "지난 주 서버로그 분석 보고서를 작성해주세요" → {{"tool": "report", "grain": "week", "target_month": "2026-06-01", "compare_type": "MoM", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
+- "5월 25일부터 5월 31일까지 주간 서버로그 분석 보고서를 작성해주세요" → {{"tool": "report", "grain": "week", "target_month": "2026-05-25", "compare_type": "MoM", "months_back": 1, "report_type": "기술분석", "mode": "auto"}}
+- "1/4분기 판매실적 보고서 작성해줘" → {{"tool": "report", "grain": "quarter", "target_month": "2026-Q1", "compare_type": "MoM", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
+- "2026년 2/4분기 판매증감 원인분석 보고서를 전년 동기 대비로 작성해주세요" → {{"tool": "report", "grain": "quarter", "target_month": "2026-Q2", "compare_type": "YoY", "months_back": 3, "report_type": "판매분석", "mode": "auto"}}
+- "상반기 재무분석 보고서 작성해줘" → {{"tool": "report", "grain": "half", "target_month": "2026-H1", "compare_type": "MoM", "months_back": 3, "report_type": "재무분석", "mode": "auto"}}
+- "작년 리스크분석 보고서" → {{"tool": "report", "grain": "year", "target_month": "2025", "compare_type": "MoM", "months_back": 3, "report_type": "리스크분석", "mode": "auto"}}
+- "서버 상태 확인" → {{"tool": "health", "grain": "month", "target_month": null, "compare_type": "MoM", "months_back": 3, "report_type": null, "mode": null}}
+- "이 보고서 매달 5일 08시에 작성해주세요" → {{"tool": "schedule_set", "grain": "month", "target_month": null, "compare_type": "MoM", "months_back": 3, "report_type": null, "mode": null}}
+- "어떤 분석을 할 수 있나요?" → {{"tool": "chat", "grain": "month", "target_month": null, "compare_type": "MoM", "months_back": 3, "report_type": null, "mode": null}}"""
 
 
 _GRAINS = ("month", "quarter", "half", "year", "week")
@@ -159,15 +169,23 @@ def parse_intent(message: str, project_id=None, tenant_id=None, user_uid=None, a
             parsed.setdefault("tool", "chat")
             parsed.setdefault("grain", "month")
             parsed.setdefault("target_month", None)
+            parsed.setdefault("compare_type", "MoM")
             parsed.setdefault("months_back", 3)
             parsed.setdefault("report_type", None)
             parsed.setdefault("mode", None)
             if parsed["grain"] not in _GRAINS:
                 parsed["grain"] = "month"
+            if parsed.get("compare_type") not in ("MoM", "YoY", "QoQ"):
+                parsed["compare_type"] = "MoM"
+            if parsed["compare_type"] == "QoQ" and parsed["grain"] != "month":
+                # QoQ는 month grain 전용(dataset_builder.compare_shift) — 다른 grain에서
+                # QoQ가 잘못 나오면 조용히 MoM(바로 전 주기)으로 대체한다.
+                parsed["compare_type"] = "MoM"
             if parsed["grain"] == "week" and parsed.get("target_month"):
                 parsed["target_month"] = _week_period_from_date_str(parsed["target_month"])
             return parsed
     except Exception as e:
         # print(f"[intent_parser] error: {e}")
         pass
-    return {"tool": "chat", "grain": "month", "target_month": None, "months_back": 3, "report_type": None, "mode": None}
+    return {"tool": "chat", "grain": "month", "target_month": None, "compare_type": "MoM",
+            "months_back": 3, "report_type": None, "mode": None}

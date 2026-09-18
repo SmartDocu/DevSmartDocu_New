@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from d2insight.engine.format import korean_money_reference, table_to_markdown
+from d2insight.engine.format import compare_period_label, korean_money_reference, table_to_markdown
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine._llm import chat
 
@@ -104,8 +104,8 @@ def _facts(ctx) -> str:
     """이미 계산된 값만 모아 사실표를 만든다. 여기서 새로 계산하는 것은 없다."""
     lines: list[str] = []
     meta = ctx.meta or {}
-    lines.append(f"[분석 대상] 기준 {meta.get('target_month', '미지정')}, "
-                 f"비교 {meta.get('compare_type', '미지정')}")
+    compare_label = compare_period_label(meta.get("grain") or "month", meta.get("compare_type"))
+    lines.append(f"[분석 대상] 기준 {meta.get('target_month', '미지정')}, 비교 {compare_label}")
 
     tv = ctx.get("total_variance")
     if tv:

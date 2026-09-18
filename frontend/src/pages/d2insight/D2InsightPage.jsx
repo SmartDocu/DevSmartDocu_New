@@ -14,7 +14,8 @@ import { getErrorMessage, getErrorDetail } from '@/utils/apiError'
 
 const CHAT_TIMEOUT = { timeout: 3600000 } // 보고서 생성 최대 6분
 
-const GRAIN_CYCLE_LABEL = { month: '매달', quarter: '매분기', half: '매반기', year: '매년' }
+const GRAIN_CYCLE_LABEL = { month: '월', quarter: '분기', half: '반기', year: '년', week: '주간' }
+const WEEKDAY_LABELS_KO = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'] // cron 관례 0=일요일
 
 function getInitialMessage() {
   return {
@@ -82,6 +83,7 @@ export default function D2InsightPage() {
   // 클릭 시 이 데이터를 옵션 JSON으로 실어 /chat에 실제 실행 요청. null이면 preview 없음.
   const [previewData, setPreviewData] = useState(null)
   const [previewOriginalMessage, setPreviewOriginalMessage] = useState('')
+  const [previewFileName, setPreviewFileName] = useState('')
 
   // 정기 보고서 공유(공유한/공유받은)
   const [sharesSentSchedule, setSharesSentSchedule] = useState([])
@@ -394,7 +396,7 @@ export default function D2InsightPage() {
   }
 
   // 실제 /chat 실행 — sendMessage(preview 흐름 성공 시) 또는 handleConfirmPreview에서 호출.
-  const _executeChat = async (text, options = null) => {
+  const _executeChat = async (text, options = null, fileTitle = null) => {
     try {
       const payload = {
         message: text,
@@ -404,6 +406,7 @@ export default function D2InsightPage() {
         account_uid: user?.accountuid ?? null,
       }
       if (options) payload.options = options
+      if (fileTitle) payload.file_title = fileTitle
       const { data } = await apiClient.post('/d2insight/chat', payload, CHAT_TIMEOUT)
 
       if (data.session_id) updateSessionId(data.session_id)
@@ -449,10 +452,11 @@ export default function D2InsightPage() {
     }
     setIsLoading(true)
     try {
-      await _executeChat(text, options)
+      await _executeChat(text, options, previewFileName.trim() || null)
     } finally {
       setPreviewData(null)
       setPreviewOriginalMessage('')
+      setPreviewFileName('')
       setIsLoading(false)
     }
   }
@@ -528,6 +532,7 @@ export default function D2InsightPage() {
       if (previewResp.data?.applied_steps?.length) {
         setPreviewData(previewResp.data)
         setPreviewOriginalMessage(text)
+        setPreviewFileName(previewResp.data.default_name || '')
         const scenarioMsg = previewResp.data.scenario
           ? `'${previewResp.data.scenario}' 시나리오로 매칭됐어요.`
           : '보고서 구성을 준비했어요.'
@@ -734,9 +739,10 @@ export default function D2InsightPage() {
         user_id: userId,
         project_id: user?.myprojectid ?? null,
         day_of_month: settings.day_of_month,
+        weekday: settings.weekday,
         hour: settings.hour,
         minute: settings.minute,
-        grain: settings.grain,
+        start_month: settings.start_month,
       })
       return data
     } catch (e) {
@@ -755,10 +761,11 @@ export default function D2InsightPage() {
         user_id: userId,
         project_id: user?.myprojectid ?? null,
         day_of_month: settings.day_of_month,
+        weekday: settings.weekday,
         hour: settings.hour,
         minute: settings.minute,
         template_nm: settings.template_nm || null,
-        grain: settings.grain,
+        start_month: settings.start_month,
       })
       const markTemplate = (list) => list.map((m) => (
         m.role === 'assistant' && m.qauid === settings.qauid ? { ...m, isTemplate: true } : m
@@ -776,6 +783,7 @@ export default function D2InsightPage() {
       const { data } = await apiClient.post(`/d2insight/schedule/${settings.session_id}/update-preview`, {
         user_id: userId,
         day_of_month: settings.day_of_month,
+        weekday: settings.weekday,
         hour: settings.hour,
         minute: settings.minute,
       })
@@ -791,6 +799,7 @@ export default function D2InsightPage() {
       await apiClient.post(`/d2insight/schedule/${settings.session_id}/update`, {
         user_id: userId,
         day_of_month: settings.day_of_month,
+        weekday: settings.weekday,
         hour: settings.hour,
         minute: settings.minute,
         template_nm: settings.template_nm || null,
@@ -1376,7 +1385,7 @@ export default function D2InsightPage() {
           preview={previewData}
           previewGenerating={isLoading}
           onConfirmPreview={handleConfirmPreview}
-          onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage('') }}
+          onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage(''); setPreviewFileName('') }}
           onReorderPreviewSteps={(newSteps) =>
             setPreviewData((prev) => (prev ? { ...prev, applied_steps: newSteps } : prev))
           }
@@ -1385,6 +1394,8 @@ export default function D2InsightPage() {
           onEditStep={handleEditStep}
           forceCompose={forceCompose}
           onToggleForceCompose={() => setForceCompose((v) => !v)}
+          previewFileName={previewFileName}
+          onChangePreviewFileName={setPreviewFileName}
         />
       </div>
 
@@ -1591,6 +1602,7 @@ function ReportOptionsPanel({
   preview, previewGenerating, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
   onValidateSteps, onDescribeStep, onEditStep,
   forceCompose, onToggleForceCompose,
+  previewFileName, onChangePreviewFileName,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
@@ -1689,13 +1701,31 @@ function ReportOptionsPanel({
 
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [scheduleDay, setScheduleDay] = useState(1)
+  const [scheduleWeekday, setScheduleWeekday] = useState(0)
   const [scheduleHour, setScheduleHour] = useState(9)
   const [scheduleNm, setScheduleNm] = useState('')
-  const [scheduleGrain, setScheduleGrain] = useState('month')
+  const scheduleNmTouchedRef = useRef(false)
+  const [originGrain, setOriginGrain] = useState('month')
+  const [scheduleStartMonth, setScheduleStartMonth] = useState(1)
   const [registering, setRegistering] = useState(false)
+
+  // 등록 폼을 열 때 원본 보고서의 grain(사용자가 못 바꿈)과 이름 기본값을 한 번에 받아온다.
+  useEffect(() => {
+    if (!showScheduleForm || !reportQauid) return
+    let cancelled = false
+    apiClient.get(`/d2insight/schedule/origin/${reportQauid}`)
+      .then(({ data }) => {
+        if (cancelled) return
+        setOriginGrain(data.grain || 'month')
+        if (!scheduleNmTouchedRef.current) setScheduleNm(data.default_name || '')
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [showScheduleForm, reportQauid])
 
   const [showEditSchedule, setShowEditSchedule] = useState(false)
   const [editDay, setEditDay] = useState(1)
+  const [editWeekday, setEditWeekday] = useState(0)
   const [editHour, setEditHour] = useState(9)
   const [editNm, setEditNm] = useState('')
   const [updating, setUpdating] = useState(false)
@@ -1703,12 +1733,16 @@ function ReportOptionsPanel({
   useEffect(() => {
     if (scheduleSettings) {
       setEditDay(scheduleSettings.day_of_month || 1)
+      setEditWeekday(scheduleSettings.weekday || 0)
       setEditHour(scheduleSettings.hour ?? 9)
       setEditNm(scheduleSettings.template_nm || '')
     }
     setShowScheduleForm(false)
     setShowEditSchedule(false)
     setScheduleNm('')
+    scheduleNmTouchedRef.current = false
+    scheduleNmTouchedRef.current = false
+    setScheduleStartMonth(1)
   }, [scheduleSettings, reportQauid])
 
   const handleRequestSaveSchedule = async () => {
@@ -1717,11 +1751,12 @@ function ReportOptionsPanel({
     try {
       const settings = {
         qauid: reportQauid,
-        day_of_month: scheduleDay,
+        day_of_month: originGrain === 'week' ? null : scheduleDay,
+        weekday: originGrain === 'week' ? scheduleWeekday : null,
         hour: scheduleHour,
         minute: 0,
         template_nm: scheduleNm.trim() || null,
-        grain: scheduleGrain,
+        start_month: scheduleStartMonth,
       }
       const res = await onPreviewRegisterSchedule?.(settings)
       if (!res) return
@@ -1746,7 +1781,8 @@ function ReportOptionsPanel({
     try {
       const settings = {
         session_id: scheduleSettings.session_id,
-        day_of_month: editDay,
+        day_of_month: scheduleSettings.grain === 'week' ? null : editDay,
+        weekday: scheduleSettings.grain === 'week' ? editWeekday : null,
         hour: editHour,
         minute: 0,
         template_nm: editNm.trim() || null,
@@ -1820,6 +1856,15 @@ function ReportOptionsPanel({
             {preview.report_title && (
               <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>{preview.report_title}</div>
             )}
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4 }}>보고서 이름</label>
+              <input
+                type="text"
+                value={previewFileName}
+                onChange={(e) => onChangePreviewFileName?.(e.target.value)}
+                style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }}
+              />
+            </div>
 
             {/* JSON 원문 보기 토글 — 스텝 리스트 위에 배치.
                 단독앱 pr_module_insight_202608061005/frontend/src/components/OptionsPanel.jsx의
@@ -1970,29 +2015,56 @@ function ReportOptionsPanel({
                     <input
                       type="text"
                       value={scheduleNm}
-                      onChange={(e) => setScheduleNm(e.target.value)}
-                      placeholder="보고서 이름 (선택)"
+                      onChange={(e) => { setScheduleNm(e.target.value); scheduleNmTouchedRef.current = true }}
+                      placeholder="보고서 이름"
                       style={{ flex: '1 1 100%' }}
                     />
-                    <select value={scheduleGrain} onChange={(e) => setScheduleGrain(e.target.value)}>
-                      <option value="month">매달</option>
-                      <option value="quarter">매분기</option>
-                      <option value="half">매반기</option>
-                      <option value="year">매년</option>
-                    </select>
-                    <select value={scheduleDay} onChange={(e) => setScheduleDay(Number(e.target.value))}>
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>{d}일</option>
-                      ))}
-                    </select>
-                    <select value={scheduleHour} onChange={(e) => setScheduleHour(Number(e.target.value))}>
-                      {Array.from({ length: 24 }, (_, i) => i).map((h) => (
-                        <option key={h} value={h}>{h}시</option>
-                      ))}
-                    </select>
-                    <button type="button" className="opt-schedule-submit" onClick={handleRequestSaveSchedule} disabled={registering}>
-                      {registering ? '확인 중...' : '등록 요청'}
-                    </button>
+                    <div style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: '#8a5a00', fontWeight: 600 }}>
+                        {GRAIN_CYCLE_LABEL[originGrain] || '월'} 보고서로 등록됩니다
+                      </span>
+                      <button type="button" className="opt-schedule-submit" onClick={handleRequestSaveSchedule} disabled={registering} style={{ marginLeft: 0 }}>
+                        {registering ? '확인 중...' : '등록 요청'}
+                      </button>
+                    </div>
+                    {(originGrain === 'quarter' || originGrain === 'half' || originGrain === 'year') && (
+                      <div className="opt-schedule-field">
+                        <label>작성월</label>
+                        <select value={scheduleStartMonth} onChange={(e) => setScheduleStartMonth(Number(e.target.value))}>
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                            <option key={m} value={m}>{m}월</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {originGrain === 'week' ? (
+                      <div className="opt-schedule-field">
+                        <label>작성요일</label>
+                        <select value={scheduleWeekday} onChange={(e) => setScheduleWeekday(Number(e.target.value))}>
+                          {WEEKDAY_LABELS_KO.map((label, wd) => (
+                            <option key={wd} value={wd}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="opt-schedule-field">
+                        <label>작성일</label>
+                        <select value={scheduleDay} onChange={(e) => setScheduleDay(Number(e.target.value))}>
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>{d}일</option>
+                          ))}
+                          <option value={-1}>말일</option>
+                        </select>
+                      </div>
+                    )}
+                    <div className="opt-schedule-field">
+                      <label>작성시각</label>
+                      <select value={scheduleHour} onChange={(e) => setScheduleHour(Number(e.target.value))}>
+                        {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                          <option key={h} value={h}>{h}시</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2004,7 +2076,11 @@ function ReportOptionsPanel({
                   {scheduleSettings.template_nm && (
                     <div style={{ fontWeight: 600, marginBottom: 2 }}>📄 {scheduleSettings.template_nm}</div>
                   )}
-                  정기 보고서 작성 일시: {GRAIN_CYCLE_LABEL[scheduleSettings.grain] || '매달'} {scheduleSettings.day_of_month}일 {scheduleSettings.hour}시
+                  정기 보고서 작성 일시: {GRAIN_CYCLE_LABEL[scheduleSettings.grain] || '월'}{' '}
+                  {scheduleSettings.grain === 'week'
+                    ? `${WEEKDAY_LABELS_KO[scheduleSettings.weekday || 0]}`
+                    : `${scheduleSettings.day_of_month}일`}{' '}
+                  {scheduleSettings.hour}시
                 </div>
                 <button type="button" className="opt-schedule-toggle" onClick={() => setShowEditSchedule((v) => !v)}>
                   {showEditSchedule ? '수정 취소' : '수정'}
@@ -2018,17 +2094,34 @@ function ReportOptionsPanel({
                       placeholder="보고서 이름 (선택)"
                       style={{ flex: '1 1 100%' }}
                     />
-                    <span>매달</span>
-                    <select value={editDay} onChange={(e) => setEditDay(Number(e.target.value))}>
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>{d}일</option>
-                      ))}
-                    </select>
-                    <select value={editHour} onChange={(e) => setEditHour(Number(e.target.value))}>
-                      {Array.from({ length: 24 }, (_, i) => i).map((h) => (
-                        <option key={h} value={h}>{h}시</option>
-                      ))}
-                    </select>
+                    {scheduleSettings.grain === 'week' ? (
+                      <div className="opt-schedule-field">
+                        <label>작성요일</label>
+                        <select value={editWeekday} onChange={(e) => setEditWeekday(Number(e.target.value))}>
+                          {WEEKDAY_LABELS_KO.map((label, wd) => (
+                            <option key={wd} value={wd}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="opt-schedule-field">
+                        <label>작성일</label>
+                        <select value={editDay} onChange={(e) => setEditDay(Number(e.target.value))}>
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>{d}일</option>
+                          ))}
+                          <option value={-1}>말일</option>
+                        </select>
+                      </div>
+                    )}
+                    <div className="opt-schedule-field">
+                      <label>작성시각</label>
+                      <select value={editHour} onChange={(e) => setEditHour(Number(e.target.value))}>
+                        {Array.from({ length: 24 }, (_, i) => i).map((h) => (
+                          <option key={h} value={h}>{h}시</option>
+                        ))}
+                      </select>
+                    </div>
                     <button type="button" className="opt-schedule-submit" onClick={handleRequestScheduleUpdate} disabled={updating}>
                       {updating ? '확인 중...' : '변경'}
                     </button>

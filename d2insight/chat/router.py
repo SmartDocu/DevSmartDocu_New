@@ -19,9 +19,8 @@ from pydantic import BaseModel, Field
 
 from backend.app.dependencies import get_token, get_user as _get_user, require_insight_read, require_insight_write
 from d2insight.chat.intent_parser import parse_intent
-from d2insight.chat.pipeline_runner import run_tool, run_report_from_spec
+from d2insight.chat.pipeline_runner import run_tool
 from d2insight.chat import session as _session
-from d2insight.chat import report_spec as _spec_mod
 from d2insight.chat import schedule_spec as _sched_mod
 from d2insight.db import insight_storage as storage
 from d2insight import token_tracker
@@ -83,6 +82,9 @@ class ChatRequest(BaseModel):
     # AI 자유 보고서 토글 — True면 등록된 시나리오 매칭을 건너뛰고 compose_scenario(LLM 자유
     # 조립)로 강제 진입한다.
     force_compose: bool = False
+    # 미리보기 패널에서 사용자가 확정한 보고서 파일명(기본값 프리필 후 수정 가능) — 없으면
+    # 자동 생성 규칙(report_type_target_month_타임스탬프)을 그대로 쓴다.
+    file_title: str | None = None
 
 
 class ApiDatasetRequest(BaseModel):
@@ -126,16 +128,21 @@ class ScheduleRegisterRequest(BaseModel):
     qauid: str
     user_id: str
     project_id: int | None = None
-    day_of_month: int
+    # grain이 week면 day_of_month 대신 weekday(0=일요일, cron 관례)를 쓴다 — grain 자체는
+    # 사용자가 고르지 않는다(등록 대상 보고서가 이미 만들어진 grain으로 고정, _origin_grain 참고).
+    day_of_month: int | None = None
+    weekday: int | None = None
     hour: int = 9
     minute: int = 0
     template_nm: str | None = None
-    grain: str = "month"
+    # quarter/half/year일 때만 의미 있음 — 그 주기가 도는 시작월(1~12). 예: half+8이면 8월·2월.
+    start_month: int = 1
 
 
 class ScheduleUpdateRequest(BaseModel):
     user_id: str
-    day_of_month: int
+    day_of_month: int | None = None
+    weekday: int | None = None
     hour: int = 9
     minute: int = 0
     template_nm: str | None = None
@@ -202,36 +209,11 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
         "account_uid": req.account_uid,
     })
 
-    # ── 대화형 보고서 작성 진행 중 ───────────────────────────────────────
-    active_spec = _spec_mod.get_spec(sid)
-    active_sched = _sched_mod.get_spec(sid)
-    if active_spec:
-        updated_spec, bot_response = _spec_mod.advance_spec(
-            sid, req.message, history=hist, project_id=_project_id, tenant_id=_tenant_id,
-            user_uid=req.user_id, account_uid=req.account_uid,
-        )
-        if bot_response == "__EXECUTE__":
-            result = run_report_from_spec(updated_spec, req.user_id,
-                                          project_id=_project_id, tenant_id=_tenant_id,
-                                          account_uid=req.account_uid, session_id=sid)
-            _spec_mod.clear_spec(sid)
-        elif bot_response == "__CANCEL__":
-            result = {
-                "answer": "보고서 작성을 취소했습니다. 다른 작업을 도와드릴까요?",
-                "visualization_type": "none", "table_html": None,
-                "chart_image": None, "report_path": None,
-            }
-        else:
-            result = {
-                "answer": bot_response,
-                "visualization_type": "none", "table_html": None,
-                "chart_image": None, "report_path": None,
-            }
-
     # ── 대화형 정기 보고서 등록 진행 중("이 보고서 매달 5일에 작성해주세요") ───────
     # 대화 목록(history) 화면은 입력창이 없어 이 경로를 탈 수 없다 — 실시간 대화 중에만
     # 도달한다. 등록 자체는 오른쪽 패널 버튼과 같은 _register_schedule_for_qa를 공유한다.
-    elif active_sched:
+    active_sched = _sched_mod.get_spec(sid)
+    if active_sched:
         updated_sched, bot_response = _sched_mod.advance_set_spec(
             sid, req.message, project_id=_project_id, tenant_id=_tenant_id,
             user_uid=req.user_id, account_uid=req.account_uid,
@@ -275,6 +257,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                               user_uid=req.user_id, account_uid=req.account_uid)
         intent["original_message"] = req.message
         intent["force_compose"] = req.force_compose
+        intent["file_title"] = req.file_title
         # 옵션 패널 "이대로 작성"에서 온 preview 확정 옵션 — pipeline_runner가 report 실행 시
         # step plan을 이걸로 강제 (LLM 자유 계획 대신).
         if req.options:
@@ -297,26 +280,13 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                 "applied_steps": inline["steps"], "scenario": inline.get("scenario"),
             }
 
-        if tool == "report" and not (inline and target_month) and (
-            intent.get("mode") == "start" or not target_month
-        ):
-            spec = _spec_mod.create_spec(
-                target_month=target_month,
-                report_type=intent.get("report_type"),
-                scenario_options=intent.get("scenario_options"),
-            )
-            if target_month:
-                spec["entry_asked"] = True
-                answer = _spec_mod.ENTRY_QUESTION
-            else:
-                # JSON이 있으면 구성은 이미 정해졌다 — 월을 받는 즉시 작성한다.
-                if inline:
-                    spec["entry_asked"] = True
-                    spec["bulk_mode"] = True
-                answer = "어느 기간의 보고서인가요?"
-            _spec_mod.save_spec(sid, spec)
+        if tool == "report" and not target_month:
+            # 세션에 상태를 남기지 않는다 — 다음 메시지에 기간을 포함해 완전한 문장으로
+            # 다시 요청해야 한다(예전엔 여러 턴에 걸쳐 명세를 기억하며 양식·유형 등을 하나씩
+            # 되물었으나, 그 상태가 끝까지 안 지워지면 이후 무관한 메시지까지 그 명세의
+            # 답으로 잘못 해석되는 문제가 있었다 — 2026-09-18).
             result = {
-                "answer": answer,
+                "answer": "어느 기간의 보고서인지 포함해서 다시 요청해주세요. 예: '지난달 판매분석 보고서 만들어줘'",
                 "visualization_type": "none", "table_html": None,
                 "chart_image": None, "report_path": None,
             }
@@ -590,17 +560,29 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
 # ── 정기 보고서 (스케줄) ───────────────────────────────────────────
 # 실제 스케줄 트리거는 본프로젝트 Schedule(UserScheduleMasters 등)이 담당한다. 여기서는
 # "무엇을 어떤 조건으로 반복 생성할지"를 analytictemplates에 기록하고, /scheduled/run으로
-# 호출되면 실행하는 것까지만 담당한다. 등록 화면은 현재 월 단위(grain="month")만 지원한다.
+# 호출되면 실행하는 것까지만 담당한다. grain은 등록 대상 보고서가 이미 쓴 값으로 고정된다
+# (_origin_grain) — 사용자가 고르지 않는다.
 
-def _resolve_schedule_origin(qauid: str, override_nm: str | None = None) -> tuple[dict, dict, str]:
+_REGISTERABLE_GRAINS = ("month", "quarter", "half", "year", "week")
+
+
+def _origin_grain(answer_json: dict) -> str:
+    """등록 대상 보고서가 실제로 쓴 grain — period_dataset 모듈 params에서 읽는다(사용자가
+    고르는 값이 아니다). 못 찾으면 month."""
+    for step in answer_json.get("applied_steps") or []:
+        for m in step.get("modules", []):
+            if m.get("module_id") == "period_dataset":
+                grain = (m.get("params") or {}).get("grain")
+                if grain in _REGISTERABLE_GRAINS:
+                    return grain
+    return "month"
+
+
+def _resolve_schedule_origin(
+    qauid: str, override_nm: str | None = None,
+) -> tuple[dict, dict, str, str]:
     """등록 대상 보고서(qauid)를 조회하고 중복 등록 여부를 확인한다.
-
-    반환: (qa 원본 행, 그 answer 컬럼을 파싱한 dict, 템플릿 이름). override_nm이 있으면
-    사용자가 직접 지정한 이름을 그대로 쓰고, 없으면 f"{scenario_nm} 정기 보고서" —
-    scenario_nm은 그 보고서 실행 시 Analytics.ScenarioNm에 기록된 report_type(record_analytics
-    참조)이다. 자동 생성 시에는 그 보고서 자체의 유형에서 이름을 뽑는다(pr_module_insight와
-    동일 원칙).
-    """
+    반환: (qa, answer_json, template_nm, grain)."""
     qa = storage.get_qa(qauid)
     if not qa or not qa.get("filenm"):
         raise HTTPException(status_code=400, detail="정기 보고서로 등록할 보고서를 찾을 수 없습니다.")
@@ -612,40 +594,35 @@ def _resolve_schedule_origin(qauid: str, override_nm: str | None = None) -> tupl
             answer_json = {}
     except (json.JSONDecodeError, TypeError):
         answer_json = {}
+    grain = _origin_grain(answer_json)
     scenario_nm = storage.get_analytic_scenario_nm(answer_json.get("analytic_uid"))
-    template_nm = override_nm or f"{scenario_nm or '보고서'} 정기 보고서"
-    return qa, answer_json, template_nm
+    template_nm = override_nm or _sched_mod.default_report_nm(scenario_nm, grain)
+    return qa, answer_json, template_nm, grain
 
 
-_REGISTERABLE_GRAINS = ("month", "quarter", "half", "year")
-
-
-def _next_schedule_run(qa: dict, day_of_month: int, hour: int, minute: int, grain: str = "month") -> datetime:
-    """다음 실행 시각 — qa(등록 기준 원본 보고서)의 대상 기간과 겹치면 한 주기 미룬다
-    (중복 방지, schedule_spec.next_run_avoiding_period 참조). 미리보기/등록 양쪽이 같은
-    시각을 보도록 이 함수 하나로 공유한다.
-    """
+def _next_schedule_run(qa: dict, day_of_month: int | None, hour: int, minute: int, grain: str = "month",
+                        start_month: int = 1, weekday: int | None = None) -> datetime:
+    """다음 실행 시각 — qa의 대상 기간과 겹치면 한 주기 미룬다(중복 방지)."""
     origin_period = storage._parse_target_period(qa.get("filenm"))
-    return _sched_mod.next_run_avoiding_period(origin_period, day_of_month, hour, minute, grain=grain)
+    return _sched_mod.next_run_avoiding_period(origin_period, day_of_month, hour, minute, grain=grain,
+                                                start_month=start_month, weekday=weekday)
 
 
 def _register_schedule_for_qa(
     qauid: str, user_id: str, project_id: int | None,
-    day_of_month: int, hour: int, minute: int,
+    day_of_month: int | None, hour: int, minute: int,
     template_nm_override: str | None = None,
-    grain: str = "month",
+    start_month: int = 1,
+    weekday: int | None = None,
 ) -> dict:
-    """보고서(qauid) 하나를 정기 보고서로 등록한다 — REST 버튼 경로와 대화(챗) 경로가 공유하는
-    핵심 로직. 스케줄마다 전용 세션을 새로 만든다 — 원래 대화 세션은 건드리지 않는다(등록 시
-    원래 세션 전체가 대화 목록에서 사라지고 그 세션의 다른 보고서까지 회차로 섞여 들어가던
-    문제의 원인이었다). 등록 기준이 된 원본 보고서를 그 전용 세션의 첫 기록으로 남긴다.
-    """
+    """보고서(qauid)를 정기 보고서로 등록한다 — grain은 원본 보고서가 이미 쓴 값으로 고정된다.
+    스케줄마다 전용 세션을 새로 만들고, 등록 기준 원본 보고서를 그 세션의 첫 기록으로 남긴다."""
     from d2insight.engine.entry import merge_execution_cache
 
-    if grain not in _REGISTERABLE_GRAINS:
-        raise HTTPException(status_code=400, detail=f"등록 가능한 기간 단위가 아닙니다: '{grain}' ({'/'.join(_REGISTERABLE_GRAINS)}만 지원)")
+    if not 1 <= start_month <= 12:
+        raise HTTPException(status_code=400, detail=f"시작월은 1~12 사이여야 합니다: {start_month}")
 
-    qa, answer_json, template_nm = _resolve_schedule_origin(qauid, override_nm=template_nm_override)
+    qa, answer_json, template_nm, grain = _resolve_schedule_origin(qauid, override_nm=template_nm_override)
 
     tenant_id, db_project_id = storage.get_project_info(user_id)
     resolved_project_id = project_id if project_id is not None else db_project_id
@@ -655,8 +632,9 @@ def _register_schedule_for_qa(
     report_type = intent.get("report_type") or "보고서"
     months_back = intent.get("months_back") or 3
 
-    cron = _sched_mod.compose_cron(grain, day_of_month, None, hour, minute)
-    next_dt = _next_schedule_run(qa, day_of_month, hour, minute, grain=grain)
+    cron = _sched_mod.compose_cron(grain, day_of_month, weekday, hour, minute, start_month=start_month)
+    next_dt = _next_schedule_run(qa, day_of_month, hour, minute, grain=grain, start_month=start_month,
+                                  weekday=weekday)
 
     dedicated_sid = storage.create_session(tenant_id, resolved_project_id, user_id)
     storage.update_session_title(dedicated_sid, template_nm)
@@ -694,15 +672,23 @@ def _register_schedule_for_qa(
     return {"ok": True, "template_uid": templateuid, "session_id": dedicated_sid, "template_nm": template_nm}
 
 
+@router.get("/schedule/origin/{qauid}", dependencies=[Depends(require_insight_read)])
+def get_schedule_origin(qauid: str, token: str = Depends(get_token)):
+    """등록 폼이 열릴 때 필요한 정보 — 원본 grain(사용자가 못 바꿈) + 이름 기본값."""
+    qa, _answer_json, template_nm, grain = _resolve_schedule_origin(qauid)
+    return {"grain": grain, "default_name": template_nm}
+
+
 @router.post("/schedule/register-preview", dependencies=[Depends(require_insight_write)])
 def preview_register_schedule(body: ScheduleRegisterRequest, token: str = Depends(get_token)):
     """정기 보고서 등록 전 확인 문구(중복 등록 여부 + 다음 실행 예정일시)를 반환한다."""
     _check_owner(token, body.user_id)
-    if body.grain not in _REGISTERABLE_GRAINS:
-        raise HTTPException(status_code=400, detail=f"등록 가능한 기간 단위가 아닙니다: '{body.grain}' ({'/'.join(_REGISTERABLE_GRAINS)}만 지원)")
-    qa, _answer_json, _template_nm = _resolve_schedule_origin(body.qauid)
-    next_dt = _next_schedule_run(qa, body.day_of_month, body.hour, body.minute, grain=body.grain)
-    message = _sched_mod.build_register_message(next_dt, body.grain, body.day_of_month, None, body.hour, body.minute)
+    if not 1 <= body.start_month <= 12:
+        raise HTTPException(status_code=400, detail=f"시작월은 1~12 사이여야 합니다: {body.start_month}")
+    qa, _answer_json, _template_nm, grain = _resolve_schedule_origin(body.qauid)
+    next_dt = _next_schedule_run(qa, body.day_of_month, body.hour, body.minute, grain=grain,
+                                  start_month=body.start_month, weekday=body.weekday)
+    message = _sched_mod.build_register_message(next_dt, grain, body.day_of_month, body.weekday, body.hour, body.minute)
     return {"message": message}
 
 
@@ -712,7 +698,7 @@ def register_schedule(body: ScheduleRegisterRequest, token: str = Depends(get_to
     _check_owner(token, body.user_id)
     return _register_schedule_for_qa(
         body.qauid, body.user_id, body.project_id, body.day_of_month, body.hour, body.minute,
-        template_nm_override=body.template_nm, grain=body.grain,
+        template_nm_override=body.template_nm, start_month=body.start_month, weekday=body.weekday,
     )
 
 
@@ -751,7 +737,8 @@ def preview_schedule_update(session_id: str, body: ScheduleUpdateRequest, token:
         raise HTTPException(status_code=404, detail="등록된 정기 보고서가 없습니다.")
     old_settings = _sched_mod.parse_cron(template["schedulecron"])
     new_settings = {"grain": old_settings["grain"], "day_of_month": body.day_of_month,
-                    "weekday": None, "hour": body.hour, "minute": body.minute}
+                    "weekday": body.weekday, "hour": body.hour, "minute": body.minute,
+                    "start_month": old_settings.get("start_month")}
     decision = _sched_mod.compute_schedule_update(old_settings, new_settings, datetime.now(tz=_sched_mod.KST))
     message = _sched_mod.build_update_message(decision, new_settings)
     return {
@@ -771,9 +758,11 @@ def apply_schedule_update(session_id: str, body: ScheduleUpdateRequest, token: s
         raise HTTPException(status_code=404, detail="등록된 정기 보고서가 없습니다.")
     old_settings = _sched_mod.parse_cron(template["schedulecron"])
     new_settings = {"grain": old_settings["grain"], "day_of_month": body.day_of_month,
-                    "weekday": None, "hour": body.hour, "minute": body.minute}
+                    "weekday": body.weekday, "hour": body.hour, "minute": body.minute,
+                    "start_month": old_settings.get("start_month")}
     decision = _sched_mod.compute_schedule_update(old_settings, new_settings, datetime.now(tz=_sched_mod.KST))
-    new_cron = _sched_mod.compose_cron(new_settings["grain"], body.day_of_month, None, body.hour, body.minute)
+    new_cron = _sched_mod.compose_cron(new_settings["grain"], body.day_of_month, body.weekday, body.hour, body.minute,
+                                        start_month=old_settings.get("start_month") or 1)
     storage.update_analytic_template_schedule(template["templateuid"], new_cron, decision["effective_start"].isoformat())
     if body.template_nm:
         storage.update_analytic_template_name(template["templateuid"], body.template_nm)
@@ -1141,6 +1130,7 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
     )
     target_month = parsed_intent.get("target_month")
     grain = parsed_intent.get("grain") or "month"
+    compare_type = parsed_intent.get("compare_type") or "MoM"
     if target_month:
         has_data, no_data_msg = has_data_for_period(
             target_month, grain=grain, source_id=source_id,
@@ -1161,6 +1151,7 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
             message=req.message,
             target_month=f"{today.year:04d}-{today.month:02d}",
             grain=grain,
+            compare_type=compare_type,
             # matched가 없으면(JSON만 있는 경우) report_type을 아예 안 넘긴다 — 굳이 임의의
             # 시나리오 이름으로 채우지 않아도 preview_report_plan() 자체에 중립적인 기본값이
             # 있다(entry.py). matched가 있으면 그 이름을 그대로 report_type으로도 쓴다.
@@ -1188,10 +1179,14 @@ def preview_report(req: ReportPreviewRequest, token: str = Depends(get_token)) -
                 m["purpose"] = mdef.purpose
 
     scenario = result.get("scenario") or matched
+    default_name = _sched_mod.default_report_nm(
+        scenario or parsed_intent.get("report_type"), grain, target_period=target_month,
+    )
     return {
         "scenario": scenario,
         "report_title": SCENARIO_REGISTRY.get(scenario, {}).get("report_title", ""),
         "applied_steps": applied_steps,
+        "default_name": default_name,
     }
 
 
