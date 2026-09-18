@@ -27,7 +27,7 @@ export default function FreeServiceGate() {
       <h2 style={{ textAlign: 'center', marginBottom: 8, color: '#163E64', fontSize: 22, fontWeight: 700 }}>
         {t('ttl.freeservice.heading')}
       </h2>
-      <p style={{ textAlign: 'center', color: '#888', fontSize: 13, marginBottom: 32 }}>
+      <p style={{ textAlign: 'center', color: '#888', fontSize: 13, marginBottom: 32, whiteSpace: 'pre-line' }}>
         {t('inf.freeservice.subheading')}
       </p>
 
@@ -95,6 +95,10 @@ export default function FreeServiceGate() {
       >
         {t('btn.freeservice.start')}
       </button>
+
+      <p style={{ textAlign: 'center', color: '#888', fontSize: 13, marginTop: 16, marginBottom: 0 }}>
+        {t('inf.freeservice.tenant_notice')}
+      </p>
     </div>
   )
 }
