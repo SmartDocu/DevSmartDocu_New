@@ -12,6 +12,16 @@ from docx.enum.section import WD_SECTION
 from docx.oxml.shared import OxmlElement, qn
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
+# CKEditor 페이지 나누기 마커. utilsPrj/template_parser.py의 remove_highlight_bg()가
+# 실제 문서 생성 시(worker/main.py의 process_template 호출) 모든 style 속성의 끝 세미콜론을
+# 제거해버리는 부작용이 있어(하이라이트 배경색 제거 목적, 페이지나누기와 무관), 저장 시점
+# 원본(chapters.texttemplate, 세미콜론 있음)과 생성 시점 콘텐츠(세미콜론 없음)의 표기가 달라질
+# 수 있다. 세미콜론 유무에 상관없이 매칭되도록 정규식으로 처리한다(2026-09-18 발견).
+PAGE_BREAK_RE = re.compile(
+    r'<div class="page-break" style="page-break-after:\s*always;?"\s*>'
+    r'<span style="display:\s*none;?"\s*>&nbsp;</span></div>'
+)
+
 # ===== 유틸 =====
 def hex_to_rgb(hex_color):
     if not hex_color: return (0,0,0)
@@ -588,8 +598,7 @@ def html_to_docx(supabase, genchapteruid, html_content):
         # print(f'HTML_Content: {html_content}')
         pass
         # 페이지 나누기 코드 변환 처리
-        sep_pagebreak = '<div class="page-break" style="page-break-after:always;"><span style="display:none;">&nbsp;</span></div>'
-        html_content = html_content.replace(sep_pagebreak, '---페이지 나누기---')
+        html_content = PAGE_BREAK_RE.sub('---페이지 나누기---', html_content)
 
         soup=BeautifulSoup(html_content,'html.parser')
         
@@ -685,9 +694,8 @@ def html_to_docx_merge(supabase, doc, genchapteruid, html_content, index, previo
     """
     try:
         # 페이지 나누기 코드 변환 처리 --> HTML To Text
-        sep_pagebreak = '<div class="page-break" style="page-break-after:always;"><span style="display:none;">&nbsp;</span></div>'
-        html_content = html_content.replace(sep_pagebreak, '---페이지 나누기---')
-        
+        html_content = PAGE_BREAK_RE.sub('---페이지 나누기---', html_content)
+
         soup = BeautifulSoup(html_content, 'html.parser')
         
         # 1️⃣ 새 섹션 생성 + 머리글/바닥글 설정

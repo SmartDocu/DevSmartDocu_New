@@ -447,6 +447,18 @@ table tr.selected-row {
 .table-sm td, .table-sm th { padding: 3px 8px; }
 .table-bordered, .table-bordered td, .table-bordered th { border: 1px solid var(--border-color); }
 
+/* input/select 테두리색 통일(테이블과 동일 톤) — d2chat/d2insight 화면은 자체 디자인이라 제외 */
+input,
+select {
+  border: 1px solid var(--border-color);
+}
+.d2chat-layout input,
+.d2chat-layout select,
+.d2insight-layout input,
+.d2insight-layout select {
+  border: revert;
+}
+
 /* 테이블 셀 유틸 */
 .info { text-align: center; }
 .multiline { white-space: pre-line; }

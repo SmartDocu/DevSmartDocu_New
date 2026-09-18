@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Select, Spin, Upload } from 'antd'
 import { UploadOutlined, DownloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -41,16 +41,23 @@ export default function ReqDocReadPage() {
   const [loading, setLoading] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
 
+  // 문서를 빠르게 전환할 때 먼저 보낸 요청이 나중에 응답으로 도착해 최신 선택을
+  // 덮어쓰는 걸 막기 위한 가드 — 응답 도착 시점에 여전히 최신 요청인지 확인 후에만 반영한다.
+  const latestRequestRef = useRef(0)
+
   const loadContent = async (gendocuid, type) => {
     if (!gendocuid) return
+    const requestId = ++latestRequestRef.current
     setLoading(true)
     try {
       const res = await apiClient.get(`/gendocs/${gendocuid}/doc-content`, { params: { type } })
+      if (requestId !== latestRequestRef.current) return
       setContent(res.data)
     } catch {
+      if (requestId !== latestRequestRef.current) return
       setContent({ contents: t('msg.load.error'), doc_info: {} })
     } finally {
-      setLoading(false)
+      if (requestId === latestRequestRef.current) setLoading(false)
     }
   }
 

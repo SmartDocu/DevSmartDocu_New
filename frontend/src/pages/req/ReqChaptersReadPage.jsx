@@ -132,16 +132,23 @@ export default function ReqChaptersReadPage() {
   }, [generating, selectedGendocuid]) // eslint-disable-line
 
   // ── 콘텐츠 로드 ─────────────────────────────────────────────────────────────
+  // 챕터/조회유형을 빠르게 전환할 때 먼저 보낸 요청이 나중에 응답으로 도착해 최신 선택을
+  // 덮어쓰는 걸 막기 위한 가드 — 응답 도착 시점에 여전히 최신 요청인지 확인 후에만 반영한다.
+  const latestContentRequestRef = useRef(0)
+
   const loadContent = async (genchapteruid, type) => {
+    const requestId = ++latestContentRequestRef.current
     setContentLoading(true)
     setContent(null)
     try {
       const res = await apiClient.get(`/gendocs/genchapters/${genchapteruid}/content`, { params: { type } })
+      if (requestId !== latestContentRequestRef.current) return
       setContent(res.data)
     } catch {
+      if (requestId !== latestContentRequestRef.current) return
       setContent({ contents: t('msg.load.error') })
     } finally {
-      setContentLoading(false)
+      if (requestId === latestContentRequestRef.current) setContentLoading(false)
     }
   }
 
@@ -314,14 +321,14 @@ export default function ReqChaptersReadPage() {
       <div style={{ flex: 1, display: 'flex', gap: 24, minHeight: 0 }}>
 
         {/* 좌측: 챕터 목록 */}
-        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        <div className="panel-section" style={{ flex: 1.25, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
 
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
             borderBottom: '1px solid var(--border-color, #e3e6eb)',
           }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.chapter.list')}</h3>
+            <h3 style={{ margin: 0 }}>{t('ttl.chapter.list.panel')}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {editbuttonyn && (
                 <button
@@ -351,7 +358,7 @@ export default function ReqChaptersReadPage() {
                   <th style={{ width: '22%' }}>{t('thd.chapternm')}</th>
                   <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.createuser')}</th>
                   <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.createfiledts')}</th>
-                  <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.new.chapter')}</th>
+                  <th style={{ width:  '8%', textAlign: 'center', whiteSpace: 'pre-line' }}>{t('thd.new.chapter')}</th>
                   <th style={{ width:  '8%', textAlign: 'center' }}>{t('thd.updateuser')}</th>
                   <th style={{ width: '12%', textAlign: 'center' }}>{t('thd.updatefiledts')}</th>
                   <th style={{ width: '8%', textAlign: 'center', whiteSpace: 'pre-line' }}>{t('thd.new.upload')}</th>
@@ -388,7 +395,7 @@ export default function ReqChaptersReadPage() {
         </div>
 
         {/* 우측: 챕터 내용 */}
-        <div className="panel-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        <div className="panel-section" style={{ flex: 1.25, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
           {selectedChap ? (
             <>
             {/* 조회 유형 + 액션 버튼 */}

@@ -118,6 +118,102 @@ function TemplateBlockPlugin(editor) {
   })
 }
 
+// ──────────────────────────────────────────────
+// 페이지 나누기 삽입 버튼
+// CKEditor CDN "decoupled-document" 빌드엔 공식 PageBreak 플러그인도, 이를 흉내내려 썼던
+// GeneralHtmlSupport(GHS)도 포함돼 있지 않다(전 버전 확인 완료) — 그래서 raw HTML을
+// 그냥 삽입하는 방식은 스키마에 없는 태그/속성이 전부 걸러져 단순 줄바꿈+텍스트로만 남았다.
+// 실제 CKEditor PageBreak 플러그인과 동일하게 모델 스키마 + 컨버전을 직접 등록한다.
+// data 다운캐스트 결과 마커는 utilsPrj/html_to_docx.py・docx_read.py・
+// backend/app/routers/chapters.py가 그대로 매칭해서 실제 워드 페이지나누기로 변환/역변환하므로
+// 문자열을 정확히 유지해야 한다.
+// ──────────────────────────────────────────────
+function PageBreakPlugin(editor) {
+  const schema = editor.model.schema
+  const conversion = editor.conversion
+
+  schema.register('pageBreak', {
+    isObject: true,
+    allowWhere: '$block',
+  })
+
+  // 저장된 데이터(또는 붙여넣기) 안의 마커 HTML → pageBreak 모델 엘리먼트
+  conversion.for('upcast').elementToElement({
+    view: { name: 'div', classes: 'page-break' },
+    model: 'pageBreak',
+  })
+
+  // 모델 → 데이터(저장용 HTML) — 백엔드가 매칭하는 마커와 정확히 동일해야 함
+  conversion.for('dataDowncast').elementToElement({
+    model: 'pageBreak',
+    view: (modelElement, { writer }) =>
+      writer.createRawElement('div', { class: 'page-break', style: 'page-break-after:always;' }, (domElement) => {
+        domElement.innerHTML = '<span style="display:none;">&nbsp;</span>'
+      }),
+  })
+
+  // 모델 → 편집화면 표시용 — 점선 + 라벨로 눈에 띄게 표시
+  conversion.for('editingDowncast').elementToElement({
+    model: 'pageBreak',
+    view: (modelElement, { writer }) =>
+      writer.createRawElement('div', {
+        class: 'page-break',
+        contenteditable: 'false',
+        style: 'position:relative; clear:both; margin:10px 0; user-select:none;',
+      }, (domElement) => {
+        domElement.innerHTML = `
+          <hr style="border:none; border-top:2px dashed #b3b3b3; margin:0;" />
+          <span style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            background:#f3f3f3; color:#888; font-size:11px; padding:2px 10px; border-radius:10px;
+            border:1px dashed #b3b3b3; white-space:nowrap;">${t('lbl.pagebreak.label')}</span>
+        `
+      }),
+  })
+
+  editor.ui.componentFactory.add('pageBreak', () => {
+    const view = {
+      element: null,
+      render() {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'ck ck-button ck-template-block-btn'
+        btn.innerHTML = `
+          <svg width="18" height="18" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"
+            fill="none" stroke="#444" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8,2 L8,6 L12,6" />
+            <path d="M17,2 L17,6 L13,6" />
+            <path d="M8,18 L8,14 L12,14" />
+            <path d="M17,18 L17,14 L13,14" />
+            <path d="M6,10 L17,10" stroke-dasharray="1.8,1.8" />
+            <path d="M1,7 L6,10 L1,13 Z" fill="#444" stroke="none" />
+          </svg>
+        `
+        btn.title = t('btn.insert.pagebreak')
+        btn.style.cssText = `
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4px 8px;
+          cursor: pointer;
+        `
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          editor.model.change((writer) => {
+            const pageBreakElement = writer.createElement('pageBreak')
+            editor.model.insertObject(pageBreakElement, null, null, { setSelection: 'after' })
+          })
+          editor.editing.view.focus()
+        })
+        this.element = btn
+        return btn
+      },
+      destroy() {},
+    }
+    view.render()
+    return view
+  })
+}
+
 function AutoCompletePlugin(editor, tbl_params_ref, sca_params_ref) {
   let dropdown = null
 
@@ -1009,6 +1105,7 @@ export default function MasterChapterTemplatePage() {
       extraPlugins: [
         VariablePlugin,
         TemplateBlockPlugin,
+        PageBreakPlugin,
         AutoCompletePluginWrapper,   // ✅ 화살표 함수 → 일반 함수로 교체
         VariableHighlightPlugin,
       ],
