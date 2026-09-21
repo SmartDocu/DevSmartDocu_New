@@ -336,6 +336,40 @@ def append_qa(
     return qauid
 
 
+def create_qa_placeholder(
+    session_uid: str,
+    tenant_id: int | None,
+    project_id: int | None,
+    question: str,
+    creator: str | None,
+    servicecd: str = "In",
+) -> str:
+    """비동기 보고서 생성 요청을 접수하며 자리표시자 행을 만들고 qauid를 반환한다.
+
+    jobstatuscd='S'로 두면 워커가 SQS 메시지를 받아 'P'로 선점 후 처리하고, 완료되면
+    answer/filenm/fileurl과 함께 'D'(성공) 또는 'F'(실패)로 갱신한다(worker/insight_main.py).
+    """
+    row: dict = {
+        "sessionuid": session_uid,
+        "tenantid": tenant_id or None,
+        "projectid": project_id or None,
+        "question": question,
+        "answer": json.dumps({"answer": "보고서를 생성하고 있습니다. 완료되면 알림으로 안내해드립니다."}, ensure_ascii=False),
+        "creator": creator or None,
+        "favoriteyn": False,
+        "servicecd": servicecd,
+        "jobstatuscd": "S",
+    }
+    res = _sc.table("insight_qas").insert(row).execute()
+    qauid: str = res.data[0]["qauid"]
+
+    session = get_session(session_uid)
+    if session and not session.get("sessiontitles"):
+        update_session_title(session_uid, question[:50])
+
+    return qauid
+
+
 def get_session_messages(session_uid: str) -> list[dict]:
     """LLM 컨텍스트 + 히스토리 뷰용 메시지 배열 반환.
 

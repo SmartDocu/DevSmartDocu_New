@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     SECRETS_TTL_SECONDS: int = 86400
     SQS_QUEUE_URL: str = ""
     SQS_CHAPTER_QUEUE_URL: str = ""
+    SQS_INSIGHT_QUEUE_URL: str = ""
 
     # 이메일
     EMAIL_HOST_USER: str = ""

@@ -11,12 +11,14 @@ from datetime import date, datetime
 from typing import List, Optional
 from urllib.parse import urlparse
 
+import boto3
 import pandas as pd
 from requests import exceptions as requests_exceptions
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from backend.app.config import settings
 from backend.app.dependencies import get_token, get_user as _get_user, require_insight_read, require_insight_write
 from d2insight.chat.intent_parser import parse_intent
 from d2insight.chat.pipeline_runner import run_tool
@@ -209,6 +211,8 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
         "account_uid": req.account_uid,
     })
 
+    async_qauid: Optional[str] = None  # tool=="report"에서 채워짐 — 아래 append_qa 재실행을 막는 표시
+
     # ── 대화형 정기 보고서 등록 진행 중("이 보고서 매달 5일에 작성해주세요") ───────
     # 대화 목록(history) 화면은 입력창이 없어 이 경로를 탈 수 없다 — 실시간 대화 중에만
     # 도달한다. 등록 자체는 오른쪽 패널 버튼과 같은 _register_schedule_for_qa를 공유한다.
@@ -342,6 +346,35 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                         "chart_image": None, "report_path": None,
                     }
 
+        elif tool == "report":
+            # 보고서 생성은 SQS + 전용 워커(worker/insight_main.py)로 비동기 처리한다 — 자리표시자
+            # 행을 먼저 만들어 qauid를 확보하고, 실제 생성은 워커가 끝낸 뒤 같은 행을 갱신한다.
+            # 완료 알림은 create_notification()으로만 전달한다(채팅창 실시간 갱신 없음).
+            async_qauid = storage.create_qa_placeholder(
+                sid, _tenant_id, _project_id, req.message, req.user_id, servicecd="In",
+            )
+            sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+            sqs.send_message(
+                QueueUrl=settings.SQS_INSIGHT_QUEUE_URL,
+                MessageBody=json.dumps({
+                    "qauid": async_qauid,
+                    "tool": tool,
+                    "target_month": target_month,
+                    "months_back": months_back,
+                    "intent": intent,
+                    "user_id": req.user_id,
+                    "project_id": _project_id,
+                    "tenant_id": _tenant_id,
+                    "account_uid": req.account_uid,
+                    "session_id": sid,
+                }, ensure_ascii=False),
+            )
+            result = {
+                "answer": "보고서 생성 요청이 접수되었습니다. 생성이 완료되면 알림으로 안내해드립니다.",
+                "visualization_type": "none", "table_html": None,
+                "chart_image": None, "report_path": None,
+            }
+
         else:
             result = run_tool(tool, target_month, months_back, history=hist, intent=intent,
                               user_id=req.user_id, project_id=_project_id, tenant_id=_tenant_id,
@@ -349,33 +382,34 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
 
     tokens = token_tracker.get()
 
-    qauid: Optional[str] = None
+    qauid: Optional[str] = async_qauid
     calls = tokens.get("calls", [])
     questiontypecd = "R" if any(c.get("is_report") for c in calls) else "S"
-    try:
-        answer_json = {
-            "answer": result.get("answer", ""),
-            "visualization_type": result.get("visualization_type", "none"),
-            "table_html": result.get("table_html"),
-            "applied_steps": result.get("applied_steps"),
-            "analytic_uid": result.get("analytic_uid"),
-            # 실행에 쓰인 SQL·표 형식. applied_steps와 섞지 않고 나란히 둔다 — 정기 보고서로
-            # 등록할 때만 합쳐서 스냅샷에 넣는다.
-            "execution_cache": result.pop("execution_cache", None),
-        }
-        qauid = _session.append_qa(
-            sid, req.message, answer_json,
-            user_id=req.user_id,
-            project_id=req.project_id,
-            filenm=result.get("report_path"),
-            fileurl=result.get("fileurl"),
-            inputtoken=tokens["input"] or None,
-            outputtoken=tokens["output"] or None,
-            servicecd="In",
-        )
-    except Exception as e:
-        # print(f"[session] append_qa 실패 (저장 건너뜀): {e}")
-        pass
+    if qauid is None:
+        try:
+            answer_json = {
+                "answer": result.get("answer", ""),
+                "visualization_type": result.get("visualization_type", "none"),
+                "table_html": result.get("table_html"),
+                "applied_steps": result.get("applied_steps"),
+                "analytic_uid": result.get("analytic_uid"),
+                # 실행에 쓰인 SQL·표 형식. applied_steps와 섞지 않고 나란히 둔다 — 정기 보고서로
+                # 등록할 때만 합쳐서 스냅샷에 넣는다.
+                "execution_cache": result.pop("execution_cache", None),
+            }
+            qauid = _session.append_qa(
+                sid, req.message, answer_json,
+                user_id=req.user_id,
+                project_id=req.project_id,
+                filenm=result.get("report_path"),
+                fileurl=result.get("fileurl"),
+                inputtoken=tokens["input"] or None,
+                outputtoken=tokens["output"] or None,
+                servicecd="In",
+            )
+        except Exception as e:
+            # print(f"[session] append_qa 실패 (저장 건너뜀): {e}")
+            pass
 
     if qauid and (tokens["input"] or tokens["output"]):
         token_tracker.record_turn(sid, qauid, tokens)

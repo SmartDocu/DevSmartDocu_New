@@ -1,0 +1,38 @@
+{
+  "family": "smartdocu-insight-worker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "4096",
+  "taskRoleArn": "arn:aws:iam::189993504048:role/smartdocu-worker-task-role",
+  "executionRoleArn": "arn:aws:iam::189993504048:role/smartdocu-backend-exec-role",
+  "containerDefinitions": [
+    {
+      "name": "smartdocu-insight-worker",
+      "image": "189993504048.dkr.ecr.ap-northeast-2.amazonaws.com/smartdocu-worker:latest",
+      "command": ["python", "-m", "worker.insight_main"],
+      "essential": true,
+      "environment": [
+        { "name": "SUPABASE_SCHEMA", "value": "sdoc" },
+        { "name": "AWS_REGION", "value": "ap-northeast-2" },
+        { "name": "SUPABASE_URL", "value": "https://tkqmotkvsisasqaqhoun.supabase.co" },
+        { "name": "SQS_INSIGHT_QUEUE_URL", "value": "https://sqs.ap-northeast-2.amazonaws.com/189993504048/smartdocu-genreports-queue" }
+      ],
+      "secrets": [
+        { "name": "CLAUDE_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:189993504048:secret:smartdocu/backend/env-umVn4O:CLAUDE_API_KEY::" },
+        { "name": "SUPABASE_SERVICE_ROLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:189993504048:secret:smartdocu/backend/env-umVn4O:SUPABASE_SERVICE_ROLE_KEY::" },
+        { "name": "SUPABASE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:189993504048:secret:smartdocu/backend/env-umVn4O:SUPABASE_KEY::" },
+        { "name": "ENCRYPTION_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:189993504048:secret:smartdocu/backend/env-umVn4O:ENCRYPTION_KEY::" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "smartdocu-insight-worker",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
