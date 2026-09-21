@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { DatePicker, Pagination, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
+import { ReloadOutlined } from '@ant-design/icons'
 import { t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { usePaymentHistory } from '@/hooks/usePayments'
@@ -27,7 +28,7 @@ export default function BillingHistoryPanel({ pageTitle }) {
   const startDate = dates[0]?.format('YYYY-MM-DD')
   const endDate = dates[1]?.format('YYYY-MM-DD')
 
-  const { data = {}, isLoading } = usePaymentHistory(startDate, endDate)
+  const { data = {}, isLoading, isFetching, refetch } = usePaymentHistory(startDate, endDate)
   const payments = data.payments || []
   const hasItems = (p) => Array.isArray(p.items) && p.items.length > 0
   const hasExpandableRows = payments.some((p) => hasItems(p) || p.adjust)
@@ -86,11 +87,14 @@ export default function BillingHistoryPanel({ pageTitle }) {
         </div>
       </div>
 
-      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div className="filter-item">
           <label style={{ fontWeight: 'bold' }}>{t('lbl.period')}</label>
           <RangePicker value={dates} onChange={(v) => v && setDates(v)} allowClear={false} />
         </div>
+        <button className="btn btn-secondary" type="button" onClick={() => refetch()} disabled={isFetching}>
+          <ReloadOutlined spin={isFetching} style={{ marginRight: 6 }} />{t('btn.refresh')}
+        </button>
       </div>
 
       <div className="panel-section" style={{ height: 'calc(100vh - 306px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
