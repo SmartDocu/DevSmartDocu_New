@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
-import { App, Pagination } from 'antd'
+import { Pagination } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAdminUserRoles, useSaveUserRole } from '@/hooks/useAdmin'
-import { getErrorMessage } from '@/utils/apiError'
 
 const PAGE_SIZE = 10
 
 export default function AdminUserRolePage() {
-  const { message } = App.useApp()
   const { data = {}, isLoading, refetch } = useAdminUserRoles()
   const saveMutation = useSaveUserRole()
 
@@ -43,20 +41,16 @@ export default function AdminUserRolePage() {
       { useruid, roleid },
       {
         onSuccess: async () => {
-          // ✅ 1. 메시지 먼저 (샘플 방식)
-          message.success(t('msg.save.success'))
-
-          // ✅ 2. 데이터 갱신
+          // ✅ 1. 데이터 갱신 (성공 안내는 useSaveUserRole 훅에서 표시)
           await refetch()
 
-          // ✅ 3. pending 정리
+          // ✅ 2. pending 정리
           setPendingRoles((prev) => {
             const next = { ...prev }
             delete next[useruid]
             return next
           })
         },
-        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
         onSettled: () => {
           setSavingUid(null)
         }

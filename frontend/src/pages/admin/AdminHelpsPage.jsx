@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { App, Modal, Spin } from 'antd'
+import { App, Spin } from 'antd'
 import { PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
@@ -10,7 +10,7 @@ import { getErrorMessage } from '@/utils/apiError'
 const EMPTY_FORM = { helpuid: '', help: '', url: '', desc: '', languagecd: 'en' }
 
 export default function AdminHelpsPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const qc = useQueryClient()
   useLangStore((s) => s.translations)
 
@@ -134,7 +134,7 @@ export default function AdminHelpsPage() {
 
   const handleDelete = () => {
     if (!selected?.helpuid) return
-    Modal.confirm({
+    modal.confirm({
       title: t('btn.delete'),
       content: t('msg.confirm.delete'),
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },

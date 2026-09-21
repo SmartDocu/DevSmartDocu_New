@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react'
-import { App, Pagination } from 'antd'
+import { Pagination } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useBillingRecoveryAccounts, useRetryBillingRecovery } from '@/hooks/useAdmin'
-import { getErrorMessage } from '@/utils/apiError'
 
 const PAGE_SIZE = 10
 
 export default function AdminBillingRecoveryPage() {
-  const { message } = App.useApp()
   useLangStore((s) => s.translations)
 
   const { data = {}, isLoading } = useBillingRecoveryAccounts()
@@ -27,9 +25,7 @@ export default function AdminBillingRecoveryPage() {
   }
 
   const handleRetry = (accountuid) => {
-    retryMutation.mutate(accountuid, {
-      onError: (err) => { message.error(getErrorMessage(err, 'msg.billing.retry.error')) },
-    })
+    retryMutation.mutate(accountuid)
   }
 
   return (

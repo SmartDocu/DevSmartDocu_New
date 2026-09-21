@@ -113,7 +113,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
           <span style={{ width: 90, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.usernm')}</span>
           <input type="text" value={usernm} onChange={(e) => setUsernm(e.target.value)}
-            placeholder={t('lbl.usernm')}
+            placeholder={t('lbl.usernm')} disabled={saving}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
@@ -121,7 +121,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
           <span style={{ width: 90, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.email')}</span>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-            placeholder={t('lbl.email')}
+            placeholder={t('lbl.email')} disabled={saving}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
@@ -129,7 +129,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8 }}>
           <span style={{ width: 90, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.password')}</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-            placeholder={t('lbl.password')}
+            placeholder={t('lbl.password')} disabled={saving}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
@@ -137,13 +137,13 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 8 }}>
           <span style={{ width: 90, textAlign: 'right', fontSize: 14, fontWeight: 500 }}>{t('lbl.password.confirm')}</span>
           <input type="password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)}
-            placeholder={t('lbl.password.confirm')}
+            placeholder={t('lbl.password.confirm')} disabled={saving}
             style={{ flex: 1, height: 36, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }} />
         </label>
 
         {/* 전체 동의 */}
         <label style={{ display: 'block', marginBottom: 8, textAlign: 'left', fontSize: 14 }}>
-          <input type="checkbox" checked={agreeAll} onChange={(e) => handleAgreeAll(e.target.checked)} style={{ marginRight: 6 }} />
+          <input type="checkbox" checked={agreeAll} onChange={(e) => handleAgreeAll(e.target.checked)} disabled={saving} style={{ marginRight: 6 }} />
           {t('lbl.agree.all')}
         </label>
 
@@ -151,7 +151,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'block', marginBottom: 6, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={userinfoyn}
             onChange={(e) => { setUserinfoyn(e.target.checked); syncAgreeAll(e.target.checked, termsofuseyn, electronicfinancialtermsyn, marketingyn) }}
-            style={{ marginRight: 6 }} />
+            disabled={saving} style={{ marginRight: 6 }} />
           <a href="/terms?terms=collection" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.privacy')}</a> ({t('lbl.required')})
         </label>
 
@@ -159,7 +159,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'block', marginBottom: 6, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={termsofuseyn}
             onChange={(e) => { setTermsofuseyn(e.target.checked); syncAgreeAll(userinfoyn, e.target.checked, electronicfinancialtermsyn, marketingyn) }}
-            style={{ marginRight: 6 }} />
+            disabled={saving} style={{ marginRight: 6 }} />
           <a href="/terms?terms=service" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.service')}</a> ({t('lbl.required')})
         </label>
 
@@ -167,7 +167,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'block', marginBottom: 6, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={electronicfinancialtermsyn}
             onChange={(e) => { setElectronicfinancialtermsyn(e.target.checked); syncAgreeAll(userinfoyn, termsofuseyn, e.target.checked, marketingyn) }}
-            style={{ marginRight: 6 }} />
+            disabled={saving} style={{ marginRight: 6 }} />
           <a href="/terms?terms=finance" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.electronic')}</a> ({t('lbl.required')})
         </label>
 
@@ -175,7 +175,7 @@ export default function RegisterModal({ open, onClose }) {
         <label style={{ display: 'block', marginBottom: 20, textAlign: 'left', fontSize: 14 }}>
           <input type="checkbox" checked={marketingyn}
             onChange={(e) => { setMarketingyn(e.target.checked); syncAgreeAll(userinfoyn, termsofuseyn, electronicfinancialtermsyn, e.target.checked) }}
-            style={{ marginRight: 6 }} />
+            disabled={saving} style={{ marginRight: 6 }} />
           <a href="/terms?terms=marketing" target="_blank" style={{ color: '#0f6efd', textDecoration: 'underline' }}>{t('lbl.terms.marketing')}</a> ({t('lbl.optional')})
         </label>
 

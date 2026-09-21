@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Modal } from 'antd'
+import { App } from 'antd'
 import { SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -8,7 +8,7 @@ import { useOrgTenantLlms, useSaveTenantLlm, useDeleteTenantLlm } from '@/hooks/
 const EMPTY_FORM = { projectnm: '', llmmodelnm: '', apikey: '' }
 
 export default function OrgTenantLlmsPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   useLangStore((s) => s.translations)
   const accountuid = useAuthStore((s) => s.user?.accountuid)
   const { data = {}, isLoading } = useOrgTenantLlms(accountuid)
@@ -39,32 +39,19 @@ export default function OrgTenantLlmsPage() {
     if (!selectedId) { message.warning(t('msg.select')); return }
     saveMutation.mutate(
       { projectid: selectedId, llmmodelnm: form.llmmodelnm || null, apikey: form.apikey || '' },
-      {
-        onSuccess: () => { message.success(t('msg.save.success')) },
-        onError: (err) => {
-          const detail = err.response?.data?.detail
-          message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
-        },
-      }
     )
   }
 
   const handleDelete = () => {
     if (!selectedId) return
-    Modal.confirm({
+    modal.confirm({
       title: t('btn.delete'),
       content: t('msg.confirm.delete'),
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => {
         deleteMutation.mutate(
           { projectid: selectedId },
-          {
-            onSuccess: () => { message.success(t('msg.delete.success')); setSelectedId(null); setForm(EMPTY_FORM) },
-            onError: (err) => {
-              const detail = err.response?.data?.detail
-              message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
-            },
-          }
+          { onSuccess: () => { setSelectedId(null); setForm(EMPTY_FORM) } }
         )
       },
     })

@@ -210,6 +210,12 @@ export function useTenantManageTeamProducts(servicecd) {
   })
 }
 
+export function useTenantSubscriptionChangePreview() {
+  return useMutation({
+    mutationFn: (params) => apiClient.get('/settings/tenant-manage/subscription-change-preview', { params }).then((r) => r.data),
+  })
+}
+
 export function useChangeTenantSubscription() {
   const qc = useQueryClient()
   return useMutation({
@@ -368,10 +374,6 @@ export function usePurchaseTenantManageCreditSubscription() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tenant-manage-credit-subscriptions'] })
     },
-    onError: (err) => {
-      const detail = err.response?.data?.detail
-      message.error(detail ? t(detail) : t('msg.save.error'))
-    },
   })
 }
 
@@ -390,10 +392,6 @@ export function usePurchaseMyInfoCredit() {
     mutationFn: (body) => apiClient.post('/settings/myinfo/credit-purchase', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['myinfo-credit-purchase'] })
-    },
-    onError: (err) => {
-      const detail = err.response?.data?.detail
-      message.error(detail ? t(detail) : t('msg.save.error'))
     },
   })
 }

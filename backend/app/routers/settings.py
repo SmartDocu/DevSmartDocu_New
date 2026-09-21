@@ -2658,9 +2658,136 @@ def _calc_prorated_amount(full_price: float, today: date, next_billing_dt: date)
     return max(0, min(prorated, round(full_price)))
 
 
+UPGRADE_CREDIT_REASONCD = "UpgradeProration"
+
+
+def _find_prev_payment_within_24h(svc, accountuid: str, productcd: str, now_utc) -> Optional[dict]:
+    """같은 상품의 직전 성공 결제가 24시간 이내이면 그 결제 행(paymentuid, createdts)을, 아니면 None을 반환."""
+    from dateutil import parser as dtparser
+
+    rows = (
+        svc.table("payments").select("paymentuid,createdts")
+        .eq("accountuid", accountuid).eq("productcd", productcd)
+        .eq("payment_status", "Success")
+        .order("createdts", desc=True).limit(1).execute().data or []
+    )
+    if rows and now_utc - dtparser.parse(rows[0]["createdts"]) <= timedelta(hours=24):
+        return rows[0]
+    return None
+
+
+def _find_last_paid_subscription_item(svc, tenantid, accountuid: str, productcd: str) -> Optional[dict]:
+    """productcd의 가장 최근 '결제 성공' 서비스 구독 invoice_items 행 + invoice_date를 반환. 없으면 None.
+    환불된 결제(payments.payment_status != 'Success')에 연결된 인보이스는 제외한다."""
+    items = (
+        svc.table("invoice_items").select("invoiceuid,amount,credit_amount,createdts")
+        .eq("tenantid", int(tenantid)).eq("productcd", productcd).eq("item_type", "Subscription")
+        .order("createdts", desc=True).limit(10).execute().data or []
+    )
+    if not items:
+        return None
+    inv_ids = list({i["invoiceuid"] for i in items})
+    invs = (
+        svc.table("invoices").select("invoiceuid,invoice_date")
+        .eq("accountuid", accountuid).in_("invoiceuid", inv_ids).execute().data or []
+    )
+    inv_map = {i["invoiceuid"]: i for i in invs}
+    if not inv_map:
+        return None
+    pays = (
+        svc.table("payments").select("invoiceuid")
+        .in_("invoiceuid", list(inv_map)).eq("payment_status", "Success").execute().data or []
+    )
+    paid_invs = {p["invoiceuid"] for p in pays}
+    for it in items:
+        if it["invoiceuid"] in paid_invs:
+            return {**it, "invoice_date": inv_map[it["invoiceuid"]]["invoice_date"]}
+    return None
+
+
+def _build_change_quote(svc, tenantid, accountuid: str, current: dict, product: dict, full_price: float,
+                        today: date, now_utc, account_billing: Optional[dict]) -> dict:
+    """서비스 상품 변경 시 청구액 산출. 같은 서비스에서 월 가격이 더 비싼 상품으로 바꾸는 '업그레이드'이면
+    기존 상품에 실제 결제한 금액의 미사용분(30일 고정, 통합 결제일 기준 잔여일수)을 공제한다.
+
+    - 새 상품 금액(new_amount) = 통합 결제일까지 남은 일수만큼 일할 계산한 금액(기존 로직 그대로)
+    - 공제액(credit_amount) = 기존 상품 실결제 가치 × 잔여일수 / 결제가 커버한 일수, 새 상품 금액을 넘지 않는다
+    - 최종 청구액(charge_amount) = new_amount - credit_amount
+    통합 결제일(next_billing_dt)은 바꾸지 않는다. 업그레이드가 아니거나 공제 근거가 없으면 credit_amount=0.
+    """
+    next_dt = date.fromisoformat(account_billing["next_billing_dt"]) if account_billing else None
+    new_amount = _calc_prorated_amount(full_price, today, next_dt) if next_dt else full_price
+    quote = {
+        "full_price": full_price, "new_amount": new_amount, "credit_amount": 0, "charge_amount": new_amount,
+        "used_days": None, "remaining_days": None,
+        "next_billing_dt": next_dt.isoformat() if next_dt else None,
+        "is_upgrade": False, "ref_subscriptionuid": None, "adjust": None,
+    }
+
+    cur_productcd = (current or {}).get("productcd")
+    if not next_dt or not cur_productcd or cur_productcd == product["productcd"]:
+        return quote
+
+    cur_prod = svc.table("products").select("billingtermcd").eq("productcd", cur_productcd).maybe_single().execute()
+    old_price = _get_current_price(svc, cur_productcd, cur_prod.data.get("billingtermcd") if cur_prod and cur_prod.data else None)
+    if old_price is None or full_price <= old_price:
+        return quote
+    quote["is_upgrade"] = True
+
+    # 24시간 이내 재변경은 직전 결제를 자동 환불하는 기존 규칙이 적용되므로 공제하지 않는다(이중 혜택 방지)
+    if _find_prev_payment_within_24h(svc, accountuid, cur_productcd, now_utc):
+        return quote
+
+    remaining_days = max(0, min(30, (next_dt - today).days))
+    used_days = 30 - remaining_days
+    quote["used_days"], quote["remaining_days"] = used_days, remaining_days
+    if remaining_days <= 0:
+        return quote
+
+    paid = _find_last_paid_subscription_item(svc, tenantid, accountuid, cur_productcd)
+    if not paid:
+        return quote
+
+    paid_value = float(paid.get("amount") or 0) + float(paid.get("credit_amount") or 0)
+    inv_dt = date.fromisoformat(str(paid["invoice_date"])[:10])
+    last_billed = account_billing.get("last_billed_dt")
+    if last_billed and inv_dt <= date.fromisoformat(str(last_billed)[:10]):
+        covered_days = 30
+    else:
+        covered_days = max(1, min(30, (next_dt - inv_dt).days))
+
+    credit = min(round(paid_value * remaining_days / covered_days), round(paid_value), new_amount)
+    if credit <= 0:
+        return quote
+
+    quote["credit_amount"] = credit
+    quote["charge_amount"] = new_amount - credit
+    quote["ref_subscriptionuid"] = current.get("subscriptionuid")
+    quote["adjust"] = {
+        "gross_amount": full_price, "credit_amount": credit,
+        "used_days": used_days, "remaining_days": remaining_days,
+        "adjust_reasoncd": UPGRADE_CREDIT_REASONCD, "ref_subscriptionuid": quote["ref_subscriptionuid"],
+    }
+    return quote
+
+
+def _prorated_adjust(svc, accountuid: str, regular_total: float) -> Optional[dict]:
+    """일할 결제용 인보이스 항목 명세(공제 없음). 통합 결제일 정보가 없으면 None."""
+    ab = _lookup_account_billing(svc, accountuid)
+    if not ab or not ab.get("next_billing_dt"):
+        return None
+    remaining = max(0, min(30, (date.fromisoformat(str(ab["next_billing_dt"])[:10]) - date.today()).days))
+    return {
+        "gross_amount": regular_total, "credit_amount": None,
+        "used_days": 30 - remaining, "remaining_days": remaining,
+        "adjust_reasoncd": "ProratedPurchase", "ref_subscriptionuid": None,
+    }
+
+
 def _issue_invoice_for_purchase(
     svc, user_id: str, tenantid, accountuid: str, paymentuid: Optional[str],
     productcd: str, item_type: str, desc: str, quantity: int, price: float,
+    adjust: Optional[dict] = None,
 ) -> None:
     """1회성 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 건에 대해 invoices/invoice_items 1건씩 발급한다.
     정기 자동 재청구(payments.py의 _process_account_billing_cycle)만 invoice를 남기고 이 경로들은
@@ -2688,24 +2815,37 @@ def _issue_invoice_for_purchase(
         "billing_period_from": today_iso, "billing_period_to": today_iso,
         "invoice_date": today_iso, "due_date": today_iso,
         "currencycd": "KRW", "subtotal_amount": subtotal_amount, "tax_amount": tax_amount,
-        "discount_amount": 0, "total_amount": price, "paid_amount": price,
+        "discount_amount": (adjust.get("credit_amount") or 0) if adjust else 0,
+        "total_amount": price, "paid_amount": price,
         "creator": user_id,
     }).execute()
     invoiceuid = inv_resp.data[0]["invoiceuid"]
 
-    svc.table("invoice_items").insert({
+    item_row = {
         "tenantid": int(tenantid), "invoiceuid": invoiceuid, "productcd": productcd,
         "item_type": item_type, "desc": desc, "quantity": quantity,
         "regular_price": subtotal_amount, "price": subtotal_amount,
         "regular_amount": price, "amount": price,
         "creator": user_id,
-    }).execute()
+    }
+    if adjust:
+        # regular_amount=정가(1개월분), credit_amount=공제한 잔여 금액(없으면 None), amount=실제 청구액
+        # (정가 → 일할 적용액 = amount + credit_amount → 공제 → 최종 청구액 순으로 화면에서 복원한다)
+        item_row.update({
+            "regular_price": round(adjust["gross_amount"] * 0.9),
+            "regular_amount": adjust["gross_amount"],
+            "credit_amount": adjust.get("credit_amount"),
+            "used_days": adjust["used_days"], "remaining_days": adjust["remaining_days"],
+            "adjust_reasoncd": adjust["adjust_reasoncd"],
+            "ref_subscriptionuid": adjust["ref_subscriptionuid"],
+        })
+    svc.table("invoice_items").insert(item_row).execute()
 
     if paymentuid:
         svc.table("payments").update({"invoiceuid": invoiceuid}).eq("paymentuid", paymentuid).execute()
 
 
-def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1, override_amount: Optional[float] = None, item_type: str = "Subscription") -> dict:
+def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, productcd: str, billingtermcd: Optional[str], order_name: str, quantity: int = 1, override_amount: Optional[float] = None, item_type: str = "Subscription", adjust: Optional[dict] = None) -> dict:
     """
     실제 상품 구매(플랜 변경/인원·기능 추가/크레딧 구매 등) 공통 결제 게이트.
     가격 조회 → 계정 기본 결제수단 확인 → 그 결제수단으로 실제 청구 → 성공 시 invoice 1건 발급까지 수행한다.
@@ -2715,6 +2855,7 @@ def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, pr
     override_amount: 계산된 금액(예: 통합 결제일 기준 일할 계산액)을 그대로 청구하고 싶을 때 사용 —
       지정하면 unit_price × quantity 대신 이 금액을 청구한다(가격 미등록 여부 확인용으로 unit_price 조회는 그대로 수행).
     item_type: invoice_items.item_type — codes(codegroupcd='item_type') 값(Subscription/AddOn/Credit/Adjustment) 중 호출부가 지정.
+    adjust: 업그레이드 잔여 공제 명세(_build_change_quote()의 "adjust") — 주면 인보이스에 공제 내역까지 기록한다.
     """
     from backend.app.routers.payments import execute_charge
 
@@ -2722,6 +2863,11 @@ def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, pr
     if unit_price is None:
         raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
     price = override_amount if override_amount is not None else unit_price * quantity
+
+    # 통합 결제일 기준 일할 계산으로 정가보다 적게 청구되는 경우, 결제 이력에서 왜 그 금액인지 보이도록
+    # 정가/잔여일수/사유를 인보이스 항목에 함께 남긴다 (업그레이드 공제는 호출부가 adjust를 직접 넘김).
+    if override_amount is not None and adjust is None and 0 < override_amount < unit_price * quantity:
+        adjust = _prorated_adjust(svc, accountuid, unit_price * quantity)
 
     if price <= 0:
         return {"success": True, "paymentuid": None, "pgTxId": None, "skipped_zero_amount": True}
@@ -2740,7 +2886,7 @@ def _require_payment_and_charge(svc, user_id: str, tenantid, accountuid: str, pr
 
     _issue_invoice_for_purchase(
         svc, user_id, tenantid, accountuid, charge_result.get("paymentuid"),
-        productcd, item_type, order_name, quantity, price,
+        productcd, item_type, order_name, quantity, price, adjust=adjust,
     )
     return charge_result
 
@@ -2848,14 +2994,13 @@ def change_tenant_subscription(
     full_price = _get_current_price(svc, product["productcd"], product.get("billingtermcd"))
     if full_price is None:
         raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
-    charge_amount = (
-        _calc_prorated_amount(full_price, today, date.fromisoformat(account_billing["next_billing_dt"]))
-        if account_billing else full_price
-    )
+    quote = _build_change_quote(svc, tenantid, accountuid, current, product, full_price, today, now_utc, account_billing)
+    charge_amount = quote["charge_amount"]
 
     charge_result = _require_payment_and_charge(
         svc, user_id, tenantid, accountuid, product["productcd"], product.get("billingtermcd"),
         product.get("productnm") or product["productcd"], override_amount=charge_amount,
+        adjust=quote["adjust"],
     )
 
     # 결제는 이미 성공했으므로, 이 아래(구독 반영) 단계에서 무엇이 실패하든
@@ -2943,21 +3088,13 @@ def change_tenant_subscription(
         # (예: BYOK로 바꿨다가 몇 분 뒤 일반으로 재변경 — 짧은 시간 안의 반복 변경으로 중복 청구되는 것 방지).
         # current.productcd는 이 servicecd의 직전 상품(구조상 항상 Service 타입)이므로 producttype 체크는 불필요.
         if current.get("productcd") and current["productcd"] != product["productcd"]:
-            from dateutil import parser as dtparser
-            prev_payments = (
-                svc.table("payments").select("paymentuid,createdts")
-                .eq("accountuid", accountuid).eq("productcd", current["productcd"])
-                .eq("payment_status", "Success")
-                .order("createdts", desc=True).limit(1).execute().data or []
-            )
-            if prev_payments:
-                prev_dt = dtparser.parse(prev_payments[0]["createdts"])
-                if now_utc - prev_dt <= td(hours=24):
-                    from backend.app.routers.payments import refund_charge
-                    refund_charge(
-                        svc, user_id, prev_payments[0]["paymentuid"],
-                        f"{product['servicecd']} 서비스 상품을 24시간 이내에 재변경하여 이전 결제를 자동 환불함",
-                    )
+            prev_payment = _find_prev_payment_within_24h(svc, accountuid, current["productcd"], now_utc)
+            if prev_payment:
+                from backend.app.routers.payments import refund_charge
+                refund_charge(
+                    svc, user_id, prev_payment["paymentuid"],
+                    f"{product['servicecd']} 서비스 상품을 24시간 이내에 재변경하여 이전 결제를 자동 환불함",
+                )
     except Exception as e:
         if account_billing_bootstrapped:
             svc.table("account_billing").delete().eq("accountuid", accountuid).execute()
@@ -2975,10 +3112,57 @@ def change_tenant_subscription(
         useruid=user_id, tenantid=int(tenantid), servicecd="Tenant",
         actioncd="update", targettype="settings/tenant-manage/subscription-change", targetid=accountuid,
         before=current or None, after=after_row.data if after_row else None,
-        detail={"new_subscriptionuid": new_subscriptionuid, "charge_amount": charge_amount},
+        detail={
+            "new_subscriptionuid": new_subscriptionuid, "charge_amount": charge_amount,
+            "credit_amount": quote["credit_amount"], "new_amount": quote["new_amount"],
+            "used_days": quote["used_days"], "remaining_days": quote["remaining_days"],
+        },
         ip=get_client_ip(request),
     )
     return {"result": "success", "message": "구독이 변경되었습니다."}
+
+
+@router.get("/tenant-manage/subscription-change-preview")
+def preview_tenant_subscription_change(
+    servicecd: str,
+    productcd: str,
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """구독 변경 결제 전 안내: 새 상품 금액 / 기존 상품 잔여 공제 / 최종 결제액 / 통합 결제일 미리보기."""
+    from datetime import datetime, timezone as tz
+
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    tenantid, accountuid = _get_tenant_and_account(svc, user_id, tenantid)
+    _require_tenant_manager(svc, user_id, tenantid)
+    _require_not_system_tenant(svc, tenantid)
+    if not accountuid:
+        raise HTTPException(status_code=400, detail="accountuid를 확인할 수 없습니다.")
+
+    prod_row = svc.table("products").select(
+        "productcd,productnm,plancd,servicecd,billingtermcd"
+    ).eq("productcd", productcd).eq("servicecd", servicecd).maybe_single().execute()
+    if not prod_row or not prod_row.data:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    product = prod_row.data
+
+    cur_row = svc.table("accountservices").select("*").eq("accountuid", accountuid).eq("servicecd", servicecd).maybe_single().execute()
+    current = cur_row.data if cur_row and cur_row.data else {}
+
+    full_price = _get_current_price(svc, product["productcd"], product.get("billingtermcd"))
+    if full_price is None:
+        raise HTTPException(status_code=400, detail="가격 정보가 없어 구매할 수 없습니다.")
+
+    now_utc = datetime.now(tz.utc)
+    quote = _build_change_quote(
+        svc, tenantid, accountuid, current, product, full_price, now_utc.date(), now_utc,
+        _lookup_account_billing(svc, accountuid),
+    )
+    quote.pop("adjust", None)
+    return quote
 
 
 @router.get("/tenant-manage/tenant-info")

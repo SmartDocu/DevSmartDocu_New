@@ -2,6 +2,7 @@ import { App, Alert, Spin } from 'antd'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMyInfoCreditPurchase, usePurchaseMyInfoCredit } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
+import { getErrorMessage } from '@/utils/apiError'
 
 export default function CreditPurchasePage() {
   useLangStore((s) => s.translations)
@@ -32,7 +33,7 @@ export default function CreditPurchasePage() {
                 promptCardRegistration()
                 return
               }
-              message.error(detail || t('msg.save.error'))
+              message.error(getErrorMessage(err, 'msg.save.error'))
             },
           },
         )

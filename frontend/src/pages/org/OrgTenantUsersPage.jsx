@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { App, Modal } from 'antd'
+import { App } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
@@ -17,7 +17,7 @@ const EMPTY_FORM = {
 }
 
 export default function OrgTenantUsersPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
   useLangStore((s) => s.translations)
@@ -102,20 +102,14 @@ export default function OrgTenantUsersPage() {
         servicecds: form.servicecds,
         accountuid: accountuid || null,
       },
-      {
-        onSuccess: () => { message.success(t('msg.save.success')); handleNew() },
-        onError: (err) => {
-          const detail = err.response?.data?.detail
-          message.error((typeof detail === 'string' && t(detail)) || t('msg.save.error'))
-        },
-      },
+      { onSuccess: () => { handleNew() } },
     )
   }
 
   const handleDelete = () => {
     if (!form.useruid) { message.warning(t('msg.select.delete')); return }
 
-    Modal.confirm({
+    modal.confirm({
       title: t('btn.delete'), content: t('msg.confirm.delete'),
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteMutation.mutate(
@@ -124,13 +118,7 @@ export default function OrgTenantUsersPage() {
           useruid: form.useruid,
           accountuid: accountuid || null,
         },
-        {
-          onSuccess: () => { message.success(t('msg.delete.success')); handleNew() },
-          onError: (err) => {
-            const detail = err.response?.data?.detail
-            message.error((typeof detail === 'string' && t(detail)) || t('msg.delete.error'))
-          },
-        },
+        { onSuccess: () => { handleNew() } },
       ),
     })
   }

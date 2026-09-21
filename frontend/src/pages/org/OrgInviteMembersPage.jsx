@@ -4,7 +4,6 @@ import { PlusOutlined, SendOutlined, CheckCircleFilled } from '@ant-design/icons
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useOrgInvitations, useSendInvitation } from '@/hooks/useOrg'
-import { getErrorMessage } from '@/utils/apiError'
 
 const EMPTY_FORM = { emails: [], servicecd: '' }
 
@@ -95,7 +94,6 @@ export default function OrgInviteMembersPage() {
       { emails: form.emails, servicecd: form.servicecd },
       {
         onSuccess: (data) => { message.success(data?.message || t('msg.invite.sent')); handleNew() },
-        onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
   }

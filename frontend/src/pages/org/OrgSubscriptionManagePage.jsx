@@ -7,6 +7,7 @@ import {
   useTenantManageSubscriptions,
   useTenantManageTeamProducts,
   useChangeTenantSubscription,
+  useTenantSubscriptionChangePreview,
   useCancelTenantSubscription,
   useCancelUndoTenantSubscription,
 } from '@/hooks/useSettings'
@@ -32,6 +33,7 @@ export default function OrgSubscriptionManagePage() {
 
   const { hasPaymentMethod, promptCardRegistration } = usePaymentGate('org/payment-manage')
   const changeMutation = useChangeTenantSubscription()
+  const previewMutation = useTenantSubscriptionChangePreview()
   const cancelMutation = useCancelTenantSubscription()
   const cancelUndoMutation = useCancelUndoTenantSubscription()
   const { data: cancelReasonCodes = [] } = useMenuCodes('cancel_reasoncd')
@@ -70,25 +72,65 @@ export default function OrgSubscriptionManagePage() {
       return
     }
 
-    modal.confirm({
-      content: t('msg.confirm.subscription.change'),
-      onOk: () => {
-        changeMutation.mutate(
-          { servicecd: selectedServicecd, productcd: selectedProductcd },
-          {
-            onSuccess: () => { message.success(t('msg.save.success')); setSelectedProductcd(null) },
-            onError: (err) => {
-              const detail = err.response?.data?.detail
-              if (detail === PAYMENT_METHOD_REQUIRED) {
-                promptCardRegistration()
-                return
-              }
-              message.error(getErrorMessage(err, 'msg.save.error'))
-            },
+    const submitChange = () => {
+      changeMutation.mutate(
+        { servicecd: selectedServicecd, productcd: selectedProductcd },
+        {
+          onSuccess: () => { message.success(t('msg.save.success')); setSelectedProductcd(null) },
+          onError: (err) => {
+            const detail = err.response?.data?.detail
+            if (detail === PAYMENT_METHOD_REQUIRED) {
+              promptCardRegistration()
+              return
+            }
+            message.error(getErrorMessage(err, 'msg.save.error'))
           },
-        )
+        },
+      )
+    }
+
+    // 업그레이드(잔여 공제 발생)면 결제 전에 금액 산출 내역을 보여주고, 그 외에는 기존 확인창을 그대로 쓴다.
+    // 미리보기 조회가 실패해도 변경 자체는 막지 않는다(서버가 결제 시점에 다시 계산함).
+    previewMutation.mutate(
+      { servicecd: selectedServicecd, productcd: selectedProductcd },
+      {
+        onSuccess: (q) => {
+          const fmt = (n) => `${Number(n).toLocaleString()} KRW`
+          if (q?.is_upgrade && q.credit_amount > 0) {
+            modal.confirm({
+              title: t('msg.confirm.subscription.change'),
+              content: (
+                <div style={{ fontSize: 13, lineHeight: 1.9 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                    <span>{t('lbl.upgrade.quote.new_amount').replace('{n}', q.remaining_days)}</span>
+                    <span>{fmt(q.new_amount)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, color: '#d4380d' }}>
+                    <span>{t('lbl.upgrade.quote.credit').replace('{used}', q.used_days).replace('{remaining}', q.remaining_days)}</span>
+                    <span>- {fmt(q.credit_amount)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontWeight: 700, borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
+                    <span>{t('lbl.upgrade.quote.charge')}</span>
+                    <span>{fmt(q.charge_amount)}</span>
+                  </div>
+                  {q.next_billing_dt && (
+                    <div style={{ color: '#888', marginTop: 8 }}>
+                      {t('inf.upgrade.quote.next_billing').replace('{date}', q.next_billing_dt)}
+                    </div>
+                  )}
+                </div>
+              ),
+              onOk: submitChange,
+            })
+            return
+          }
+          modal.confirm({ content: t('msg.confirm.subscription.change'), onOk: submitChange })
+        },
+        onError: () => {
+          modal.confirm({ content: t('msg.confirm.subscription.change'), onOk: submitChange })
+        },
       },
-    })
+    )
   }
 
   const handleCancel = (servicecd, e) => {
@@ -212,7 +254,7 @@ export default function OrgSubscriptionManagePage() {
               className="btn btn-primary"
               type="button"
               onClick={handleSave}
-              disabled={changeMutation.isPending || !selectedProductcd}
+              disabled={changeMutation.isPending || previewMutation.isPending || !selectedProductcd}
             >
               <ShoppingCartOutlined style={{ marginRight: 6 }} />{t('btn.subscribe')}
             </button>

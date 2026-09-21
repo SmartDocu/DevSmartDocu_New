@@ -29,7 +29,40 @@ export default function BillingHistoryPanel({ pageTitle }) {
 
   const { data = {}, isLoading } = usePaymentHistory(startDate, endDate)
   const payments = data.payments || []
-  const hasExpandableRows = payments.some((p) => Array.isArray(p.items) && p.items.length > 0)
+  const hasItems = (p) => Array.isArray(p.items) && p.items.length > 0
+  const hasExpandableRows = payments.some((p) => hasItems(p) || p.adjust)
+  const fmt = (n) => `${Number(n || 0).toLocaleString()}`
+
+  // 일할/공제로 정가와 다른 금액이 청구된 단건 결제의 산출 내역
+  const renderAdjust = (r) => {
+    const a = r.adjust
+    const cur = r.currencycd || ''
+    return (
+      <div style={{ fontSize: 13, lineHeight: 1.9, maxWidth: 560 }}>
+        <div style={{ color: '#6c757d', marginBottom: 4 }}>
+          {t(`cod.adjust_reason_${a.adjust_reasoncd}`)}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span>{t('lbl.billing.detail.regular')}</span>
+          <span>{fmt(a.regular_amount)} {cur}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span>{t('lbl.billing.detail.prorated').replace('{remaining}', a.remaining_days ?? '-')}</span>
+          <span>{fmt(a.prorated_amount)} {cur}</span>
+        </div>
+        {a.credit_amount > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, color: '#d4380d' }}>
+            <span>{t('lbl.upgrade.quote.credit').replace('{used}', a.used_days ?? '-').replace('{remaining}', a.remaining_days ?? '-')}</span>
+            <span>- {fmt(a.credit_amount)} {cur}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontWeight: 700, borderTop: '1px solid #eee', marginTop: 4, paddingTop: 4 }}>
+          <span>{t('lbl.upgrade.quote.charge')}</span>
+          <span>{fmt(a.amount)} {cur}</span>
+        </div>
+      </div>
+    )
+  }
 
   const [page, setPage] = useState(1)
   useEffect(() => { setPage(1) }, [startDate, endDate])
@@ -69,8 +102,8 @@ export default function BillingHistoryPanel({ pageTitle }) {
           rowKey="paymentuid"
           locale={{ emptyText: t('msg.no.data') }}
           expandable={!hasExpandableRows ? undefined : {
-            rowExpandable: (r) => Array.isArray(r.items) && r.items.length > 0,
-            expandedRowRender: (r) => (
+            rowExpandable: (r) => hasItems(r) || !!r.adjust,
+            expandedRowRender: (r) => r.adjust ? renderAdjust(r) : (
               <table className="table table-sm table-bordered" style={{ marginBottom: 0 }}>
                 <thead>
                   <tr>

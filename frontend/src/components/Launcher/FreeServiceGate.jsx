@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Spin } from 'antd'
 import { CheckCircleFilled } from '@ant-design/icons'
 import { t } from '@/stores/langStore'
 import { useSelectFreeServices } from '@/hooks/useApps'
@@ -99,6 +100,26 @@ export default function FreeServiceGate() {
       <p style={{ textAlign: 'center', color: '#888', fontSize: 13, marginTop: 16, marginBottom: 0 }}>
         {t('inf.freeservice.tenant_notice')}
       </p>
+
+      {/* 로딩 오버레이 */}
+      {selectMutation.isPending && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: '#fafae5', padding: '20px 30px', borderRadius: 8,
+            fontSize: 16, fontWeight: 'bold', color: '#6c757d',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <Spin />
+            <span>{t('msg.freeservice.processing')}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

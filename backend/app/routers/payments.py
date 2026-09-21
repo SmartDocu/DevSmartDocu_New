@@ -372,11 +372,12 @@ def list_payment_history(
 
     # 정기결제 자동 재청구(run-billing-cycle)로 생긴 통합 청구는 payments.productcd가 비어있고
     # invoiceuid로 invoice_items(여러 상품 묶음)와 연결된다 — 화면에 항목 breakdown을 같이 내려준다.
-    invoiceuids = [r["invoiceuid"] for r in rows if not r.get("productcd") and r.get("invoiceuid")]
+    invoiceuids = [r["invoiceuid"] for r in rows if r.get("invoiceuid")]
     items_map = {}
     if invoiceuids:
         item_rows = (
-            sd.table("invoice_items").select("invoiceuid,productcd,desc,quantity,amount")
+            sd.table("invoice_items")
+            .select("invoiceuid,productcd,desc,quantity,amount,regular_amount,credit_amount,used_days,remaining_days,adjust_reasoncd")
             .in_("invoiceuid", invoiceuids).execute().data or []
         )
         for it in item_rows:
@@ -388,6 +389,20 @@ def list_payment_history(
         if not r.get("productcd") and r.get("invoiceuid"):
             r["items"] = items_map.get(r["invoiceuid"], [])
             r["productnm"] = r["productnm"] or "정기 결제"
+        elif r.get("invoiceuid"):
+            # 단건 구매(플랜 변경/부가상품 등): 일할·공제로 금액이 정가와 다른 경우 산출 내역을 함께 내려준다
+            adj = next((it for it in items_map.get(r["invoiceuid"], []) if it.get("adjust_reasoncd")), None)
+            if adj:
+                credit = adj.get("credit_amount") or 0
+                r["adjust"] = {
+                    "adjust_reasoncd": adj["adjust_reasoncd"],
+                    "regular_amount": adj.get("regular_amount"),
+                    "prorated_amount": (adj.get("amount") or 0) + credit,
+                    "credit_amount": credit,
+                    "used_days": adj.get("used_days"),
+                    "remaining_days": adj.get("remaining_days"),
+                    "amount": adj.get("amount"),
+                }
 
     return {"payments": rows}
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { App, Modal } from 'antd'
+import { App } from 'antd'
 import { PlusOutlined, SaveOutlined, DeleteOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus } from '@/hooks/useMenus'
@@ -23,7 +23,7 @@ export default function SettingsServersPage() {
   const currentMenu = allMenus.find((m) => m.route_path && location.pathname.includes(m.route_path))
   const menuNm = currentMenu ? (t(`mnu.${currentMenu.menucd}`) || currentMenu.default_text || '') : ''
 
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { data = {}, isLoading } = useServers()
   const saveServer = useSaveServer()
   const deleteServer = useDeleteServer()
@@ -103,7 +103,7 @@ export default function SettingsServersPage() {
 
   const handleDelete = () => {
     if (!selectedId) { message.warning(t('msg.select.server')); return }
-    Modal.confirm({
+    modal.confirm({
       title: t('ttl.confirm.delete'), content: t('msg.confirm.delete'),
       okText: t('btn.delete'), cancelText: t('btn.cancel'), okButtonProps: { danger: true },
       onOk: () => deleteServer.mutate(selectedId, {
