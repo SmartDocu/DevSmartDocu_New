@@ -378,7 +378,7 @@ def get_session_messages(session_uid: str) -> list[dict]:
     """
     res = (
         _sc.table("insight_qas")
-        .select("qauid, question, answer, filenm, fileurl")
+        .select("qauid, question, answer, filenm, fileurl, jobstatuscd")
         .eq("sessionuid", session_uid)
         .order("createdts", desc=False)
         .execute()
@@ -408,6 +408,9 @@ def get_session_messages(session_uid: str) -> list[dict]:
             "qauid": row["qauid"],
             "appliedSteps": applied_steps,
             "isTemplate": bool(filenm) and filenm in scheduled_filenms,
+            # 비동기 보고서 진행 상태 — 'S'(접수)/'P'(처리중)이면 아직 워커가 안 끝난 것.
+            # 동기 turn(챗/헬스 등)은 이 컬럼 자체가 없어 None → 프론트는 "완료된 turn"으로 취급.
+            "jobstatuscd": row.get("jobstatuscd"),
         })
     return messages
 

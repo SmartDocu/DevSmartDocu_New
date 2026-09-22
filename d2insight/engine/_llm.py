@@ -12,7 +12,7 @@ Anthropic/OpenAI 키·모델 관리 대신, d2insight/chat 라우터가 이미 �
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 Grade = Literal["fast", "balanced", "quality"]
@@ -72,9 +72,9 @@ def chat(
             lc_messages.append(AIMessage(content=content))
 
     print(f"[engine LLM] vendor={vendor}  model={model_id}  grade={grade}  label={label or '-'}")
-    _start = datetime.now()
+    _start = datetime.now(timezone.utc)
     resp = llm.invoke(lc_messages)
-    _end = datetime.now()
+    _end = datetime.now(timezone.utc)
 
     # 토큰 추출: usage_metadata 우선 (LangChain 통일 형식), fallback → response_metadata
     um = getattr(resp, "usage_metadata", None) or {}

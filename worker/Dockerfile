@@ -6,7 +6,7 @@ WORKDIR /app
 # MSSQL 데이터소스를 조회할 때 이 워커 컨테이너 안에서 직접 pyodbc로 접속한다) ──────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc curl gnupg2 apt-transport-https ca-certificates \
-    unixodbc-dev \
+    unixodbc-dev fonts-nanum \
     && curl -sSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update -o Acquire::AllowInsecureRepositories=true \
     && ACCEPT_EULA=Y apt-get install -y --allow-unauthenticated msodbcsql17 \

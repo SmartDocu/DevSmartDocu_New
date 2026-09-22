@@ -251,7 +251,7 @@ DB 정보:
 - 결과만 SQL로 출력 (백틱, 설명, 주석 제외)
 """
 
-        from datetime import datetime
+        from datetime import datetime, timezone
         from langchain_core.messages import SystemMessage, HumanMessage
         from utilsPrj.ai_chain import build_langchain_llm, get_llm_info
 
@@ -276,12 +276,12 @@ DB 정보:
                     log_ctx["account_uid"] = _resolved_account_uid
 
         llm = build_langchain_llm(vendor_name, api_key, model)
-        start = datetime.now()
+        start = datetime.now(timezone.utc)
         response = llm.invoke([
             SystemMessage(content="You generate SQL queries only."),
             HumanMessage(content=prompt),
         ])
-        end = datetime.now()
+        end = datetime.now(timezone.utc)
         usage = getattr(response, "usage_metadata", None) or {}
         log_llm_call(
             log_ctx=log_ctx, stepnm="sql_generate", steptitle="SQL 생성", llmmodelnm=model,

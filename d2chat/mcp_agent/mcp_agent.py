@@ -324,12 +324,12 @@ class MCPAgent:
         tool_node = ToolNode(self.tools)
 
         def call_model(state: MessagesState, config=None):
-            from datetime import datetime
+            from datetime import datetime, timezone
             system_message = self._create_system_message()
             messages = [system_message] + state["messages"]
-            start = datetime.now()
+            start = datetime.now(timezone.utc)
             response = self.llm.bind_tools(self.tools).invoke(messages)
-            end = datetime.now()
+            end = datetime.now(timezone.utc)
             usage = getattr(response, 'usage_metadata', None) or {}
             in_tok = usage.get('input_tokens', 0)
             out_tok = usage.get('output_tokens', 0)
@@ -429,7 +429,7 @@ class MCPAgent:
     def _answer_from_data(self, question: str, data: List[Dict], log_ctx: dict = None) -> str:
         """환각 방지: 도구를 거치지 않고 생성된 최초 답변은 근거가 없으므로 폐기하고,
         강제로 조회한 실제 데이터만 근거로 답변 문장을 새로 생성한다."""
-        from datetime import datetime
+        from datetime import datetime, timezone
         preview = json.dumps(data[:50], ensure_ascii=False, default=str)
         prompt = f"""다음은 사용자 질문에 대해 실제로 조회한 데이터입니다.
 이 데이터에 있는 값만 사용해서 질문에 자연스러운 한국어 문장으로 답변하세요.
@@ -440,9 +440,9 @@ class MCPAgent:
 조회된 데이터(JSON, 최대 50건): {preview}
 
 답변:"""
-        start = datetime.now()
+        start = datetime.now(timezone.utc)
         response = self.llm.invoke(prompt)
-        end = datetime.now()
+        end = datetime.now(timezone.utc)
         usage = getattr(response, 'usage_metadata', None) or {}
         log_llm_call(
             log_ctx=log_ctx,

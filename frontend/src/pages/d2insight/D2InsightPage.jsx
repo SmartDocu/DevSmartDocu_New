@@ -262,7 +262,7 @@ export default function D2InsightPage() {
       } catch { answerText = data.answer || '' }
       setHistoryMessages([
         { role: 'user', content: data.question || '' },
-        { role: 'assistant', content: answerText, fileurl: data.fileurl, reportPath: data.filenm, appliedSteps },
+        { role: 'assistant', content: answerText, fileurl: data.fileurl, mdurl: data.mdurl, reportPath: data.filenm, appliedSteps },
       ])
       setHistoryLabel(label || t('ttl.d2insight.shares_received'))
       setViewingSessionId(null)
@@ -395,6 +395,38 @@ export default function D2InsightPage() {
     }
   }
 
+  // 비동기 보고서 완료를 폴링해 "지금 보고 있는 대화창"에 그대로 반영한다 — 세션을 닫았다
+  // 다시 열 필요 없이 그 말풍선만 새 내용으로 바뀐다(완료 알림과는 별개로 화면도 갱신).
+  const pollPendingReport = (sid, qauid, attemptsLeft = 60) => {
+    if (attemptsLeft <= 0) return
+    setTimeout(async () => {
+      if (sessionIdRef.current !== sid) return // 그 사이 다른 대화로 이동했으면 중단
+      try {
+        const { data } = await apiClient.get(`/d2insight/history/${userId}/${sid}`)
+        const updated = (data.messages || []).find((m) => m.qauid === qauid && m.role === 'assistant')
+        if (updated && updated.jobstatuscd !== 'S' && updated.jobstatuscd !== 'P') {
+          setMessages((prev) => prev.map((m) => (
+            m.qauid === qauid && m.role === 'assistant'
+              ? {
+                  ...m,
+                  content: updated.content,
+                  fileurl: updated.fileurl,
+                  mdurl: updated.mdurl,
+                  reportPath: updated.reportPath,
+                  appliedSteps: updated.appliedSteps,
+                  pending: false,
+                }
+              : m
+          )))
+          return // 완료 — 폴링 중단
+        }
+      } catch {
+        // 다음 시도에서 재시도
+      }
+      pollPendingReport(sid, qauid, attemptsLeft - 1)
+    }, 10000)
+  }
+
   // 실제 /chat 실행 — sendMessage(preview 흐름 성공 시) 또는 handleConfirmPreview에서 호출.
   const _executeChat = async (text, options = null, fileTitle = null) => {
     try {
@@ -425,11 +457,14 @@ export default function D2InsightPage() {
           role: 'assistant',
           content: data.answer || '',
           fileurl: data.fileurl || null,
+          mdurl: data.mdurl || null,
           reportPath: data.report_path || null,
           qauid: data.qauid || null,
           appliedSteps: data.applied_steps || null,
+          pending: data.pending || false,
         },
       ])
+      if (data.pending && data.qauid) pollPendingReport(data.session_id || sessionIdRef.current, data.qauid)
       setActiveReportIndex(null)
     } catch (error) {
       setMessages((prev) => [
@@ -580,11 +615,14 @@ export default function D2InsightPage() {
           role: 'assistant',
           content: data.answer || '',
           fileurl: data.fileurl || null,
+          mdurl: data.mdurl || null,
           reportPath: data.report_path || null,
           qauid: data.qauid || null,
           appliedSteps: data.applied_steps || null,
+          pending: data.pending || false,
         },
       ])
+      if (data.pending && data.qauid) pollPendingReport(data.session_id || sessionIdRef.current, data.qauid)
       setActiveReportIndex(null) // 새 답변이 왔으니 다시 "최신 보고서" 기본 표시로
     } catch (error) {
       setMessages((prev) => [
@@ -1246,6 +1284,7 @@ export default function D2InsightPage() {
                           role={msg.role}
                           content={msg.content}
                           fileurl={msg.fileurl}
+                          mdurl={msg.mdurl}
                           reportPath={msg.reportPath}
                           starButton={starButton}
                           qauid={msg.qauid}
@@ -1339,6 +1378,7 @@ export default function D2InsightPage() {
                             role={msg.role}
                             content={msg.content}
                             fileurl={msg.fileurl}
+                            mdurl={msg.mdurl}
                             reportPath={msg.reportPath}
                             starButton={starButton}
                             qauid={msg.qauid}
@@ -2234,7 +2274,7 @@ function ReportOptionsPanel({
 // ─────────────────────────────────────────────────────────────────
 // 메시지 말풍선
 // ─────────────────────────────────────────────────────────────────
-function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, onShare }) {
+function MessageBubble({ role, content, fileurl, mdurl, reportPath, starButton, qauid, onShare }) {
   useLangStore((s) => s.translations)
   const [previewExpanded, setPreviewExpanded] = useState(false)
   const [previewContent, setPreviewContent] = useState('')
@@ -2245,10 +2285,11 @@ function MessageBubble({ role, content, fileurl, reportPath, starButton, qauid, 
     setPreviewExpanded(false)
   }, [fileurl])
 
+  // mdUrl은 백엔드가 .md 경로를 별도로 서명해 내려주는 mdurl을 그대로 쓴다 — fileurl(.pdf용
+  // 서명 URL)의 확장자만 문자열로 바꿔치기하면 서명 토큰이 안 맞아 항상 요청이 실패한다
+  // (2026-09-22 발견, 9/2부터 있던 회귀 — 미리보기가 계속 PDF 뷰어로만 보이던 원인).
   const isMdUrl = fileurl ? /\.md(\?|$)/.test(fileurl) : false
-  const mdUrl = fileurl
-    ? (isMdUrl ? fileurl : fileurl.replace(/\.pdf(\?.*)?$/, '.md$1'))
-    : null
+  const mdUrl = mdurl || null
   const pdfUrl = fileurl
     ? (isMdUrl ? fileurl.replace(/\.md(\?.*)?$/, '.pdf$1') : fileurl)
     : null

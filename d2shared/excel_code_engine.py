@@ -5,7 +5,7 @@ d2chat·d2insight 공용 — DB 의존 없음.
 """
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -239,9 +239,9 @@ def run_pandas_code(
         meta_by_dataset=meta_by_dataset,
     )
 
-    start = datetime.now()
+    start = datetime.now(timezone.utc)
     response = llm.invoke(prompt)
-    end = datetime.now()
+    end = datetime.now(timezone.utc)
 
     usage = getattr(response, "usage_metadata", None) or {}
     log_llm_call(

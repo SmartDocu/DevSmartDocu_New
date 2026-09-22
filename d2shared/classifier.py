@@ -7,7 +7,7 @@ d2insight: ReportClassification  (어떤 분석 툴/보고서 유형을 쓸지)
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Type
 
 from pydantic import BaseModel
@@ -37,9 +37,9 @@ def classify_with_llm(
     """
     structured_llm = llm.with_structured_output(output_schema, include_raw=True)
 
-    start = datetime.now()
+    start = datetime.now(timezone.utc)
     raw = structured_llm.invoke(prompt)
-    end = datetime.now()
+    end = datetime.now(timezone.utc)
 
     result = raw.get('parsed') if isinstance(raw, dict) else raw
     raw_msg = raw.get('raw') if isinstance(raw, dict) else None

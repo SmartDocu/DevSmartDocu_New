@@ -172,6 +172,7 @@ class ChatResponse(BaseModel):
     mdurl: str | None = None
     qauid: str | None = None
     applied_steps: list | None = None
+    pending: bool = False  # True면 보고서가 워커에서 아직 처리 중 — 프론트가 이 qauid를 폴링해 완료를 감지한다.
 
 
 # ── 채팅 ─────────────────────────────────────────────────────────
@@ -391,6 +392,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                 "answer": "보고서 생성 요청이 접수되었습니다. 생성이 완료되면 알림으로 안내해드립니다.",
                 "visualization_type": "none", "table_html": None,
                 "chart_image": None, "report_path": None,
+                "pending": True,
             }
 
         else:

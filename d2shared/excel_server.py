@@ -11,7 +11,7 @@ MCPServer(SQL 생성/실행)와 동일한 역할을 업로드 데이터에 대�
 """
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -126,9 +126,9 @@ def _generate_dataset_metadata(llm, df: pd.DataFrame, dataset_key: str, log_ctx:
 """
     metadata = None
     try:
-        start = datetime.now()
+        start = datetime.now(timezone.utc)
         response = llm.invoke(prompt)
-        end = datetime.now()
+        end = datetime.now(timezone.utc)
 
         usage = getattr(response, "usage_metadata", None) or {}
         log_llm_call(
@@ -223,9 +223,9 @@ def _infer_join_relationships(
 """
     try:
         structured_llm = llm.with_structured_output(_DatasetRelations, include_raw=True)
-        start = datetime.now()
+        start = datetime.now(timezone.utc)
         raw = structured_llm.invoke(prompt)
-        end = datetime.now()
+        end = datetime.now(timezone.utc)
 
         result = raw.get('parsed') if isinstance(raw, dict) else raw
         raw_msg = raw.get('raw') if isinstance(raw, dict) else None

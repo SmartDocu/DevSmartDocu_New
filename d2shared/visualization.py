@@ -150,7 +150,7 @@ def detect_visualization_type_with_llm(question: str, llm, log_ctx: dict = None)
 }}
 """
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
         from d2shared.llm_logger import log_llm_call
 
         def parse_llm_json_response(result):
@@ -159,9 +159,9 @@ def detect_visualization_type_with_llm(question: str, llm, log_ctx: dict = None)
             json_str = json_match.group(1) if json_match else text
             return json.loads(json_str)
 
-        start = datetime.now()
+        start = datetime.now(timezone.utc)
         raw_result = llm.invoke(prompt)
-        end = datetime.now()
+        end = datetime.now(timezone.utc)
 
         usage = getattr(raw_result, 'usage_metadata', None) or {}
         log_llm_call(
