@@ -35,6 +35,10 @@ CloudWatch 알람이 큐 메시지 감지 → smartdocu-insight-worker-service 0
 
 d2insight의 DB 접근은 전부 서비스 롤 기반(`d2insight/db/supabase_client.py`)이라, d2doc 워커와 달리 access_token/FakeRequest 없이 동작한다.
 
+### LLM 키 조회 실패 문제와 해결
+
+엔진 내부 LLM 호출(`d2insight/engine/_llm.py`, `d2insight/engine/pipeline/db_meta.py` 등)은 project_id/tenant_id/account_uid를 함수 인자로 받지 않고 `token_tracker.get_log_ctx()`(요청마다 설정해두는 전역 컨텍스트)에서 읽는다. 기존엔 `router.py`가 `/chat` 시작 시 `token_tracker.set_log_ctx(...)`를 호출해뒀지만, 워커는 이 호출이 없어 컨텍스트가 비어 있었고 그래서 LLM 키를 찾을 project_id 등이 전부 `None`이 되어 "AI 키가 등록되지 않았습니다" 에러가 났다. `worker/insight_main.py`에서 `run_tool()` 호출 전 `token_tracker.reset()` + `set_log_ctx(...)`(router.py와 동일한 dict 형태)를 호출하고, 끝나면 `finally`에서 `set_log_ctx(None)`으로 정리하도록 수정.
+
 ### 업로드 데이터셋 문제와 해결
 
 업로드된 엑셀/CSV는 백엔드 프로세스 메모리(`d2shared/excel_server.py`의 `ExcelServer` 싱글턴)에만 있어, 별도 프로세스인 워커는 원래 볼 수 없었다(큐-워커 전환 전엔 업로드·보고서 생성이 같은 프로세스라 문제없었음). 해결: `/chat`이 비동기 분기를 탈 때 그 세션에 업로드 데이터셋이 있으면, 그 요청(qauid) 전용 일회용 중계 파일(`Users/{accountuid}/Insight/UploadHandoff/{qauid}/datasets.pkl`)로 Storage에 올리고 경로를 SQS 메시지에 실어 보낸다. 워커는 그 파일을 내려받아 자기 프로세스의 `ExcelServer`에 주입한 뒤 처리하고, 끝나면(성공/실패 무관) 즉시 삭제한다. 세션 원본 데이터(백엔드 메모리)는 건드리지 않으므로 같은 세션에서 요청이 여러 번 와도 매번 새 중계 파일을 만들어 문제없다.

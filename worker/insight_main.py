@@ -72,6 +72,18 @@ def process_insight_message(msg):
             logger.exception("SQS 메시지 삭제 실패 (중복 스킵): %s", qauid)
         return
 
+    from d2insight import token_tracker
+    token_tracker.reset()
+    token_tracker.set_log_ctx({
+        "qauid": qauid,
+        "servicecd": "In",
+        "tenant_id": body.get("tenant_id"),
+        "project_id": body.get("project_id"),
+        "session_uid": session_id,
+        "creator": user_id,
+        "account_uid": body.get("account_uid"),
+    })
+
     try:
         if upload_handoff_path:
             _restore_upload_handoff(session_id, upload_handoff_path)
@@ -148,6 +160,7 @@ def process_insight_message(msg):
             logger.exception("보고서 상태 업데이트 실패: %s", qauid)
 
     finally:
+        token_tracker.set_log_ctx(None)
         if upload_handoff_path:
             try:
                 from d2insight.db.supabase_client import delete_from_storage
