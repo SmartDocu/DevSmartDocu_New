@@ -523,11 +523,13 @@ def run_engine_report(
 
     # 파일명 — 사용자가 미리보기에서 이름을 정했으면 그걸 쓰고, 없으면 옛 보고서와 같은
     # 규칙(안전유형_기준월_타임스탬프.md)을 그대로 쓴다. 타임스탬프는 겹침 방지용으로 항상 붙인다.
-    # Supabase Storage가 키에 괄호·공백 등을 거부하므로(InvalidKey), 영문/숫자/한글/밑줄/하이픈/
-    # 마침표 외의 문자는 전부 밑줄로 바꾼다 — "기술분석(주간) 보고서" → "기술분석_주간_보고서".
+    # Supabase Storage 키는 한글 등 비-ASCII 문자를 통째로 거부한다(InvalidKey, 2026-09-22 실측
+    # 확인 — 워커/큐와 무관하게 Storage API 자체가 그렇다). 그래서 ASCII(영문/숫자/밑줄/하이픈/
+    # 마침표)만 남기고 나머지(한글 포함)는 전부 밑줄로 바꾼다. file_title이 한글뿐이라 다 지워지면
+    # _safe_type(report_type)의 영문 매핑(folder_en, 예: "기술분석"→"technology")으로 대체한다.
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if file_title:
-        safe_title = re.sub(r"[^\w\-.]+", "_", file_title).strip("_") or "보고서"
+        safe_title = re.sub(r"[^\w\-.]+", "_", file_title, flags=re.ASCII).strip("_") or _safe_type(report_type)
         md_filename = f"{safe_title}_{ts}.md"
     else:
         md_filename = f"{_safe_type(report_type)}_{target_month}_{ts}.md"

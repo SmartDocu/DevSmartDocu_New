@@ -35,6 +35,10 @@ CloudWatch 알람이 큐 메시지 감지 → smartdocu-insight-worker-service 0
 
 d2insight의 DB 접근은 전부 서비스 롤 기반(`d2insight/db/supabase_client.py`)이라, d2doc 워커와 달리 access_token/FakeRequest 없이 동작한다.
 
+### 한글 파일명 Storage 저장 실패 (Queue-Worker와 무관, 별개 버그)
+
+`기술분석_주간_보고서_....md` 같은 한글 파일명이 Supabase Storage에 `InvalidKey`로 거부됨 — 로컬에서 워커/코드 전혀 안 거치고 Storage API에 직접 같은 키로 요청해도 동일하게 재현되어, Queue-Worker나 워커 환경과는 무관함을 확인(2026-09-22). 한글 1글자만 있어도 거부되고 영문/숫자만 있으면 통과됨. 예전에 성공했던 보고서들은 애초에 파일명이 전부 영문("technology_2026-W37_...")이었을 뿐 — 한글 파일명이 실제로 성공한 적이 없었던 것으로 확인(그래서 지금까지 안 드러났던 잠재 버그, 이번에 file_title 기능으로 한글 제목이 처음 실사용되며 드러남). `d2insight/engine/entry.py`의 파일명 생성 로직을 `re.ASCII` 플래그로 한글도 밑줄로 치환하도록 수정, 전부 지워지면 `_safe_type(report_type)`의 영문 매핑으로 대체하도록 수정. 이 파일(`entry.py`)은 워커와 메인 앱 이미지 둘 다에 포함되므로 **양쪽 다 재배포 필요**.
+
 ### LLM 키 조회 실패 문제와 해결
 
 엔진 내부 LLM 호출(`d2insight/engine/_llm.py`, `d2insight/engine/pipeline/db_meta.py` 등)은 project_id/tenant_id/account_uid를 함수 인자로 받지 않고 `token_tracker.get_log_ctx()`(요청마다 설정해두는 전역 컨텍스트)에서 읽는다. 기존엔 `router.py`가 `/chat` 시작 시 `token_tracker.set_log_ctx(...)`를 호출해뒀지만, 워커는 이 호출이 없어 컨텍스트가 비어 있었고 그래서 LLM 키를 찾을 project_id 등이 전부 `None`이 되어 "AI 키가 등록되지 않았습니다" 에러가 났다. `worker/insight_main.py`에서 `run_tool()` 호출 전 `token_tracker.reset()` + `set_log_ctx(...)`(router.py와 동일한 dict 형태)를 호출하고, 끝나면 `finally`에서 `set_log_ctx(None)`으로 정리하도록 수정.
