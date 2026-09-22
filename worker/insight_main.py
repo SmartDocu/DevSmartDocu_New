@@ -33,11 +33,25 @@ def _update_insight_qa(sb_svc, qauid: str, job_status_cd: str, **fields) -> None
     sb_svc.schema(SUPABASE_SCHEMA).table("insight_qas").update(row).eq("qauid", qauid).execute()
 
 
+def _restore_upload_handoff(session_id: str, upload_handoff_path: str) -> None:
+    """업로드 데이터셋 중계 파일을 내려받아 이 프로세스의 ExcelServer에 주입한다.
+    백엔드 프로세스 메모리에만 있던 업로드 데이터가 워커 프로세스에도 보이게 하는 용도."""
+    import pickle
+    from d2insight.db.supabase_client import get_client
+    from utilsPrj.private_storage import resolve_template_bytes
+    from d2insight.report.excel_registry import get_excel_server
+
+    raw = resolve_template_bytes(get_client(), upload_handoff_path)
+    datasets = pickle.loads(raw)
+    get_excel_server().session_datasets[session_id] = datasets
+
+
 def process_insight_message(msg):
     body = json.loads(msg["Body"])
     qauid = body["qauid"]
     session_id = body["session_id"]
     user_id = body.get("user_id")
+    upload_handoff_path = body.get("upload_handoff_path")
     receipt_handle = msg["ReceiptHandle"]
 
     sb_svc = get_service_client()
@@ -59,6 +73,9 @@ def process_insight_message(msg):
         return
 
     try:
+        if upload_handoff_path:
+            _restore_upload_handoff(session_id, upload_handoff_path)
+
         from d2insight.chat.pipeline_runner import run_tool
 
         result = run_tool(
@@ -75,24 +92,39 @@ def process_insight_message(msg):
             "applied_steps": result.get("applied_steps"),
             "analytic_uid": result.get("analytic_uid"),
         }
-        _update_insight_qa(
-            sb_svc, qauid, "D",
-            answer=json.dumps(answer_json, ensure_ascii=False),
-            filenm=result.get("report_path"),
-            fileurl=result.get("fileurl"),
-        )
-        logger.info("보고서 완료: %s", qauid)
-
-        if user_id:
-            create_notification(
-                sb_svc, category="insight", status="info",
-                title="보고서 생성 완료", message="요청하신 보고서 생성이 완료되었습니다.",
-                title_key="msg.notification.insight.completed.title",
-                message_key="msg.notification.insight.completed.body",
-                params={},
-                target_object="insight_qa", target_uid=qauid,
-                target_url="d2insight", target_useruid=user_id,
+        # run_tool()은 데이터 조회 실패 등도 예외를 던지지 않고 answer에 실패 메시지만 담아
+        # 정상 반환한다 — report_path(실제로 만들어진 md 파일명)가 있을 때만 진짜 성공이다.
+        if result.get("report_path"):
+            _update_insight_qa(
+                sb_svc, qauid, "D",
+                answer=json.dumps(answer_json, ensure_ascii=False),
+                filenm=result.get("report_path"),
+                fileurl=result.get("fileurl"),
             )
+            logger.info("보고서 완료: %s", qauid)
+            if user_id:
+                create_notification(
+                    sb_svc, category="insight", status="info",
+                    title="보고서 생성 완료", message="요청하신 보고서 생성이 완료되었습니다.",
+                    title_key="msg.notification.insight.completed.title",
+                    message_key="msg.notification.insight.completed.body",
+                    params={},
+                    target_object="insight_qa", target_uid=qauid,
+                    target_url="d2insight", target_useruid=user_id,
+                )
+        else:
+            _update_insight_qa(sb_svc, qauid, "F", answer=json.dumps(answer_json, ensure_ascii=False))
+            logger.info("보고서 실패(데이터 없음/처리 불가): %s", qauid)
+            if user_id:
+                create_notification(
+                    sb_svc, category="insight", status="error",
+                    title="보고서 생성 실패", message=result.get("answer") or "요청하신 보고서 생성에 실패했습니다.",
+                    title_key="msg.notification.insight.failed.title",
+                    message_key="msg.notification.insight.failed.body",
+                    params={},
+                    target_object="insight_qa", target_uid=qauid,
+                    target_url="d2insight", target_useruid=user_id,
+                )
 
     except Exception:
         logger.exception("보고서 생성 오류: %s", qauid)
@@ -116,6 +148,12 @@ def process_insight_message(msg):
             logger.exception("보고서 상태 업데이트 실패: %s", qauid)
 
     finally:
+        if upload_handoff_path:
+            try:
+                from d2insight.db.supabase_client import delete_from_storage
+                delete_from_storage(upload_handoff_path)
+            except Exception:
+                logger.exception("업로드 중계 파일 삭제 실패: %s", upload_handoff_path)
         try:
             sqs.delete_message(QueueUrl=SQS_INSIGHT_QUEUE_URL, ReceiptHandle=receipt_handle)
         except Exception:

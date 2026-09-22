@@ -65,6 +65,22 @@ def build_qas_path(
     return build_private_path(accountuid, "Insight", "Qas", p, u, filename)
 
 
+def build_upload_handoff_path(
+    user_id: str | None,
+    tenant_id: int | None,
+    qauid: str,
+    filename: str,
+) -> str:
+    """Users/{accountuid}/Insight/UploadHandoff/{qauid}/{filename} — 업로드 데이터셋을
+    비동기 워커(별도 프로세스)에 건네주는 일회용 중계 파일 경로. 요청(qauid)마다 새로
+    만들고, 워커가 읽은 직후 삭제한다(세션 전체가 공유하는 캐시가 아니다)."""
+    accountuid = resolve_accountuid_best_effort(get_client(), user_id, tenant_id) if user_id else None
+    if not accountuid:
+        t = str(tenant_id) if tenant_id is not None else "0"
+        return f"Unresolved/Insight/UploadHandoff/{t}/{qauid}/{filename}"
+    return build_private_path(accountuid, "Insight", "UploadHandoff", qauid, filename)
+
+
 def build_shares_path(
     tenant_id: int | None,
     project_id: int | None,

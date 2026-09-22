@@ -353,6 +353,23 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             async_qauid = storage.create_qa_placeholder(
                 sid, _tenant_id, _project_id, req.message, req.user_id, servicecd="In",
             )
+
+            # 업로드 데이터셋은 백엔드 프로세스 메모리(ExcelServer)에만 있어 별도 프로세스인
+            # 워커가 볼 수 없다 — 이 요청 하나를 위한 일회용 중계 파일로 Storage에 올려
+            # 워커에 경로만 넘긴다. 워커가 읽은 직후 삭제하므로 세션의 원본 데이터는
+            # 그대로 남아 이후 요청에도 매번 새 중계 파일을 만들 수 있다.
+            upload_handoff_path = None
+            excel_server = get_excel_server()
+            if excel_server.has_datasets(sid):
+                import pickle
+                from d2insight.db.supabase_client import build_upload_handoff_path, upload_report_bytes
+                upload_handoff_path = build_upload_handoff_path(req.user_id, _tenant_id, async_qauid, "datasets.pkl")
+                upload_report_bytes(
+                    upload_handoff_path,
+                    pickle.dumps(excel_server.session_datasets[sid]),
+                    "application/octet-stream",
+                )
+
             sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
             sqs.send_message(
                 QueueUrl=settings.SQS_INSIGHT_QUEUE_URL,
@@ -367,6 +384,7 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                     "tenant_id": _tenant_id,
                     "account_uid": req.account_uid,
                     "session_id": sid,
+                    "upload_handoff_path": upload_handoff_path,
                 }, ensure_ascii=False),
             )
             result = {
