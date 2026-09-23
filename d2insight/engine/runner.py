@@ -8,14 +8,39 @@
 """
 from __future__ import annotations
 
+import contextvars
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
+from d2insight import token_tracker
 from d2insight.engine.chart import render_chart_markdown
 from d2insight.engine.context import SharedContext
 from d2insight.engine.format import table_to_markdown
 from d2insight.engine.types import DEFAULT_LAYOUT, ModuleResult, ModuleSpec, Render
+
+
+def _submit_with_context(pool: ThreadPoolExecutor, fn, *args):
+    """제출 시점(호출 스레드)의 contextvars를 캡처해 워커 스레드에서 그대로 쓰게 한다.
+
+    token_tracker의 log_ctx/provider는 ContextVar라 캡처해 넘기지 않으면 워커 스레드에서는
+    빈 값으로 보여 엉뚱한(기본) LLM 키를 쓰게 된다. 토큰 누적은 스레드마다 따로 쌓이는
+    threading.local이라, 워커 스레드에서 쓴 호출 기록을 모아 결과와 함께 반환한다 — 메인
+    스레드가 받아 token_tracker.merge_calls()로 합친다(그러지 않으면 병렬 실행된 모듈의
+    토큰이 집계에서 누락된다).
+    """
+    snapshot = contextvars.copy_context()
+
+    def _run():
+        def _inner():
+            token_tracker.reset()
+            result = fn(*args)
+            return result, token_tracker.get()["calls"]
+        return snapshot.run(_inner)
+
+    return pool.submit(_run)
+
 
 # 스텝 제목에 실수로 새어든 스펙 번호(§11, §12-A 등)를 출력 직전에 제거하는 방어 패턴.
 # 스펙 번호는 코드 주석·설계 문서에만 존재해야 하며 보고서 본문에 노출되면 안 된다.
@@ -211,8 +236,16 @@ def topo_order(instances: list[ModuleInstance]) -> list[ModuleInstance]:
 
 
 # ── 3. 실행 ─────────────────────────────────────────────────────────────────
+_MAX_PARALLEL_MODULES = 6  # 한 라운드에 동시 실행할 모듈 수 상한 (LLM 호출이 대부분이라 I/O 대기 위주)
+
+
 def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[tuple[ModuleInstance, Render]]]:
-    """위상 순서대로 모듈을 실행한다.
+    """위상 순서대로 모듈을 실행한다. 같은 라운드(서로 의존하지 않는 모듈)는 스레드로 동시 실행한다.
+
+    각 모듈은 실행 중 ctx에 쓰지 않고(계산 결과만 반환), 이 함수가 라운드가 끝난 뒤 순서대로
+    ctx.put()을 호출한다 — 그래서 여러 모듈을 동시에 돌려도 공유 상태 경합이 없다(모듈이 읽기용
+    으로 쓰는 ctx.get_or_compute()만 락으로 보호돼 있다, context.py 참고). 이 방식으로 모듈 하나당
+    LLM 호출 1회(narrative)가 순차 누적되던 시간을 라운드 단위로 줄인다.
 
     실패 처리(Step 2):
       - 선행 이름표 부재 → 생략 기록(선행 모듈이 실패/생략됐다는 뜻). 후속으로 전파됨.
@@ -222,33 +255,58 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
     모듈은 계산만 한다. 본문 해설(narrative)은 이 단계 뒤 스텝 단위로 LLM이 채운다(narrate).
     """
     step_renders: dict[str, list[tuple[ModuleInstance, Render]]] = {}
+    pending = list(range(len(order)))  # order 안의 인덱스로 추적 — ModuleInstance는 필드값이
+                                        # 같으면 == 가 참이라 인스턴스 자체로 in/not in 비교하면 안 된다.
 
-    for inst in order:
-        missing = ctx.missing_requires(inst.spec.requires)
-        if missing:
-            ctx.mark_skipped(inst.ref, f"선행 데이터 {missing} 없음(선행 모듈 실패·생략 추정)")
-            continue
+    while pending:
+        ready = [i for i in pending if not ctx.missing_requires(order[i].spec.requires)]
+        if not ready:
+            for i in pending:
+                missing = ctx.missing_requires(order[i].spec.requires)
+                ctx.mark_skipped(order[i].ref, f"선행 데이터 {missing} 없음(선행 모듈 실패·생략 추정)")
+            break
 
-        try:
-            result: ModuleResult = inst.spec.run(ctx, inst.params, inst.tools)
-        except Exception as e:                 # 조용히 생략하지 않고 기록
-            ctx.mark_failed(inst.ref, f"{type(e).__name__}: {e}")
-            continue
+        outcomes: dict[int, tuple[str, object]] = {}
+        with ThreadPoolExecutor(max_workers=min(_MAX_PARALLEL_MODULES, len(ready))) as pool:
+            futures = {
+                _submit_with_context(pool, order[i].spec.run, ctx, order[i].params, order[i].tools): i
+                for i in ready
+            }
+            for fut in as_completed(futures):
+                i = futures[fut]
+                try:
+                    result, calls = fut.result()
+                    if calls:
+                        token_tracker.merge_calls(calls)
+                    outcomes[i] = ("ok", result)
+                except Exception as e:          # 조용히 생략하지 않고 기록
+                    outcomes[i] = ("error", e)
 
-        if result.status != "ok":
-            ctx.mark_failed(inst.ref, result.error or "알 수 없는 실패")
-            continue
+        # ctx.put()/기록은 여기서 원래 순서대로 순차 처리 — 조립 순서·로그를 결정적으로 유지.
+        for i in ready:
+            inst = order[i]
+            kind, payload = outcomes[i]
+            if kind == "error":
+                ctx.mark_failed(inst.ref, f"{type(payload).__name__}: {payload}")
+                continue
+            result: ModuleResult = payload
+            if result.status != "ok":
+                ctx.mark_failed(inst.ref, result.error or "알 수 없는 실패")
+                continue
 
-        for lbl, val in result.outputs.items():
-            # 모듈은 이름표를 평범한 이름으로 읽는다(ctx.get("outlier_result")). 같은 모듈이
-            # 대상만 바꿔 여러 번 돌면 뒤엣것이 앞엣것을 덮는데, 소비자는 위상정렬로 자기
-            # 생산자 바로 뒤에 오므로 그때그때 맞는 값을 본다.
-            # 대상이 없는 모듈(총평 등)은 공용 수치라 덮어쓰기를 막아 둔다(§6.2 재계산 금지).
-            _ow = lbl in STEP_SCOPED_LABELS or inst.sub_name is not None
-            ctx.put(lbl, val, overwrite=_ow)
-        if result.render is not None:
-            ctx.add_summary(inst.ref, result.render.summary)   # 결론 전용(본문에는 안 나감)
-            step_renders.setdefault(inst.step_label, []).append((inst, result.render))
+            for lbl, val in result.outputs.items():
+                # 모듈은 이름표를 평범한 이름으로 읽는다(ctx.get("outlier_result")). 같은 모듈이
+                # 대상만 바꿔 여러 번 돌면 뒤엣것이 앞엣것을 덮는데, 소비자는 위상정렬로 자기
+                # 생산자 바로 뒤에 오므로 그때그때 맞는 값을 본다.
+                # 대상이 없는 모듈(총평 등)은 공용 수치라 덮어쓰기를 막아 둔다(§6.2 재계산 금지).
+                _ow = lbl in STEP_SCOPED_LABELS or inst.sub_name is not None
+                ctx.put(lbl, val, overwrite=_ow)
+            if result.render is not None:
+                ctx.add_summary(inst.ref, result.render.summary)   # 결론 전용(본문에는 안 나감)
+                step_renders.setdefault(inst.step_label, []).append((inst, result.render))
+
+        ready_set = set(ready)
+        pending = [i for i in pending if i not in ready_set]
 
     return step_renders
 
@@ -265,7 +323,12 @@ def narrate(step_order: list[str],
     (처음부터 새로 쓰는 게 아니라 편집).
 
     해설 실패는 본문을 죽이지 않는다. 실패를 기록하고 각자의 narrative를 그대로 둔다.
+
+    스텝마다 서로 다른 Render를 다듬을 뿐 공유 상태를 건드리지 않으므로, 해설이 필요한
+    스텝들의 LLM 호출을 동시에 실행해 순차 누적 시간을 줄인다.
     """
+    jobs: list[tuple[str, list[str], list[tuple[ModuleInstance, Render]], list[dict]]] = []
+
     for label in step_order:
         entries = step_renders.get(label)
         if not entries or len(entries) < 2:
@@ -293,12 +356,30 @@ def narrate(step_order: list[str],
             "narrative": render.narrative,  # 모듈이 이미 쓴 해설 — 해설자는 이걸 다듬는다
         } for key, (inst, render) in zip(keys, entries)]
 
-        try:
-            written = catalog.narrate_step(label, items, ctx) or {}
-        except Exception as e:
-            ctx.mark_failed(f"{label} / 해설", f"{type(e).__name__}: {e} (각 모듈 해설 그대로 사용)")
-            written = {}
+        jobs.append((label, keys, entries, items))
 
+    if not jobs:
+        return
+
+    results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(_MAX_PARALLEL_MODULES, len(jobs))) as pool:
+        futures = {
+            _submit_with_context(pool, catalog.narrate_step, label, items, ctx): label
+            for label, _, _, items in jobs
+        }
+        for fut in as_completed(futures):
+            label = futures[fut]
+            try:
+                written, calls = fut.result()
+                if calls:
+                    token_tracker.merge_calls(calls)
+                results[label] = written or {}
+            except Exception as e:
+                ctx.mark_failed(f"{label} / 해설", f"{type(e).__name__}: {e} (각 모듈 해설 그대로 사용)")
+                results[label] = {}
+
+    for label, keys, entries, _ in jobs:
+        written = results.get(label, {})
         for key, (_, render) in zip(keys, entries):
             render.narrative = written.get(key) or render.narrative or render.summary
 
@@ -346,12 +427,13 @@ def _extract_lead_summary(narrative: str) -> tuple[str | None, str]:
 
 def assemble(plan: dict, step_order: list[str],
              step_renders: dict[str, list[tuple[ModuleInstance, Render]]],
-             ctx: SharedContext) -> str:
+             ctx: SharedContext) -> tuple[str, str | None]:
     """스텝을 순서대로 조립한다(§6.2). 결론도 이제 평범한 스텝 하나라 이 루프가 그대로
     처리한다(2026-07-28, 7단계 — 예전엔 conclusion을 별도 인자로 받아 특수 처리했다).
 
     결론의 "핵심 요약" 절만 따로 뽑아 제목 바로 아래(맨 앞)에도 둔다 — 결론에서는 뺀다
-    (같은 문장이 두 번 나오지 않게).
+    (같은 문장이 두 번 나오지 않게). 반환: (markdown, lead_summary) — lead_summary는
+    호출부가 채팅 답변 요약으로 재사용해 별도 LLM 호출을 줄이는 데 쓴다.
     """
     md: list[str] = [f"# {clean_title(plan.get('report_title') or '보고서')}"]
     lead_summary: str | None = None
@@ -375,7 +457,7 @@ def assemble(plan: dict, step_order: list[str],
     if lead_summary:
         md.insert(1, f"## 핵심 요약\n\n{lead_summary}")
 
-    return "\n\n".join(md)
+    return "\n\n".join(md), lead_summary
 
 
 # ── 6. 최상위 진입 ───────────────────────────────────────────────────────────
@@ -401,9 +483,10 @@ def run_plan(plan: dict, catalog: Catalog, ctx: SharedContext | None = None) -> 
         raise DataLoadError(f"분석할 데이터를 가져오지 못했습니다. {reason}")
 
     narrate(step_order, step_renders, catalog, ctx)
-    markdown = assemble(plan, step_order, step_renders, ctx)
+    markdown, lead_summary = assemble(plan, step_order, step_renders, ctx)
     return {
         "markdown": markdown,
+        "lead_summary": lead_summary,
         "step_renders": step_renders,
         "notes": ctx.notes(),
         "context": ctx,

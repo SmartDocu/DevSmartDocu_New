@@ -537,6 +537,7 @@ def run_engine_report(
     return {
         "md_text": out["markdown"],
         "md_filename": md_filename,
+        "lead_summary": out.get("lead_summary"),
         "notes": out["notes"],
         "plan_notes": plan_notes,
         "applied_steps": applied_steps,

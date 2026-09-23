@@ -85,6 +85,9 @@ export default function D2InsightPage() {
   const [previewOriginalMessage, setPreviewOriginalMessage] = useState('')
   const [previewFileName, setPreviewFileName] = useState('')
 
+  // 생성 중인 보고서(확정~완료 전) — 오른쪽 패널에 이 보고서의 스텝을 계속 보여준다.
+  const [generatingReport, setGeneratingReport] = useState(null) // { qauid, scenario, appliedSteps } | null
+
   // 정기 보고서 공유(공유한/공유받은)
   const [sharesSentSchedule, setSharesSentSchedule] = useState([])
   const [sharesReceivedSchedule, setSharesReceivedSchedule] = useState([])
@@ -211,6 +214,7 @@ export default function D2InsightPage() {
     setViewingScheduleSessionId(null)
     setScheduleSettings(null)
     setActiveReportIndex(null)
+    setGeneratingReport(null)
     setViewMode('chat')
     setInputValue('')
   }
@@ -418,6 +422,7 @@ export default function D2InsightPage() {
                 }
               : m
           )))
+          setGeneratingReport((g) => (g?.qauid === qauid ? null : g))
           return // 완료 — 폴링 중단
         }
       } catch {
@@ -466,28 +471,29 @@ export default function D2InsightPage() {
       ])
       if (data.pending && data.qauid) pollPendingReport(data.session_id || sessionIdRef.current, data.qauid)
       setActiveReportIndex(null)
+      return data
     } catch (error) {
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: t('msg.d2insight.chat_error_prefix') + (getErrorDetail(error) || error.message) },
       ])
+      return null
     }
   }
 
   // "이대로 작성" 클릭 — preview 확정 후 /chat 실제 실행. 옵션은 서버가 이해할 형태로 전달.
-  // previewData는 보고서 생성이 끝날 때까지 지우지 않는다 — 생성 중에도 오른쪽 패널이 방금
-  // 확인한 스텝 목록을 계속 보여줘야 하고(카탈로그만 남는 빈 화면 방지), 생성이 끝나면 백엔드가
-  // 이 스텝 목록을 그대로 되돌려주므로(pipeline_runner.py) 패널 내용이 그대로 이어진다.
+  // 큐-워커라 /chat이 곧장 반환하므로, 생성 완료 전까지는 previewData 대신 generatingReport로
+  // 이 보고서의 스텝을 오른쪽 패널에 계속 보여준다(pollPendingReport가 완료 시 정리).
   const handleConfirmPreview = async () => {
     if (!previewData || isLoading) return
     const text = previewOriginalMessage
-    const options = {
-      scenario: previewData.scenario,
-      applied_steps: previewData.applied_steps,
-    }
+    const scenario = previewData.scenario
+    const appliedSteps = previewData.applied_steps
+    const options = { scenario, applied_steps: appliedSteps }
     setIsLoading(true)
     try {
-      await _executeChat(text, options, previewFileName.trim() || null)
+      const data = await _executeChat(text, options, previewFileName.trim() || null)
+      if (data?.pending && data.qauid) setGeneratingReport({ qauid: data.qauid, scenario, appliedSteps })
     } finally {
       setPreviewData(null)
       setPreviewOriginalMessage('')
@@ -888,7 +894,9 @@ export default function D2InsightPage() {
       : findLatestReportIndex(activeMessages)
   )
   const activeReportMessage = activeReportMsgIndex != null ? activeMessages[activeReportMsgIndex] : null
-  const activeAppliedSteps = activeReportMessage?.appliedSteps || null
+  // 명시적으로 다른 말풍선을 선택하지 않은 채(chat 모드) 생성 중인 보고서가 있으면 그걸 우선 보여준다.
+  const showGeneratingReport = viewMode === 'chat' && activeReportIndex == null && generatingReport
+  const activeAppliedSteps = showGeneratingReport ? null : (activeReportMessage?.appliedSteps || null)
 
   // 말풍선 클릭 → 그 보고서(assistant 메시지)의 옵션을 패널에 표시한다.
   const selectReportForIndex = (idx, list) => {
@@ -1415,6 +1423,7 @@ export default function D2InsightPage() {
         {/* ── 우측 옵션 패널 (적용된 모듈/툴/파라미터 + 패널 내 정기 보고서 등록/수정) ── */}
         <ReportOptionsPanel
           appliedSteps={activeAppliedSteps}
+          generating={showGeneratingReport ? generatingReport : null}
           reportQauid={activeReportMessage?.qauid || null}
           isTemplate={!!activeReportMessage?.isTemplate}
           scheduleSettings={scheduleSettings}
@@ -1635,7 +1644,7 @@ function StepEditPopup({ step, readOnly = false, onDescribeStep, onEditStep, onS
 // 우측 옵션 패널 — 보고서가 어떤 모듈/툴/파라미터로 만들어졌는지 표시(읽기 전용)
 // ─────────────────────────────────────────────────────────────────
 function ReportOptionsPanel({
-  appliedSteps, reportQauid, isTemplate,
+  appliedSteps, generating, reportQauid, isTemplate,
   scheduleSettings,
   onPreviewRegisterSchedule, onRegisterSchedule,
   onPreviewScheduleUpdate, onApplyScheduleUpdate,
@@ -1871,7 +1880,7 @@ function ReportOptionsPanel({
       )}
       <div className="options-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="options-panel-title">
-          {preview ? '작성 전 확인 (preview)' : '적용된 옵션'}
+          {preview ? '작성 전 확인 (preview)' : generating ? '보고서 작성 중...' : '적용된 옵션'}
         </span>
         <button
           type="button"
@@ -2032,10 +2041,32 @@ function ReportOptionsPanel({
           </div>
         )}
 
-        {/* preview가 떠 있는 동안(= 새 보고서 확인/생성 중)에는 이전 보고서의 "적용된 옵션"을
-            같이 보여주지 않는다 — 그렇지 않으면 두 번째 보고서를 만들 때 방금 뜬 preview 카드
-            아래에 직전 보고서의 스텝 카드가 나란히 남아 스텝이 두 벌 보이는 것처럼 보인다. */}
-        {!preview && (!appliedSteps || appliedSteps.length === 0 ? (
+        {/* 생성 중인 보고서 — 완료된 것처럼 취급하지 않도록 read-only로만 스텝을 보여준다. */}
+        {!preview && generating && (
+          <div className="opt-preview" style={{ marginBottom: 16, padding: 12, background: '#e8f4fd', border: '1px solid #90caf9', borderRadius: 6 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>⏳ {generating.scenario || '보고서'} 작성 중...</div>
+            <div className="opt-steps">
+              {(generating.appliedSteps || []).map((step, idx) => (
+                <div key={idx} className="opt-step" style={{ opacity: 0.85 }}>
+                  <div className="opt-step-header">
+                    <span className="opt-step-title">{idx + 1}. {step.title || step.step || step.section}</span>
+                  </div>
+                  {(step.modules || []).length > 0 && (
+                    <div className="opt-module">
+                      <span className="opt-module-name" style={{ fontWeight: 'normal', color: '#666' }}>
+                        {step.modules.map((m) => m.purpose || m.module_id).join(' · ')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* preview/generating이 떠 있는 동안에는 이전 보고서의 "적용된 옵션"을 같이 보여주지
+            않는다 — 그렇지 않으면 방금 뜬 카드 아래에 직전 보고서의 스텝이 나란히 남는다. */}
+        {!preview && !generating && (!appliedSteps || appliedSteps.length === 0 ? (
           <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
         ) : (
           <>

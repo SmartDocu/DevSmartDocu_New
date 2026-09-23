@@ -364,8 +364,11 @@ def run_tool(
             result["execution_cache"] = eng.get("execution_cache")
             report_type = eng.get("scenario") or report_type
 
-            brief = ""
-            if md_text:
+            # 결론 모듈이 이미 "핵심 요약"을 만들어뒀으면 그대로 쓴다 — 같은 내용을 다시
+            # LLM으로 요약하는 호출을 없애 보고서 생성 시간을 줄인다. 결론이 실패·생략된
+            # 경우에만(핵심 요약이 없을 때만) 예전처럼 새로 요약한다.
+            brief = eng.get("lead_summary") or ""
+            if not brief and md_text:
                 try:
                     brief = _quick_chat(
                         f"다음 보고서 내용에서 핵심 내용을 3~4문장으로 요약하세요. 수치 중심으로 간결하게.\n\n{md_text[:4000]}",
