@@ -15,7 +15,6 @@
 """
 from __future__ import annotations
 
-import threading
 from typing import Any, Callable, Iterable
 
 
@@ -38,7 +37,6 @@ class SharedContext:
         self._store: dict[str, Any] = {}
         self._summaries: list[dict] = []
         self._notes: list[dict] = []           # {"ref", "reason", "kind": "failed"|"skipped"}
-        self._lock = threading.Lock()          # get_or_compute용 — 모듈이 스레드로 동시 실행될 때 대비
 
     # ── 이름표 값 저장·조회 ────────────────────────────────────────────────
     def put(self, label: str, value: Any, *, overwrite: bool = False) -> None:
@@ -70,12 +68,11 @@ class SharedContext:
 
         이름표가 있으면 저장값을 그대로 돌려주고, 없으면 compute_fn()으로 계산해 저장한 뒤 반환한다.
         """
-        with self._lock:
-            if label in self._store:
-                return self._store[label]
-            value = compute_fn()
-            self._store[label] = value
-            return value
+        if label in self._store:
+            return self._store[label]
+        value = compute_fn()
+        self._store[label] = value
+        return value
 
     # ── requires(선행 이름표) 점검 ─────────────────────────────────────────
     def missing_requires(self, requires: Iterable[str]) -> list[str]:
