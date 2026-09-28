@@ -294,6 +294,36 @@ def query_step_dataset(
     if not use_dims and not use_measures:
         raise db_meta.DbMetaError("등록된 컬럼 중 조회할 수 있는 것이 없습니다.")
 
+    # 이 스텝이 여러 소스를 걸치면(예: 헤더+디테일), 부모(1)쪽 측정값을 조인된 결과에 그대로
+    # SUM할 경우 자식(N)쪽 행 수만큼 부풀려진다(§ header-detail fan-out). LLM에게 SQL을 맡기기
+    # 전에 미리 걸러낸다 — 같은 역할(Semantic_Type)의 자식측 측정값이 있으면 그걸로 대체하고,
+    # 없으면 이번 조회에서 뺀다. 단일 소스만 쓰는 스텝은 조인 자체가 없어 위험하지 않으므로
+    # 손대지 않는다.
+    used_physicals = {
+        meta.loc[meta["Physical_Name"] == c, "_source_physical"].iloc[0]
+        for c in (use_dims + use_measures) if c in set(meta["Physical_Name"])
+    }
+    if len(used_physicals) > 1 and "Is_Parent_Side" in measure_rows.columns:
+        safe_measures = []
+        for m in use_measures:
+            row = measure_rows.loc[measure_rows["Physical_Name"] == m]
+            if row.empty or not bool(row.iloc[0]["Is_Parent_Side"]):
+                safe_measures.append(m)
+                continue
+            role = row.iloc[0]["Semantic_Type"]
+            substitute = measure_rows[
+                (measure_rows["Semantic_Type"] == role) & (role != "")
+                & (measure_rows["Is_Parent_Side"] == False)  # noqa: E712
+            ]
+            if len(substitute):
+                sub_name = substitute.iloc[0]["Physical_Name"]
+                print(f"[dataset_builder] '{m}'은 조인 시 부풀려질 수 있어 '{sub_name}'로 대체합니다.")
+                safe_measures.append(sub_name)
+            else:
+                print(f"[dataset_builder] '{m}'은 조인 시 부풀려질 수 있고 대체할 측정값이 없어 "
+                      "이번 조회에서 제외합니다.")
+        use_measures = list(dict.fromkeys(safe_measures))
+
     if existing_sql:
         a_start, a_end = _actual_range(target_period, grain)
         c_start, c_end = _compare_range(target_period, compare_type, grain)

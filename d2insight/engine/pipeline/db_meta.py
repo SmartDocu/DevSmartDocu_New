@@ -224,9 +224,26 @@ def resolve_source_cluster(project_id: int | None = None, message: str | None = 
     return candidates[:2]
 
 
+def _parent_physical_names(sources: list[dict]) -> set[str]:
+    """이 소스 묶음 안에서 다른 소스의 reference.parent_table로 지목된 소스(조인의 '1'쪽).
+
+    1:N 조인(헤더/디테일 등)에서 '1'쪽 테이블의 측정값을 조인된 결과에 그대로 SUM하면
+    'N'쪽 행 수만큼 부풀려진다(§ header-detail fan-out). 어느 쪽이 '1'인지는 등록 시 이미
+    입력하는 reference 정보로 판정한다 — 테이블명을 코드에 새로 박지 않는다.
+    """
+    physicals = {s["physical_name"] for s in sources if s.get("physical_name")}
+    parents = set()
+    for src in sources:
+        parent_table = (src.get("reference") or {}).get("parent_table")
+        if parent_table and parent_table in physicals:
+            parents.add(parent_table)
+    return parents
+
+
 def build_meta_columns(sources: list[dict]) -> pd.DataFrame:
     """소스 묶음(1~2개) → 엔진 Schema가 쓰는 meta_columns DataFrame(§1)."""
     roles = infer_roles(sources)
+    parent_physicals = _parent_physical_names(sources)
 
     rows = []
     for src in sources:
@@ -263,6 +280,7 @@ def build_meta_columns(sources: list[dict]) -> pd.DataFrame:
                 "Is_Key_Measure": semantic == "amount",
                 "Is_Date_for_Analytic": is_date,
                 "Semantic_Type": semantic,
+                "Is_Parent_Side": table in parent_physicals,
                 "_source_physical": src["physical_name"],
                 "_source_schema": src["schema"],
                 "_source_label": label,
@@ -289,7 +307,7 @@ def count_measure_row(meta: pd.DataFrame) -> pd.DataFrame:
     row = {
         "Physical_Name": COUNT_MEASURE, "Logical_Name": COUNT_MEASURE_LABEL,
         "Data_Type": "int", "Field_Type": "Measure", "Is_Key_Measure": True,
-        "Is_Date_for_Analytic": False, "Semantic_Type": "",
+        "Is_Date_for_Analytic": False, "Semantic_Type": "", "Is_Parent_Side": False,
         "_source_physical": "", "_source_schema": "", "_source_label": "",
     }
     return pd.concat([meta, pd.DataFrame([{c: row.get(c) for c in meta.columns} | row])],
@@ -387,6 +405,28 @@ def build_agg_sql(sources: list[dict], meta: pd.DataFrame, grain: str = "month")
 
     dim_rows = meta[(meta["Field_Type"] == "Dim") & (meta["Semantic_Type"] != "period")]
     measure_rows = meta[(meta["Field_Type"] == "Measure") & (meta["_source_physical"] != "")]
+
+    # 조인된 소스가 둘 이상이면 부모(1)쪽 측정값을 그대로 SUM할 수 없다 — 자식(N)쪽 조인으로
+    # 행이 복제돼 부풀려진다(§ header-detail fan-out). 같은 역할(Semantic_Type)의 자식측
+    # 측정값이 있으면 그걸로 대체하고, 없으면 이 집계에서 뺀다. 어느 쪽이 부모인지는
+    # build_meta_columns()가 reference로 이미 판정해뒀다(Is_Parent_Side) — 테이블명을 여기 새로
+    # 박지 않는다.
+    if len(sources) > 1 and "Is_Parent_Side" in measure_rows.columns:
+        drop_names = []
+        for _, row in measure_rows[measure_rows["Is_Parent_Side"] == True].iterrows():  # noqa: E712
+            substitute = measure_rows[
+                (measure_rows["Semantic_Type"] == row["Semantic_Type"])
+                & (measure_rows["Semantic_Type"] != "")
+                & (measure_rows["Is_Parent_Side"] == False)  # noqa: E712
+            ]
+            if len(substitute):
+                print(f"[db_meta] '{row['Physical_Name']}'은 조인 시 부풀려질 수 있어 "
+                      f"'{substitute.iloc[0]['Physical_Name']}'로 대체합니다.")
+            else:
+                print(f"[db_meta] '{row['Physical_Name']}'은 조인 시 부풀려질 수 있고 "
+                      "대체할 측정값이 없어 이번 집계에서 제외합니다.")
+            drop_names.append(row["Physical_Name"])
+        measure_rows = measure_rows[~measure_rows["Physical_Name"].isin(drop_names)]
 
     select_parts = [f"{period_expr} AS [{period_colname}]"]
     group_parts = [period_expr]
