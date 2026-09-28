@@ -3,6 +3,29 @@ from typing import Optional
 from utilsPrj.supabase_client import SUPABASE_SCHEMA
 
 
+def notification_tenant_tag(issystemtenant: bool, disptenantnm: Optional[str]) -> str:
+    """알림 메시지 접두어 — 개인(시스템) 테넌트는 회사 개념이 없어 굳이 표시할 필요가 없으므로 생략하고,
+    기업 테넌트일 때만 "[테넌트명] "을 붙인다. 어느 테넌트의 결제/구독/작업 알림인지 구분하기 위한 용도.
+    백엔드 라우터와 워커(worker/main.py) 양쪽에서 공유해서 쓴다."""
+    if issystemtenant:
+        return ""
+    return f"[{disptenantnm or '-'}] "
+
+
+def notification_tenant_tag_by_id(sd, tenantid) -> str:
+    """tenantid로 tenants를 조회해 notification_tenant_tag()를 계산하는 편의 함수.
+    sd는 이미 sdoc 스키마로 스코핑된 클라이언트여야 한다(예: get_service_client().schema(SUPABASE_SCHEMA)).
+    조회 실패/tenantid 없음이면 개인 테넌트로 간주해 빈 문자열을 반환한다."""
+    if not tenantid:
+        return ""
+    try:
+        row = sd.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
+        data = (row.data if row else None) or {}
+    except Exception:
+        return ""
+    return notification_tenant_tag(data.get("issystemtenant", True), data.get("disptenantnm"))
+
+
 def create_notification(
     sb,
     *,

@@ -1445,11 +1445,15 @@ def _apply_due_pro_downgrades(svc, accountuid: str) -> None:
         )
 
         if actor:
+            from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+            t_row = svc.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", row["tenantid"]).maybe_single().execute()
+            t_data = (t_row.data if t_row else None) or {}
+            tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
             create_notification(
                 svc, category="plan", status="info",
-                title="요금제 변경", message=f"'{row['servicecd']}' 서비스 요금제가 무료(Free)로 전환되었습니다.",
+                title="요금제 변경", message=f"{tenant_tag}'{row['servicecd']}' 서비스 요금제가 무료(Free)로 전환되었습니다.",
                 title_key="msg.notification.plan.downgraded.title", message_key="msg.notification.plan.downgraded.body",
-                params={"servicecd": row["servicecd"]},
+                params={"servicecd": row["servicecd"], "tenant_tag": tenant_tag},
                 target_object="accountservice", target_uid=accountuid, target_url="myinfo", target_useruid=actor,
             )
 
@@ -1503,12 +1507,16 @@ def _apply_due_pro_archival(svc, accountuid: str) -> None:
         }).eq("accountuid", accountuid).eq("servicecd", row["servicecd"]).execute()
 
         if actor:
+            from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+            t_row = svc.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", row["tenantid"]).maybe_single().execute()
+            t_data = (t_row.data if t_row else None) or {}
+            tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
             create_notification(
                 svc, category="plan", status="info",
                 title="서비스 보관 전환",
-                message=f"'{row['servicecd']}' 서비스가 읽기전용으로 전환되었습니다. 90일 후 데이터가 삭제됩니다.",
+                message=f"{tenant_tag}'{row['servicecd']}' 서비스가 읽기전용으로 전환되었습니다. 90일 후 데이터가 삭제됩니다.",
                 title_key="msg.notification.service.archived.title", message_key="msg.notification.service.archived.body",
-                params={"servicecd": row["servicecd"]},
+                params={"servicecd": row["servicecd"], "tenant_tag": tenant_tag},
                 target_object="accountservice", target_uid=accountuid, target_url="myinfo", target_useruid=actor,
             )
 
@@ -1573,15 +1581,19 @@ def _apply_due_feature_cancellations(svc, accountuid: str) -> None:
                 ).eq("servicecd", product["servicecd"]).eq("useyn", True).execute()
                 active_count = active_cnt.count or 0
                 if active_count > new_total_users and actor:
+                    from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+                    t_row = svc.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", row["tenantid"]).maybe_single().execute()
+                    t_data = (t_row.data if t_row else None) or {}
+                    tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
                     create_notification(
                         svc, category="plan", status="error",
                         title="인원 초과 안내",
                         message=(
-                            f"'{product['servicecd']}' 서비스 정원이 {new_total_users}명으로 줄었지만 "
+                            f"{tenant_tag}'{product['servicecd']}' 서비스 정원이 {new_total_users}명으로 줄었지만 "
                             f"현재 활성 인원은 {active_count}명입니다. 인원을 비활성화해주세요."
                         ),
                         title_key="msg.notification.overcapacity.title", message_key="msg.notification.overcapacity.body",
-                        params={"servicecd": product["servicecd"], "total_users": new_total_users, "active_count": active_count},
+                        params={"servicecd": product["servicecd"], "total_users": new_total_users, "active_count": active_count, "tenant_tag": tenant_tag},
                         target_object="accountservice", target_uid=accountuid,
                         target_url="org/tenant-users", target_useruid=actor,
                     )
@@ -1600,12 +1612,16 @@ def _apply_due_feature_cancellations(svc, accountuid: str) -> None:
             ).execute()
 
         if actor:
+            from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+            t_row = svc.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", row["tenantid"]).maybe_single().execute()
+            t_data = (t_row.data if t_row else None) or {}
+            tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
             create_notification(
                 svc, category="plan", status="info",
                 title="구독 해지 완료",
-                message=f"'{product.get('productnm') or row['productcd']}' 구독이 해지되었습니다.",
+                message=f"{tenant_tag}'{product.get('productnm') or row['productcd']}' 구독이 해지되었습니다.",
                 title_key="msg.notification.feature.cancelled.title", message_key="msg.notification.feature.cancelled.body",
-                params={"productnm": product.get("productnm") or row["productcd"]},
+                params={"productnm": product.get("productnm") or row["productcd"], "tenant_tag": tenant_tag},
                 target_object="subscription_feature", target_uid=row["subscriptionuid"],
                 target_url="org/other-subscription-manage", target_useruid=actor,
             )
@@ -1711,16 +1727,20 @@ def _apply_due_quantity_decreases(svc, accountuid: str) -> None:
                     # 정원·청구 유지 — 감소를 적용하지 않고 다음 조회 시점에 다시 평가되도록 그대로 둔다.
                     target_useruid = row.get("updater") or row.get("creator")
                     if target_useruid and not _recent_overcapacity_notification(svc, accountuid, product["servicecd"]):
+                        from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+                        t_row = svc.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", row["tenantid"]).maybe_single().execute()
+                        t_data = (t_row.data if t_row else None) or {}
+                        tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
                         create_notification(
                             svc, category="plan", status="error",
                             title="인원 초과 안내",
                             message=(
-                                f"'{product['servicecd']}' 서비스 정원을 {future_total_users}명으로 줄이려면 "
+                                f"{tenant_tag}'{product['servicecd']}' 서비스 정원을 {future_total_users}명으로 줄이려면 "
                                 f"현재 활성 인원({active_count}명)을 먼저 비활성화해야 합니다. 인원을 정리할 때까지 "
                                 f"기존 정원과 청구가 유지됩니다."
                             ),
                             title_key="msg.notification.overcapacity.title", message_key="msg.notification.overcapacity.pending_body",
-                            params={"servicecd": product["servicecd"], "total_users": future_total_users, "active_count": active_count},
+                            params={"servicecd": product["servicecd"], "total_users": future_total_users, "active_count": active_count, "tenant_tag": tenant_tag},
                             target_object="accountservice", target_uid=accountuid,
                             target_url="org/tenant-users", target_useruid=target_useruid,
                         )

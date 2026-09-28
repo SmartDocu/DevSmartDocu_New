@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_user as _get_user
-from utilsPrj.notifications import create_notification
+from utilsPrj.notifications import create_notification, notification_tenant_tag as _notification_tenant_tag
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.audit_log import log_work_action, get_client_ip
 
@@ -50,8 +50,17 @@ def _resolve_tenant_accountuid(sd, tenantid: int, user_id: str) -> Optional[str]
 
 
 def _payment_manage_url(issystemtenant: bool) -> str:
-    """알림 target_url — 개인(시스템) 테넌트는 개인 결제 관리, 기업 테넌트는 기업 결제 관리 화면으로 안내."""
+    """알림 target_url — 결제수단(카드) 자체를 고쳐야 하는 알림(정기 결제 실패/서비스 정지)에서 사용.
+    개인(시스템) 테넌트는 개인 결제 관리, 기업 테넌트는 기업 결제 관리 화면으로 안내."""
     return "upgrade/payment-manage" if issystemtenant else "org/payment-manage"
+
+
+def _billing_history_url(issystemtenant: bool) -> str:
+    """알림 target_url — 특정 결제/환불 건 하나를 가리키는 알림에서 사용. 결제수단 관리 화면이 아니라
+    그 거래 내역을 바로 확인할 수 있는 결제 이력 화면으로 안내한다."""
+    return "billing-history" if issystemtenant else "org/billing-history"
+
+
 
 
 def _require_tenant_manager_tenantid(user_id: str, header_tenantid: Optional[str]) -> int:
@@ -186,27 +195,34 @@ def refund_charge(sd, user_id: str, paymentuid: str, reason: str) -> dict:
         "creator": user_id,
     }).execute()
 
-    t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", payment.get("tenantid")).maybe_single().execute()
-    issystemtenant = (t_row.data or {}).get("issystemtenant", True) if t_row else True
-    payment_url = _payment_manage_url(issystemtenant)
+    t_row = sd.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", payment.get("tenantid")).maybe_single().execute()
+    t_data = (t_row.data if t_row else None) or {}
+    issystemtenant = t_data.get("issystemtenant", True)
+    tenant_tag = _notification_tenant_tag(issystemtenant, t_data.get("disptenantnm"))
+    billing_url = _billing_history_url(issystemtenant)
     amount_txt = f"{int(payment.get('payment_amount') or 0):,}원"
 
-    refund_params = {"amount": int(payment.get("payment_amount") or 0)}
+    order_name = payment.get("productcd") or "-"
+    if payment.get("productcd"):
+        prod_row = sd.table("products").select("productnm").eq("productcd", payment["productcd"]).maybe_single().execute()
+        order_name = ((prod_row.data if prod_row else None) or {}).get("productnm") or payment["productcd"]
+
+    refund_params = {"amount": int(payment.get("payment_amount") or 0), "order_name": order_name, "tenant_tag": tenant_tag}
     if success:
         create_notification(
             get_service_client(), category="payment", status="info",
-            title="결제 환불 완료", message=f"결제({amount_txt})가 환불되었습니다.",
+            title="결제 환불 완료", message=f"{tenant_tag}'{order_name}' 결제({amount_txt})가 환불되었습니다.",
             title_key="msg.notification.payment.refund.completed.title",
             message_key="msg.notification.payment.refund.completed.body", params=refund_params,
-            target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+            target_object="payment", target_uid=paymentuid, target_url=billing_url, target_useruid=user_id,
         )
     else:
         create_notification(
             get_service_client(), category="payment", status="error",
-            title="결제 환불 실패", message=f"결제({amount_txt}) 환불 처리 중 오류가 발생했습니다. 고객센터에 문의해주세요.",
+            title="결제 환불 실패", message=f"{tenant_tag}'{order_name}' 결제({amount_txt}) 환불 처리 중 오류가 발생했습니다. 고객센터에 문의해주세요.",
             title_key="msg.notification.payment.refund.failed.title",
             message_key="msg.notification.payment.refund.failed.body", params=refund_params,
-            target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+            target_object="payment", target_uid=paymentuid, target_url=billing_url, target_useruid=user_id,
         )
 
     if not success:
@@ -572,7 +588,8 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
     t_row = sd.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
     t_data = (t_row.data if t_row else None) or {}
     disptenantnm = t_data.get("disptenantnm") or "고객"
-    payment_url = _payment_manage_url(t_data.get("issystemtenant", True))
+    tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
+    billing_url = _billing_history_url(t_data.get("issystemtenant", True))
 
     email, telno = "", ""
     if accountuid:
@@ -627,10 +644,10 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
         sd.table("payment_attempts").update({"attempt_status": "Success"}).eq("attemptuid", attemptuid).execute()
         create_notification(
             get_service_client(), category="payment", status="info",
-            title="결제 완료", message=f"'{order_name}' 결제가 완료되었습니다. ({amount_txt})",
+            title="결제 완료", message=f"{tenant_tag}'{order_name}' 결제가 완료되었습니다. ({amount_txt})",
             title_key="msg.notification.payment.completed.title", message_key="msg.notification.payment.completed.body",
-            params={"order_name": order_name, "amount": int(amount)},
-            target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+            params={"order_name": order_name, "amount": int(amount), "tenant_tag": tenant_tag},
+            target_object="payment", target_uid=paymentuid, target_url=billing_url, target_useruid=user_id,
         )
         return {"success": True, "pgTxId": (pg_result.get("payment") or {}).get("pgTxId"), "paymentuid": paymentuid}
 
@@ -643,10 +660,10 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
     }).eq("attemptuid", attemptuid).execute()
     create_notification(
         get_service_client(), category="payment", status="error",
-        title="결제 실패", message=f"'{order_name}' 결제가 실패했습니다. ({amount_txt})",
+        title="결제 실패", message=f"{tenant_tag}'{order_name}' 결제가 실패했습니다. ({amount_txt})",
         title_key="msg.notification.payment.failed.title", message_key="msg.notification.payment.failed.body",
-        params={"order_name": order_name, "amount": int(amount)},
-        target_object="payment", target_uid=paymentuid, target_url=payment_url, target_useruid=user_id,
+        params={"order_name": order_name, "amount": int(amount), "tenant_tag": tenant_tag},
+        target_object="payment", target_uid=paymentuid, target_url=billing_url, target_useruid=user_id,
     )
     return {"success": False, "message": failure_message, "paymentuid": paymentuid}
 
@@ -857,8 +874,10 @@ def _handle_billing_failure(sd, ab: dict, today: date, notify_useruid: str, mess
         date.fromisoformat(first_failure_dt) + timedelta(days=GRACE_PERIOD_DAYS)
     ).isoformat()
 
-    t_row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
-    payment_url = _payment_manage_url(((t_row.data if t_row else None) or {}).get("issystemtenant", True))
+    t_row = sd.table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
+    t_data = (t_row.data if t_row else None) or {}
+    payment_url = _payment_manage_url(t_data.get("issystemtenant", True))
+    tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
 
     # accountservices.servicestatus를 바꾸는 것과 동시에, 그 서비스가 참조 중인 subscriptions 행의
     # subscription_status도 같이 맞춘다 — 안 그러면 결제가 계속 실패해도 subscription_status는
@@ -889,9 +908,9 @@ def _handle_billing_failure(sd, ab: dict, today: date, notify_useruid: str, mess
         }).eq("accountuid", accountuid).execute()
         create_notification(
             get_service_client(), category="payment", status="error",
-            title="서비스 정지", message=f"정기 결제 실패가 지속되어 서비스가 정지되었습니다. ({message})",
+            title="서비스 정지", message=f"{tenant_tag}정기 결제 실패가 지속되어 서비스가 정지되었습니다. ({message})",
             title_key="msg.notification.billing.suspended.title", message_key="msg.notification.billing.suspended.body",
-            params={"message": message},
+            params={"message": message, "tenant_tag": tenant_tag},
             target_object="account_billing", target_uid=accountuid, target_url=payment_url, target_useruid=notify_useruid,
         )
         return {"result": "suspended", "message": message}
@@ -903,9 +922,9 @@ def _handle_billing_failure(sd, ab: dict, today: date, notify_useruid: str, mess
     create_notification(
         get_service_client(), category="payment", status="error",
         title="정기 결제 실패",
-        message=f"정기 결제에 실패했습니다. {grace_until}까지 결제수단을 갱신해주세요. ({message})",
+        message=f"{tenant_tag}정기 결제에 실패했습니다. {grace_until}까지 결제수단을 갱신해주세요. ({message})",
         title_key="msg.notification.billing.failed.title", message_key="msg.notification.billing.failed.body",
-        params={"message": message, "grace_until": grace_until},
+        params={"message": message, "grace_until": grace_until, "tenant_tag": tenant_tag},
         target_object="account_billing", target_uid=accountuid, target_url=payment_url, target_useruid=notify_useruid,
     )
     return {"result": "failed_grace", "message": message, "grace_until": grace_until}

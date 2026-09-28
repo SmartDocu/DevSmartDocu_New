@@ -13,7 +13,7 @@ from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SU
 from utilsPrj.chapter_making import replace_doc
 from utilsPrj.credit_helper import apply_chapter_credit_deduction, apply_doc_credit_deduction
 from utilsPrj.html_to_docx import html_to_docx_merge
-from utilsPrj.notifications import create_notification
+from utilsPrj.notifications import create_notification, notification_tenant_tag_by_id
 from utilsPrj.audit_log import log_work_action
 from utilsPrj.private_storage import (
     resolve_accountuid_via_docid, build_private_path, upload_private_file,
@@ -328,11 +328,12 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
         except Exception:
             logger.exception("크레딧 차감 실패: %s (gendocjobuid=%s)", gendocuid, gendocjobuid)
 
+        tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
         create_notification(
             sb_svc, category="doc", status="info",
-            title="문서 작성 완료", message=f"'{gendocnm}' 문서 작성이 완료되었습니다.",
+            title="문서 작성 완료", message=f"{tenant_tag}'{gendocnm}' 문서 작성이 완료되었습니다.",
             title_key="msg.notification.doc.completed.title", message_key="msg.notification.doc.completed.body",
-            params={"gendocnm": gendocnm},
+            params={"gendocnm": gendocnm, "tenant_tag": tenant_tag},
             target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
         )
 
@@ -348,11 +349,12 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_queue(sb_svc, gendocjobuid, "E",
                           error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+            tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
             create_notification(
                 sb_svc, category="doc", status="error",
-                title="문서 작성 실패", message=f"'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                title="문서 작성 실패", message=f"{tenant_tag}'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
                 title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
-                params={"gendocnm": gendocnm},
+                params={"gendocnm": gendocnm, "tenant_tag": tenant_tag},
                 target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
             )
         except Exception:
@@ -455,11 +457,12 @@ def process_message(msg):
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_queue(sb_svc, gendocjobuid, "E",
                           error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+            tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
             create_notification(
                 sb_svc, category="doc", status="error",
-                title="문서 작성 실패", message=f"'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                title="문서 작성 실패", message=f"{tenant_tag}'{gendocnm}' 문서 작성 중 오류가 발생했습니다.",
                 title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
-                params={"gendocnm": gendocnm},
+                params={"gendocnm": gendocnm, "tenant_tag": tenant_tag},
                 target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
             )
         except Exception:
@@ -588,11 +591,12 @@ def process_chapter_message(msg):
             logger.exception("크레딧 차감 실패: %s (genchapterjobuid=%s)", genchapteruid, genchapterjobuid)
 
         if not is_start_doc:
+            tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
             create_notification(
                 sb_svc, category="chapter", status="info",
-                title="챕터 작성 완료", message=f"'{gendocnm}' 문서의 '{chapternm}' 챕터 작성이 완료되었습니다.",
+                title="챕터 작성 완료", message=f"{tenant_tag}'{gendocnm}' 문서의 '{chapternm}' 챕터 작성이 완료되었습니다.",
                 title_key="msg.notification.chapter.completed.title", message_key="msg.notification.chapter.completed.body",
-                params={"gendocnm": gendocnm, "chapternm": chapternm},
+                params={"gendocnm": gendocnm, "chapternm": chapternm, "tenant_tag": tenant_tag},
                 target_object="gendoc", target_uid=gendocuid,
                 target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=user_id,
             )
@@ -631,11 +635,12 @@ def process_chapter_message(msg):
             _update_chapter_queue(sb_svc, genchapterjobuid, "E",
                                    error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
             if not is_start_doc:
+                tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                 create_notification(
                     sb_svc, category="chapter", status="error",
-                    title="챕터 작성 실패", message=f"'{gendocnm}' 문서의 '{chapternm}' 챕터 작성 중 오류가 발생했습니다.",
+                    title="챕터 작성 실패", message=f"{tenant_tag}'{gendocnm}' 문서의 '{chapternm}' 챕터 작성 중 오류가 발생했습니다.",
                     title_key="msg.notification.chapter.failed.title", message_key="msg.notification.chapter.failed.body",
-                    params={"gendocnm": gendocnm, "chapternm": chapternm},
+                    params={"gendocnm": gendocnm, "chapternm": chapternm, "tenant_tag": tenant_tag},
                     target_object="gendoc", target_uid=gendocuid,
                     target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=user_id,
                 )
@@ -650,12 +655,13 @@ def process_chapter_message(msg):
                     end_iso = datetime.now(timezone.utc).isoformat()
                     _update_queue(sb_svc, gendocjobuid, "E",
                                   error_cd="ERR", error_msg=f"챕터 처리 실패: {genchapteruid}", end_dts=end_iso)
+                    tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                     create_notification(
                         sb_svc, category="doc", status="error",
                         title="문서 작성 실패",
-                        message=f"'{doc_rt[0].get('gendocnm') or gendocnm}' 문서 작성 중 오류가 발생했습니다.",
+                        message=f"{tenant_tag}'{doc_rt[0].get('gendocnm') or gendocnm}' 문서 작성 중 오류가 발생했습니다.",
                         title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
-                        params={"gendocnm": doc_rt[0].get("gendocnm") or gendocnm},
+                        params={"gendocnm": doc_rt[0].get("gendocnm") or gendocnm, "tenant_tag": tenant_tag},
                         target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=user_id,
                     )
                     sb_svc.schema(SUPABASE_SCHEMA).table("genlocks").update({

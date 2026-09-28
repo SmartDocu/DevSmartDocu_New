@@ -1168,13 +1168,18 @@ def rewrite_chapter_status(genchapteruid: str, token: str = Depends(get_token)):
                 if not row[0].get("is_start_doc") and row[0].get("creator"):
                     _chap_nm_row = sb_svc.schema(SUPABASE_SCHEMA).table("chapters").select("chapternm").eq("chapteruid", row[0].get("chapteruid")).execute().data
                     _chapternm = _chap_nm_row[0]["chapternm"] if _chap_nm_row else ""
-                    _gendoc_nm_row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm").eq("gendocuid", gendocuid).execute().data
+                    _gendoc_nm_row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocnm,tenantid").eq("gendocuid", gendocuid).execute().data
                     _gendocnm = _gendoc_nm_row[0]["gendocnm"] if _gendoc_nm_row else ""
+                    from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+                    _tid = _gendoc_nm_row[0].get("tenantid") if _gendoc_nm_row else None
+                    _t_row = sb_svc.schema(SUPABASE_SCHEMA).table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", _tid).maybe_single().execute() if _tid else None
+                    _t_data = (_t_row.data if _t_row else None) or {}
+                    tenant_tag = _notification_tenant_tag(_t_data.get("issystemtenant", True), _t_data.get("disptenantnm"))
                     create_notification(
                         sb_svc, category="chapter", status="error",
-                        title="챕터 작성 실패", message=f"'{_gendocnm}' 문서의 '{_chapternm}' 챕터 작성 중 오류가 발생했습니다.",
+                        title="챕터 작성 실패", message=f"{tenant_tag}'{_gendocnm}' 문서의 '{_chapternm}' 챕터 작성 중 오류가 발생했습니다.",
                         title_key="msg.notification.chapter.failed.title", message_key="msg.notification.chapter.failed.body",
-                        params={"gendocnm": _gendocnm, "chapternm": _chapternm},
+                        params={"gendocnm": _gendocnm, "chapternm": _chapternm, "tenant_tag": tenant_tag},
                         target_object="gendoc", target_uid=gendocuid,
                         target_url=f"req/chapters-read?genchapteruid={genchapteruid}", target_useruid=row[0]["creator"],
                     )
@@ -1470,12 +1475,18 @@ def generate_status(gendocuid: str, token: str = Depends(get_token)):
                     "docenddts": now_iso,
                 }).eq("gendocuid", gendocuid).eq("genchapteruid", "").execute()
                 if row[0].get("creator"):
+                    from utilsPrj.notifications import notification_tenant_tag as _notification_tenant_tag
+                    gendoc_row = sb_svc.schema(SUPABASE_SCHEMA).table("gendocs").select("tenantid").eq("gendocuid", gendocuid).maybe_single().execute()
+                    tid = ((gendoc_row.data if gendoc_row else None) or {}).get("tenantid")
+                    t_row = sb_svc.schema(SUPABASE_SCHEMA).table("tenants").select("disptenantnm,issystemtenant").eq("tenantid", tid).maybe_single().execute() if tid else None
+                    t_data = (t_row.data if t_row else None) or {}
+                    tenant_tag = _notification_tenant_tag(t_data.get("issystemtenant", True), t_data.get("disptenantnm"))
                     create_notification(
                         sb_svc, category="doc", status="error",
                         title="문서 작성 실패",
-                        message=f"'{row[0].get('gendocnm') or ''}' 문서 작성 중 오류가 발생했습니다.",
+                        message=f"{tenant_tag}'{row[0].get('gendocnm') or ''}' 문서 작성 중 오류가 발생했습니다.",
                         title_key="msg.notification.doc.failed.title", message_key="msg.notification.doc.failed.body",
-                        params={"gendocnm": row[0].get("gendocnm") or ""},
+                        params={"gendocnm": row[0].get("gendocnm") or "", "tenant_tag": tenant_tag},
                         target_object="gendoc", target_uid=gendocuid, target_url="req/doc-read", target_useruid=row[0]["creator"],
                     )
                 return {"JobStatusCD": "E", "ErrorCD": "CRASH", "ErrorMessage": "Worker process terminated unexpectedly"}
