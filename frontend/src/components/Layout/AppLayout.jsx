@@ -12,7 +12,7 @@ import { useMe } from '@/hooks/useAuth'
 import { useConfigs } from '@/hooks/useConfigs'
 import { useMenus } from '@/hooks/useMenus'
 import AppSidebar from '@/components/Layout/AppSidebar'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
@@ -81,6 +81,37 @@ export default function AppLayout() {
   const { data: helpData } = useHelpSearch(helpUrl, languageCd || 'en')
   const helpItem = helpData?.help ?? null
 
+  // 헬프 아이콘 위치 — 각 화면의 .page-title(공용 클래스)과 같은 높이로 우측 끝에 상하 중앙 정렬되도록
+  // 실제 렌더된 제목 요소를 측정해서 맞춘다(화면마다 제목 높이가 달라도 항상 정렬되도록).
+  const contentWrapperRef = useRef(null)
+  const [helpIconCenterY, setHelpIconCenterY] = useState(31)
+
+  useLayoutEffect(() => {
+    const wrapper = contentWrapperRef.current
+    if (!wrapper) return
+
+    const recalcHelpIconPos = () => {
+      const titleEl = wrapper.querySelector('.page-title')
+      if (!titleEl) return
+      const titleRect = titleEl.getBoundingClientRect()
+      const wrapperRect = wrapper.getBoundingClientRect()
+      setHelpIconCenterY(titleRect.top - wrapperRect.top + titleRect.height / 2)
+    }
+
+    recalcHelpIconPos()
+    const mutationObserver = new MutationObserver(recalcHelpIconPos)
+    mutationObserver.observe(wrapper, { childList: true, subtree: true })
+    const resizeObserver = new ResizeObserver(recalcHelpIconPos)
+    resizeObserver.observe(wrapper)
+    window.addEventListener('resize', recalcHelpIconPos)
+
+    return () => {
+      mutationObserver.disconnect()
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', recalcHelpIconPos)
+    }
+  }, [location.pathname])
+
   // ── 헬프 팝업 내용 표시용 RTE(CKEditor, 읽기 전용) ──────────────────────────
   const helpEditorContainerRef = useRef(null)
   const helpEditorInstanceRef = useRef(null)
@@ -107,14 +138,16 @@ export default function AppLayout() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [helpModalOpen, helpEditorContainerMounted])
 
-  // 모달 닫힐 때 에디터 정리(다음에 열 때 새로 생성 + helpItem 최신 내용 반영)
+  // 모달 닫힐 때 에디터 인스턴스만 정리(다음에 열 때 새로 생성 + helpItem 최신 내용 반영).
+  // AntD Modal은 destroyOnClose 없이는 닫혀도 내부 DOM을 유지하므로 컨테이너의
+  // helpEditorContainerMounted는 되돌리지 않는다 — 되돌리면 ref 콜백이 다시 호출되지 않아
+  // (DOM이 그대로 유지되므로) 재오픈 시 에디터가 다시 생성되지 못하고 빈 화면으로 남는다.
   useEffect(() => {
     if (helpModalOpen) return
     if (helpEditorInstanceRef.current) {
       helpEditorInstanceRef.current.destroy()
       helpEditorInstanceRef.current = null
     }
-    setHelpEditorContainerMounted(false)
   }, [helpModalOpen])
   const { data: { apps = [], subscribed_servicecds = [] } = {} } = useApps({ enabled: !!user, tenantid: user?.tenantid, languagecd: languageCd })
   const currentServicecd = apps.find((a) => a.appcd === appcd)?.servicecd
@@ -910,9 +943,9 @@ export default function AppLayout() {
         )}
 
         <Content style={{ marginTop: tabs.length > 0 ? 104 : 60, padding: '0 24px 24px', minHeight: tabs.length > 0 ? 'calc(95vh - 104px)' : 'calc(95vh - 60px)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ background: 'var(--body-background-color, #f5f5f5)', borderRadius: cssToken.borderRadius, flex: 1, position: 'relative' }}>
+          <div ref={contentWrapperRef} style={{ background: 'var(--body-background-color, #f5f5f5)', borderRadius: cssToken.borderRadius, flex: 1, position: 'relative' }}>
             {helpItem && (
-              <div style={{ position: 'absolute', top: 21, right: 2, zIndex: 1 }}>
+              <div style={{ position: 'absolute', top: helpIconCenterY, right: 2, transform: 'translateY(-50%)', zIndex: 1 }}>
                 <QuestionCircleOutlined
                   style={{ fontSize: 20, cursor: 'pointer', color: '#8c8c8c' }}
                   onClick={() => setHelpModalOpen(true)}
