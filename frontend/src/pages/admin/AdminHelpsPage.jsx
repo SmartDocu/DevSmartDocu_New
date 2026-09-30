@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { App, Spin } from 'antd'
+import { App, Spin, Input, Pagination } from 'antd'
 import { PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
@@ -8,6 +8,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { getErrorMessage } from '@/utils/apiError'
 
 const EMPTY_FORM = { helpuid: '', help: '', url: '', desc: '', languagecd: 'en' }
+const PAGE_SIZE = 15
 
 export default function AdminHelpsPage() {
   const { message, modal } = App.useApp()
@@ -80,10 +81,26 @@ export default function AdminHelpsPage() {
     queryKey: ['admin-helps'],
     queryFn: () => apiClient.get('/admin/helps').then((r) => r.data.helps),
   })
-  const helps = [...(data || [])].sort((a, b) => {
-    const u = (a.url || '').localeCompare(b.url || '')
-    return u !== 0 ? u : (a.languagecd || '').localeCompare(b.languagecd || '')
-  })
+
+  // ── 필터(제목/언어) — 입력 즉시 반영 ──
+  const [searchText, setSearchText] = useState('')
+  const [filterLangcd, setFilterLangcd] = useState('all')
+
+  const helps = [...(data || [])]
+    .filter((h) => {
+      if (filterLangcd !== 'all' && h.languagecd !== filterLangcd) return false
+      const q = searchText.trim().toLowerCase()
+      if (!q) return true
+      return (h.help || '').toLowerCase().includes(q)
+    })
+    .sort((a, b) => {
+      const u = (a.url || '').localeCompare(b.url || '')
+      return u !== 0 ? u : (a.languagecd || '').localeCompare(b.languagecd || '')
+    })
+
+  const [page, setPage] = useState(1)
+  useEffect(() => { setPage(1) }, [searchText, filterLangcd])
+  const pagedHelps = helps.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const { data: languages = [] } = useLanguages()
   const languageLabel = (cd) => languages.find((l) => l.languagecd === cd)?.languagenm || cd || 'en'
@@ -154,9 +171,39 @@ export default function AdminHelpsPage() {
         </div>
       </div>
 
+      {/* 필터 */}
+      <div className="panel-section" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <div className="filter-item">
+          <label style={{ fontWeight: 'bold' }}>{t('thd.languagenm')}</label>
+          <div className="segmented" style={{ height: 32 }}>
+            {[['all', t('cod.filter_all')], ...languages.map((l) => [l.languagecd, l.languagenm])].map(([v, lbl]) => (
+              <button
+                key={v}
+                type="button"
+                className={`segmented-item${filterLangcd === v ? ' active' : ''}`}
+                style={{ padding: '0 14px', display: 'flex', alignItems: 'center' }}
+                onClick={() => setFilterLangcd(v)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="filter-item" style={{ marginLeft: 24 }}>
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.subject')}</label>
+          <Input
+            placeholder={t('inf.help.title_placeholder')}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            allowClear
+            style={{ height: 32, width: 220 }}
+          />
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측: 도움말 목록 */}
-        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 270px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -192,7 +239,7 @@ export default function AdminHelpsPage() {
                 <tbody>
                   {helps.length === 0 ? (
                     <tr><td colSpan={3} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
-                  ) : helps.map((h) => (
+                  ) : pagedHelps.map((h) => (
                     <tr
                       key={h.helpuid}
                       className={selected?.helpuid === h.helpuid ? 'selected-row' : ''}
@@ -207,11 +254,22 @@ export default function AdminHelpsPage() {
               </table>
             </div>
           )}
+          {helps.length > PAGE_SIZE && (
+            <div style={{ paddingTop: 12, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                current={page}
+                pageSize={PAGE_SIZE}
+                total={helps.length}
+                showSizeChanger={false}
+                onChange={setPage}
+              />
+            </div>
+          )}
           </div>
         </div>
 
         {/* 우측: 편집 영역 */}
-        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+        <div className="panel-section" style={{ flex: 1.5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 270px)' }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
             margin: '-16px -18px 16px', padding: '16px 18px 12px',
@@ -278,7 +336,7 @@ export default function AdminHelpsPage() {
             <label>{t('lbl.desc_lbl')}</label>
             <div style={{ border: '1px solid var(--border-color, #e3e6eb)', borderRadius: 4, overflow: 'hidden' }}>
               <div ref={toolbarHostRef} style={{ borderBottom: '1px solid var(--border-color, #e3e6eb)' }} />
-              <div ref={editorContainerCallbackRef} style={{ minHeight: 350, padding: '0 4px', background: '#fff' }} />
+              <div ref={editorContainerCallbackRef} style={{ minHeight: 305, padding: '0 4px', background: '#fff' }} />
             </div>
           </div>
           </div>

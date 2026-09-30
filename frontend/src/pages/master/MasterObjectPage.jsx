@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { App, Select } from 'antd'
-import { PlusOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled, CheckOutlined } from '@ant-design/icons'
+import { SaveOutlined, DeleteOutlined, ExportOutlined, CheckCircleFilled, CheckOutlined } from '@ant-design/icons'
 import { useChapters } from '@/hooks/useChapters'
 import { useObjects, useSaveObject, useDeleteObject } from '@/hooks/useObjects'
 import { useAuthStore } from '@/stores/authStore'
@@ -109,14 +109,11 @@ export default function MasterObjectPage() {
     }
   }
 
-  const handleNew = () => {
-    if (!selectedChapteruid) { message.warning(t('msg.select.chapter')); return }
-    resetForm()
-  }
-
   const handleSave = () => {
+    // 신규 항목 생성은 이 화면에서 막는다 — 챕터 템플릿 본문에 {{항목명}}으로 없는 항목은
+    // "항목 추출 → 저장" 시 삭제되므로, 항목은 반드시 챕터 템플릿에서 추출해 생성해야 한다.
+    if (!form.objectuid) { message.warning(t('msg.select.object')); return }
     if (!selectedChapteruid) { message.warning(t('msg.select.chapter')); return }
-    if (!form.objectuid && !form.objectnm.trim()) { message.warning(t('msg.objectnm.required')); return }
 
     const doSave = () => {
       saveObject.mutate({
@@ -210,11 +207,6 @@ export default function MasterObjectPage() {
                 {t('lbl.count.items').replace('{n}', objects.length)}
               </span>
             </div>
-            {isEditYn && (
-              <button className="btn btn-primary" type="button" onClick={handleNew}>
-                <PlusOutlined style={{ marginRight: 6 }} />{t('btn.new')}
-              </button>
-            )}
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
@@ -280,7 +272,7 @@ export default function MasterObjectPage() {
               )}
               {isEditYn && (
                 <>
-                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saveObject.isPending || deleteObject.isPending}>
+                  <button className="btn btn-primary" type="button" onClick={handleSave} disabled={!selectedObj || saveObject.isPending || deleteObject.isPending}>
                     <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
                   </button>
                   {selectedObj && (
@@ -301,78 +293,77 @@ export default function MasterObjectPage() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
 
-          <div className="form-group">
-            <label>{!form.objectuid && <span style={{ color: 'red', marginRight: 2 }}>*</span>}{t('lbl.objectnm_lbl')}:</label>
-            {form.objectuid ? (
-              <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
-            ) : (
-              <input
-                type="text"
-                value={form.objectnm}
-                onChange={(e) => setForm((f) => ({ ...f, objectnm: e.target.value }))}
-                style={{ height: 38 }}
-              />
-            )}
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="obj-desc">{t('lbl.objectdesc_lbl')}:</label>
-            <textarea
-              id="obj-desc"
-              rows={3}
-              value={form.objectdesc}
-              onChange={(e) => setForm((f) => ({ ...f, objectdesc: e.target.value }))}
-              style={{ width: '100%', resize: 'vertical' }}
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('lbl.objecttypecd_lbl')}:</label>
-            <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-              <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
-                <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>💻 UI</span>
-                <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>✨ AI</span>
+          {selectedObj ? (
+            <>
+              <div className="form-group">
+                <label>{t('lbl.objectnm_lbl')}:</label>
+                <span style={{ padding: '6px 4px', fontWeight: 600 }}>{form.objectnm}</span>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}>
-                {objectTypes.map((ot) => (
-                  <label key={ot.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
-                    <input
-                      type="radio"
-                      name="objecttypecd"
-                      value={ot.codevalue}
-                      checked={form.objecttypecd === ot.codevalue}
-                      onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.codevalue }))}
-                    />
-                    {t(ot.term_key) || ot.default_name}
-                  </label>
-                ))}
+
+              <div className="form-group">
+                <label htmlFor="obj-desc">{t('lbl.objectdesc_lbl')}:</label>
+                <textarea
+                  id="obj-desc"
+                  rows={3}
+                  value={form.objectdesc}
+                  onChange={(e) => setForm((f) => ({ ...f, objectdesc: e.target.value }))}
+                  style={{ width: '100%', resize: 'vertical' }}
+                  spellCheck={false}
+                />
               </div>
-            </div>
-          </div>
 
-          <div className="form-group">
-            <label htmlFor="obj-useyn">{t('lbl.useyn_lbl')}:</label>
-            <div style={{ paddingLeft: 60 }}>
-              <input
-                id="obj-useyn"
-                type="checkbox"
-                checked={!!form.useyn}
-                onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
-              />
-            </div>
-          </div>
+              <div className="form-group">
+                <label>{t('lbl.objecttypecd_lbl')}:</label>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+                  <div style={{ display: 'grid', gap: '18%', height: '70%', marginRight: 8 }}>
+                    <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>💻 UI</span>
+                    <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>✨ AI</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}>
+                    {objectTypes.map((ot) => (
+                      <label key={ot.codevalue} style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', width: 'calc(33.3% - 16px)' }}>
+                        <input
+                          type="radio"
+                          name="objecttypecd"
+                          value={ot.codevalue}
+                          checked={form.objecttypecd === ot.codevalue}
+                          onChange={() => setForm((f) => ({ ...f, objecttypecd: ot.codevalue }))}
+                        />
+                        {t(ot.term_key) || ot.default_name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-          <div className="form-group">
-            <label htmlFor="obj-orderno">{t('lbl.object.orderno')}:</label>
-            <input
-              id="obj-orderno"
-              type="number"
-              value={form.orderno}
-              onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
-              style={{ width: 80, height: 38 }}
-            />
-          </div>
+              <div className="form-group">
+                <label htmlFor="obj-useyn">{t('lbl.useyn_lbl')}:</label>
+                <div style={{ paddingLeft: 60 }}>
+                  <input
+                    id="obj-useyn"
+                    type="checkbox"
+                    checked={!!form.useyn}
+                    onChange={(e) => setForm((f) => ({ ...f, useyn: e.target.checked }))}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="obj-orderno">{t('lbl.object.orderno')}:</label>
+                <input
+                  id="obj-orderno"
+                  type="number"
+                  value={form.orderno}
+                  onChange={(e) => setForm((f) => ({ ...f, orderno: e.target.value }))}
+                  style={{ width: 80, height: 38 }}
+                />
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#aaa' }}>
+              {t('msg.select.object')}
+            </div>
+          )}
 
           </div>
         </div>
