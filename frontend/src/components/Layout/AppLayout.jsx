@@ -1060,12 +1060,15 @@ export default function AppLayout() {
       </Modal>
 
       <Modal
-        title={<div style={{ textAlign: 'center' }}>{helpItem?.help}</div>}
+        title={<div style={{ textAlign: 'center', fontSize: 20, fontWeight: 700 }}>{helpItem?.help}</div>}
         open={helpModalOpen}
         onCancel={() => setHelpModalOpen(false)}
         footer={null}
         width={1400}
-        styles={{ body: { height: '72vh', overflowY: 'auto' } }}
+        styles={{
+          header: { borderBottom: '1px solid var(--border-color, #e3e6eb)', paddingBottom: 16, marginBottom: 0 },
+          body: { height: '72vh', overflowY: 'auto' },
+        }}
       >
         <div
           ref={helpEditorContainerCallbackRef}
