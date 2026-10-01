@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
 import { Spin } from 'antd'
 import QRCode from 'qrcode'
 import apiClient from '@/api/client'
@@ -9,8 +8,6 @@ import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
 import { getErrorMessage } from '@/utils/apiError'
 
 export default function LoginModal({ open, onClose }) {
-  const navigate = useNavigate()
-  const location = useLocation()
   const setAuth = useAuthStore((s) => s.setAuth)
   const updateTokens = useAuthStore((s) => s.updateTokens)
   const clearAuth = useAuthStore((s) => s.clearAuth)
@@ -219,6 +216,10 @@ export default function LoginModal({ open, onClose }) {
     )
   }
 
+  // 로그인 전 머물러 있던 보호된 URL(state.from)로 돌려보내지 않는다 — RequireAuth가 그
+  // 리다이렉트 시점에 탭을 전부 비워버리므로(clearTabs), 돌아가면 탭 없이 화면 내용만
+  // 떠 있는 상태가 된다. 로그인 후에는 항상 "/"로 머물고, 거기서 HomeOrLauncher가
+  // accessToken 유무를 보고 자동으로 /launcher로 보낸다.
   const _finalizeLogin = (data) => {
     setAuth({
       accessToken: data.access_token,
@@ -226,10 +227,6 @@ export default function LoginModal({ open, onClose }) {
       user: data.user,
     })
     onClose()
-    setTimeout(() => {
-      const from = location.state?.from?.pathname
-      if (from && from !== '/login') navigate(from, { replace: true })
-    }, 100)
   }
 
   const handleClose = () => {
