@@ -233,7 +233,7 @@ export default function OrgTenantUsersPage() {
                   <button
                     className="btn btn-secondary"
                     type="button"
-                    onClick={() => openInTab('org/invite-members')}
+                    onClick={() => openInTab('org/invite-members', '', t('btn.invite.members.manage'))}
                   >
                     {t('btn.invite.members.manage')}<ExportOutlined style={{ marginLeft: 6 }} />
                   </button>
