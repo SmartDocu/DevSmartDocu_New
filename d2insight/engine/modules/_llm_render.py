@@ -62,7 +62,9 @@ _RENDER_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트다.
 이미 계산되어 있는 표를 보고, 분석 목적에 맞게 표에 보여줄 열과 차트를 고르고 해설을 쓴다.
 
 규칙
-1. 주어진 표에 있는 값만 쓴다. 새 수치를 계산하거나 추정하지 않는다.
+1. 주어진 표에 있는 값만 쓴다. 새 수치를 계산하거나 추정하지 않는다. 분석 대상은 표에 나온
+   차원·열 이름 그대로 부른다(예: 표가 '상품명'이면 상품) — 표에 없는 대상(고객·사용자·지역 등)으로
+   바꿔 부르거나 새로 만들어 붙이지 않는다.
 2. 표의 열 개수·구성은 정해져 있지 않다 — 분석 목적에 맞게 직접 고른다(전부 써도, 일부만 써도 된다).
 3. 숫자는 원본 그대로 옮기는 게 기본이다. 억/만 등 한글 단위로 쓰고 싶으면 반드시 [한글 단위
    참고표]에 나온 값을 그대로 옮기고, 직접 억/만으로 환산하지 마라 — 직접 계산하면 자릿수를
@@ -79,7 +81,9 @@ _NARRATIVE_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트�
 표 열 구성과 차트는 이미 정해져 있다 — 그 표에 나온 값을 보고 해설만 새로 쓴다.
 
 규칙
-1. 주어진 표에 있는 값만 쓴다. 새 수치를 계산하거나 추정하지 않는다.
+1. 주어진 표에 있는 값만 쓴다. 새 수치를 계산하거나 추정하지 않는다. 분석 대상은 표에 나온
+   차원·열 이름 그대로 부른다(예: 표가 '상품명'이면 상품) — 표에 없는 대상(고객·사용자·지역 등)으로
+   바꿔 부르거나 새로 만들어 붙이지 않는다.
 2. 숫자는 원본 그대로 옮기는 게 기본이다. 억/만 등 한글 단위로 쓰고 싶으면 반드시 [한글 단위
    참고표]에 나온 값을 그대로 옮기고, 직접 억/만으로 환산하지 마라 — 직접 계산하면 자릿수를
    틀린 사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 통화기호는 임의로 붙이지 않는다.
@@ -196,6 +200,20 @@ def _build_chart(c: dict | None, chart_source: pd.DataFrame, purpose: str):
     return None
 
 
+def _ensure_label_column(df: pd.DataFrame, cols: list[str]) -> list[str]:
+    """고른 열이 숫자뿐이면 항목 이름(문자열) 열을 앞에 붙인다.
+
+    LLM이 표에 보여줄 열을 고르다 이름 열을 빼면 행이 어느 항목인지 알 수 없는 숫자 표가 된다
+    (2026-10-01, 단가 표에서 상품명이 빠진 사례). 숫자 열만 골랐고 df에 문자열 열이 있으면 그 첫 열을 넣는다.
+    """
+    if not cols or any(not pd.api.types.is_numeric_dtype(df[c]) for c in cols):
+        return cols
+    for c in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            return [c] + cols
+    return cols
+
+
 def render_from_dataframe(
     df: pd.DataFrame | None, *, purpose: str, narrative_hint: str, params: dict,
     label: str = "", empty_summary: str = "해당 조건에 표시할 데이터가 없습니다.",
@@ -230,6 +248,7 @@ def render_from_dataframe(
 
     if cache:
         cols = [c for c in (cache.get("table_columns") or []) if c in df.columns]
+        cols = _ensure_label_column(df, cols)
         table = df[cols] if cols else df
         chart = _build_chart(cache.get("chart"), chart_source, purpose)
 
@@ -271,6 +290,7 @@ def render_from_dataframe(
     spec = _parse_json(text)
 
     cols = [c for c in (spec.get("table_columns") or []) if c in df.columns]
+    cols = _ensure_label_column(df, cols)
     table = df[cols] if cols else df
     chart = _build_chart(spec.get("chart"), chart_source, purpose)
 

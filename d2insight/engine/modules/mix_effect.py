@@ -44,7 +44,7 @@ def _run_bridge_effect(ctx, params, *, effect_col: str, effect_label: str,
     PVM과 달리 항목별 top_n 표를 낸다(§13 방식은 전체 증감액과 검산까지 통과한다).
     """
     try:
-        effects = get_bridge_effects(ctx)
+        effects = get_bridge_effects(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
     if not effects["quantity_available"] or effects["item_effects"] is None:
@@ -64,6 +64,7 @@ def _run_bridge_effect(ctx, params, *, effect_col: str, effect_label: str,
             f"{effect_label} 효과 합계 {amount:+,.0f}(전체 증감액의 {share:+.1f}%, {direction} 방향)를 "
             "밝히고, 어느 항목이 그 효과를 가장 크게 냈는지 짚어라. "
             "신규·단종 등 그 외 효과는 이 표 대상이 아니라는 것도 언급하라."
+            + "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in effects.get("notes") or [])
         ),
         params={"효과": effect_label}, label="bridge_item_effect",
         cache=params.get("_llm_render_cache"),
@@ -85,7 +86,15 @@ def _uncovered_note(effects: dict, total_variance: float) -> str:
         f" (참고: Volume+Price+Mix는 두 기간 모두 존재한 공통 항목만 대상이다. "
         f"신규·단종 등 그 밖의 항목 효과는 별도로 {gap:+,.0f}(비중 {gap_share:+.1f}%)이며, "
         f"셋을 더한 값과 이 효과를 합치면 전체 증감액과 일치한다.)"
+        # 금액이 항목으로 나눌 수 없는 값이라 바뀌어 분해했다면 그 사실을 밝힌다.
+        + "".join(f" ({n})" for n in effects.get("notes") or [])
     )
+
+
+def _tv(effects: dict, ctx) -> float | None:
+    """분해에 쓴 금액 자신의 전체 증감(없으면 총평의 핵심 값)."""
+    own = effects.get("total_variance")
+    return own if own is not None else _total_variance(ctx)
 
 
 def _total_variance(ctx) -> float | None:
@@ -102,10 +111,10 @@ def run_volume(ctx, params, tools) -> ModuleResult:
             direction_up="확대", direction_down="축소",
         )
     try:
-        effects = get_pvm_effects(ctx)
+        effects = get_pvm_effects(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
-    total_variance = _total_variance(ctx)
+    total_variance = _tv(effects, ctx)
     if total_variance is None:
         return ModuleResult(status="failed", error="전체 증감액(total_variance)이 없어 비중을 계산할 수 없습니다.")
 
@@ -130,10 +139,10 @@ def run_price(ctx, params, tools) -> ModuleResult:
             direction_up="상승", direction_down="하락",
         )
     try:
-        effects = get_pvm_effects(ctx)
+        effects = get_pvm_effects(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
-    total_variance = _total_variance(ctx)
+    total_variance = _tv(effects, ctx)
     if total_variance is None:
         return ModuleResult(status="failed", error="전체 증감액(total_variance)이 없어 비중을 계산할 수 없습니다.")
 
@@ -154,10 +163,10 @@ def run_price(ctx, params, tools) -> ModuleResult:
 def run(ctx, params, tools) -> ModuleResult:
     """Mix 스텝. 물량은 volume_effect, 단가는 price_effect가 맡는다."""
     try:
-        effects = get_pvm_effects(ctx)
+        effects = get_pvm_effects(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
-    total_variance = _total_variance(ctx)
+    total_variance = _tv(effects, ctx)
     if total_variance is None:
         return ModuleResult(status="failed", error="전체 증감액(total_variance)이 없어 비중을 계산할 수 없습니다.")
 

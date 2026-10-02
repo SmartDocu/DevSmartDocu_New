@@ -9,8 +9,8 @@ from __future__ import annotations
 import pandas as pd
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import get_pnl_ladder
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_COST, ROLE_OPEX, get_schema
+from d2insight.engine.modules._shared import get_frames, get_full_schema, get_pnl_ladder, pnl_role_cols
+from d2insight.engine.schema import ROLE_AMOUNT, ROLE_COST, ROLE_OPEX
 from d2insight.engine.types import ModuleResult, Render
 
 STEP_REVENUE = "매출"
@@ -41,21 +41,34 @@ def _maybe_breakdown(ctx, params, step_name: str) -> tuple[pd.DataFrame | None, 
         return None, ""
     top_n = int((params or {}).get("top_n") or 10)
 
-    actual_df = ctx.get("actual_dataset")
-    compare_df = ctx.get("compare_dataset")
-    schema = get_schema(ctx)
+    schema = get_full_schema(ctx)
+
+    # 이 단계에 쓰는 측정값(손익 계단과 같은 컬럼)을 먼저 정하고, 스텝 공용 표 대신 전용 조회한 표
+    # (합계 검사를 거친 표)를 쓴다.
+    try:
+        roles = pnl_role_cols(ctx, params)
+    except ValueError as e:
+        return None, f" (차원별 상세를 조회하지 못해 생략: {e})"
+    key_of = {ROLE_AMOUNT: "amount", ROLE_COST: "cost", ROLE_OPEX: "opex"}
+    role_cols: dict[str, int] = {}
+    for role, sign in _STEP_COMBO[step_name].items():
+        cols = roles[key_of[role]]
+        if not cols:
+            return None, f" ('{role}' 역할 컬럼이 없어 차원별 상세는 생략)"
+        for col in cols:
+            role_cols[col] = sign
+    try:
+        frames = get_frames(ctx, list(role_cols), params)
+    except ValueError as e:
+        return None, f" (차원별 상세를 조회하지 못해 생략: {e})"
+    actual_df, compare_df = frames["actual"], frames["compare"]
 
     # 옵션 통로(options.py)가 역할명을 물리 컬럼으로 바꿔 주지만, 직접 호출 대비 역할명도 받는다.
     dim_col = dimension if dimension in actual_df.columns else schema.column(dimension)
     if not dim_col or dim_col not in actual_df.columns:
         return None, f" (차원 '{dimension}' 컬럼이 없어 차원별 상세는 생략)"
 
-    signed_cols: dict[str, int] = {}
-    for role, sign in _STEP_COMBO[step_name].items():
-        col = schema.column(role) or (schema.key_measure if role == ROLE_AMOUNT else None)
-        if not col or col not in actual_df.columns:
-            return None, f" ('{role}' 역할 컬럼이 없어 차원별 상세는 생략)"
-        signed_cols[col] = sign
+    signed_cols: dict[str, int] = {frames["used"][c]: s for c, s in role_cols.items()}
 
     def _value(df: pd.DataFrame) -> pd.Series:
         grouped = df.groupby(dim_col)
@@ -80,10 +93,10 @@ def _maybe_breakdown(ctx, params, step_name: str) -> tuple[pd.DataFrame | None, 
     return display, f" {schema.logical_name(dim_col)}별 상위 {len(display)}개(|증감| 기준) 상세 표 포함."
 
 
-def _get_step(ctx, key: str) -> tuple[dict | None, str]:
+def _get_step(ctx, key: str, params: dict | None = None) -> tuple[dict | None, str]:
     """이름표가 아니라 공유 캐시(_shared)에서 단계 하나를 꺼낸다. 실패 시 (None, 사유)."""
     try:
-        ladder = get_pnl_ladder(ctx)
+        ladder = get_pnl_ladder(ctx, params)
     except ValueError as e:
         return None, str(e)
     step = ladder["steps"].get(key)
@@ -112,7 +125,7 @@ def _summary_line(step: dict, *, profit_like: bool, cost_like: bool) -> str:
 def _run_step(ctx, params, step_name: str, *, profit_like: bool, cost_like: bool,
               extra_kv) -> ModuleResult:
     """다섯 스텝의 공통 실행부 — 총계 요약 + (dimension 지정 시) 차원별 상세 표."""
-    step, err = _get_step(ctx, step_name)
+    step, err = _get_step(ctx, step_name, params)
     if err:
         return ModuleResult(status="failed", error=err)
     table, note = _maybe_breakdown(ctx, params, step_name)

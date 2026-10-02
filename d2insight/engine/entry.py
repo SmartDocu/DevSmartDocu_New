@@ -183,6 +183,9 @@ def _db_has_data_for_period(target_month: str, grain: str, source_id: str | None
     except Exception as e:
         print(f"[entry] 프리플라이트 확인 건너뜀: {type(e).__name__}: {e}")
         return True, ""
+    # [진단] 기간 확인에 쓴 SQL과 행 수 — 확인 후 삭제
+    print(f"[진단-기간확인] {target_month} 행수={len(actual_df)} 컬럼={list(actual_df.columns)}")
+    print(_sql)
     return (True, "") if len(actual_df) > 0 else (False, _no_data_message(target_month))
 
 
@@ -463,8 +466,12 @@ def run_engine_report(
     matched_scenario=_UNRESOLVED,
     inline_options=_UNRESOLVED_INLINE,
     file_title: str | None = None,
+    date_column: str | None = None,
 ) -> dict:
     """채팅 요청 하나를 모듈화 엔진으로 실행해 보고서 마크다운을 만든다.
+
+    date_column: 사용자가 요청 문장에서 지정한 날짜 기준 컬럼(예: "날짜 기준은 OrderDate입니다").
+      업로드 데이터에서 기간을 자를 컬럼으로 ctx.meta["date_column"]에 실린다. 없으면 메타 규칙.
 
     matched_scenario: 호출부가 미리 match_scenario를 돌렸다면 그 결과를 그대로 넘겨 LLM을
       두 번 안 부르게 한다. 기본값(_UNRESOLVED)이면 여기서 직접 판단한다.
@@ -498,6 +505,8 @@ def run_engine_report(
     }
     if months_back:
         meta["months_back"] = months_back
+    if date_column:
+        meta["date_column"] = date_column
     if upload_session_id and upload_dataset_key:
         # period_dataset이 이걸 보고 DB 대신 업로드 세션의 DataFrame으로 뿌리를 만든다.
         meta["upload_session_id"] = upload_session_id
@@ -557,6 +566,7 @@ def collect_execution_cache(step_renders: dict) -> dict:
     for step_label, entries in step_renders.items():
         query_sql = None
         renders: dict = {}
+        queries: dict = {}
         seen: dict[str, int] = {}
         for inst, render in entries:
             n = seen.get(inst.module_id, 0) + 1
@@ -564,10 +574,13 @@ def collect_execution_cache(step_renders: dict) -> dict:
             key = inst.module_id if n == 1 else f"{inst.module_id}#{n}"
             if inst.module_id == "period_dataset" and inst.params.get("query_sql"):
                 query_sql = inst.params["query_sql"]
+            # 모듈이 스스로 던진 질문의 SQL 목록(data_request) — 스텝 안 모듈별로 모은다.
+            if inst.params.get("_queries"):
+                queries[key] = inst.params["_queries"]
             if render.llm_spec:
                 renders[key] = render.llm_spec
-        if query_sql or renders:
-            cache[step_label] = {"query_sql": query_sql, "renders": renders}
+        if query_sql or renders or queries:
+            cache[step_label] = {"query_sql": query_sql, "renders": renders, "queries": queries}
     return cache
 
 
@@ -595,6 +608,9 @@ def merge_execution_cache(steps: list[dict] | None, cache: dict | None) -> list[
             spec = (entry.get("renders") or {}).get(key)
             if spec:
                 params["_llm_render_cache"] = spec
+            saved_queries = (entry.get("queries") or {}).get(key)
+            if saved_queries:
+                params["_queries"] = copy.deepcopy(saved_queries)
             m["params"] = params
     return merged
 

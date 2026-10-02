@@ -242,6 +242,10 @@ def build_meta_columns(sources: list[dict]) -> pd.DataFrame:
             colmeta = src["columns_meta"].get(colnm) or {}
             logical = colmeta.get("logical_name") or col.get("dispcolnm") or colnm
             role = roles.get((table, colnm), "")
+            # 합산하면 의미 없는 숫자 컬럼(단가 등)으로 판정된 것은 측정값에서 뺀다(2026-09-29,
+            # UnitPrice를 그냥 더한 '단가' 행이 보고서에 나오던 문제).
+            if role == "exclude" and (dtype in _MEASURE_TYPES or col.get("measureyn")):
+                continue
 
             is_date = dtype in _DATE_TYPES and colnm == default_time_col
             if is_date:

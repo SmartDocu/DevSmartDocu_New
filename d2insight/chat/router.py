@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
+import threading
 import time
 import traceback
 import uuid as _uuid
@@ -359,9 +361,12 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             # 워커가 볼 수 없다 — 이 요청 하나를 위한 일회용 중계 파일로 Storage에 올려
             # 워커에 경로만 넘긴다. 워커가 읽은 직후 삭제하므로 세션의 원본 데이터는
             # 그대로 남아 이후 요청에도 매번 새 중계 파일을 만들 수 있다.
+            # 로컬 확인용 — INSIGHT_RUN_LOCAL이 켜져 있으면 SQS 대신 이 프로세스의 스레드에서 워커
+            # 처리 함수를 직접 부른다(같은 프로세스라 업로드 데이터도 이미 메모리에 있다).
+            run_local = os.getenv("INSIGHT_RUN_LOCAL", "").strip().lower() in ("1", "true", "yes")
             upload_handoff_path = None
             excel_server = get_excel_server()
-            if excel_server.has_datasets(sid):
+            if not run_local and excel_server.has_datasets(sid):
                 import pickle
                 from d2insight.db.supabase_client import build_upload_handoff_path, upload_report_bytes
                 upload_handoff_path = build_upload_handoff_path(req.user_id, _tenant_id, async_qauid, "datasets.pkl")
@@ -371,23 +376,27 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
                     "application/octet-stream",
                 )
 
-            sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
-            sqs.send_message(
-                QueueUrl=settings.SQS_INSIGHT_QUEUE_URL,
-                MessageBody=json.dumps({
-                    "qauid": async_qauid,
-                    "tool": tool,
-                    "target_month": target_month,
-                    "months_back": months_back,
-                    "intent": intent,
-                    "user_id": req.user_id,
-                    "project_id": _project_id,
-                    "tenant_id": _tenant_id,
-                    "account_uid": req.account_uid,
-                    "session_id": sid,
-                    "upload_handoff_path": upload_handoff_path,
-                }, ensure_ascii=False),
-            )
+            message_body = json.dumps({
+                "qauid": async_qauid,
+                "tool": tool,
+                "target_month": target_month,
+                "months_back": months_back,
+                "intent": intent,
+                "user_id": req.user_id,
+                "project_id": _project_id,
+                "tenant_id": _tenant_id,
+                "account_uid": req.account_uid,
+                "session_id": sid,
+                "upload_handoff_path": upload_handoff_path,
+            }, ensure_ascii=False)
+            if run_local:
+                from worker.insight_main import process_insight_message
+                threading.Thread(
+                    target=process_insight_message, args=({"Body": message_body},), daemon=True,
+                ).start()
+            else:
+                sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+                sqs.send_message(QueueUrl=settings.SQS_INSIGHT_QUEUE_URL, MessageBody=message_body)
             result = {
                 "answer": "보고서 생성 요청이 접수되었습니다. 생성이 완료되면 알림으로 안내해드립니다.",
                 "visualization_type": "none", "table_html": None,
@@ -1263,7 +1272,18 @@ def validate_steps(req: ValidateStepsRequest, token: str = Depends(get_token)) -
     from d2insight.engine.options import OptionsError, global_to_meta, options_to_plan
     from d2insight.engine.planner import PlannerError, data_digest
 
-    _, resolved_project_id = _resolve_report_project(req.user_id, req.project_id)
+    tenant_id, resolved_project_id = _resolve_report_project(req.user_id, req.project_id)
+
+    # 컬럼의 의미 표시(meta_roles)를 LLM으로 판정하려면 이 log_ctx가 필요하다 — _llm.chat()이
+    # 프로젝트/테넌트별 LLM 키를 여기서 찾는다. 빠뜨리면 "AI 키가 등록되지 않았습니다"로 판정이
+    # 실패하고, 의미 표시가 없어 분석 모듈이 전부 "차원을 찾을 수 없음"으로 빠진다
+    # (2026-09-29, JSON 보기에서 스텝을 지우고 저장하면 분석 모듈이 사라지던 문제).
+    token_tracker.set_log_ctx({
+        "qauid": None, "servicecd": "In", "tenant_id": tenant_id,
+        "project_id": resolved_project_id, "session_uid": None,
+        "creator": req.user_id, "account_uid": req.account_uid,
+    })
+
     upload_dataset_key, source_id = _resolve_report_source(req.session_id, resolved_project_id)
     if not upload_dataset_key and source_id is None:
         return {"applied_steps": req.steps}

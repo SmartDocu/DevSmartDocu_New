@@ -13,7 +13,7 @@
 
 분류 단위(grain)는 item 역할 기본, params.dimensions로 명시 지정. 컬럼명을 코드에 박지 않고
 스키마 역할(item/amount/period)로 질의한다(§7.4). 역할 없으면 조용히 처리하지 않고 명시적 실패(§11 Step2).
-다월 추이가 필요하므로 history_dataset에 의존한다.
+다월 추이가 필요하므로 금액을 항목별·기간별로 직접 요청한다(get_series).
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import slice_history_window
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM, ROLE_PERIOD, get_schema
+from d2insight.engine.modules._shared import get_full_schema, get_series, pick_dimension, role_column
+from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM
 from d2insight.engine.types import ModuleResult
 
 _STAGE_ORDER = ["도입", "성장", "성숙", "쇠퇴"]
@@ -40,44 +40,25 @@ def _stage(age: int, growth: float, intro_max: int, g_up: float, g_down: float) 
 
 
 def run(ctx, params, tools) -> ModuleResult:
-    history = ctx.get("history_dataset")
-    if history is None or getattr(history, "empty", True):
-        return ModuleResult(
-            status="failed",
-            error="이력(history_dataset)이 없어 제품 수명주기(추이)를 판정할 수 없습니다.",
-        )
-
-    schema = get_schema(ctx)
-    period_col = schema.column(ROLE_PERIOD)
-    amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
-    if not period_col or period_col not in history.columns:
-        return ModuleResult(
-            status="failed",
-            error="이력에 기간(period) 역할 컬럼이 없어 추이를 판정할 수 없습니다.",
-        )
-    if amount_col not in history.columns:
-        return ModuleResult(status="failed", error=f"이력에 금액 컬럼 '{amount_col}'이 없습니다.")
-
-    # 창을 자르면 전반/후반 분할 기준이 통째로 이동하므로 판정 결과가 달라진다.
-    # 기본값 None = 이력 전체(기존 동작). 창 지정은 수동 모드에서 params로 들어온다.
-    history, window_note = slice_history_window(
-        history, period_col, params.get("window_months"))
-
+    schema = get_full_schema(ctx)
+    amount_col = params.get("measure") or role_column(ctx, ROLE_AMOUNT) or schema.key_measure
     requested = params.get("dimensions")
-    if requested:
-        missing = [d for d in requested if d not in history.columns]
-        if missing:
-            return ModuleResult(status="failed",
-                                error=f"요청한 분류 차원 {missing}이 이력에 없습니다.")
-        grain = list(requested)
-    else:
-        item_col = schema.column(ROLE_ITEM)
-        grain = [item_col] if item_col and item_col in history.columns else []
-    if not grain:
+    item_col = requested[0] if requested else pick_dimension(ctx, ROLE_ITEM, [amount_col])
+    if not item_col:
         return ModuleResult(
             status="failed",
-            error="분류할 항목 차원이 없습니다. item 역할을 선언하거나 params.dimensions를 지정하세요.",
+            error="분류할 항목 차원이 없습니다. item 의미 표시를 선언하거나 params.dimensions를 지정하세요.",
         )
+    grain = [item_col]
+
+    # 창을 자르면 전반/후반 분할 기준이 통째로 이동하므로 판정 결과가 달라진다. 창 지정이 없으면
+    # 보고서 설정의 기간 수 전체를 쓴다(get_series).
+    try:
+        history = get_series(ctx, amount_col, item_col, params)
+    except ValueError as e:
+        return ModuleResult(status="failed", error=f"기간별 값 조회에 실패했습니다: {e}")
+    period_col = history.columns[0]
+    window_note = ""
 
     months = sorted(history[period_col].unique())
     if len(months) < 2:

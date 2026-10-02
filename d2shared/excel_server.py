@@ -255,6 +255,44 @@ def _infer_join_relationships(
         return []
 
 
+def _key_values(series: pd.Series) -> set:
+    """연결 키 값을 비교용 문자열 집합으로 만든다. 한쪽이 정수, 다른 쪽이 소수(123.0)로 읽힌 경우도 같게 본다."""
+    s = series.dropna()
+    if pd.api.types.is_float_dtype(s) and len(s) and (s == s.round()).all():
+        s = s.astype("int64")
+    return set(s.astype(str).str.strip())
+
+
+def _annotate_relations(new_df: pd.DataFrame, relations: List[Dict], existing: Dict[str, Dict]) -> List[Dict]:
+    """LLM이 추정한 조인 관계를 데이터로 확인하고 1:N 방향을 붙인다.
+
+    - 컬럼이 실제로 없거나 두 파일의 키 값이 하나도 안 겹치면 버린다(LLM 추정 오류).
+    - cardinality: "<새 데이터셋 쪽>:<기존 데이터셋 쪽>" — 그 쪽 키 값이 유일하면 "1", 아니면 "N".
+      두 쪽 다 N이면 직접 합칠 때 행이 곱해진다.
+    - self_in_other: 이 데이터셋의 키 값 중 상대에도 있는 비율, other_in_self: 반대.
+    기존 키(dataset/left_on/right_on)는 그대로 둔다 — d2chat도 이 목록을 읽는다.
+    """
+    kept = []
+    for rel in relations:
+        other = existing.get(rel.get("dataset"))
+        left_on, right_on = rel.get("left_on"), rel.get("right_on")
+        if other is None or left_on not in new_df.columns or right_on not in other["df"].columns:
+            continue
+        lv, rv = _key_values(new_df[left_on]), _key_values(other["df"][right_on])
+        common = lv & rv
+        if not common:
+            continue
+        left_one = bool(new_df[left_on].dropna().is_unique)
+        right_one = bool(other["df"][right_on].dropna().is_unique)
+        kept.append({
+            **rel,
+            "cardinality": f"{'1' if left_one else 'N'}:{'1' if right_one else 'N'}",
+            "self_in_other": round(len(common) / len(lv), 3),
+            "other_in_self": round(len(common) / len(rv), 3),
+        })
+    return kept
+
+
 class ExcelServer:
     """업로드된 엑셀/CSV/API 데이터를 세션별로 보관/질의하는 서버"""
 
@@ -284,13 +322,19 @@ class ExcelServer:
         metadata = _generate_dataset_metadata(llm, df, key, log_ctx=log_ctx)
 
         relations = _infer_join_relationships(llm, key, df, session_datasets, log_ctx=log_ctx)
+        # LLM이 추정한 연결을 데이터로 확인하고 1:N 방향을 붙인다(없는 컬럼·안 겹치는 키는 버림).
+        relations = _annotate_relations(df, relations, session_datasets)
         metadata["reference"] = relations
 
         # 기존 데이터셋 쪽에도 새 데이터셋으로의 역방향 조인 힌트를 추가 (양방향 탐색 가능하도록)
         for rel in relations:
             other_meta = session_datasets[rel["dataset"]]["metadata"]
             other_refs = other_meta.get("reference") or []
-            other_refs.append({"dataset": key, "left_on": rel["right_on"], "right_on": rel["left_on"]})
+            other_refs.append({
+                "dataset": key, "left_on": rel["right_on"], "right_on": rel["left_on"],
+                "cardinality": rel["cardinality"][::-1],
+                "self_in_other": rel["other_in_self"], "other_in_self": rel["self_in_other"],
+            })
             other_meta["reference"] = other_refs
 
         session_datasets[key] = {

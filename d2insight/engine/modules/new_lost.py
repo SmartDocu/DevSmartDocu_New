@@ -6,14 +6,14 @@
   두 달 모두 구매한 고객은 80명. 이는 이탈이 아니라 "이번 달에 안 샀다"일 뿐이다.
   그 결과 고객 차원 순효과가 전체 증감의 97%를 차지하는 동어반복이 나왔다.
 
-현 기준: 과거 이력(history_dataset)을 보고 생애주기를 판정한다(_shared.get_item_lifecycle).
+현 기준: 과거 기간별 이력을 직접 요청해 보고 생애주기를 판정한다(_shared.get_item_lifecycle).
   진성신규 / 복귀 / 유지 / 진성이탈 / 일시미구매
 
   - 진성이탈  : 반복 구매하던 항목이 사라짐 → **관리 대상**
   - 일시미구매: 단발 구매자가 이번에 안 옴 → 구매 주기일 뿐, 이탈로 보고하지 않는다
   - 복귀      : 과거 구매 이력이 있는 항목의 재구매 → 신규로 부풀리지 않는다
 
-history_dataset이 없으면 생애주기를 판정할 수 없다. 이때는 **1개월 정의로 조용히 되돌아가지 않고**
+과거 이력을 가져오지 못하면 생애주기를 판정할 수 없다. 이때는 **1개월 정의로 조용히 되돌아가지 않고**
 "판정 불가"임을 보고서에 명시한다(§11 Step 2 실패 정책).
 
 §14(이상징후)와 역할이 다르다. §6은 총량(건수·금액), §14는 개별 이상치다.
@@ -25,7 +25,7 @@ import pandas as pd
 from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import (
     LIFECYCLE_CHURN, LIFECYCLE_DORMANT, LIFECYCLE_KEEP, LIFECYCLE_NEW, LIFECYCLE_RETURN,
-    get_item_variance, get_lifecycle_effects,
+    get_full_schema, get_item_variance, get_lifecycle_effects,
 )
 from d2insight.engine.schema import ROLE_ITEM, ROLE_PARTY, get_schema
 from d2insight.engine.types import ModuleResult
@@ -54,11 +54,11 @@ def run(ctx, params, tools) -> ModuleResult:
         # 1개월 정의로 되돌아가면 "이탈 1,890건" 같은 무의미한 수치가 나온다. 명시적으로 실패시킨다.
         return ModuleResult(
             status="failed",
-            error=("과거 이력(history_dataset)이 없어 신규·이탈 생애주기를 판정할 수 없습니다. "
+            error=("과거 기간별 이력을 가져오지 못해 신규·이탈 생애주기를 판정할 수 없습니다. "
                    "1개월 비교만으로는 구매 주기와 실제 이탈을 구분할 수 없습니다."),
         )
 
-    schema = get_schema(ctx)
+    schema = get_full_schema(ctx)
     byitem = get_item_variance(ctx)
     all_dims = set(byitem["Dimension_Logical_Name"].unique())
     requested = params.get("dimensions") or ([params["dimension"]] if params.get("dimension") else None)
@@ -131,7 +131,9 @@ def run(ctx, params, tools) -> ModuleResult:
         purpose="신규·이탈 현황(건수·금액)을 차원별로 제시.",
         narrative_hint=(
             f"순효과 {net_total:+,.0f}을 먼저 말하고, 어느 차원에서 신규·이탈이 두드러졌는지 짚어라. "
-            f"일시미구매(구매 주기에 따른 미등장) {dormant_total:,}건은 이탈이 아니라는 것도 밝혀라."
+            f"일시미구매(구매 주기에 따른 미등장) {dormant_total:,}건은 이탈이 아니라는 것도 밝혀라. "
+            f"세는 대상은 '{', '.join(schema.logical_name(d) for d in target_dims)}' 항목이다 — "
+            "표에 없는 '고객'이라는 말로 바꿔 부르지 말고 그 이름(항목)으로 써라."
         ),
         params={"대상 차원": target_dims}, label="new_lost_detection",
         chart_df=chart_top if not chart_top.empty else None,

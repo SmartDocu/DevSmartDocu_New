@@ -91,6 +91,13 @@ is_market_axis (field_type이 Dim인 컬럼에만 해당, 그 외는 true로 둬
 핵심 규칙:
   - amount 역할은 반드시 1개만 골라라(후보가 여럿이면 가장 대표적인 거래 금액 하나만).
   - is_key_measure=true는 amount 역할을 받은 컬럼에만 줘라.
+  - period 역할도 반드시 1개만 줘라. 날짜 컬럼이 여러 개면 거래·사건이 실제로 일어난 날(주문일·
+    발생일·판매일 등) 하나만 골라라. 납기일·출하일·배송일·수정일·생성일·기록일처럼 부가적이거나
+    시스템이 기록한 일자는 고르지 마라 — 그런 일자밖에 없을 때만 그중 하나를 골라라. 나머지 날짜
+    컬럼은 semantic을 빈 문자열로 둬라.
+  - 제품·고객·직원 목록처럼 개체 하나가 한 행인 마스터 파일의 날짜(출시일·단종일·가입일·입사일 등)는
+    그 개체의 속성일 뿐 거래·사건이 일어난 날이 아니다 — 분석 기간이 될 수 없으므로 period를 주지 말고
+    semantic을 빈 문자열로 둬라(이런 파일은 period가 없는 것이 정상이다).
   - 확신이 없는 역할은 억지로 채우지 말고 빈 문자열로 둬라.
   - columns 배열에는 입력으로 받은 컬럼 전부를 빠짐없이 포함해라(역할이 없어도 포함).
 
@@ -192,11 +199,11 @@ def _mark_ungroupable_dims(df: pd.DataFrame, columns: list[dict]) -> list[str]:
         if col.get("field_type") != "Dim" or col.get("semantic"):
             continue
         physical = col.get("physical")
-        print(f"[DEBUG-mark-ungroupable] physical={physical!r} in df.columns={physical in df.columns}")  # jeff
+        # print(f"[DEBUG-mark-ungroupable] physical={physical!r} in df.columns={physical in df.columns}")  # jeff
         if physical not in df.columns:
             continue
         ratio = df[physical].nunique(dropna=True) / n_rows
-        print(f"[DEBUG-mark-ungroupable]   nunique/n_rows={ratio!r} (threshold={_GROUPABLE_MAX_UNIQUE_RATIO})")  # jeff
+        # print(f"[DEBUG-mark-ungroupable]   nunique/n_rows={ratio!r} (threshold={_GROUPABLE_MAX_UNIQUE_RATIO})")  # jeff
         if ratio > _GROUPABLE_MAX_UNIQUE_RATIO:
             col["is_groupable"] = False
             excluded.append(physical)
@@ -227,18 +234,18 @@ def resolve_upload_meta_columns(
 
     definition = infer_definition(df, dataset_name, provider=provider)
 
-    print("[DEBUG-upload-meta] infer_definition 분류 결과:")  # jeff
-    for _c in definition["columns"]:  # jeff
-        print(f"[DEBUG-upload-meta]   physical={_c.get('physical')!r} "  # jeff
-              f"field_type={_c.get('field_type')!r} semantic={_c.get('semantic')!r}")  # jeff
+    # print("[DEBUG-upload-meta] infer_definition 분류 결과:")  # jeff
+    # for _c in definition["columns"]:  # jeff
+    #     print(f"[DEBUG-upload-meta]   physical={_c.get('physical')!r} "  # jeff
+    #           f"field_type={_c.get('field_type')!r} semantic={_c.get('semantic')!r}")  # jeff
 
     excluded_dims = _mark_ungroupable_dims(df, definition["columns"])
 
-    print(f"[DEBUG-upload-meta] _mark_ungroupable_dims 제외 목록: {excluded_dims}")  # jeff
-    for _c in definition["columns"]:  # jeff
-        if _c.get("field_type") == "Dim":  # jeff
-            print(f"[DEBUG-upload-meta]   [Dim] physical={_c.get('physical')!r} "  # jeff
-                  f"semantic={_c.get('semantic')!r} is_groupable={_c.get('is_groupable', True)!r}")  # jeff
+    # print(f"[DEBUG-upload-meta] _mark_ungroupable_dims 제외 목록: {excluded_dims}")  # jeff
+    # for _c in definition["columns"]:  # jeff
+    #     if _c.get("field_type") == "Dim":  # jeff
+    #         print(f"[DEBUG-upload-meta]   [Dim] physical={_c.get('physical')!r} "  # jeff
+    #               f"semantic={_c.get('semantic')!r} is_groupable={_c.get('is_groupable', True)!r}")  # jeff
 
     if excluded_dims:
         definition["_warnings"].append(

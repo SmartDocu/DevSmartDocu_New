@@ -347,6 +347,7 @@ def run_tool(
                     upload_dataset_key=upload_dataset_key,
                     matched_scenario=matched_scenario,
                     inline_options=inline_options,
+                    date_column=intent.get("date_column"),
                 )
             except DataLoadError as _de:
                 # 사유가 이미 사용자에게 할 말이다 — 앞말을 덧붙이지 않는다.

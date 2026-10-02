@@ -328,7 +328,8 @@ STEP_REGISTRY: dict[str, dict] = {
         "title": "재고 ABC",
         "topics": ["inventory"],
         "default_modules": [
-            {"module_name": "abc_classification"},
+            # 재고 잔액은 합계가 아니라 기간 평균으로 분류한다(sub_name 생략 → 재고 파일에서 닿는 item)
+            {"measure": "inventory", "module_name": "abc_classification", "params": {"aggregate": "avg"}},
         ],
     },
     "turnover": {

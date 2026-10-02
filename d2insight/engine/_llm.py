@@ -71,7 +71,7 @@ def chat(
         elif role == "assistant":
             lc_messages.append(AIMessage(content=content))
 
-    print(f"[engine LLM] vendor={vendor}  model={model_id}  grade={grade}  label={label or '-'}")
+    # print(f"[engine LLM] vendor={vendor}  model={model_id}  grade={grade}  label={label or '-'}")  # jeff 로그 줄이기
     _start = datetime.now(timezone.utc)
     resp = llm.invoke(lc_messages)
     _end = datetime.now(timezone.utc)

@@ -17,8 +17,9 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.modules._llm_render import render_from_dataframe
+from d2insight.engine.modules._shared import get_dim_frames, get_full_schema, pick_dimension
 from d2insight.engine.schema import (
-    ROLE_INBOUND, ROLE_INVENTORY, ROLE_ITEM, ROLE_OUTBOUND, get_schema,
+    ROLE_INBOUND, ROLE_INVENTORY, ROLE_ITEM, ROLE_OUTBOUND,
 )
 from d2insight.engine.types import ModuleResult, Render
 
@@ -26,25 +27,36 @@ _CHART_MAX = 12
 
 
 def run(ctx, params, tools) -> ModuleResult:
-    actual_df = ctx.get("actual_dataset")
-    compare_df = ctx.get("compare_dataset")
-    if actual_df is None or compare_df is None:
-        return ModuleResult(status="failed", error="actual_dataset/compare_dataset이 없습니다.")
-
-    schema = get_schema(ctx)
+    schema = get_full_schema(ctx)         # 역할은 전체 스키마에서 찾는다(스텝 표에 없는 컬럼도 있다)
     inv_col = schema.column(ROLE_INVENTORY)
     in_col = schema.column(ROLE_INBOUND)
     out_col = schema.column(ROLE_OUTBOUND)
 
     missing = [role for role, col in
                ((ROLE_INVENTORY, inv_col), (ROLE_INBOUND, in_col), (ROLE_OUTBOUND, out_col))
-               if not col or col not in actual_df.columns]
+               if not col]
     if missing:
         return ModuleResult(
             status="failed",
             error=f"재고 이동 분석에 필요한 역할 {missing}이 없습니다. "
                   "데이터소스 정의에 inventory/inbound/outbound 역할을 선언하세요.",
         )
+
+    # 스텝 공용 표 대신, 항목 차원 하나로 전용 조회한 표(합계 검사를 거친 표)를 쓴다.
+    item_col = params.get("dimension") or pick_dimension(ctx, ROLE_ITEM, [inv_col, in_col, out_col])
+    try:
+        frames = get_dim_frames(ctx, [inv_col, in_col, out_col], item_col, params)
+    except ValueError as e:
+        return ModuleResult(status="failed", error=str(e))
+    swapped = [c for c in (inv_col, in_col, out_col) if frames["used"][c] != c]
+    if swapped:
+        # 기초+입고−출고=기말 항등식은 세 측정값이 모두 제 값이어야 성립한다 — 다른 측정값으로 대체하지 않는다.
+        return ModuleResult(
+            status="failed",
+            error=f"'{', '.join(schema.logical_name(c) for c in swapped)}'을(를) 항목 차원으로 작성할 수 없어 "
+                  "재고 이동 정합성을 점검할 수 없습니다(다른 측정값으로 대체하지 않습니다).",
+        )
+    actual_df, compare_df = frames["actual"], frames["compare"]
 
     tolerance = float(getattr(config, "STOCK_RECONCILE_TOLERANCE", 0.01))
     top_n = int(params.get("top_n") or 20)
@@ -67,7 +79,6 @@ def run(ctx, params, tools) -> ModuleResult:
     ])
 
     # ── 항목별 정합성 ────────────────────────────────────────────────────────
-    item_col = params.get("dimension") or schema.column(ROLE_ITEM)
     detail = pd.DataFrame()
     if item_col and item_col in actual_df.columns:
         a = actual_df.groupby(item_col)[[in_col, out_col, inv_col]].sum()

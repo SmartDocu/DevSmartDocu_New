@@ -33,7 +33,7 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import slice_history_window
+from d2insight.engine.modules._shared import get_full_schema, get_series, role_column
 from d2insight.engine.modules.summary import DERIVED_DISCOUNT_RATE, DERIVED_UNIT_PRICE
 from d2insight.engine.schema import (
     ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_PERIOD, ROLE_QUANTITY, get_schema,
@@ -58,7 +58,7 @@ def _level(score: float, threshold: float) -> str:
     return LEVEL_NORMAL
 
 
-def _monthly_series(history: pd.DataFrame, period_col: str, schema,
+def _monthly_series(ctx, history: pd.DataFrame, period_col: str, schema,
                     physical_name: str) -> pd.Series | None:
     """measure 하나의 월별 시계열. 파생 measure는 역할로 재구성한다.
 
@@ -67,10 +67,10 @@ def _monthly_series(history: pd.DataFrame, period_col: str, schema,
     if physical_name in history.columns:
         return history.groupby(period_col)[physical_name].sum().sort_index()
 
-    amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
+    amount_col = role_column(ctx, ROLE_AMOUNT) or schema.key_measure
 
     if physical_name == DERIVED_UNIT_PRICE:
-        qty_col = schema.column(ROLE_QUANTITY)
+        qty_col = role_column(ctx, ROLE_QUANTITY, amount_col)
         if not qty_col or qty_col not in history.columns or amount_col not in history.columns:
             return None
         grouped = history.groupby(period_col)[[amount_col, qty_col]].sum().sort_index()
@@ -78,7 +78,7 @@ def _monthly_series(history: pd.DataFrame, period_col: str, schema,
         return (grouped[amount_col] / qty.where(qty != 0)).dropna()
 
     if physical_name == DERIVED_DISCOUNT_RATE:
-        disc_col = schema.column(ROLE_DISCOUNT)
+        disc_col = role_column(ctx, ROLE_DISCOUNT, amount_col)
         if not disc_col or disc_col not in history.columns or amount_col not in history.columns:
             return None
         grouped = history.groupby(period_col)[[amount_col, disc_col]].sum().sort_index()
@@ -160,28 +160,36 @@ def run(ctx, params, tools) -> ModuleResult:
 
     # ── history_z 툴: 분석월 제외 과거 개월로 기준선을 만든다 ────────────────────
     else:
-        history = ctx.get("history_dataset")
-        if history is None or getattr(history, "empty", True):
+        # KPI는 기준 없는 기간별 합계다 — 판정할 KPI(측정값)와, 파생 KPI(단가·할인율)를 만들 금액·수량·
+        # 할인을 각각 직접 요청해 기간 기준으로 한 표에 맞춘다. 못 가져온 값은 '판정 불가'로 남는다.
+        full = get_full_schema(ctx)
+        wanted = [r["Physical_Name"] for _, r in summary_df.iterrows() if r["Physical_Name"] in full.measures]
+        for role in (ROLE_AMOUNT, ROLE_QUANTITY, ROLE_DISCOUNT):
+            col = full.column(role)
+            if col and col not in wanted:
+                wanted.append(col)
+        sp = dict(params, window_months=params.get("window_months") or getattr(config, "KPI_ALERT_WINDOW", None))
+        history, period_col = None, None
+        for col in wanted:
+            try:
+                part = get_series(ctx, col, None, sp)
+            except ValueError as e:
+                print(f"[kpi_alert] '{col}' 기간별 값 조회 실패: {e}")
+                continue
+            period_col = part.columns[0]
+            history = part if history is None else history.merge(part, on=period_col, how="outer")
+        if history is None:
             return ModuleResult(
                 status="failed",
-                error="이력(history_dataset)이 없어 KPI 시계열 판정을 할 수 없습니다. "
+                error="KPI 기간별 값을 조회하지 못해 시계열 판정을 할 수 없습니다. "
                       "이력 없이 판정하려면 threshold 툴을 쓰세요.",
             )
-        period_col = schema.column(ROLE_PERIOD)
-        if not period_col or period_col not in history.columns:
-            return ModuleResult(
-                status="failed",
-                error="이력에 기간(period) 역할 컬럼이 없어 시계열 판정을 할 수 없습니다. "
-                      "데이터소스 정의에 period 역할을 선언하세요.",
-            )
-
-        window = params.get("window_months") or getattr(config, "KPI_ALERT_WINDOW", None)
-        history, window_note = slice_history_window(history, period_col, window)
+        window_note = ""
 
         for _, r in summary_df.iterrows():
             physical = r["Physical_Name"]
             logical = r["Logical_Name"]
-            series = _monthly_series(history, period_col, schema, physical)
+            series = _monthly_series(ctx, history, period_col, schema, physical)
             if series is None or series.empty:
                 undecidable.append(f"{logical}(이력 없음)")
                 continue

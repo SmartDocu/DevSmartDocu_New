@@ -413,12 +413,24 @@ def resolve_dependencies(plan: dict) -> tuple[dict, list[str]]:
         if not missing_found:
             break
 
+    # 스텝에 처음부터 들어 있던 쿼리 모듈(자동 삽입이 아닌 것)에도 이력 표시를 붙인다. 이력 표시는 자동
+    # 삽입할 때만 계산되어, 시나리오가 쿼리 모듈을 직접 가진 스텝(예: 기간 비교의 추이)은 이력을 못 받았다.
+    for sec in expanded:
+        if sec.get("enabled") is False:
+            continue
+        specs = [registry.get(m.get("module_id")) for m in sec["modules"]]
+        if not any(s and "history_dataset" in s.requires for s in specs):
+            continue
+        for i, (m, s) in enumerate(zip(sec["modules"], specs)):
+            if s and "history_dataset" in s.produces and not (m.get("params") or {}).get("needs_history"):
+                sec["modules"][i] = dict(m, params=dict(m.get("params") or {}, needs_history=True))
+
     plan = dict(plan)
     plan["steps"] = [s for s in expanded if s["modules"]]
-    for s in plan["steps"]:
-        for m in s["modules"]:
-            if m.get("module_id") == "period_dataset":
-                print(f"[DEBUG-resolve_dependencies] step={s.get('title')!r} period_dataset _auto={m.get('_auto')!r}")
+    # for s in plan["steps"]:
+    #     for m in s["modules"]:
+    #         if m.get("module_id") == "period_dataset":
+    #             print(f"[DEBUG-resolve_dependencies] step={s.get('title')!r} period_dataset _auto={m.get('_auto')!r}")
     return plan, notes
 
 

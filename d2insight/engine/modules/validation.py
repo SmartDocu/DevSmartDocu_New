@@ -8,15 +8,16 @@
 컬럼을 찾아** 넘긴다(period→기간, amount→금액, item→개별 항목 차원). 컬럼명을 코드에 박지 않으므로
 구매·생산 등 다른 도메인에서도 그대로 동작한다(§7.3).
 
-다월(전전월·전월·당월) 비교가 필요하므로 history_dataset(월별 패널)에 의존한다. 이력이 없으면
-"이상 없음"으로 위장하지 않고 명시적으로 실패한다.
+다월(전전월·전월·당월) 비교가 필요하므로 금액을 항목별·기간별로 직접 요청한다(get_series). 조회에
+실패하면 "이상 없음"으로 위장하지 않고 명시적으로 실패한다.
 """
 from __future__ import annotations
 
 import pandas as pd
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM, ROLE_PERIOD, get_schema
+from d2insight.engine.modules._shared import get_full_schema, get_series, pick_dimension, role_column
+from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine.pipeline.validator import run_data_validation
 
@@ -30,36 +31,22 @@ def _issues_table(issues: list[dict]) -> pd.DataFrame:
 
 
 def run(ctx, params, tools) -> ModuleResult:
-    history = ctx.get("history_dataset")
-    if history is None or getattr(history, "empty", True):
-        # 다월 비교가 불가능하다. "이상 없음"으로 조용히 넘기면 검증을 안 한 것과 같다.
-        return ModuleResult(
-            status="failed",
-            error="이력(history_dataset)이 없어 데이터 검증(다월 비교)을 할 수 없습니다.",
-        )
-
     target_month = ctx.meta.get("target_month")
     if not target_month:
         return ModuleResult(status="failed", error="ctx.meta에 target_month가 없습니다.")
 
-    schema = get_schema(ctx)
-    period_col = schema.column(ROLE_PERIOD)
-    amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
-    item_col = schema.column(ROLE_ITEM)
+    schema = get_full_schema(ctx)
+    amount_col = params.get("measure") or role_column(ctx, ROLE_AMOUNT) or schema.key_measure
+    # 항목 간 이동 패턴에 쓸 개별 항목 차원 — item 의미 표시가 있는 컬럼만 사용(채널 등은 배제).
+    item_col = pick_dimension(ctx, ROLE_ITEM, [amount_col])
+    item_dims = [item_col] if item_col else []
 
-    if not period_col or period_col not in history.columns:
-        return ModuleResult(
-            status="failed",
-            error="이력에 기간(period) 역할 컬럼이 없어 다월 비교를 할 수 없습니다. "
-                  "데이터소스 정의에 period 역할을 선언하세요.",
-        )
-    if amount_col not in history.columns:
-        return ModuleResult(
-            status="failed", error=f"이력에 금액 컬럼 '{amount_col}'이 없습니다.",
-        )
-
-    # 항목 간 이동 패턴에 쓸 개별 항목 차원 — item 역할만 사용(채널 등 무역할 차원은 배제).
-    item_dims = [item_col] if item_col and item_col in history.columns else []
+    # 다월 비교가 불가능하면 "이상 없음"으로 조용히 넘기지 않는다 — 검증을 안 한 것과 같다.
+    try:
+        history = get_series(ctx, amount_col, item_col, params)
+    except ValueError as e:
+        return ModuleResult(status="failed", error=f"데이터 검증(다월 비교)에 필요한 기간별 값 조회에 실패했습니다: {e}")
+    period_col = history.columns[0]
 
     result = run_data_validation(
         history, target_month,

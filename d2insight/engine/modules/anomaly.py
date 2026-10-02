@@ -28,7 +28,9 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import LIFECYCLE_DORMANT, get_item_lifecycle, get_item_variance
+from d2insight.engine.modules._shared import (
+    LIFECYCLE_DORMANT, get_frames, get_item_lifecycle, get_item_variance, key_measure_of,
+)
 from d2insight.engine.schema import get_schema
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine.pipeline.dataset_builder import build_by_item_summary_dataset
@@ -85,7 +87,7 @@ def run(ctx, params, tools) -> ModuleResult:
     schema = get_schema(ctx)
     # measure별로 따로 계산한다(2026-07-24 4단계) — 매출 기준 이상징후와 수량 기준 이상징후는
     # 서로 다른 항목을 짚어낼 수 있다(비싼 상품이 조금 더 팔리면 매출은 튀어도 수량은 안 튐).
-    measure = params.get("measure") or schema.key_measure
+    measure = params.get("measure") or key_measure_of(ctx)
 
     tool = tools[0] if tools else "z_score"
     if tool == "attainment":
@@ -96,7 +98,7 @@ def run(ctx, params, tools) -> ModuleResult:
     if tool not in ("z_score", "iqr", "mad"):
         return ModuleResult(status="failed", error=f"지원하지 않는 탐지 툴: '{tool}'")
 
-    byitem = get_item_variance(ctx, measure)
+    byitem = get_item_variance(ctx, measure, params)
     if byitem is None or byitem.empty:
         return ModuleResult(status="failed", error="차원×항목 증감 데이터가 비어 있습니다.")
     byitem = byitem[byitem["New_Lost_Flag"] != "New"]     # §5 σ 모집단과 동일하게 맞춘다
@@ -105,8 +107,9 @@ def run(ctx, params, tools) -> ModuleResult:
     # 그 스텝이 고른 measure로 고정된 싱글턴이라, 요청 measure가 다르면 재사용할 수 없다(둘 다
     # key_measure를 쓰는 흔한 경우엔 같은 값이 나오지만, 매번 새로 계산해도 순수 함수라 결과가
     # 달라지지 않으므로 굳이 measure 일치를 추적하는 복잡도를 들이지 않는다).
+    frames = get_frames(ctx, [measure], params)     # 스텝 공용 표 대신 전용 조회한 표
     stats = build_by_item_summary_dataset(
-        byitem, ctx.get("actual_dataset"), ctx.get("compare_dataset"), measure=measure
+        byitem, frames["actual"], frames["compare"], measure=frames["used"][measure]
     )
     if stats is None or stats.empty:
         return ModuleResult(status="failed", error="차원 통계를 계산하지 못했습니다.")
@@ -196,6 +199,7 @@ def run(ctx, params, tools) -> ModuleResult:
         hits.append(flagged)
 
     note = (f" 판정 불가 차원: {', '.join(undecidable)} (항목 수 부족)." if undecidable else "") + dormant_note
+    note += "".join(f" ({n})" for n in frames["notes"])       # 측정값이 바뀌어 조회됐으면 밝힌다
 
     measure_name = schema.logical_name(measure)
 

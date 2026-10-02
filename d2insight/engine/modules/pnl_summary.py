@@ -36,7 +36,7 @@ def _display_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def run(ctx, params, tools) -> ModuleResult:
     try:
-        ladder = get_pnl_ladder(ctx)
+        ladder = get_pnl_ladder(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
 

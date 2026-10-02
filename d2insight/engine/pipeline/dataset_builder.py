@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 import numpy as np
@@ -243,6 +244,29 @@ def build_actual_compare_datasets(
 
 # ── 스텝 단위 쿼리 (2026-08-24) ──────────────────────────────────────────────
 
+_ROW_CAP = 1_000_000
+
+
+def _unlimit_rows(sql: str) -> str:
+    """LLM이 붙인 작은 행 수 제한(TOP N / LIMIT N)을 큰 값으로 바꾼다.
+
+    스텝 쿼리는 합계·순위를 구하려고 조건에 맞는 모든 행이 필요하다. LLM이 d2chat 관성으로
+    TOP 100을 붙이면 100행만 합산되어 숫자가 조용히 틀린다(2026-09-29, 총평 수량이 100으로
+    나온 사고). 이미 충분히 큰 제한은 그대로 둔다.
+    """
+    def _top(m: re.Match) -> str:
+        return m.group(0) if int(m.group(1)) >= _ROW_CAP else f"TOP {_ROW_CAP}"
+
+    def _limit(m: re.Match) -> str:
+        return m.group(0) if int(m.group(1)) >= _ROW_CAP else f"LIMIT {_ROW_CAP}"
+
+    # 뒤따르는 공백은 건드리지 않는다(TOP 100 컬럼명 → TOP 1000000 컬럼명). TOP n PERCENT는
+    # 전체 행을 뜻하는 관용구라 그대로 둔다(1000000PERCENT로 깨지면 SQL 오류).
+    sql = re.sub(r"\bTOP\s*\(\s*(\d+)\s*\)(?!\s*PERCENT\b)", _top, sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bTOP\s+(\d+)(?!\d)(?!\s*PERCENT\b)", _top, sql, flags=re.IGNORECASE)
+    return re.sub(r"\bLIMIT\s+(\d+)", _limit, sql, flags=re.IGNORECASE)
+
+
 def query_step_dataset(
     target_period: str,
     compare_type: str = "MoM",
@@ -252,6 +276,9 @@ def query_step_dataset(
     measures: list[str] | None = None,
     log_ctx: dict | None = None,
     existing_sql: str | None = None,
+    natural_question: str | None = None,
+    flexible: bool = False,
+    date_range: tuple[date, date] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     """스텝에 필요한 컬럼만 담은 이번 기간/비교 기간 데이터를 LLM이 쓴 SQL로 가져온다.
 
@@ -262,6 +289,9 @@ def query_step_dataset(
 
     existing_sql: 정기 보고서 재실행 등 이미 확정된 SQL이 있으면 LLM 재호출 없이 그대로
     쓴다(날짜만 새로 바인딩) — 매번 같은 결과가 보장된다.
+
+    date_range: (시작, 끝) 반열린 구간을 주면 여러 기간을 SQL 한 번으로 가져온다(이력 표용, 2026-09-30).
+    이때 실적/비교 구분 없이 한 표만 조회하고, 반환은 (표, 빈 표, SQL)이다. 기간 컬럼도 남긴다.
 
     반환: (actual_df, compare_df, generated_sql) — generated_sql은 :start_date/:end_date
     바인드 파라미터를 쓰는 재사용 가능한 SQL 텍스트다(정기 보고서 캐싱에 그대로 쓸 수 있음).
@@ -280,8 +310,9 @@ def query_step_dataset(
                         & (meta["Physical_Name"] != COUNT_MEASURE)]
     avail_dims = set(dim_rows["Physical_Name"])
     avail_measures = set(measure_rows["Physical_Name"])
+    avail_period = set(meta.loc[meta["Semantic_Type"] == "period", "Physical_Name"])
 
-    use_dims = [d for d in (dimensions or []) if d in avail_dims]
+    use_dims =[d for d in (dimensions or []) if d in avail_dims]
     # 측정값이 없어도 조회한다 — 합칠 숫자가 없는 데이터(로그 등)는 행 자체가 측정값이고,
     # period_dataset이 건수 컬럼을 넣어준다(schema.COUNT_MEASURE).
     use_measures = [m for m in (measures or []) if m in avail_measures]
@@ -295,17 +326,30 @@ def query_step_dataset(
         raise db_meta.DbMetaError("등록된 컬럼 중 조회할 수 있는 것이 없습니다.")
 
     if existing_sql:
+        # 이미 저장된 SQL(정기보고서 등)에 예전에 붙은 TOP 100이 남아 있어도 풀어서 쓴다.
+        existing_sql = _unlimit_rows(existing_sql)
+        if date_range:
+            server = MCPServer(db_connection=shared_meta_loader.get_connection_url())
+            df = _run_sql(server, existing_sql, {"start_date": date_range[0], "end_date": date_range[1]}, sources)
+            keep = [c for c in df.columns if c in avail_dims or c in avail_measures or c in avail_period]
+            if keep:
+                df = df[keep]
+            print(f"[dataset_builder] 기간 범위 쿼리(캐시된 SQL 재사용, {date_range[0]}~{date_range[1]}): {len(df):,}행")
+            return df, df.iloc[0:0], existing_sql
         a_start, a_end = _actual_range(target_period, grain)
         c_start, c_end = _compare_range(target_period, compare_type, grain)
         server = MCPServer(db_connection=shared_meta_loader.get_connection_url())
         actual_df = _run_sql(server, existing_sql, {"start_date": a_start, "end_date": a_end}, sources)
         compare_df = _run_sql(server, existing_sql, {"start_date": c_start, "end_date": c_end}, sources)
-        keep = [c for c in (use_dims + use_measures) if c in actual_df.columns]
+        if flexible:
+            keep = [c for c in actual_df.columns if c in avail_dims or c in avail_measures]
+        else:
+            keep = [c for c in (use_dims + use_measures) if c in actual_df.columns]
         if keep:
             actual_df = actual_df[keep]
             compare_df = compare_df[[c for c in keep if c in compare_df.columns]]
-        print(f"[dataset_builder] 스텝 쿼리(캐시된 SQL 재사용, {target_period}): "
-              f"실적 {len(actual_df):,}행 / 비교 {len(compare_df):,}행")
+        # print(f"[dataset_builder] 스텝 쿼리(캐시된 SQL 재사용, {target_period}): "  # jeff 로그 줄이기
+        #       f"실적 {len(actual_df):,}행 / 비교 {len(compare_df):,}행")
         return actual_df, compare_df, existing_sql
 
     # d2chat/ReportAgent의 query_tool.py와 같은 shape — 소스별 컬럼 목록 + reference(조인 힌트).
@@ -321,47 +365,84 @@ def query_step_dataset(
         }
         for src in sources
     }
-    for _src in sources:  # jeff
-        print(f"[DEBUG-dataset_builder] source={_src['physical_name']!r} "  # jeff
-              f"default_time_column={_src.get('default_time_column')!r}")  # jeff
+    # for _src in sources:  # jeff
+    #     print(f"[DEBUG-dataset_builder] source={_src['physical_name']!r} "  # jeff
+    #           f"default_time_column={_src.get('default_time_column')!r}")  # jeff
 
     dims_text = ", ".join(use_dims) if use_dims else "(없음)"
     measures_text = ", ".join(use_measures) if use_measures else "(없음 — 행 자체를 셉니다)"
-    question = (
-        f"다음 컬럼을 포함해 조회하세요.\n차원 컬럼: {dims_text}\n측정값 컬럼: {measures_text}\n"
-        "집계는 하지 마세요 — 조회 결과는 이후 pandas가 직접 집계합니다.\n"
-        "날짜 기간이 필요하면 반드시 기준 날짜 컬럼을 이용해 WHERE 절로 기간을 필터링하세요 — "
-        "필터링 없이 전체 데이터를 가져오는 것은 허용되지 않습니다."
-    )
+    if natural_question:
+        # 체크리스트 문구("차원 컬럼: (없음)\n측정값 컬럼: ...")는 요청 테이블에 없는 컬럼(예:
+        # 상세 테이블에 없는 날짜)을 헤더 테이블에서 JOIN해 와야 한다는 판단을 LLM이 놓치게
+        # 만드는 경우가 있었다(2026-09-28, d2chat 자연어 질의와의 비교 테스트로 확인) — 호출자가
+        # 자연스러운 문장을 준 경우 그대로 쓴다. SELECT 컬럼 제한/집계 금지는 extra_rules가 맡는다.
+        question = natural_question
+    else:
+        question = (
+            f"다음 컬럼을 포함해 조회하세요.\n차원 컬럼: {dims_text}\n측정값 컬럼: {measures_text}\n"
+            "집계는 하지 마세요 — 조회 결과는 이후 pandas가 직접 집계합니다.\n"
+            "날짜 기간이 필요하면 반드시 기준 날짜 컬럼을 이용해 WHERE 절로 기간을 필터링하세요 — "
+            "필터링 없이 전체 데이터를 가져오는 것은 허용되지 않습니다."
+        )
     extra_rules = (
         "- 집계 함수(SUM/AVG/COUNT 등)나 GROUP BY를 쓰지 마세요. 집계는 이 결과를 받는 쪽이 "
         "pandas로 직접 합니다.\n"
         "- 날짜 조건은 리터럴 날짜값이 아니라 바인드 파라미터로 작성하세요: "
         "기준 날짜 컬럼 >= :start_date AND 기준 날짜 컬럼 < :end_date\n"
-        "- SELECT에는 위에 명시된 차원·측정값 컬럼만 포함하세요(다른 컬럼 추가 금지). 특히 "
-        "'매출액_한글'처럼 숫자를 조/억/만원 등 한글 단위 문자열로 변환한 파생 컬럼을 "
-        "만들지 마세요 — 통화 단위조차 알 수 없는 원본 숫자이므로 이런 변환 자체가 "
-        "부정확합니다. 원본 숫자 컬럼만 그대로 반환하세요.\n"
+        f"- SELECT에는 다음 차원·측정값 컬럼만 포함하세요(다른 컬럼 추가 금지) — 차원: {dims_text} / "
+        f"측정값: {measures_text}. 특히 '매출액_한글'처럼 숫자를 조/억/만원 등 한글 단위 문자열로 "
+        "변환한 파생 컬럼을 만들지 마세요 — 통화 단위조차 알 수 없는 원본 숫자이므로 이런 변환 "
+        "자체가 부정확합니다. 원본 숫자 컬럼만 그대로 반환하세요.\n"
         "- SELECT 컬럼명은 위에 명시된 컬럼명과 정확히 똑같이 쓰세요(별칭을 바꾸지 마세요) — "
-        "호출부가 이 컬럼명을 그대로 참조합니다.\n"
+        "호출부가 이 컬럼명을 그대로 참조합니다. 이 컬럼들이 다른 테이블에 있으면 reference를 "
+        "보고 JOIN하세요 — 지금 SELECT할 컬럼이 없는 테이블이라도, 그 테이블에만 있는 기준 "
+        "날짜 컬럼으로 WHERE 필터링을 해야 한다면 그 테이블도 JOIN 대상입니다.\n"
         f"- 주어진 테이블 중 이번 조회에 **실제로 필요한 것만** 쓰세요. 한 쿼리에서 조인하는 "
         f"테이블은 최대 {db_meta.MAX_JOIN_TABLES}개입니다. 조인 정보(reference)가 없는 "
-        "테이블끼리는 조인하지 마세요."
+        "테이블끼리는 조인하지 마세요.\n"
+        "- 행 수를 제한하지 마세요. TOP·LIMIT을 쓰지 말고 조건에 맞는 모든 행을 조회하세요."
     )
+
+    if natural_question and flexible:
+        # 차원이 측정값과 다른 테이블에 있는 조회 — 컬럼을 못박으면 LLM이 '1'쪽 금액을 그대로
+        # 조인·합산해 부풀린다(2026-09-28 사고). 의미로 묻고, LLM이 나눌 수 있는 값을 고르게 한다.
+        # d2chat에서 같은 질문을 자연어로 했을 때 LLM이 스스로 올바른 값을 골랐다(2026-09-28).
+        extra_rules = (
+            "- 날짜 조건은 리터럴 날짜값이 아니라 바인드 파라미터로 작성하세요: "
+            "기준 날짜 컬럼 >= :start_date AND 기준 날짜 컬럼 < :end_date\n"
+            "- 필요한 기준(차원)별로 GROUP BY 집계(SUM 등)해서 조회해도 됩니다.\n"
+            "- 주문 단위처럼 '1'쪽 테이블에만 있는 금액을 '여러 줄'쪽 테이블의 기준(상품·분류 등)으로 "
+            "나누려고 조인한 뒤 합산하면 그 금액이 줄 수만큼 복사되어 합계가 부풀려집니다 — 이렇게 "
+            "하지 마세요. 그 기준으로 나눌 수 있는 같은 의미의 값(줄 단위 금액 등)이 있으면 그 값을 "
+            "쓰고, 없으면 SELECT 'CANNOT_ANSWER' AS result 로 답하세요.\n"
+            "- 결과 컬럼명은 차원은 원래 컬럼명 그대로, 값은 집계해도 그 값이 원래 있던 컬럼명을 "
+            "별칭으로 쓰세요(예: SUM(d.LineTotal) AS LineTotal). 다른 이름으로 바꾸지 마세요.\n"
+            "- 요청한 값 대신 다른 값으로 조회했다면, 결과 컬럼명은 반드시 조회한 그 값의 원래 컬럼명으로 "
+            "쓰세요. 요청한 값의 이름을 붙이면 다른 값이 요청한 값인 것처럼 표시되어 틀린 보고서가 "
+            "됩니다.\n"
+            f"- 주어진 테이블 중 이번 조회에 **실제로 필요한 것만** 쓰세요. 한 쿼리에서 조인하는 "
+            f"테이블은 최대 {db_meta.MAX_JOIN_TABLES}개입니다. 조인 정보(reference)가 없는 "
+            "테이블끼리는 조인하지 마세요.\n"
+            "- 행 수를 제한하지 마세요. TOP·LIMIT을 쓰지 말고 조건에 맞는 모든 행을 조회하세요."
+        )
 
     url = shared_meta_loader.get_connection_url()
     if not url:
         raise RuntimeError("Supabase에서 DB 연결 URL을 가져오지 못했습니다.")
     server = MCPServer(db_connection=url)
 
-    MAX_RETRIES = 2    # jeff 20260826 개발에서 5회 반복하니 시간이 너무 지체되어 2회로 수정함 --> 운용에서는 5회로 수정하기
+    MAX_RETRIES = 2   # jeff 20260826 개발에서 5회 반복하니 시간이 너무 지체되어 2회로 수정함 --> 운용에서는 5회로 수정하기
     sql = None
     for attempt in range(1, MAX_RETRIES + 1):
         candidate_sql = server.generate_sql_query(
             question=question, model=DEFAULT_LLM_MODEL, table_metadata=table_metadata,
             extra_rules=extra_rules, log_ctx=log_ctx,
         )
-        candidate_sql = server._clean_sql(candidate_sql)
+        candidate_sql = _unlimit_rows(server._clean_sql(candidate_sql))
+
+        if "CANNOT_ANSWER" in candidate_sql.upper():
+            raise RuntimeError(
+                "쿼리 생성기가 이 조합(차원과 값)으로는 답할 수 없다고 판단했습니다(CANNOT_ANSWER).")
 
         if ':start_date' in candidate_sql and ':end_date' in candidate_sql:
             sql = candidate_sql
@@ -377,6 +458,14 @@ def query_step_dataset(
             "extra_rules를 점검해주세요."
         )
 
+    if date_range:
+        df = _run_sql(server, sql, {"start_date": date_range[0], "end_date": date_range[1]}, sources)
+        keep = [c for c in df.columns if c in avail_dims or c in avail_measures or c in avail_period]
+        if keep:
+            df = df[keep]
+        print(f"[dataset_builder] 기간 범위 쿼리({date_range[0]}~{date_range[1]}, dims={use_dims or '-'}): {len(df):,}행")
+        return df, df.iloc[0:0], sql
+
     a_start, a_end = _actual_range(target_period, grain)
     c_start, c_end = _compare_range(target_period, compare_type, grain)
     actual_df = _run_sql(server, sql, {"start_date": a_start, "end_date": a_end}, sources)
@@ -384,13 +473,17 @@ def query_step_dataset(
 
     # 프롬프트로 금지해도 LLM이 파생 컬럼(예: '매출액_한글')을 만들어 끼워넣을 수 있으므로,
     # 요청한 차원·측정값 컬럼만 남기고 나머지는 코드에서 한 번 더 걸러낸다.
-    keep_cols = [c for c in (use_dims + use_measures) if c in actual_df.columns]
+    if flexible:
+        # LLM이 요청한 값 대신 같은 의미의 다른 측정값을 골랐을 수 있다 — 등록된 차원·측정값이면 남긴다.
+        keep_cols = [c for c in actual_df.columns if c in avail_dims or c in avail_measures]
+    else:
+        keep_cols = [c for c in (use_dims + use_measures) if c in actual_df.columns]
     if keep_cols:
         actual_df = actual_df[keep_cols]
         compare_df = compare_df[[c for c in keep_cols if c in compare_df.columns]]
 
-    print(f"[dataset_builder] 스텝 쿼리({target_period}, dims={use_dims or '-'}): "
-          f"실적 {len(actual_df):,}행 / 비교 {len(compare_df):,}행")
+    # print(f"[dataset_builder] 스텝 쿼리({target_period}, dims={use_dims or '-'}): "  # jeff 로그 줄이기
+    #       f"실적 {len(actual_df):,}행 / 비교 {len(compare_df):,}행")
     return actual_df, compare_df, sql
 
 

@@ -53,7 +53,7 @@ def _display_table(views: dict[str, list[dict]], total: float) -> pd.DataFrame:
 
 def run(ctx, params, tools) -> ModuleResult:
     try:
-        effects = get_bridge_effects(ctx)
+        effects = get_bridge_effects(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
 
@@ -73,6 +73,7 @@ def run(ctx, params, tools) -> ModuleResult:
         bridge_effects["item_top"] = effects["item_effects"].head(top_n)
 
     note = "" if lifecycle_available else " (이력 없음 — 신규/이탈을 2기간 산술 기준으로 구분함)"
+    note += "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in effects.get("notes") or [])
     schema = get_schema(ctx)
     item_dim = schema.column(ROLE_ITEM)
     item_view = f"{schema.logical_name(item_dim)} 관점" if item_dim else None

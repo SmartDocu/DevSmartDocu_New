@@ -19,7 +19,11 @@ import pandas as pd
 import d2insight.config as config
 from d2insight.engine.schema import (
     ROLE_AMOUNT, ROLE_COST, ROLE_DISCOUNT, ROLE_ITEM, ROLE_ITEM_GROUP, ROLE_OPEX, ROLE_PARTY,
-    ROLE_PERIOD, ROLE_QUANTITY, get_schema,
+    ROLE_PERIOD, ROLE_QUANTITY, Schema, get_schema, ALL_ROLES,
+)
+from d2insight.engine.pipeline.data_request import (
+    fetch_measure_groups, fetch_series, fetch_wide, load_meta, pick_by_rows, pick_reachable, reachable_dims,
+    source_of,
 )
 from d2insight.engine.pipeline.dataset_builder import build_by_item_dataset
 
@@ -63,7 +67,174 @@ def slice_history_window(
     return history[history[period_col].isin(keep)], ""
 
 
-def get_item_variance(ctx, measure: str | None = None) -> pd.DataFrame:
+def get_frames(ctx, measures: list[str], params: dict | None = None) -> dict:
+    """모든 분석 차원과 요청한 측정값을 담은 (실적, 비교) 표 — 최초 1회만 가져와 캐시한다.
+
+    스텝 공용 표(actual_dataset/compare_dataset)는 두 테이블을 조인해 만들어져 '1'쪽 값이 중복
+    합산될 수 있어(2026-09-28 사고) 공용 계산과 모듈들이 이 함수를 대신 쓴다. 측정값마다 전용
+    조회 + 합계 검사를 거친다(data_request.fetch_wide). 요청한 측정값을 그 기준으로 나눌 수
+    없으면 나눌 수 있는 값으로 바뀌어 조회되고, 그 사실이 notes에 담긴다.
+
+    params를 주면 만든 SQL이 params["_queries"]에 남아 정기보고서에 저장된다(첫 호출한 모듈에 붙는다).
+
+    반환: {"actual", "compare", "used": {요청한 이름: 실제 쓴 이름}, "notes": [...]}
+    실패하면 ValueError를 올린다(호출 모듈이 §11 Step 2 형태의 실패로 변환한다).
+    """
+    schema = get_schema(ctx)
+    key = "frames::" + ",".join(measures)
+
+    def _compute() -> dict:
+        dims = reachable_dims(ctx.meta, list(measures), list(schema.causal_dimensions))
+        meta = ctx.get("meta_columns")
+        if meta is None or not (set(measures) | set(dims)) <= set(meta["Physical_Name"]):
+            meta = load_meta(ctx.meta)          # 스텝 공용 표에 없는 컬럼이면 전체 메타를 쓴다
+        queries = params.setdefault("_queries", []) if params is not None else []
+        result = fetch_wide(ctx.meta, meta, schema, list(measures), dims, queries)
+        if result.get("error"):
+            raise ValueError(result["error"])
+        return result
+
+    return ctx.get_or_compute(key, _compute)
+
+
+def get_full_schema(ctx) -> Schema:
+    """스텝 공용 표에 없는 컬럼(차원)까지 담은 전체 스키마(역할 조회용).
+
+    스텝의 meta_columns는 그 스텝이 요청한 컬럼만 담는다. 그런데 공용 계산(항목별 증감·생애주기)은
+    보고서 전체에서 한 번 만든 전체 차원 표를 재사용하므로, 역할(item/party 등)을 찾을 때는 전체
+    스키마를 써야 한다 — 스텝 meta로 찾으면 그 스텝이 요청하지 않은 차원의 역할은 없는 것처럼 보인다.
+    """
+    def _compute() -> Schema:
+        meta = load_meta(ctx.meta)
+        # [진단] 의미 표시별로 어느 컬럼이 걸렸는지(컬럼, 측정값/차원/제외) — 확인 후 삭제
+        if "Semantic_Type" in meta.columns:
+            parts = []
+            for role in sorted(ALL_ROLES):
+                rows = meta[meta["Semantic_Type"] == role]
+                if len(rows):
+                    parts.append(f"{role}={[(r.Physical_Name, r.Field_Type) for r in rows.itertuples()]}")
+            print("[진단-의미] " + " | ".join(parts))
+        return Schema(meta)
+
+    return ctx.get_or_compute("full_schema", _compute)
+
+
+def pick_dimension(ctx, role: str, measures: list[str]) -> str | None:
+    """같은 의미(role)의 컬럼이 여러 파일에 있을 때, 측정값이 든 파일에서 닿는 것을 고른다.
+
+    schema.column(role)은 맨 앞 컬럼을 돌려준다. 업로드 파일이 여럿이면 그것이 측정값 파일과 연결되지
+    않는 파일의 컬럼일 수 있다(재고 분석에서 항목으로 라인명이 잡혀 재고와 이어지지 않았다).
+    """
+    return pick_reachable(ctx.meta, get_full_schema(ctx).columns(role), measures)
+
+
+def role_column(ctx, role: str, ref: str | None = None) -> str | None:
+    """역할 컬럼 하나(합산 제외 컬럼은 이미 빠져 있다). 같은 역할이 여러 파일에 있으면 기준 측정값(ref)이
+    든 파일에서 닿는 것을, 기준이 없으면 행이 가장 많은 파일(가장 세분된 거래)의 것을 고른다."""
+    cols = get_full_schema(ctx).columns(role)
+    if len(cols) <= 1:
+        return cols[0] if cols else None
+    return pick_reachable(ctx.meta, cols, [ref]) if ref else pick_by_rows(ctx.meta, cols)
+
+
+def key_measure_of(ctx) -> str:
+    """분석의 기준 측정값 — 금액 역할 중 기준 파일의 것, 없으면 메타의 핵심 표시. 총평(measure_summary)과 모든
+    모듈이 같은 값을 쓰도록 한 곳에서 정한다(합친 메타의 첫 핵심 표시는 파일 순서에 따라 달라진다)."""
+    return role_column(ctx, ROLE_AMOUNT) or get_schema(ctx).key_measure
+
+
+def get_dim_frames(ctx, measures: list[str], dimension: str | None, params: dict | None = None) -> dict:
+    """모듈이 쓰는 차원 하나로 작성된 (실적, 비교) 표 — 전용 조회 + 합계 검사를 거친다.
+
+    get_frames는 모든 차원으로 작성된 표를 가져오지만, 이 함수는 모듈이 쓰는 차원 하나로 작성된 표를
+    가져온다(재고 계열처럼 항목 단위 차원 하나만 필요한 모듈용). dimension이 없으면 합계 한 줄짜리 표를
+    돌려준다. 요청한 측정값을 그 차원으로 작성할 수 없으면 다른 측정값으로 바뀌어 조회될 수 있다 —
+    바뀐 것을 받아들일지는 호출 모듈이 정한다(frames["used"]).
+
+    반환: {"actual", "compare", "used": {요청한 이름: 실제 쓴 이름}, "notes": [...]}
+    실패하면 ValueError를 올린다.
+    """
+    key = "frames::" + (dimension or "-") + "::" + ",".join(measures)
+
+    def _compute() -> dict:
+        meta = load_meta(ctx.meta)
+        queries = params.setdefault("_queries", []) if params is not None else []
+        if dimension:
+            result = fetch_wide(ctx.meta, meta, Schema(meta), list(measures), [dimension], queries)
+            if result.get("error"):
+                raise ValueError(result["error"])
+            # [진단] 요청한 측정값의 실적/비교 행 수와 합계 — 확인 후 삭제
+            used = list(result["used"].values())
+            print(f"[진단-요청] 측정값={measures} 차원={dimension} 실적행={len(result['actual'])} "
+                  f"비교행={len(result['compare'])} "
+                  f"실적합={ {m: float(result['actual'][m].sum()) for m in used if m in result['actual'].columns} } "
+                  f"비교합={ {m: float(result['compare'][m].sum()) for m in used if m in result['compare'].columns} }")
+            return result
+        actual: dict = {}
+        compare: dict = {}
+        for g in fetch_measure_groups(ctx.meta, list(measures), meta, queries=queries):
+            if g["error"]:
+                raise ValueError(f"측정값 {g['measures']} 합계 조회에 실패했습니다: {g['error']}")
+            for m in g["measures"]:
+                actual[m] = float(g["actual"][m].sum())
+                compare[m] = float(g["compare"][m].sum())
+        return {"actual": pd.DataFrame([actual]), "compare": pd.DataFrame([compare]),
+                "used": {m: m for m in measures}, "notes": []}
+
+    return ctx.get_or_compute(key, _compute)
+
+
+def get_series(ctx, measure: str, dimension: str | None, params: dict | None = None,
+               aggregate: str = "sum") -> pd.DataFrame:
+    """측정값 하나의 기간별 값 — [기간, (차원), 측정값] 표를 모듈이 필요할 때 직접 요청한다.
+
+    기간 수는 params.window_months → params.months_back → 보고서 설정 → config 순으로 정한다.
+    같은 요청은 한 번만 가져온다(ctx 캐시). 첫 열이 기간 식별자다.
+    실패하면 ValueError를 올린다.
+    """
+    p = params or {}
+    months_back = int(p.get("window_months") or p.get("months_back") or ctx.meta.get("months_back")
+                      or getattr(config, "HISTORY_MONTHS", 7))
+    grain = ctx.meta.get("grain") or "month"
+    agg = p.get("aggregate") or aggregate
+    key = f"series::{measure}::{dimension or '-'}::{months_back}::{grain}::{agg}"
+
+    def _compute() -> pd.DataFrame:
+        return fetch_series(ctx.meta, load_meta(ctx.meta), get_full_schema(ctx), measure, dimension,
+                            months_back, grain, agg, p.setdefault("_queries", []) if params is not None else [])
+
+    return ctx.get_or_compute(key, _compute)
+
+
+def _history_attrs(ctx) -> dict:
+    history = ctx.get("history_dataset")
+    return getattr(history, "attrs", None) or {}
+
+
+def history_col(ctx, col: str | None) -> str | None:
+    """이력 표에서 실제로 읽을 컬럼 이름.
+
+    요청한 측정값(예: 총 주문 금액)을 상품 같은 기준으로 나눌 수 없어 다른 값(라인 매출)으로 이력을
+    만들었으면 그 이름을 돌려준다. 바뀐 게 없으면 받은 이름 그대로.
+    """
+    if not col:
+        return col
+    return (_history_attrs(ctx).get("alias") or {}).get(col, col)
+
+
+def history_notes(ctx) -> str:
+    """이력 표에서 측정값이 바뀌었다는 안내를 해설 지시문에 붙일 문장으로 만든다(없으면 빈 문자열)."""
+    notes = _history_attrs(ctx).get("notes") or []
+    return "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in notes)
+
+
+def history_totals(ctx) -> pd.DataFrame | None:
+    """기간별 측정값 합계 표(기준 없음). 측정값이 바뀌지 않은, 요청한 그대로의 값이다."""
+    totals = _history_attrs(ctx).get("totals")
+    return totals if totals is not None and len(totals) else None
+
+
+def get_item_variance(ctx, measure: str | None = None, params: dict | None = None) -> pd.DataFrame:
     """§4 By_Item_DataSet — 차원×항목별 증감/기여율/신규·단종 플래그. measure별로 최초 1회만 계산.
 
     measure 미지정 시 schema.key_measure(기본 measure, 보통 매출). 다른 measure를 지정하면
@@ -75,18 +246,17 @@ def get_item_variance(ctx, measure: str | None = None) -> pd.DataFrame:
     key_measure와 다르면 이 measure 자체의 총 증감을 분모로 새로 잡는다.
     """
     schema = get_schema(ctx)              # 컬럼명은 코드가 아니라 데이터 정의에서 온다
-    resolved_measure = measure or schema.key_measure
+    resolved_measure = measure or key_measure_of(ctx)
     cache_key = f"{_ITEM_VARIANCE}::{resolved_measure}"
 
     def _compute() -> pd.DataFrame:
-        actual_df = ctx.get("actual_dataset")
-        compare_df = ctx.get("compare_dataset")
-        if actual_df is None or compare_df is None:
-            raise ValueError("item_variance 계산에 actual_dataset/compare_dataset이 필요합니다.")
+        frames = get_frames(ctx, [resolved_measure], params)
+        actual_df, compare_df = frames["actual"], frames["compare"]
+        used = frames["used"][resolved_measure]      # 나눌 수 없어 다른 값으로 바뀌었을 수 있다
 
         byitem = build_by_item_dataset(
             actual_df, compare_df,
-            measure=resolved_measure,
+            measure=used,
             # causal_dimensions — 인과분석(원인 순위·이상징후·기여도·교차분석) 공용 파생물이라
             # 관리용 구분(법인·부서 등)은 뺀다. 현황 서술 모듈은 이 함수를 안 쓴다.
             dimensions=[d for d in schema.causal_dimensions if d in actual_df.columns],
@@ -95,7 +265,10 @@ def get_item_variance(ctx, measure: str | None = None) -> pd.DataFrame:
             return byitem
 
         total_variance = ctx.get("total_variance")
-        if resolved_measure == schema.key_measure and total_variance:
+        if used != resolved_measure:
+            # 바뀐 값의 기여율은 그 값 자신의 전체 증감으로 나눈다(총평의 핵심 값과 단위가 다르다).
+            denom = float(actual_df[used].sum() - compare_df[used].sum())
+        elif resolved_measure == key_measure_of(ctx) and total_variance:
             denom = float(total_variance.get("variance") or 0.0)
         else:
             denom = float(byitem["Variance"].sum())
@@ -114,7 +287,7 @@ LIFECYCLE_KEEP = "유지"           # 두 기간 모두 활동
 
 
 def get_item_lifecycle(ctx) -> pd.DataFrame | None:
-    """항목별 생애주기 — history_dataset(월별 패널)의 과거 활동 이력으로 판정한다.
+    """항목별 생애주기 — 차원별 기간별 금액(get_series)의 과거 활동 이력으로 판정한다.
 
     왜 필요한가: 1개월 비교만으로 신규/이탈을 판정하면, **구매 주기가 긴 업종에서 거의 모든 고객이
     매달 신규 또는 이탈로 분류된다.** (AdventureWorks 2014-01 실측: 고객 2,073명 중 1,993명이 '신규',
@@ -129,39 +302,33 @@ def get_item_lifecycle(ctx) -> pd.DataFrame | None:
       진성이탈   : 분석기간 활동 X, 비교기간 활동 O, 과거 활동 개월수 >= LIFECYCLE_MIN_ACTIVE_MONTHS
       일시미구매 : 분석기간 활동 X, 비교기간 활동 O, 과거 활동 개월수 < 임계 (단발 구매자)
 
-    history_dataset이 없으면 None을 돌려준다. 호출 모듈은 이를 "판정 불가"로 **명시**해야 하며
+    과거 활동 이력을 가져오지 못하면 None을 돌려준다. 호출 모듈은 이를 "판정 불가"로 **명시**해야 하며
     조용히 1개월 정의로 되돌아가서는 안 된다.
     """
     def _compute() -> pd.DataFrame | None:
-        history = ctx.get("history_dataset")
         byitem = get_item_variance(ctx)
-        if history is None or history.empty or byitem.empty:
+        if byitem.empty:
+            print("[진단-생애주기] 판정 불가 — 항목별 증감 표 비어 있음")  # [진단] 확인 후 삭제
             return None
 
-        schema = get_schema(ctx)
-        period_col = schema.column(ROLE_PERIOD)
-        amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
-        if not period_col or period_col not in history.columns or amount_col not in history.columns:
-            return None                                     # 이력에 기간·금액이 없으면 판정 불가
-
+        # 과거 활동은 판정할 차원마다 금액을 기간별로 직접 요청해 구한다(모듈이 필요한 만큼만).
+        schema = get_full_schema(ctx)
+        amount_col = role_column(ctx, ROLE_AMOUNT) or schema.key_measure
         target_month = ctx.meta.get("target_month")
-        past = history[history[period_col] != target_month]  # 분석월 제외 = 과거 구간
-        if past.empty:
-            return None
 
         min_active = int(getattr(config, "LIFECYCLE_MIN_ACTIVE_MONTHS", 2))
         rows = []
 
         for dim in byitem["Dimension_Logical_Name"].unique():
-            if dim not in past.columns:
-                continue                                    # 이력에 없는 차원은 판정 불가
+            try:
+                series = get_series(ctx, amount_col, dim)
+            except ValueError as e:
+                print(f"[진단-생애주기] '{dim}' 기간별 값 조회 실패: {e}")  # 이 차원은 판정 불가
+                continue
+            period_col = series.columns[0]
+            past = series[series[period_col] != target_month]       # 분석월 제외 = 과거 구간
             # 항목별 과거 활동 기간수 (금액 > 0 인 기간)
-            active = (
-                past[past[amount_col] > 0]
-                .groupby([dim, period_col])[amount_col].sum()
-                .reset_index()
-                .groupby(dim)[period_col].nunique()
-            )
+            active = past[past[amount_col] > 0].groupby(dim)[period_col].nunique()
             sub = byitem[byitem["Dimension_Logical_Name"] == dim]
             for _, r in sub.iterrows():
                 item = r["Item_Name"]
@@ -220,7 +387,7 @@ def get_lifecycle_effects(ctx) -> pd.DataFrame | None:
 
 
 # ── PVM(물량·믹스·가격) 분해 (2026-07-20, 시나리오 1의 Volume/Price/Mix 3스텝 공용) ───
-def get_pvm_effects(ctx) -> dict:
+def get_pvm_effects(ctx, params: dict | None = None) -> dict:
     """물량(Volume)/믹스(Mix)/가격(Price) 분해 — 최초 1회만 계산해 재사용(§6.2 재계산 금지).
 
     Volume/Price/Mix가 시나리오에서 **각각 독립 스텝**이라(스텝 분리 원칙, 2026-07-20), 세
@@ -237,20 +404,22 @@ def get_pvm_effects(ctx) -> dict:
     실패하면 ValueError를 올린다(호출 모듈이 §11 Step 2 형태의 실패로 변환한다).
     """
     def _compute() -> dict:
-        actual_df = ctx.get("actual_dataset")
-        compare_df = ctx.get("compare_dataset")
-        if actual_df is None or compare_df is None:
-            raise ValueError("선행 데이터(actual/compare)가 없습니다.")
-
         schema = get_schema(ctx)
-        amount = schema.column(ROLE_AMOUNT) or schema.key_measure
-        quantity = schema.column(ROLE_QUANTITY)
+        amount = role_column(ctx, ROLE_AMOUNT) or schema.key_measure
+        quantity = role_column(ctx, ROLE_QUANTITY, amount)
         item = schema.column(ROLE_ITEM)
 
-        if not quantity or quantity not in actual_df.columns:
+        if not quantity:
             raise ValueError("물량(quantity) 역할이 없어 물량·믹스를 가를 수 없습니다. "
                              "데이터소스 정의에 quantity 역할을 선언하세요.")
-        if not item or item not in actual_df.columns:
+        if not item:
+            raise ValueError("항목(item) 역할이 없어 믹스를 계산할 수 없습니다.")
+
+        # 스텝 공용 표 대신 전용 조회 — 금액이 항목으로 나눌 수 없는 값이면 나눌 수 있는 값으로 바뀐다.
+        frames = get_frames(ctx, [amount, quantity], params)
+        actual_df, compare_df = frames["actual"], frames["compare"]
+        amount, quantity = frames["used"][amount], frames["used"][quantity]
+        if item not in actual_df.columns:
             raise ValueError("항목(item) 역할이 없어 믹스를 계산할 수 없습니다.")
 
         a = actual_df.groupby(item)[[amount, quantity]].sum()
@@ -277,8 +446,11 @@ def get_pvm_effects(ctx) -> dict:
         price = float((keep[qa] * (p_ia - p_ic)).sum())                # 단가 변화
         covered_variance = float(keep[aa].sum() - keep[ac].sum())      # 공통 항목 매출 변화(검산)
 
+        # total_variance: 분해에 실제로 쓴 금액 자신의 전체 증감 — 나눌 수 없어 바뀐 값이면 총평의
+        # 핵심 측정값과 다르다. 비중은 이 값으로 낸다.
         return {"volume": volume, "mix": mix, "price": price,
-                "covered_variance": covered_variance}
+                "covered_variance": covered_variance, "notes": frames["notes"],
+                "total_variance": float(actual_df[amount].sum() - compare_df[amount].sum())}
 
     return ctx.get_or_compute(_PVM_EFFECTS, _compute)
 
@@ -373,7 +545,7 @@ def _bridge_decompose(panel: pd.DataFrame, lc_map: dict | None, *,
     return effects
 
 
-def get_bridge_effects(ctx) -> dict:
+def get_bridge_effects(ctx, params: dict | None = None) -> dict:
     """상품·고객 관점의 매출 증감 가법 분해(§13) — 최초 1회만 계산해 재사용(§6.2).
 
     실패(선행 데이터 없음·item/party 역할 없음·가법성 검산 불일치)하면 ValueError를 올린다
@@ -388,22 +560,21 @@ def get_bridge_effects(ctx) -> dict:
         quantity_available: bool  — False면 volume/price 분해가 무의미(수량 역할 없음)
     """
     def _compute() -> dict:
-        actual_df = ctx.get("actual_dataset")
-        compare_df = ctx.get("compare_dataset")
-        total_variance = ctx.get("total_variance")
-        if actual_df is None or compare_df is None or not total_variance:
-            raise ValueError("선행 데이터(actual/compare/total_variance)가 없습니다.")
-
         schema = get_schema(ctx)
-        amount = schema.column(ROLE_AMOUNT) or schema.key_measure
-        quantity = schema.column(ROLE_QUANTITY)
-        discount = schema.column(ROLE_DISCOUNT)
-        if quantity and quantity not in actual_df.columns:
-            quantity = None
-        if discount and discount not in actual_df.columns:
-            discount = None
+        amount = role_column(ctx, ROLE_AMOUNT) or schema.key_measure
+        quantity = role_column(ctx, ROLE_QUANTITY, amount)
+        discount = role_column(ctx, ROLE_DISCOUNT, amount)
 
-        total = float(total_variance["variance"])
+        # 스텝 공용 표 대신 전용 조회 — 금액이 항목으로 나눌 수 없는 값이면 나눌 수 있는 값으로 바뀐다.
+        frames = get_frames(ctx, [c for c in (amount, quantity, discount) if c], params)
+        actual_df, compare_df = frames["actual"], frames["compare"]
+        amount = frames["used"][amount]
+        quantity = frames["used"][quantity] if quantity else None
+        discount = frames["used"][discount] if discount else None
+
+        # 검산 기준은 분해에 실제로 쓴 금액 자신의 전체 증감이다. 총평의 핵심 측정값과 다를 수 있다
+        # (나눌 수 없어 다른 값으로 바뀐 경우) — 그때는 해설에 밝힌다(frames["notes"]).
+        total = float(actual_df[amount].sum() - compare_df[amount].sum())
         lifecycle_available = get_item_lifecycle(ctx) is not None
         measure_cols = [c for c in (amount, quantity, discount) if c]
 
@@ -461,13 +632,59 @@ def get_bridge_effects(ctx) -> dict:
             "item_effects": item_effects,
             "lifecycle_based": lifecycle_available,
             "quantity_available": quantity is not None,
+            "notes": frames["notes"],
         }
 
     return ctx.get_or_compute(_BRIDGE_CALC, _compute)
 
 
 # ── 손익 계단 (2026-07-21, 시나리오 5 "손익 분석"의 Revenue~EBIT 5스텝 공용) ─────
-def get_pnl_ladder(ctx) -> dict:
+def additive_cols(ctx, cols: list[str], params: dict | None) -> list[str]:
+    """같은 의미의 측정값이 여럿일 때 더해서 쓸 컬럼. 한 컬럼이 나머지의 합과 같으면(합계 열) 그 하나만,
+    없으면 전부(구성 항목들)다. 같은 파일의 컬럼끼리만 비교한다 — 값(분석기간 합계)으로 판단한다."""
+    if len(cols) <= 1:
+        return cols
+    meta = load_meta(ctx.meta)
+    first_src = source_of(ctx.meta, meta, cols[0])
+    cols = [c for c in cols if source_of(ctx.meta, meta, c) == first_src]
+    if len(cols) <= 1:
+        return cols
+    frames = get_dim_frames(ctx, cols, None, params)
+    sums = {c: float(frames["actual"][frames["used"][c]].iloc[0]) for c in cols}
+    for c in cols:
+        others = sum(v for k, v in sums.items() if k != c)
+        if others and abs(sums[c] - others) <= max(abs(sums[c]) * 0.005, 0.01):
+            return [c]
+    return cols
+
+
+def pnl_role_cols(ctx, params: dict | None = None) -> dict[str, list[str]]:
+    """손익에 쓸 금액·원가·판관비 컬럼 목록 {"amount": [...], "cost": [...], "opex": [...]}.
+
+    스텝 범위 메타가 아니라 전체 메타에서 찾는다(원가 파일은 매출 파일과 따로 있을 수 있다). 합산해도
+    의미 있는 측정값(Field_Type=Measure)만 쓰고, 금액은 대표 하나, 원가·판관비는 합계 열 하나 또는 구성
+    항목 전부다(_additive_cols).
+    """
+    def _compute() -> dict[str, list[str]]:
+        schema = get_full_schema(ctx)
+        out: dict[str, list[str]] = {}
+        for key, role in (("amount", ROLE_AMOUNT), ("cost", ROLE_COST), ("opex", ROLE_OPEX)):
+            cols = [c for c in schema.columns(role) if c in schema.measures]
+            if key == "amount":
+                continue
+            out[key] = additive_cols(ctx, cols, params)
+        # 금액은 원가와 같은 파일의 것을 우선한다(같은 표에서 손익이 계산돼야 단계가 맞는다).
+        meta = load_meta(ctx.meta)
+        anchor = source_of(ctx.meta, meta, out["cost"][0]) if out.get("cost") else None
+        amounts = [c for c in schema.columns(ROLE_AMOUNT) if c in schema.measures]
+        same = [c for c in amounts if anchor and source_of(ctx.meta, meta, c) == anchor]
+        out["amount"] = (same or amounts)[:1] or [role_column(ctx, ROLE_AMOUNT) or schema.key_measure]
+        return out
+
+    return ctx.get_or_compute("pnl_role_cols", _compute)
+
+
+def get_pnl_ladder(ctx, params: dict | None = None) -> dict:
     """매출→매출원가→매출총이익→판관비→영업이익 각 단계 값 — 최초 1회만 계산해 재사용.
 
     5개 리프 모듈(revenue_step/cogs_step/gross_margin_step/opex_step/ebit_step)과
@@ -483,27 +700,22 @@ def get_pnl_ladder(ctx) -> dict:
     영업이익 스텝은 호출 모듈이 각자 명시적으로 실패 처리한다(조용히 생략하지 않는다).
     """
     def _compute() -> dict:
-        actual_df = ctx.get("actual_dataset")
-        compare_df = ctx.get("compare_dataset")
-        if actual_df is None or compare_df is None:
-            raise ValueError("선행 데이터(actual/compare)가 없습니다.")
+        roles = pnl_role_cols(ctx, params)
+        amount_cols, cost_cols, opex_cols = roles["amount"], roles["cost"], roles["opex"]
 
-        schema = get_schema(ctx)
-        amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
-        cost_col = schema.column(ROLE_COST)
-        opex_col = schema.column(ROLE_OPEX)
-
-        if amount_col not in actual_df.columns:
-            raise ValueError(f"금액 컬럼 '{amount_col}'이 데이터에 없습니다.")
-        if not cost_col or cost_col not in actual_df.columns:
+        if not cost_cols:
             raise ValueError("매출원가(cost 역할) 컬럼이 없어 손익 분석을 할 수 없습니다. "
                              "데이터소스 정의에 cost 역할을 선언하세요.")
 
-        def _sum(df: pd.DataFrame, col: str | None) -> float:
-            return float(df[col].sum()) if col and col in df.columns else 0.0
+        # 차원 없이 합계만 필요하다 — 컬럼이 든 파일마다 따로 요청한다(get_dim_frames, 합계 한 줄).
+        frames = get_dim_frames(ctx, [*amount_cols, *cost_cols, *opex_cols], None, params)
+        actual_df, compare_df = frames["actual"], frames["compare"]
 
-        rev_a, rev_c = _sum(actual_df, amount_col), _sum(compare_df, amount_col)
-        cogs_a, cogs_c = _sum(actual_df, cost_col), _sum(compare_df, cost_col)
+        def _sum(df: pd.DataFrame, cols: list[str]) -> float:
+            return float(sum(df[frames["used"][c]].iloc[0] for c in cols if frames["used"][c] in df.columns))
+
+        rev_a, rev_c = _sum(actual_df, amount_cols), _sum(compare_df, amount_cols)
+        cogs_a, cogs_c = _sum(actual_df, cost_cols), _sum(compare_df, cost_cols)
         gm_a, gm_c = rev_a - cogs_a, rev_c - cogs_c
 
         def _step(name: str, compare: float, actual: float) -> dict:
@@ -523,9 +735,9 @@ def get_pnl_ladder(ctx) -> dict:
             "매출원가": _step("매출원가", cogs_c, cogs_a),
             "매출총이익": _step("매출총이익", gm_c, gm_a),
         }
-        has_opex = bool(opex_col) and opex_col in actual_df.columns
+        has_opex = bool(opex_cols)
         if has_opex:
-            opex_a, opex_c = _sum(actual_df, opex_col), _sum(compare_df, opex_col)
+            opex_a, opex_c = _sum(actual_df, opex_cols), _sum(compare_df, opex_cols)
             ebit_a, ebit_c = gm_a - opex_a, gm_c - opex_c
             steps["판매관리비"] = _step("판매관리비", opex_c, opex_a)
             steps["영업이익"] = _step("영업이익", ebit_c, ebit_a)

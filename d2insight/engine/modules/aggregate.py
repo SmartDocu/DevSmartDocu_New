@@ -17,16 +17,48 @@ from __future__ import annotations
 import pandas as pd
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import slice_history_window
-from d2insight.engine.schema import ROLE_PERIOD, get_schema
+from d2insight.engine.modules._shared import get_series, key_measure_of
+from d2insight.engine.pipeline.data_request import fetch_frame, load_meta
+from d2insight.engine.schema import get_schema
 from d2insight.engine.types import ModuleResult
 
 
 def _resolve(ctx, params) -> tuple:
     """(schema, measure, 표시명) — measure 미지정 시 핵심 measure."""
     schema = get_schema(ctx)
-    measure = params.get("measure") or schema.key_measure
+    measure = params.get("measure") or key_measure_of(ctx)
     return schema, measure, schema.logical_name(measure)
+
+
+def _frames(ctx, params, schema, measure) -> tuple:
+    """(실적표, 비교표, measure, 대체 안내, 실패 결과).
+
+    기준(차원)이 있으면 같은 테이블이든 아니든 항상 이 모듈 전용 조회를 쓴다 — 스텝 공용 표는
+    두 테이블을 조인해 만들어져 '1'쪽 값(주문 총액 등)이 '여러 줄'쪽 행 수만큼 복사되어 합계가
+    부풀려진다(2026-09-28 사고). 측정값과 기준이 같은 테이블이어도 공용 표 자체가 조인된 표라
+    마찬가지다(2026-09-29 지역별 분석에서 확인). DB는 조회 생성기(LLM)가, 업로드는 판다스가
+    답한다(data_request).
+
+    조회 뒤에 기준별 합계가 차원 없는 총합과 같은지 검사한다. 다르면 그 결과를 쓰지 않고 실패로
+    알린다. 요청한 측정값 대신 나눌 수 있는 다른 측정값으로 조회됐으면 조용히 바꾸지 않고
+    안내문을 돌려준다.
+    """
+    dimension = params.get("dimension")
+    if not dimension:
+        # 이 모듈들은 차원이 있어야 의미가 있다. 스텝 공용 표를 읽을 필요 없이 바로 실패로 알린다.
+        return None, None, measure, "", ModuleResult(
+            status="failed", error="params.dimension이 필요합니다(차원 미지정).")
+
+    meta = ctx.get("meta_columns")
+    if meta is None or measure not in set(meta["Physical_Name"]) or dimension not in set(meta["Physical_Name"]):
+        meta = load_meta(ctx.meta)          # 스텝 공용 표에 없는 컬럼이면 전체 메타를 쓴다
+
+    # 조회·힌트·합계 검사는 공통 부품(data_request.fetch_frame)이 한다 — 다른 모듈도 같이 쓴다.
+    r = fetch_frame(ctx.meta, meta, schema, measure, [dimension], params.setdefault("_queries", []))
+    if r.get("error"):
+        return None, None, measure, "", ModuleResult(status="failed", error=r["error"])
+    note = f" {r['note']} — 이 사실을 한 문장으로 밝혀라." if r["note"] else ""
+    return r["actual"], r["compare"], r["measure"], note, None
 
 
 def _need_dimension(params, actual_df) -> tuple[str | None, ModuleResult | None]:
@@ -55,8 +87,11 @@ def _compare_panel(actual_df, compare_df, dimension: str, measure: str) -> pd.Da
 
 # ── 실적집계 ─────────────────────────────────────────────────────────────────
 def run_actual_aggregate(ctx, params, tools) -> ModuleResult:
-    actual_df, compare_df = ctx.get("actual_dataset"), ctx.get("compare_dataset")
     schema, measure, measure_name = _resolve(ctx, params)
+    actual_df, compare_df, measure, subst_note, err = _frames(ctx, params, schema, measure)
+    if err:
+        return err
+    measure_name = schema.logical_name(measure)
     dimension, err = _need_dimension(params, actual_df)
     if err:
         return err
@@ -78,6 +113,7 @@ def run_actual_aggregate(ctx, params, tools) -> ModuleResult:
     if not shown.empty and (shown["Comparison_Value"] == 0).all():
         hint += (" 상위 항목 전부 비교기간 실적이 0(신규 취급)이라 증감률이 의미 없다는 것도 밝혀라"
                  " — 재구매 주기가 길어 원시 2개월 비교의 함정일 수 있다.")
+    hint += subst_note
 
     render = render_from_dataframe(
         shown, purpose="차원×항목 실적과 증감을 표·차트로 제시.", narrative_hint=hint,
@@ -90,8 +126,11 @@ def run_actual_aggregate(ctx, params, tools) -> ModuleResult:
 
 # ── 구성비 ───────────────────────────────────────────────────────────────────
 def run_composition(ctx, params, tools) -> ModuleResult:
-    actual_df, compare_df = ctx.get("actual_dataset"), ctx.get("compare_dataset")
     schema, measure, measure_name = _resolve(ctx, params)
+    actual_df, compare_df, measure, subst_note, err = _frames(ctx, params, schema, measure)
+    if err:
+        return err
+    measure_name = schema.logical_name(measure)
     dimension, err = _need_dimension(params, actual_df)
     if err:
         return err
@@ -116,7 +155,7 @@ def run_composition(ctx, params, tools) -> ModuleResult:
     render = render_from_dataframe(
         shown,
         purpose="차원 항목별 구성비와 비중 변화를 제시.",
-        narrative_hint="비중이 커진 항목과 줄어든 항목을 짚고, 집중도가 높아졌는지 낮아졌는지 말하라.",
+        narrative_hint="비중이 커진 항목과 줄어든 항목을 짚고, 집중도가 높아졌는지 낮아졌는지 말하라." + subst_note,
         params={"차원": dim_name, "측정값": measure_name}, label="composition",
         cache=params.get("_llm_render_cache"),
     )
@@ -126,8 +165,11 @@ def run_composition(ctx, params, tools) -> ModuleResult:
 
 # ── 순위 ─────────────────────────────────────────────────────────────────────
 def run_ranking(ctx, params, tools) -> ModuleResult:
-    actual_df, compare_df = ctx.get("actual_dataset"), ctx.get("compare_dataset")
     schema, measure, measure_name = _resolve(ctx, params)
+    actual_df, compare_df, measure, subst_note, err = _frames(ctx, params, schema, measure)
+    if err:
+        return err
+    measure_name = schema.logical_name(measure)
     dimension, err = _need_dimension(params, actual_df)
     if err:
         return err
@@ -153,43 +195,30 @@ def run_ranking(ctx, params, tools) -> ModuleResult:
     render = render_from_dataframe(
         shown,
         purpose="항목 상/하위 순위를 제시.",
-        narrative_hint="상위권의 규모 차이가 큰지 고른지 짚어라. 순위와 증감 방향이 어긋나면 그 점을 말하라.",
+        narrative_hint="상위권의 규모 차이가 큰지 고른지 짚어라. 순위와 증감 방향이 어긋나면 그 점을 말하라." + subst_note,
         params={"차원": dim_name, "기준": basis, "정렬": label}, label="ranking",
         cache=params.get("_llm_render_cache"),
     )
     return ModuleResult(render=render)
 
 
-# ── 추이 (이력 필요) ─────────────────────────────────────────────────────────
-def _history(ctx, params: dict | None = None) -> tuple[pd.DataFrame | None, str | None, str]:
-    """이력 패널 + 기간 컬럼. params.window_months가 있으면 최근 N개월만 잘라 준다.
-
-    창 기본값은 None = 이력 전체(기존 동작). 창 지정은 수동 모드에서 들어온다.
-    """
-    history = ctx.get("history_dataset")
-    if history is None or history.empty:
-        return None, None, ""
-    period_col = get_schema(ctx).column(ROLE_PERIOD)
-    if not period_col or period_col not in history.columns:
-        return None, None, ""
-
-    window = (params or {}).get("window_months")
-    history, note = slice_history_window(history, period_col, window)
-    return history, period_col, note
+# ── 추이 (기간별 값을 직접 요청) ─────────────────────────────────────────────
+def _series(ctx, params, measure, dimension):
+    """(기간별 표, 기간 컬럼, 실패 결과) — 측정값을 기간별로 직접 요청한다(params.aggregate로 집계 방식)."""
+    try:
+        frame = get_series(ctx, measure, dimension, params)
+    except ValueError as e:
+        return None, None, ModuleResult(status="failed", error=f"기간별 값 조회에 실패했습니다: {e}")
+    return frame, frame.columns[0], None
 
 
 def run_trend(ctx, params, tools) -> ModuleResult:
-    history, period_col, window_note = _history(ctx, params)
-    if history is None:
-        return ModuleResult(status="failed",
-                            error="이력(history_dataset)이 없어 추이를 낼 수 없습니다.")
     schema, measure, measure_name = _resolve(ctx, params)
-    if measure not in history.columns:
-        return ModuleResult(status="failed", error=f"이력에 '{measure}' 컬럼이 없습니다.")
-
     dimension = params.get("dimension")
-    if dimension and dimension not in history.columns:
-        return ModuleResult(status="failed", error=f"이력에 차원 '{dimension}'이 없습니다.")
+    history, period_col, failed = _series(ctx, params, measure, dimension)
+    if failed:
+        return failed
+    window_note = ""
 
     if dimension:
         top_n = int(params.get("top_n") or 5)
@@ -226,15 +255,13 @@ def run_trend(ctx, params, tools) -> ModuleResult:
     return ModuleResult(render=render)
 
 
-# ── 누계·진척 (이력 필요) ────────────────────────────────────────────────────
+# ── 누계·진척 (기간별 값을 직접 요청) ────────────────────────────────────────
 def run_cumulative_progress(ctx, params, tools) -> ModuleResult:
-    history, period_col, window_note = _history(ctx, params)
-    if history is None:
-        return ModuleResult(status="failed",
-                            error="이력(history_dataset)이 없어 누계를 낼 수 없습니다.")
     schema, measure, measure_name = _resolve(ctx, params)
-    if measure not in history.columns:
-        return ModuleResult(status="failed", error=f"이력에 '{measure}' 컬럼이 없습니다.")
+    history, period_col, failed = _series(ctx, params, measure, None)
+    if failed:
+        return failed
+    window_note = ""
 
     series = history.groupby(period_col)[measure].sum().sort_index()
     cumulative = series.cumsum()

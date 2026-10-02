@@ -1,5 +1,14 @@
 import re
+import sys
 from pathlib import Path
+
+# 콘솔 인코딩(cp949 등)이 표현하지 못하는 글자(— 등)를 print하면 예외가 나서 요청 처리가 중단된다.
+# 인코딩은 그대로 두고, 표현할 수 없는 글자만 대체 문자로 출력한다.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except Exception:
+        pass
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

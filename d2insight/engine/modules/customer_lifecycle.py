@@ -14,7 +14,8 @@ import pandas as pd
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
 from d2insight.engine.modules._shared import (
-    LIFECYCLE_CHURN, LIFECYCLE_DORMANT, LIFECYCLE_NEW, LIFECYCLE_RETURN, get_lifecycle_effects,
+    LIFECYCLE_CHURN, LIFECYCLE_DORMANT, LIFECYCLE_NEW, LIFECYCLE_RETURN, get_full_schema,
+    get_lifecycle_effects,
 )
 from d2insight.engine.schema import ROLE_PARTY, get_schema
 from d2insight.engine.types import ModuleResult
@@ -26,10 +27,10 @@ def _party_slice(ctx, stages: list[str]) -> tuple[pd.DataFrame, str, str] | Modu
     if merged is None:
         return ModuleResult(
             status="failed",
-            error=("과거 이력(history_dataset)이 없어 고객 생애주기를 판정할 수 없습니다. "
+            error=("과거 기간별 이력을 가져오지 못해 고객 생애주기를 판정할 수 없습니다. "
                    "1개월 비교만으로는 구매 주기와 실제 이탈을 구분할 수 없습니다."),
         )
-    schema = get_schema(ctx)
+    schema = get_full_schema(ctx)
     party = schema.column(ROLE_PARTY)
     if not party:
         return ModuleResult(status="failed", error="고객(party) 역할이 없어 신규/이탈 고객을 가를 수 없습니다.")

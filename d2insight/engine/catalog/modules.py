@@ -249,14 +249,15 @@ _AGGREGATE = [
         "trend",
         purpose="measure의 기간별 추이를 제시(추이).",
         kind="aggregate",
-        requires=["history_dataset"],
+        requires=[],                        # 기간별 값은 모듈이 필요한 만큼 직접 요청한다
         produces=[],
         params={
             "measure":   {"type": "str", "required": False, "default": None},
             "dimension": {"type": "str", "required": False, "default": None},
             "top_n":     {"type": "int", "required": False, "default": 5},
-            # None = 이력 전체(기본). 수동 모드에서 사용자가 창을 지정한다.
+            # None = 보고서 설정의 기간 수(기본). 수동 모드에서 사용자가 창을 지정한다.
             "window_months": {"type": "int", "required": False, "default": None},
+            "aggregate": {"type": "str", "required": False, "default": "sum"},   # sum(흐름)/avg·last(잔액)
         },
         tools={"available": ["series"], "default": "series"},
         model_tier="fast",
@@ -335,13 +336,14 @@ _AGGREGATE = [
         "cumulative_progress",
         purpose="기간 누계와 진척률을 제시(누계/진척).",
         kind="aggregate",
-        requires=["history_dataset"],
+        requires=[],                        # 기간별 값은 모듈이 필요한 만큼 직접 요청한다
         produces=[],
         params={
             "measure": {"type": "str", "required": False, "default": None},
             "target":  {"type": "float", "required": False, "default": None},
-            # None = 이력 전체(기본). 수동 모드에서 사용자가 창을 지정한다.
+            # None = 보고서 설정의 기간 수(기본). 수동 모드에서 사용자가 창을 지정한다.
             "window_months": {"type": "int", "required": False, "default": None},
+            "aggregate": {"type": "str", "required": False, "default": "sum"},   # sum(흐름)/avg·last(잔액)
         },
         tools={"available": ["running_total"], "default": "running_total"},
         model_tier="fast",
@@ -357,7 +359,10 @@ _ANALYSIS = [
         "measure_summary",
         purpose="측정값 전체의 증감 총평(규모·증감률). 단가·할인율은 그 역할이 있을 때만 덧붙인다.",
         kind="analysis",
-        requires=["actual_dataset", "compare_dataset"],
+        # 2026-09-28: actual_dataset/compare_dataset(스텝 공용 조회)에 더는 의존하지 않는다 —
+        # 이 모듈이 직접 필요한 측정값만 그때그때 조회한다(헤더/디테일 fan-out 회피, jeff_docs
+        # 참고). period_dataset을 이 스텝에 억지로 끼워 넣지 않기 위해 requires를 비운다.
+        requires=[],
         produces=["measure_summary", "total_variance"],
         params={"measures": {"type": "list", "required": False, "default": None}},
         tools={},                       # 집계 계산
@@ -446,7 +451,7 @@ _ANALYSIS = [
         "new_lost_detection",
         purpose="신규·이탈 항목의 건수와 금액 효과를 제시.",
         kind="analysis",
-        requires=["actual_dataset", "compare_dataset"],
+        requires=["actual_dataset", "compare_dataset"],   # 과거 이력은 모듈이 직접 요청해 생애주기를 판정
         produces=["new_lost_items", "count_summary"],
         params={
             "dimension":  {"type": "str", "required": False, "default": None},
@@ -469,7 +474,7 @@ _ANALYSIS = [
         # 역할 이름을 그대로 쓴다(구매 도메인이면 공급사, 생산이면 설비).
         purpose="party 차원의 신규 유입(진성신규·복귀)만 — 신규/이탈을 나눠 보는 스텝용.",
         kind="analysis",
-        requires=["actual_dataset", "compare_dataset"],
+        requires=["actual_dataset", "compare_dataset"],   # 과거 이력은 모듈이 직접 요청해 생애주기를 판정
         produces=[],                        # new_lost_detection과 같은 계산(_shared.get_lifecycle_effects) 공유
         params={"top_n": {"type": "int", "required": False, "default": 10}},
         tools={},
@@ -485,7 +490,7 @@ _ANALYSIS = [
         "lost_party",
         purpose="party 차원의 이탈(진성이탈)만 — 신규/이탈을 나눠 보는 스텝용.",
         kind="analysis",
-        requires=["actual_dataset", "compare_dataset"],
+        requires=["actual_dataset", "compare_dataset"],   # 과거 이력은 모듈이 직접 요청해 생애주기를 판정
         produces=[],
         params={"top_n": {"type": "int", "required": False, "default": 10}},
         tools={},
@@ -542,7 +547,7 @@ _ANALYSIS = [
         "data_validation",
         purpose="분석 신뢰도 사전 점검(데이터검증).",
         kind="analysis",
-        requires=["history_dataset"],       # 다월(전전월·전월·당월) 비교 → 이력 패널 필요
+        requires=[],                        # 다월 비교에 필요한 기간별 값은 모듈이 직접 요청한다
         produces=["validation_result"],
         params={},
         tools={"available": ["validate"], "default": "validate"},
@@ -555,10 +560,12 @@ _ANALYSIS = [
         # 분류 단위(grain)는 item 역할 기본, sub_name으로 명시 지정(§7.4). CV·등급변동은 진단적.
         purpose="항목을 규모(ABC)·변동성(XYZ)으로 분류하고 등급 변동을 제시.",
         kind="analysis",
-        requires=["history_dataset"],       # 다월 패널: XYZ의 CV·ABC 누적점유율·등급 변동
+        requires=[],                        # 기간별 값은 모듈이 필요한 만큼 직접 요청한다
         produces=["abc_xyz_classification", "abc_grade_changes"],
         params={
             "dimensions":    {"type": "list", "required": False, "default": None},   # None → item 역할
+            "measure":       {"type": "str",  "required": False, "default": None},   # None → 금액 의미 표시
+            "aggregate":     {"type": "str",  "required": False, "default": "sum"},  # sum(흐름)/avg·last(잔액)
             "window_months": {"type": "int",  "required": False, "default": 3},
             "top_n":         {"type": "int",  "required": False, "default": 20},
         },
@@ -571,13 +578,13 @@ _ANALYSIS = [
         # 계산이 리스트 파라미터를 읽으므로 sub_name은 dimensions로 펼쳐진다.
         sub_name_pool="dimensions",
         sub_name_param="dimensions",
-        accepts_measure=False,
+        accepts_measure=True,
     ),
     _spec(
         "product_lifecycle",
         purpose="항목을 수명주기 단계(도입/성장/성숙/쇠퇴)로 분류.",
         kind="analysis",
-        requires=["history_dataset"],       # 다월 추이(기울기·활동 기간)
+        requires=[],                        # 다월 추이에 필요한 기간별 값은 모듈이 직접 요청한다
         produces=["lifecycle_stages"],
         params={
             "dimensions": {"type": "list", "required": False, "default": None},   # None → item 역할
@@ -600,7 +607,7 @@ _ANALYSIS = [
         # anomaly_detection(항목 레벨·횡단면)과 다르다 — measure 레벨·시계열 판정이다.
         purpose="measure(KPI)가 이력 대비 평소 범위를 벗어났는지 경보/주의/정상으로 판정.",
         kind="analysis",
-        requires=["history_dataset", "measure_summary"],
+        requires=["measure_summary"],            # 기간별 값은 모듈이 직접 요청한다
         produces=["kpi_alerts"],
         params={
             "sigma": {"type": "float", "required": False, "default": None},   # None → config

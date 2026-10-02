@@ -104,8 +104,8 @@ def expand_plan(plan: dict, catalog: Catalog) -> tuple[list[ModuleInstance], lis
             params = dict(m.get("params") or {})
             if m.get("_auto"):
                 params["_auto"] = True
-            if m["module_id"] == "period_dataset":
-                print(f"[DEBUG-expand_plan] step={label!r} period_dataset m._auto={m.get('_auto')!r} params._auto={params.get('_auto')!r}")
+            # if m["module_id"] == "period_dataset":
+            #     print(f"[DEBUG-expand_plan] step={label!r} period_dataset m._auto={m.get('_auto')!r} params._auto={params.get('_auto')!r}")
             instances.append(ModuleInstance(
                 step_label=label,
                 module_id=m["module_id"],
@@ -227,16 +227,19 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
         missing = ctx.missing_requires(inst.spec.requires)
         if missing:
             ctx.mark_skipped(inst.ref, f"선행 데이터 {missing} 없음(선행 모듈 실패·생략 추정)")
+            print(f"[진단-실행] 생략 {inst.ref}: 선행 데이터 {missing} 없음")  # [진단] 확인 후 삭제
             continue
 
         try:
             result: ModuleResult = inst.spec.run(ctx, inst.params, inst.tools)
         except Exception as e:                 # 조용히 생략하지 않고 기록
             ctx.mark_failed(inst.ref, f"{type(e).__name__}: {e}")
+            print(f"[진단-실행] 실패 {inst.ref}: {type(e).__name__}: {e}")  # [진단] 확인 후 삭제
             continue
 
         if result.status != "ok":
             ctx.mark_failed(inst.ref, result.error or "알 수 없는 실패")
+            print(f"[진단-실행] 실패 {inst.ref}: {result.error or '알 수 없는 실패'}")  # [진단] 확인 후 삭제
             continue
 
         for lbl, val in result.outputs.items():

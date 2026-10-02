@@ -20,6 +20,7 @@ from __future__ import annotations
 import pandas as pd
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
+from d2insight.engine.modules._shared import get_frames, role_column
 from d2insight.engine.schema import ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_PERIOD, ROLE_QUANTITY, get_schema
 from d2insight.engine.types import ModuleResult, Render
 
@@ -56,10 +57,8 @@ def _effects(row: pd.Series, amount: str, quantity: str | None,
 def run(ctx, params, tools) -> ModuleResult:
     outliers = ctx.get("outlier_result")
     stats = ctx.get("dimension_stats")
-    actual_df = ctx.get("actual_dataset")
-    compare_df = ctx.get("compare_dataset")
-    if actual_df is None or compare_df is None or stats is None:
-        return ModuleResult(status="failed", error="선행 데이터(actual/compare/dimension_stats)가 없습니다.")
+    if stats is None:
+        return ModuleResult(status="failed", error="선행 데이터(dimension_stats)가 없습니다.")
 
     if outliers is None or outliers.empty:
         # 쪼갤 대상이 없는 것은 실패가 아니라 "해당 없음"이다.
@@ -73,13 +72,20 @@ def run(ctx, params, tools) -> ModuleResult:
     requested_subs = params.get("sub_dimensions")
 
     schema = get_schema(ctx)
-    amount = schema.column(ROLE_AMOUNT) or schema.key_measure
-    quantity = schema.column(ROLE_QUANTITY)
-    discount = schema.column(ROLE_DISCOUNT)
-    if quantity and quantity not in actual_df.columns:
-        quantity = None
-    if discount and discount not in actual_df.columns:
-        discount = None
+    amount = role_column(ctx, ROLE_AMOUNT) or schema.key_measure
+    quantity = role_column(ctx, ROLE_QUANTITY, amount)
+    discount = role_column(ctx, ROLE_DISCOUNT, amount)
+
+    # 스텝 공용 표 대신 전용 조회한 표(합계 검사를 거친 표)를 쓴다. 금액이 나눌 수 없는 값이면
+    # 나눌 수 있는 값으로 바뀌어 조회된다(frames["notes"]).
+    try:
+        frames = get_frames(ctx, [c for c in (amount, quantity, discount) if c], params)
+    except ValueError as e:
+        return ModuleResult(status="failed", error=str(e))
+    actual_df, compare_df = frames["actual"], frames["compare"]
+    amount = frames["used"][amount]
+    quantity = frames["used"][quantity] if quantity else None
+    discount = frames["used"][discount] if discount else None
 
     dvi_order = stats.sort_values("DVI", ascending=False)["Dimension_Logical_Name"].tolist()
     measures = [c for c in (amount, quantity, discount) if c]

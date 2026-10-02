@@ -141,10 +141,14 @@ class Schema:
         return cols[0] if cols else None
 
     def columns(self, role: str) -> list[str]:
-        """역할에 해당하는 컬럼 전부."""
+        """역할에 해당하는 컬럼 전부. 합산하면 의미가 없는 값(단가·비율 등, Field_Type=Exclude)은 분석에서
+        제외하기로 한 컬럼이라 뺀다. 단, 재고 잔량은 합산은 못 해도 기말 값·평균으로 쓰는 값이라 남긴다."""
         if "Semantic_Type" not in self._meta.columns:
             return []
-        return self._meta.loc[self._meta["Semantic_Type"] == role, "Physical_Name"].tolist()
+        rows = self._meta[self._meta["Semantic_Type"] == role]
+        if role != ROLE_INVENTORY and "Field_Type" in rows.columns:
+            rows = rows[rows["Field_Type"] != "Exclude"]
+        return rows["Physical_Name"].tolist()
 
     def has(self, role: str) -> bool:
         return self.column(role) is not None

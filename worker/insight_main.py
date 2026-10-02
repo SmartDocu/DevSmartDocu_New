@@ -52,10 +52,11 @@ def process_insight_message(msg):
     session_id = body["session_id"]
     user_id = body.get("user_id")
     upload_handoff_path = body.get("upload_handoff_path")
-    receipt_handle = msg["ReceiptHandle"]
+    # 로컬 확인용(INSIGHT_RUN_LOCAL)으로 라우터가 직접 부르면 SQS 메시지가 없어 ReceiptHandle도 없다.
+    receipt_handle = msg.get("ReceiptHandle")
 
     sb_svc = get_service_client()
-    sqs = boto3.client("sqs", region_name=AWS_REGION)
+    sqs = boto3.client("sqs", region_name=AWS_REGION) if receipt_handle else None
 
     logger.info("보고서 생성 시작: %s", qauid)
 
@@ -66,10 +67,11 @@ def process_insight_message(msg):
         .eq("qauid", qauid).eq("jobstatuscd", "S").execute()
     if not claim.data:
         logger.info("보고서 중복 처리 스킵 (이미 선점됨): %s", qauid)
-        try:
-            sqs.delete_message(QueueUrl=SQS_INSIGHT_QUEUE_URL, ReceiptHandle=receipt_handle)
-        except Exception:
-            logger.exception("SQS 메시지 삭제 실패 (중복 스킵): %s", qauid)
+        if sqs:
+            try:
+                sqs.delete_message(QueueUrl=SQS_INSIGHT_QUEUE_URL, ReceiptHandle=receipt_handle)
+            except Exception:
+                logger.exception("SQS 메시지 삭제 실패 (중복 스킵): %s", qauid)
         return
 
     from d2insight import token_tracker
@@ -103,6 +105,9 @@ def process_insight_message(msg):
             "table_html": result.get("table_html"),
             "applied_steps": result.get("applied_steps"),
             "analytic_uid": result.get("analytic_uid"),
+            # 정기보고서 등록이 이 값을 읽어 stepsjson에 합친다(router.py _register_schedule_for_qa) —
+            # 빠지면 회차마다 SQL·표 형식이 새로 만들어져 결과가 달라진다.
+            "execution_cache": result.get("execution_cache"),
         }
         # run_tool()은 데이터 조회 실패 등도 예외를 던지지 않고 answer에 실패 메시지만 담아
         # 정상 반환한다 — report_path(실제로 만들어진 md 파일명)가 있을 때만 진짜 성공이다.
@@ -167,10 +172,11 @@ def process_insight_message(msg):
                 delete_from_storage(upload_handoff_path)
             except Exception:
                 logger.exception("업로드 중계 파일 삭제 실패: %s", upload_handoff_path)
-        try:
-            sqs.delete_message(QueueUrl=SQS_INSIGHT_QUEUE_URL, ReceiptHandle=receipt_handle)
-        except Exception:
-            logger.exception("SQS 메시지 삭제 실패: %s", qauid)
+        if sqs:
+            try:
+                sqs.delete_message(QueueUrl=SQS_INSIGHT_QUEUE_URL, ReceiptHandle=receipt_handle)
+            except Exception:
+                logger.exception("SQS 메시지 삭제 실패: %s", qauid)
 
 
 def poll_queue(queue_url, handler_fn):

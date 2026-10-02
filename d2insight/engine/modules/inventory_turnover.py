@@ -18,7 +18,9 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.schema import ROLE_COST, ROLE_INVENTORY, ROLE_ITEM, get_schema
+from d2insight.engine.modules._shared import additive_cols, get_dim_frames, get_full_schema, pick_dimension
+from d2insight.engine.pipeline.data_request import fetch_series, is_upload, load_meta, reachable_dims
+from d2insight.engine.schema import ROLE_COST, ROLE_INVENTORY, ROLE_ITEM, ROLE_OUTBOUND, get_schema
 from d2insight.engine.types import ModuleResult, Render
 
 FLAG_SLOW = "장기체화"
@@ -39,28 +41,69 @@ def _fmt_days(days: float) -> str:
 
 
 def run(ctx, params, tools) -> ModuleResult:
-    actual_df = ctx.get("actual_dataset")
-    compare_df = ctx.get("compare_dataset")
-    if actual_df is None or compare_df is None:
-        return ModuleResult(status="failed", error="actual_dataset/compare_dataset이 없습니다.")
-
-    schema = get_schema(ctx)
+    schema = get_full_schema(ctx)         # 역할은 전체 스키마에서 찾는다(스텝 표에 없는 컬럼도 있다)
     inv_col = schema.column(ROLE_INVENTORY)
     cost_col = schema.column(ROLE_COST)
 
-    if not inv_col or inv_col not in actual_df.columns:
+    if not inv_col:
         return ModuleResult(
             status="failed",
             error="재고(inventory 역할) 컬럼이 없어 재고 분석을 할 수 없습니다. "
                   "데이터소스 정의에 inventory 역할을 선언하세요.",
         )
-    if not cost_col or cost_col not in actual_df.columns:
+    # 분자: 매출원가(cost)가 실제 금액 측정값이면 그것을, 단가 같은 값(측정값이 아님)뿐이면 같은 재고 장부의
+    # 출고를 쓴다 — 출고와 재고는 같은 단위라 회전율 비율이 같다.
+    # 원가는 항목(item)으로 나눌 수 있을 때만 쓴다 — 월·치료군 단위 원가표는 재고 항목별로 나뉘지 않는다.
+    item_col = params.get("dimension") or pick_dimension(ctx, ROLE_ITEM, [inv_col])
+    flow_col = None
+    cost_cands = [c for c in schema.columns(ROLE_COST) if c in schema.measures
+                  and item_col and reachable_dims(ctx.meta, [c], [item_col])]
+    if cost_cands:
+        picked = additive_cols(ctx, cost_cands, params)
+        flow_col = picked[0] if len(picked) == 1 else None
+    flow_col = flow_col or schema.column(ROLE_OUTBOUND)
+    if not flow_col:
         # 매출로 대체하면 마진만큼 회전율이 부풀려진다. 조용히 대체하지 않는다.
         return ModuleResult(
             status="failed",
-            error="매출원가(cost 역할) 컬럼이 없어 회전율을 낼 수 없습니다. "
-                  "재고는 원가로 계상되므로 분자도 원가여야 합니다.",
+            error="매출원가(cost 역할)나 출고(outbound 역할) 컬럼이 없어 회전율을 낼 수 없습니다. "
+                  "재고는 원가로 계상되므로 분자도 같은 단위여야 합니다.",
         )
+    cost_col = flow_col
+
+    if is_upload(ctx.meta):
+        # 업로드는 필요한 값을 직접 요청한다 — 재고는 잔액이라 기간 말 값(기초 = 직전 기간 말, 기말 = 분석
+        # 기간 말), 출고는 분석 기간 합계.
+        try:
+            grain = ctx.meta.get("grain") or "month"
+            meta = load_meta(ctx.meta)
+            queries = params.setdefault("_queries", [])
+            inv = fetch_series(ctx.meta, meta, schema, inv_col, item_col, 2, grain, "last", queries)
+            flow = fetch_series(ctx.meta, meta, schema, cost_col, item_col, 1, grain, "sum", queries)
+        except Exception as e:
+            return ModuleResult(status="failed", error=f"재고·출고 조회에 실패했습니다: {e}")
+        pcol = inv.columns[0]
+        pids = sorted(inv[pcol].unique())
+        end_s = inv[inv[pcol] == pids[-1]].set_index(item_col)[inv_col]
+        begin_s = (inv[inv[pcol] == pids[0]].set_index(item_col)[inv_col] if len(pids) > 1 else end_s)
+        flow_s = flow.set_index(item_col)[cost_col]
+        actual_df = pd.DataFrame({inv_col: end_s, cost_col: flow_s}).fillna(0.0).rename_axis(item_col).reset_index()
+        compare_df = begin_s.to_frame(inv_col).rename_axis(item_col).reset_index()
+    else:
+        # DB는 아직 이전 방식(항목 차원 전용 조회)을 쓴다.
+        try:
+            frames = get_dim_frames(ctx, [inv_col, cost_col], item_col, params)
+        except ValueError as e:
+            return ModuleResult(status="failed", error=str(e))
+        swapped = [c for c in (inv_col, cost_col) if frames["used"][c] != c]
+        if swapped:
+            # 재고·원가는 다른 측정값으로 바꿔 계산하면 의미가 달라진다 — 조용히 대체하지 않는다.
+            return ModuleResult(
+                status="failed",
+                error=f"'{', '.join(schema.logical_name(c) for c in swapped)}'을(를) 항목 차원으로 작성할 수 없어 "
+                      "재고회전율을 낼 수 없습니다(다른 측정값으로 대체하지 않습니다).",
+            )
+        actual_df, compare_df = frames["actual"], frames["compare"]
 
     period_days = int(getattr(config, "INVENTORY_PERIOD_DAYS", 30))
     slow_days = float(params.get("slow_days") or getattr(config, "INVENTORY_SLOW_DAYS", 90.0))
@@ -82,7 +125,6 @@ def run(ctx, params, tools) -> ModuleResult:
     days = period_days / turnover if turnover > 0 else float("inf")
 
     # ── 항목별 회전율 ────────────────────────────────────────────────────────
-    item_col = params.get("dimension") or schema.column(ROLE_ITEM)
     detail = pd.DataFrame()
     if item_col and item_col in actual_df.columns:
         a = actual_df.groupby(item_col)[[inv_col, cost_col]].sum()
@@ -118,7 +160,8 @@ def run(ctx, params, tools) -> ModuleResult:
     outputs = {"inventory_metrics": detail if not detail.empty else pd.DataFrame(),
               "inventory_summary": {"turnover": turnover, "days": days,
                                     "avg_inventory": avg_inv, "cogs": cogs,
-                                    "begin": inv_begin, "end": inv_end}}
+                                    "begin": inv_begin, "end": inv_end,
+                                    "flow_col": cost_col}}
     key_value = {
         "회전율": f"{turnover:.2f}회", "재고일수": _fmt_days(days),
         "평균재고": f"{avg_inv:,.0f}", FLAG_SLOW: f"{slow_n}개",
@@ -165,7 +208,7 @@ def run_dead_stock(ctx, params, tools) -> ModuleResult:
         return ModuleResult(status="failed", error="재고 항목별 데이터(inventory_metrics)가 없습니다.")
 
     schema = get_schema(ctx)
-    cost_col = schema.column(ROLE_COST)
+    cost_col = (ctx.get("inventory_summary") or {}).get("flow_col") or schema.column(ROLE_COST)
     top_n = int(params.get("top_n") or 20)
 
     dead = detail[detail["Flag"] == FLAG_DEAD]
@@ -195,7 +238,7 @@ def run_slow_moving(ctx, params, tools) -> ModuleResult:
         return ModuleResult(status="failed", error="재고 항목별 데이터(inventory_metrics)가 없습니다.")
 
     schema = get_schema(ctx)
-    cost_col = schema.column(ROLE_COST)
+    cost_col = (ctx.get("inventory_summary") or {}).get("flow_col") or schema.column(ROLE_COST)
     top_n = int(params.get("top_n") or 20)
     slow_days_cfg = float(params.get("slow_days") or getattr(config, "INVENTORY_SLOW_DAYS", 90.0))
 

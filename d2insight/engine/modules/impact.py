@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import get_item_variance
+from d2insight.engine.modules._shared import get_frames, get_item_variance, key_measure_of
 from d2insight.engine.schema import get_schema
 from d2insight.engine.types import ModuleResult
 from d2insight.engine.pipeline.dataset_builder import build_by_item_summary_dataset
@@ -35,9 +35,9 @@ def run(ctx, params, tools) -> ModuleResult:
     # measure별로 따로 계산·캐시한다(2026-07-24 4단계) — get_item_variance가 measure를 받아
     # 캐시 키에 반영하므로, 같은 보고서에서 매출 기준 dimension_impact와 수량 기준을 각각
     # 계산해도 서로 덮어쓰지 않는다.
-    measure = params.get("measure") or schema.key_measure
+    measure = params.get("measure") or key_measure_of(ctx)
 
-    byitem = get_item_variance(ctx, measure)
+    byitem = get_item_variance(ctx, measure, params)
     if byitem is None or byitem.empty:
         return ModuleResult(status="failed", error="차원×항목 증감 데이터가 비어 있습니다.")
 
@@ -50,8 +50,12 @@ def run(ctx, params, tools) -> ModuleResult:
                 error=f"요청한 차원 {dimensions}에 해당하는 데이터가 없습니다.",
             )
 
+    # 스텝 공용 표 대신 전용 조회한 표(합계 검사를 거친 표)를 쓴다. 측정값이 나눌 수 없는 값이라
+    # 바뀌었으면 바뀐 값으로 계산하고 그 사실을 해설에 밝힌다.
+    frames = get_frames(ctx, [measure], params)
+    note_hint = "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in frames["notes"])
     stats = build_by_item_summary_dataset(
-        byitem, ctx.get("actual_dataset"), ctx.get("compare_dataset"), measure=measure
+        byitem, frames["actual"], frames["compare"], measure=frames["used"][measure]
     )
     if stats.empty:
         return ModuleResult(status="failed", error="차원별 통계를 계산하지 못했습니다.")
@@ -70,7 +74,7 @@ def run(ctx, params, tools) -> ModuleResult:
         narrative_hint=(
             "1위 차원이 전체 변화의 몇 %를 설명하는지만 짧게 말하라. DVI·HHI·집중도·평균Z 같은 "
             "내부 지표 용어는 본문에 쓰지 마라 — 구체적으로 어떤 항목이 얼마나 움직였는지는 "
-            "다음 스텝(항목별 증감)이 다룬다."
+            "다음 스텝(항목별 증감)이 다룬다." + note_hint
         ),
         params={"측정값": schema.logical_name(measure), "순위 기준": basis},
         label="dimension_impact", cache=params.get("_llm_render_cache"),

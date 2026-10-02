@@ -12,7 +12,7 @@ dimension_impact(§12-A)가 "어느 차원이 흔들렸나"를 답한다면, 이
 from __future__ import annotations
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import get_item_variance
+from d2insight.engine.modules._shared import get_frames, get_item_variance, key_measure_of
 from d2insight.engine.schema import get_schema
 from d2insight.engine.types import ModuleResult
 
@@ -33,7 +33,7 @@ def run(ctx, params, tools) -> ModuleResult:
         dimension = stats.sort_values("Shapley_Share", ascending=False)["Dimension_Logical_Name"].iloc[0]
 
     schema = get_schema(ctx)
-    key_measure = schema.key_measure
+    key_measure = key_measure_of(ctx)
     measure = params.get("measure")
     if measure and measure != key_measure:
         return ModuleResult(
@@ -41,12 +41,17 @@ def run(ctx, params, tools) -> ModuleResult:
             error=f"기여도 분석은 현재 핵심 measure '{key_measure}'만 지원합니다 (요청: '{measure}').",
         )
 
-    total_variance = ctx.get("total_variance")
-    if not total_variance or not total_variance.get("variance"):
+    # 스텝 공용 표 대신 전용 조회한 표를 쓴다(get_item_variance도 같은 표). 핵심 측정값을 항목으로 나눌
+    # 수 없어 다른 값으로 바뀌었으면 그 값 자신의 전체 증감이 기여율의 분모다.
+    frames = get_frames(ctx, [key_measure], params)
+    used = frames["used"][key_measure]
+    own_total = float(frames["actual"][used].sum() - frames["compare"][used].sum())
+    if not own_total:
         # 전체 증감이 0이면 기여율의 분모가 없다. 비율 대신 증감액만 보는 게 맞으므로 명시적 실패.
         return ModuleResult(status="failed", error="전체 증감액이 0이라 기여율을 계산할 수 없습니다.")
+    total_variance = {"variance": own_total}
 
-    byitem = get_item_variance(ctx)
+    byitem = get_item_variance(ctx, None, params)
     sub = byitem[byitem["Dimension_Logical_Name"] == dimension]
     if sub.empty:
         available = sorted(byitem["Dimension_Logical_Name"].unique().tolist())
@@ -85,6 +90,7 @@ def run(ctx, params, tools) -> ModuleResult:
             "증감률)'로, Contribution_Rate는 '전체 증감의 N%를 차지/잠식'처럼 반드시 '전체 증감의'를 "
             "붙여 뒤따로 밝혀라. \"상위 N개\"라고 개수를 말할 때는 직접 세지 말고 순위 열의 "
             "값을 그대로 옮겨라 — 세다가 하나씩 밀린 사례가 있었다."
+            + "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in frames["notes"])
         ),
         params={"차원": dim_name, "상위 항목수": len(ranked)},
         extra_money={"전체 증감액": total_variance["variance"]},

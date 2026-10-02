@@ -9,8 +9,8 @@ XYZ: 창 기간별 변동계수 CV=std/mean 임계(config.XYZ_THRESHOLDS)로 X/Y
 필요한 시나리오는 plan/기본세트가 params.dimensions로 명시한다(재고분석 등 다른 도메인은
 분류 단위가 다르므로). 역할이 없으면 조용히 0으로 처리하지 않고 명시적으로 실패한다(§11 Step 2).
 
-다기간 비교가 필요하므로 history_dataset(기간별 패널)에 의존한다. 그 패널 위 pandas
-재구성이라 새 SQL/쿼리가 없다. 임계값(ABC/XYZ)은 분석 튜닝값이라 config에 둔다(도메인 어휘 아님).
+다기간 비교가 필요하므로 스텝이 넘긴 측정값(measure)·분류 차원(dimensions)·집계 방식(aggregate:
+sum/avg/last)으로 기간별 값을 직접 요청한다(fetch_series). 재고처럼 잔액인 값은 avg/last로 넘긴다. 임계값(ABC/XYZ)은 분석 튜닝값이라 config에 둔다(도메인 어휘 아님).
 
 기간 단위(time_grain, 2026-07-24 3단계): month(기본)/quarter/year/week. 창(window) 이동은
 dataset_builder.shift_period를 그대로 재사용한다 — 월 전용 계산을 따로 두면 grain마다
@@ -23,7 +23,9 @@ import pandas as pd
 
 import d2insight.config as config
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM, ROLE_PERIOD, get_schema
+from d2insight.engine.modules._shared import get_full_schema, pick_dimension, role_column
+from d2insight.engine.pipeline.data_request import fetch_series, load_meta
+from d2insight.engine.schema import ROLE_AMOUNT, ROLE_ITEM
 from d2insight.engine.types import ModuleResult
 from d2insight.engine.pipeline.dataset_builder import shift_period
 
@@ -121,13 +123,6 @@ def _display_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def run(ctx, params, tools) -> ModuleResult:
-    history = ctx.get("history_dataset")
-    if history is None or getattr(history, "empty", True):
-        return ModuleResult(
-            status="failed",
-            error="이력(history_dataset)이 없어 ABC-XYZ 분류(다월 패널)를 할 수 없습니다.",
-        )
-
     target_month = ctx.meta.get("target_month")
     if not target_month:
         return ModuleResult(status="failed", error="ctx.meta에 target_month가 없습니다.")
@@ -135,40 +130,32 @@ def run(ctx, params, tools) -> ModuleResult:
     # time_grain으로 구분한다.
     time_grain = ctx.meta.get("grain") or "month"
 
-    schema = get_schema(ctx)
-    period_col = schema.column(ROLE_PERIOD)
-    amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
-    if not period_col or period_col not in history.columns:
-        return ModuleResult(
-            status="failed",
-            error="이력에 기간(period) 역할 컬럼이 없어 분류할 수 없습니다. "
-                  "데이터소스 정의에 period 역할을 선언하세요.",
-        )
-    if amount_col not in history.columns:
-        return ModuleResult(status="failed", error=f"이력에 금액 컬럼 '{amount_col}'이 없습니다.")
-
-    # 분류 단위 grain — 기본은 item 역할, params.dimensions로 명시 지정 가능(§7.4).
+    # 스텝이 넘긴 매개변수(측정값·분류 차원·집계 방식)로 필요한 기간별 값을 직접 요청한다.
+    schema = get_full_schema(ctx)
+    amount_col = params.get("measure") or role_column(ctx, ROLE_AMOUNT) or schema.key_measure
+    if not amount_col:
+        return ModuleResult(status="failed", error="분류에 쓸 측정값이 지정되지 않았습니다.")
     requested = params.get("dimensions")
-    if requested:
-        missing = [d for d in requested if d not in history.columns]
-        if missing:
-            available = [c for c in history.columns if c != period_col]
-            return ModuleResult(
-                status="failed",
-                error=f"요청한 분류 차원 {missing}이 이력에 없습니다. 사용 가능: {available}",
-            )
-        grain = list(requested)
-    else:
-        item_col = schema.column(ROLE_ITEM)
-        grain = [item_col] if item_col and item_col in history.columns else []
-    if not grain:
+    item_col = requested[0] if requested else pick_dimension(ctx, ROLE_ITEM, [amount_col])
+    if not item_col:
         return ModuleResult(
             status="failed",
-            error="분류할 항목 차원이 없습니다. 데이터소스 정의에 item 역할을 선언하거나 "
-                  "params.dimensions로 분류 단위를 지정하세요.",
+            error="분류할 항목 차원이 없습니다. 스텝이 sub_name으로 분류 단위를 지정하거나 "
+                  "데이터에 item 의미 표시가 있어야 합니다.",
         )
+    grain = [item_col]
 
     window = int(params.get("window_months") or getattr(config, "ABC_XYZ_WINDOW_MONTHS", _DEFAULT_WINDOW))
+    # 현재 창 + 등급 변동 비교용 이전 창 두 개를 덮는 기간 수
+    try:
+        history = fetch_series(
+            ctx.meta, load_meta(ctx.meta), schema, amount_col, item_col, window + 2, time_grain,
+            params.get("aggregate") or "sum", params.setdefault("_queries", []),
+        )
+    except Exception as e:
+        return ModuleResult(status="failed", error=f"'{schema.logical_name(amount_col)}' 기간별 값 조회에 실패했습니다: {e}")
+    period_col = history.columns[0]
+
     top_n = int(params.get("top_n") or 20)
 
     # 현황: 당기 포함 최근 window개 기간
@@ -207,7 +194,7 @@ def run(ctx, params, tools) -> ModuleResult:
             f"등급 분포({grade_str})를 밝히고, 규모가 크면서 불안정한(AZ 등) 항목이 있으면 짚어라."
             + change_note
         ),
-        params={"기준": schema.logical_name(amount_col), "분류 항목수": len(classification)},
+        params={"기준": schema.logical_name(amount_col), "집계": params.get("aggregate") or "sum", "분류 항목수": len(classification)},
         label="abc_classification", chart_df=chart_df,
         cache=params.get("_llm_render_cache"),
     )

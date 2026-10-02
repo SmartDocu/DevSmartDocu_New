@@ -227,7 +227,7 @@ WITH {table_name} AS ({dataset_query})
 - 반드시 위 CTE를 선언하고 FROM 절에서 {table_name}을 참조하세요
 - SELECT 쿼리만 생성 (INSERT/UPDATE/DELETE 금지)
 - 숫자 컬럼에 FORMAT() 등 문자열 변환 함수 사용 금지
-- 결과만 SQL로 출력 (백틱, 설명, 주석 제외)
+- 출력 형식(엄수): 이 응답은 그대로 DB에서 실행됩니다. 응답 전체가 문법에 맞는 SQL 구문 하나여야 하며, 오류 없이 실행되는 쿼리로 작성하세요. 분석 과정·판단 이유·설명·요약·마크다운·백틱·주석 등 SQL이 아닌 글자는 SQL 앞이나 뒤에 한 글자도 출력하지 마세요(SQL이 아닌 글자가 하나라도 섞이면 실행 오류가 납니다). 판단은 출력하지 말고 속으로만 하세요. 답할 수 없으면 CANNOT_ANSWER 쿼리 한 줄만 출력하세요.
 """
         else:
             prompt = f"""당신은 숙련된 데이터베이스 엔지니어입니다.
@@ -248,7 +248,7 @@ DB 정보:
 - 매핑 불가한 경우: SELECT 'CANNOT_ANSWER' AS result, '해당 조건을 처리할 수 없습니다' AS reason
 - 숫자 컬럼에 FORMAT() 등 문자열 변환 함수 사용 금지
 - 숫자형 컬럼 정렬 시 CAST: ORDER BY CAST(컬럼 AS INT) ASC
-- 결과만 SQL로 출력 (백틱, 설명, 주석 제외)
+- 출력 형식(엄수): 이 응답은 그대로 DB에서 실행됩니다. 응답 전체가 문법에 맞는 SQL 구문 하나여야 하며, 오류 없이 실행되는 쿼리로 작성하세요. 분석 과정·판단 이유·설명·요약·마크다운·백틱·주석 등 SQL이 아닌 글자는 SQL 앞이나 뒤에 한 글자도 출력하지 마세요(SQL이 아닌 글자가 하나라도 섞이면 실행 오류가 납니다). 판단은 출력하지 말고 속으로만 하세요. 답할 수 없으면 CANNOT_ANSWER 쿼리 한 줄만 출력하세요.
 """
 
         from datetime import datetime, timezone
@@ -278,7 +278,11 @@ DB 정보:
         llm = build_langchain_llm(vendor_name, api_key, model)
         start = datetime.now(timezone.utc)
         response = llm.invoke([
-            SystemMessage(content="You generate SQL queries only."),
+            SystemMessage(content=(
+                "You generate SQL queries only. Your entire reply is executed directly against the database, "
+                "so it must be exactly one syntactically valid SQL statement that runs without errors, "
+                "and nothing else: no analysis, no explanation, no markdown, no comments."
+            )),
             HumanMessage(content=prompt),
         ])
         end = datetime.now(timezone.utc)

@@ -108,8 +108,13 @@ mode 선택 기준 (tool이 "report"일 때):
 - "start": "작성하려 합니다", "만들고 싶어요", "필요해요", "생각이에요" 등 의도 표현 → 대화형 명세 수집 시작
 - "auto": "생성해줘", "만들어줘", "써줘", "작성해줘" 등 즉시 실행 명령 → 즉시 실행
 
+date_column 결정 규칙 (tool이 "report"일 때):
+- 사용자가 기간을 자를 때 쓸 날짜 컬럼을 직접 지정했으면(예: "날짜 기준은 OrderDate입니다",
+  "주문일자 기준으로", "OrderDate 컬럼으로 기간을 잡아줘") 그 컬럼 이름을 사용자가 쓴 그대로 넣는다.
+- 지정하지 않았으면 반드시 null. 이름을 추측해서 채우지 않는다.
+
 응답 JSON 형식:
-{{"tool": "도구명", "grain": "month/quarter/half/year/week", "target_month": "grain 형식에 맞는 값 또는 null", "compare_type": "MoM/YoY/QoQ", "months_back": 숫자, "report_type": "카테고리명 또는 null", "mode": "start 또는 auto 또는 null"}}
+{{"tool": "도구명", "grain": "month/quarter/half/year/week", "target_month": "grain 형식에 맞는 값 또는 null", "compare_type": "MoM/YoY/QoQ", "months_back": 숫자, "report_type": "카테고리명 또는 null", "mode": "start 또는 auto 또는 null", "date_column": "사용자가 지정한 날짜 기준 컬럼명 또는 null"}}
 
 예시 (아래는 오늘이 2026-06-08(월요일)이라고 가정했을 때의 예시일 뿐입니다 — 실제 계산은
 매번 메시지 맨 앞에 주어지는 진짜 오늘 날짜를 기준으로 할 것):
@@ -173,6 +178,7 @@ def parse_intent(message: str, project_id=None, tenant_id=None, user_uid=None, a
             parsed.setdefault("months_back", 3)
             parsed.setdefault("report_type", None)
             parsed.setdefault("mode", None)
+            parsed.setdefault("date_column", None)
             if parsed["grain"] not in _GRAINS:
                 parsed["grain"] = "month"
             if parsed.get("compare_type") not in ("MoM", "YoY", "QoQ"):

@@ -561,11 +561,19 @@ export default function D2InsightPage() {
         project_id: user?.myprojectid ?? null,
         account_uid: user?.accountuid ?? null,
         force_compose: forceCompose,
-      })
+      }, CHAT_TIMEOUT)
       if (previewResp.data?.no_data_message) {
         setMessages((prev) => [
           ...prev,
           { role: 'assistant', content: previewResp.data.no_data_message },
+        ])
+        setIsLoading(false)
+        return
+      }
+      if (previewResp.data?.error) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: previewResp.data.error },
         ])
         setIsLoading(false)
         return
@@ -587,10 +595,17 @@ export default function D2InsightPage() {
         setIsLoading(false)
         return
       }
-    } catch (_) {
-      // preview 실패해도 조용히 /chat 폴백
+    // } catch (_) {
+    //   // preview 실패해도 조용히 /chat 폴백
+    // }
+    } catch (e) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `보고서 구성을 준비하지 못했습니다: ${e.response?.data?.detail || e.message}` },
+      ])
+      setIsLoading(false)
+      return
     }
-
     // 2) preview 매칭 없음 → 기존 /chat 흐름 그대로.
     try {
       const { data } = await apiClient.post(

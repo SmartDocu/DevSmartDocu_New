@@ -15,40 +15,52 @@ from __future__ import annotations
 import pandas as pd
 
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.modules._shared import get_pnl_ladder
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_COST, ROLE_OPEX, get_schema
+from d2insight.engine.modules._shared import get_frames, get_full_schema, get_pnl_ladder, pnl_role_cols
 from d2insight.engine.types import ModuleResult
 
 
-def _item_decompose(ctx, dimension: str, top_n: int) -> tuple[pd.DataFrame | None, str]:
+def _item_decompose(ctx, dimension: str, top_n: int,
+                    params: dict | None = None) -> tuple[pd.DataFrame | None, str]:
     """차원 항목별 ΔEBIT 분해 표(2026-07-23 옵션 추가) — "영업이익 악화를 어느 항목이 주도했나".
 
     항목별로 매출 효과(ΔRevenue)·매출원가 효과(−ΔCOGS)·판관비 효과(−ΔOPEX)와 그 합(EBIT 증감)을
     내고 |EBIT 증감| 상위 top_n개를 돌려준다. 컬럼이 없으면 표 없이 사유만(총계 분해는 유효).
     """
-    actual_df = ctx.get("actual_dataset")
-    compare_df = ctx.get("compare_dataset")
-    schema = get_schema(ctx)
+    schema = get_full_schema(ctx)
+
+    # 손익 계단과 같은 컬럼을 쓰고, 스텝 공용 표 대신 전용 조회한 표(합계 검사를 거친 표)를 쓴다.
+    try:
+        roles = pnl_role_cols(ctx, params)
+        if not roles["cost"] or not roles["opex"]:
+            return None, " (cost/opex 역할 컬럼이 없어 항목별 상세는 생략)"
+        frames = get_frames(ctx, [*roles["amount"], *roles["cost"], *roles["opex"]], params)
+    except ValueError as e:
+        return None, f" (항목별 상세를 조회하지 못해 생략: {e})"
+    actual_df, compare_df = frames["actual"], frames["compare"]
+    used = frames["used"]
+    amount_cols = [used[c] for c in roles["amount"]]
+    cost_cols = [used[c] for c in roles["cost"]]
+    opex_cols = [used[c] for c in roles["opex"]]
 
     dim_col = dimension if dimension in actual_df.columns else schema.column(dimension)
     if not dim_col or dim_col not in actual_df.columns:
         return None, f" (차원 '{dimension}' 컬럼이 없어 항목별 상세는 생략)"
 
-    amount_col = schema.column(ROLE_AMOUNT) or schema.key_measure
-    cost_col, opex_col = schema.column(ROLE_COST), schema.column(ROLE_OPEX)
-    if not cost_col or not opex_col:
-        return None, " (cost/opex 역할 컬럼이 없어 항목별 상세는 생략)"
-
     def _sums(df: pd.DataFrame) -> pd.DataFrame:
-        return df.groupby(dim_col)[[amount_col, cost_col, opex_col]].sum()
+        g = df.groupby(dim_col)
+        return pd.DataFrame({
+            "amount": g[amount_cols].sum().sum(axis=1),
+            "cost": g[cost_cols].sum().sum(axis=1),
+            "opex": g[opex_cols].sum().sum(axis=1),
+        })
 
     actual_s, compare_s = _sums(actual_df), _sums(compare_df)
     delta = actual_s.sub(compare_s, fill_value=0.0)
 
     detail = pd.DataFrame({
-        "매출 효과": delta[amount_col],
-        "매출원가 효과": -delta[cost_col],
-        "판매관리비 효과": -delta[opex_col],
+        "매출 효과": delta["amount"],
+        "매출원가 효과": -delta["cost"],
+        "판매관리비 효과": -delta["opex"],
     })
     detail["EBIT 증감"] = detail.sum(axis=1)
     detail = detail.reindex(detail["EBIT 증감"].abs().sort_values(ascending=False).index).head(top_n)
@@ -64,7 +76,7 @@ def _item_decompose(ctx, dimension: str, top_n: int) -> tuple[pd.DataFrame | Non
 
 def run(ctx, params, tools) -> ModuleResult:
     try:
-        ladder = get_pnl_ladder(ctx)
+        ladder = get_pnl_ladder(ctx, params)
     except ValueError as e:
         return ModuleResult(status="failed", error=str(e))
 
@@ -106,7 +118,7 @@ def run(ctx, params, tools) -> ModuleResult:
     # 옮겨 정보 손실 없이 보여준다(Render.table은 한 장이므로).
     dimension = (params or {}).get("dimension")
     if dimension:
-        detail, note = _item_decompose(ctx, dimension, int((params or {}).get("top_n") or 10))
+        detail, note = _item_decompose(ctx, dimension, int((params or {}).get("top_n") or 10), params)
         summary += note
         if detail is not None:
             display = detail

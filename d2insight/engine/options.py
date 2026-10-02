@@ -165,6 +165,8 @@ def options_to_plan(options: dict, schema: Schema,
     registry = get_module_registry()
     notes: list[str] = []
     steps = []
+    # [진단] 모듈이 빠진 원인 확인용 — 확인 후 삭제(2026-09-29)
+    print(f"[진단-스키마] 검증에 쓰인 차원={schema.dimensions} 측정값={schema.measures}")
 
     for step in options.get("steps", []):
         step_id = step.get("step_id", "?")
@@ -183,6 +185,7 @@ def options_to_plan(options: dict, schema: Schema,
             if reason:
                 notes.append(f"스텝 '{title}': {reason} 이 모듈을 건너뛰었습니다.")
                 skip_reasons.append(reason)
+                print(f"[진단-모듈제외] 스텝 '{title}': {reason}")  # [진단] 확인 후 삭제
                 continue
             m = to_execution_entry(raw_m)
             module_id = m["module_id"]
@@ -218,6 +221,7 @@ def options_to_plan(options: dict, schema: Schema,
                 reason = f"필요한 역할 {missing_roles}이(가) 데이터셋에 없습니다."
                 notes.append(f"스텝 '{title}' 모듈 '{module_id}'을 건너뛰었습니다: {reason}")
                 skip_reasons.append(reason)
+                print(f"[진단-모듈제외] 스텝 '{title}' 모듈 '{module_id}': {reason}")  # [진단] 확인 후 삭제
                 continue
 
             # 저장된 JSON은 툴을 "tools"(복수)로 남긴다 — 붙여넣어 재실행할 때 골라둔 툴이
@@ -231,6 +235,7 @@ def options_to_plan(options: dict, schema: Schema,
             except OptionsError as e:
                 notes.append(f"스텝 '{title}' 모듈 '{module_id}'을 건너뛰었습니다: {e}")
                 skip_reasons.append(str(e))
+                print(f"[진단-모듈제외] 스텝 '{title}' 모듈 '{module_id}': {e}")  # [진단] 확인 후 삭제
                 continue
 
             modules_out.append(

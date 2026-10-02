@@ -14,13 +14,22 @@
   단가(ASP) = 금액 / 물량                      (물량 역할이 없으면 생략)
   할인율    = 할인액 / (금액 + 할인액)          (할인 역할이 없으면 생략)
               금액이 할인 후 순액이라는 전제 — 정가 기준으로 환산해 비율을 낸다.
+
+데이터 조회 (2026-09-28 재작성)
+  이 모듈은 더 이상 스텝 공용 actual_dataset/compare_dataset을 쓰지 않는다 — 헤더/디테일처럼
+  1:N으로 조인되는 소스에서, 서로 다른 테이블의 측정값을 한 조회에 섞으면 '1'쪽 측정값이
+  'N'쪽 행 수만큼 부풀려진다(§ header-detail fan-out, 2026-09-28 실사고). 그래서 필요한
+  측정값을 **원래 테이블별로 묶어서 그때그때 직접 조회**한다 — 차원(dimension)은 요청하지
+  않으므로(총평은 기간 합계만 필요) 같은 테이블 안에서는 조인 없이 안전하게 합산된다.
 """
 from __future__ import annotations
 
 import pandas as pd
 
+from d2insight.engine.pipeline.data_request import fetch_measure_groups, is_upload, load_meta, source_of
 from d2insight.engine.modules._llm_render import render_from_dataframe
-from d2insight.engine.schema import ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_QUANTITY, get_schema
+from d2insight.engine.modules._shared import role_column
+from d2insight.engine.schema import ROLE_AMOUNT, ROLE_DISCOUNT, ROLE_QUANTITY, Schema
 from d2insight.engine.types import ModuleResult
 
 DERIVED_UNIT_PRICE = "단가"
@@ -63,53 +72,89 @@ def _display_table(df: pd.DataFrame, ratio_rows: set[str]) -> pd.DataFrame:
     })
 
 
-def run(ctx, params, tools) -> ModuleResult:
-    actual_df = ctx.get("actual_dataset")
-    compare_df = ctx.get("compare_dataset")
-    if actual_df is None or compare_df is None:
-        return ModuleResult(status="failed", error="actual_dataset/compare_dataset이 없습니다.")
+def _fetch_measure_sums(ctx_meta: dict, measures: list[str],
+                        meta: pd.DataFrame, queries: list | None = None) -> tuple[dict, dict, list[str]]:
+    """측정값들을 원래 테이블(파일)별로 묶어 따로따로 조회하고, 각각의 기간 합계(SUM)만
+    돌려준다. 조회 방식은 공통 함수(data_request)가 정한다 — DB는 SQL, 업로드는 판다스.
+    차원을 요청하지 않으므로 같은 테이블 안에서는 조인이 없어 안전하다.
 
-    schema = get_schema(ctx)
-    key_measure = schema.key_measure
-    if key_measure not in actual_df.columns:
-        return ModuleResult(
-            status="failed",
-            error=f"핵심 measure '{key_measure}' 컬럼이 데이터에 없습니다.",
-        )
+    반환: (실적 합계 dict, 비교 합계 dict, 조회 실패한 측정값 목록)
+    """
+    actual_sums: dict[str, float] = {}
+    compare_sums: dict[str, float] = {}
+    failed: list[str] = []
+    for group in fetch_measure_groups(ctx_meta, measures, meta, queries=queries):
+        if group["error"]:
+            failed.extend(group["measures"])
+            continue
+        actual_df, compare_df = group["actual"], group["compare"]
+        for m in group["measures"]:
+            if m in actual_df.columns:
+                actual_sums[m] = float(actual_df[m].sum())
+                compare_sums[m] = float(compare_df[m].sum()) if m in compare_df.columns else 0.0
+            else:
+                failed.append(m)
+    return actual_sums, compare_sums, failed
+
+
+def run(ctx, params, tools) -> ModuleResult:
+    try:
+        meta = load_meta(ctx.meta)   # 필터 없는 전체 스키마(역할이 그대로 잡혀 있음) — DB/업로드 공통
+    except ValueError as e:
+        return ModuleResult(status="failed", error=str(e))
+    schema = Schema(meta)
+    # 핵심 측정값은 금액 역할 중 기준 파일(여럿이면 가장 세분된 거래 기록)의 것이다. 합친 메타의 첫 핵심
+    # 표시를 그대로 쓰면 다른 파일(월 집계 표 등)의 금액이 잡힐 수 있다.
+    key_measure = role_column(ctx, ROLE_AMOUNT) or schema.key_measure
 
     requested = params.get("measures")
-    measures = [m for m in schema.measures if m in actual_df.columns]
+    measures = list(schema.measures)
+    # 여러 파일이면 핵심 측정값과 같은 파일의 측정값만 총평에 담는다(다른 표의 측정값은 따로 분석한다).
+    key_src = source_of(ctx.meta, meta, key_measure)
+    if key_src and is_upload(ctx.meta):
+        measures = [m for m in measures if source_of(ctx.meta, meta, m) in (key_src, None)]
     if requested:
         measures = [m for m in measures if m in set(requested) | {key_measure}]
+    if key_measure not in measures:
+        measures = [key_measure] + measures
+
+    # 만든 SQL은 params["_queries"]에 남겨 정기보고서 등록 때 저장된다(entry.collect_execution_cache).
+    # 밑줄로 시작해야 계획 검증(options.py)이 카탈로그에 없는 실행 캐시로 허용한다.
+    actual_sums, compare_sums, failed_measures = _fetch_measure_sums(
+        ctx.meta, measures, meta, queries=params.setdefault("_queries", []))
+    if key_measure not in actual_sums:
+        return ModuleResult(
+            status="failed",
+            error=f"핵심 measure '{key_measure}' 조회에 실패했습니다.",
+        )
+    measures = [m for m in measures if m in actual_sums]  # 조회 실패한 건 총평에서 뺀다
 
     rows = [
-        _row(m, schema.logical_name(m),
-             float(compare_df[m].sum()) if m in compare_df.columns else 0.0,
-             float(actual_df[m].sum()))
+        _row(m, schema.logical_name(m), compare_sums.get(m, 0.0), actual_sums[m])
         for m in measures
     ]
 
     ratio_rows: set[str] = set()
 
     # 파생: 단가(ASP) — 물량 역할이 선언된 경우에만
-    qty_col = schema.column(ROLE_QUANTITY)
-    amount_col = schema.column(ROLE_AMOUNT) or key_measure
-    if qty_col and qty_col in actual_df.columns and amount_col in actual_df.columns:
-        a_qty, c_qty = float(actual_df[qty_col].sum()), float(compare_df[qty_col].sum())
-        a_asp = float(actual_df[amount_col].sum()) / a_qty if a_qty else 0.0
-        c_asp = float(compare_df[amount_col].sum()) / c_qty if c_qty else 0.0
+    amount_col = key_measure
+    qty_col = role_column(ctx, ROLE_QUANTITY, amount_col)
+    if qty_col and qty_col in actual_sums and amount_col in actual_sums:
+        a_qty, c_qty = actual_sums[qty_col], compare_sums.get(qty_col, 0.0)
+        a_asp = actual_sums[amount_col] / a_qty if a_qty else 0.0
+        c_asp = compare_sums.get(amount_col, 0.0) / c_qty if c_qty else 0.0
         rows.append(_row(DERIVED_UNIT_PRICE, f"단가({schema.logical_name(amount_col)}/"
                                              f"{schema.logical_name(qty_col)})", c_asp, a_asp))
 
     # 파생: 할인율 — 할인 역할이 선언된 경우에만. 비율이라 합산이 성립하지 않아 기간별로 계산한다.
-    disc_col = schema.column(ROLE_DISCOUNT)
-    if disc_col and disc_col in actual_df.columns:
-        def _rate(df: pd.DataFrame) -> float:
-            disc = float(df[disc_col].sum())
-            gross = float(df[amount_col].sum()) + disc      # 금액이 할인 후 순액이라는 전제
+    disc_col = role_column(ctx, ROLE_DISCOUNT, amount_col)
+    if disc_col and disc_col in actual_sums:
+        def _rate(disc: float, amount: float) -> float:
+            gross = amount + disc                            # 금액이 할인 후 순액이라는 전제
             return disc / gross if gross else 0.0
         rows.append(_row(DERIVED_DISCOUNT_RATE, DERIVED_DISCOUNT_RATE,
-                         _rate(compare_df), _rate(actual_df)))
+                         _rate(compare_sums.get(disc_col, 0.0), compare_sums.get(amount_col, 0.0)),
+                         _rate(actual_sums[disc_col], actual_sums.get(amount_col, 0.0))))
         ratio_rows.add(DERIVED_DISCOUNT_RATE)
 
     summary_df = pd.DataFrame(rows)
