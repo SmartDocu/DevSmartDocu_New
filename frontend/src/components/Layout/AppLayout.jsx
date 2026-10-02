@@ -180,10 +180,12 @@ export default function AppLayout() {
   const isLoggedIn = !!user
   const showSidebar = isLoggedIn && location.pathname !== '/launcher'
 
+  // 앱을 고르지 않은 상태(launcher)에서는 첫 번째 앱으로 조용히 폴백하지 않고, 먼저 앱을
+  // 선택하도록 안내한다 — 어떤 앱 맥락에서 보는지 사용자가 모른 채로 열리는 걸 막는다.
   const openMyInfoInTab = () => {
-    const effectiveAppcd = appcd || apps[0]?.appcd
-    const tabPath = effectiveAppcd ? `app/${effectiveAppcd}/myinfo` : 'myinfo'
-    const navPath = effectiveAppcd ? `/app/${effectiveAppcd}/myinfo` : '/myinfo'
+    if (!appcd) { message.warning(t('msg.select.app')); return }
+    const tabPath = `app/${appcd}/myinfo`
+    const navPath = `/app/${appcd}/myinfo`
     const menu = allMenus.find((m) => m.route_path === 'myinfo')
     if (menu) {
       openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text || 'My Info'), labelKey: `mnu.${menu.menucd}`, path: tabPath })
@@ -194,9 +196,9 @@ export default function AppLayout() {
   }
 
   const openMyUsageInTab = () => {
-    const effectiveAppcd = appcd || apps[0]?.appcd
-    const tabPath = effectiveAppcd ? `app/${effectiveAppcd}/myusage` : 'myusage'
-    const navPath = effectiveAppcd ? `/app/${effectiveAppcd}/myusage` : '/myusage'
+    if (!appcd) { message.warning(t('msg.select.app')); return }
+    const tabPath = `app/${appcd}/myusage`
+    const navPath = `/app/${appcd}/myusage`
     const menu = allMenus.find((m) => m.route_path === 'myusage')
     if (menu) {
       openTab({ key: menu.menucd, label: t(`mnu.${menu.menucd}`, menu.default_text || 'My Usage'), labelKey: `mnu.${menu.menucd}`, path: tabPath })

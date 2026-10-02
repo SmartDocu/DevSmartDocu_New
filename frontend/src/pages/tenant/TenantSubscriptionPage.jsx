@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { App, Button, Form, Input, Select } from 'antd'
+import { App, Form, Input, Select } from 'antd'
+import { SaveOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -63,38 +64,49 @@ export default function TenantSubscriptionPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.tenant.subscription')}</div>
         </div>
       </div>
 
-      <Form layout="vertical" style={{ maxWidth: 480 }}>
-        <Form.Item label={t('lbl.tenantnm')} required>
-          <Input value={tenantnm} onChange={(e) => setTenantnm(e.target.value)} disabled={isLoading} />
-        </Form.Item>
-        <Form.Item label={t('lbl.languagecd')}>
-          <Select
-            value={languagecd}
-            onChange={setLanguagecd}
-            loading={isLoading}
-            options={languages.map((l) => ({ label: l.languagenm, value: l.languagecd }))}
-          />
-        </Form.Item>
-        <Form.Item label={t('lbl.timezone')}>
-          <Select
-            value={tz}
-            onChange={setTz}
-            loading={isLoading}
-            showSearch
-            options={timezones.map((z) => ({ label: z, value: z }))}
-          />
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" onClick={handleSave} loading={createTenant.isPending}>
-            {t('btn.save')}
-          </Button>
-        </Form.Item>
-      </Form>
+      <div className="panel-section" style={{ maxWidth: 480 }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60,
+          margin: '-16px -18px 16px', padding: '16px 18px 12px',
+          borderBottom: '1px solid var(--border-color, #e3e6eb)',
+        }}>
+          <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
+          <button className="btn btn-primary" type="button" onClick={handleSave} disabled={createTenant.isPending}>
+            <SaveOutlined style={{ marginRight: 6 }} />{t('btn.save')}
+          </button>
+        </div>
+
+        <Form layout="vertical">
+          <Form.Item label={t('lbl.tenantnm')} required>
+            <Input value={tenantnm} onChange={(e) => setTenantnm(e.target.value)} disabled={isLoading} />
+          </Form.Item>
+          <Form.Item label={t('lbl.languagecd')}>
+            <Select
+              value={languagecd}
+              onChange={setLanguagecd}
+              loading={isLoading}
+              options={languages.map((l) => ({ label: l.languagenm, value: l.languagecd }))}
+            />
+          </Form.Item>
+          <Form.Item label={t('lbl.timezone')}>
+            <Select
+              value={tz}
+              onChange={setTz}
+              loading={isLoading}
+              showSearch
+              options={timezones.map((z) => ({ label: z, value: z }))}
+            />
+          </Form.Item>
+        </Form>
+      </div>
     </div>
   )
 }

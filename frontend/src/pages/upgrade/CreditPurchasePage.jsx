@@ -1,5 +1,7 @@
 import { App, Alert, Spin } from 'antd'
+import { ShoppingCartOutlined } from '@ant-design/icons'
 import { useLangStore, t } from '@/stores/langStore'
+import { useMenuCodes } from '@/hooks/useMenus'
 import { useMyInfoCreditPurchase, usePurchaseMyInfoCredit } from '@/hooks/useSettings'
 import { usePaymentGate, PAYMENT_METHOD_REQUIRED } from '@/hooks/usePayments'
 import { getErrorMessage } from '@/utils/apiError'
@@ -14,6 +16,12 @@ export default function CreditPurchasePage() {
 
   const products = data.products || []
   const owned = data.owned || []
+
+  const { data: serviceCodes = [] } = useMenuCodes('servicecd')
+  const serviceLabel = (cd) => {
+    const found = serviceCodes.find((c) => c.codevalue === cd)
+    return found ? (t(found.term_key) || found.default_name) : cd
+  }
 
   const handlePurchase = (productcd) => {
     if (!hasPaymentMethod) {
@@ -45,22 +53,40 @@ export default function CreditPurchasePage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('ttl.myinfo.credit.purchase')}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* 좌측(7): 보유 중인 크레딧 내역 */}
-        <div style={{ flex: 7, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, lineHeight: 1 }}>{t('ttl.list')}</h3>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+                font: '500 11px monospace', color: '#8d9199', background: '#f2efe9',
+                borderRadius: 6, padding: '5px 8px 4px',
+              }}>
+                {t('lbl.count.docs').replace('{n}', owned.length)}
+              </span>
+            </div>
             <div />
           </div>
-          <div className="table-container">
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="table-container" style={{ height: 'auto', overflowY: 'visible' }}>
             <table className="table table-bordered table-sm">
               <thead>
                 <tr>
+                  <th>{t('lbl.service_name_lbl')}</th>
                   <th>{t('lbl.product')}</th>
                   <th>{t('lbl.credit')}</th>
                   <th>{t('thd.createdts_thd')}</th>
@@ -69,11 +95,12 @@ export default function CreditPurchasePage() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center' }}>{t('msg.loading')}</td></tr>
                 ) : owned.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888' }}>{t('msg.no.data')}</td></tr>
                 ) : owned.map((row) => (
                   <tr key={row.subscriptionuid}>
+                    <td>{serviceLabel(row.servicecd)}</td>
                     <td>{row.productnm}</td>
                     <td>{row.quantity}</td>
                     <td>{row.createdts}</td>
@@ -83,14 +110,20 @@ export default function CreditPurchasePage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
-        {/* 우측(3): 구매 가능한 크레딧 상품 */}
-        <div style={{ flex: 3, padding: '0 20px', overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        {/* 우측(3): 구매 가능한 크레딧 상품 (즉시 구매) */}
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
 
           {products.some((p) => p.currencycd === 'USD') && (
             <Alert type="info" showIcon message={t('inf.pricing.usd_notice')} style={{ marginBottom: 10 }} />
@@ -107,7 +140,9 @@ export default function CreditPurchasePage() {
             >
               <div>
                 <div style={{ fontWeight: 600 }}>{p.productnm}</div>
-                <div style={{ fontSize: 12, color: '#888' }}>{p.credit} credit</div>
+                <div style={{ fontSize: 12, color: '#888' }}>
+                  {serviceLabel(p.servicecd)} · {p.credit} credit
+                </div>
                 {p.price != null && (
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#163E64', marginTop: 4 }}>
                     {Number(p.price).toLocaleString()} {p.currencycd}
@@ -120,10 +155,11 @@ export default function CreditPurchasePage() {
                 disabled={purchaseMutation.isPending}
                 onClick={() => handlePurchase(p.productcd)}
               >
-                {t('btn.purchase')}
+                <ShoppingCartOutlined style={{ marginRight: 6 }} />{t('btn.purchase')}
               </button>
             </div>
           ))}
+          </div>
         </div>
       </div>
 

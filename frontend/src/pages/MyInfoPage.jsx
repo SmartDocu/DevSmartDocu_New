@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
-  App, Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag, Typography,
+  App, Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag,
 } from 'antd'
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
 import {
@@ -19,8 +19,6 @@ import { useTabStore } from '@/stores/tabStore'
 import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
 import WithdrawAccountModal from '@/components/payment/WithdrawAccountModal'
 import { getErrorMessage } from '@/utils/apiError'
-
-const { Title } = Typography
 
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
@@ -173,12 +171,20 @@ export default function MyInfoPage() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>{t('ttl.myinfo.personal')}</Title>
+      <div className="page-title">
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
+          <div>{t('ttl.myinfo.personal')}</div>
+        </div>
+      </div>
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
         {/* 개인 정보 */}
         <Col span={12}>
-          <Card size="small" title={t('ttl.myinfo.personal')} loading={isLoading} style={{ height: '100%' }}>
+          <Card size="small" title={t('ttl.myinfo.personal')} loading={isLoading} style={{ height: '100%', borderRadius: 12 }}>
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={t('lbl.email')}>{userInfo.email || '-'}</Descriptions.Item>
               <Descriptions.Item label={t('lbl.usernm')}>
@@ -230,7 +236,7 @@ export default function MyInfoPage() {
 
         {/* 약관 동의 여부 */}
         <Col span={12}>
-          <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ height: '100%' }}>
+          <Card size="small" title={t('ttl.myinfo.terms')} loading={isLoading} style={{ height: '100%', borderRadius: 12 }}>
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={`${t('lbl.terms.privacy')} (${t('lbl.required')})`}>
                 {isAgreed(userInfo.userinfoyn) ? <Tag color="default">{t('lbl.agreed')}</Tag> : <Tag color="red">{t('lbl.not.agreed')}</Tag>}
@@ -278,7 +284,7 @@ export default function MyInfoPage() {
               </div>
             ) : null}
             loading={subsLoading}
-            style={{ height: '100%' }}
+            style={{ height: '100%', borderRadius: 12 }}
           >
             <Table
               size="small"
@@ -330,7 +336,7 @@ export default function MyInfoPage() {
               title={t('ttl.myinfo.credit.purchase')}
               extra={<Button size="small" onClick={() => openInTab('credit-purchase', '', t('ttl.myinfo.credit.purchase'))}>{t('btn.purchase')}</Button>}
               loading={creditPurchaseLoading}
-              style={{ height: '100%' }}
+              style={{ height: '100%', borderRadius: 12 }}
             >
               <Table
                 size="small"
@@ -355,7 +361,7 @@ export default function MyInfoPage() {
           size="small"
           title={t('ttl.myinfo.security')}
           loading={factorsLoading}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 16, borderRadius: 12 }}
         >
           <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
             {t('msg.mfa.account_wide_notice')}
@@ -387,7 +393,7 @@ export default function MyInfoPage() {
       )}
 
       {/* 소속 */}
-      <Card size="small" title={t('ttl.myinfo.belong')} loading={isLoading} style={{ marginBottom: 16 }}>
+      <Card size="small" title={t('ttl.myinfo.belong')} loading={isLoading} style={{ marginBottom: 16, borderRadius: 12 }}>
         <Table
           columns={[
             {
