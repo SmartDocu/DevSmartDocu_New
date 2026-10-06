@@ -13,7 +13,7 @@ from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
 from utilsPrj.credit_helper import CREDITCHARGECD_PRIORITY, upsert_ba_creditbucket, offset_negative_ba_bucket
 from utilsPrj.notifications import create_notification
-from utilsPrj.user_lookup import get_usernm_email
+from utilsPrj.user_lookup import get_usernm_email_map
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 from utilsPrj.private_storage import resolve_display_url
 from backend.app.routers.admin import _require_admin
@@ -331,9 +331,10 @@ def list_tenants(token: str = Depends(get_token)):
         account_map = {a["tenantid"]: a for a in acc_rows}
 
     svc_client = get_service_client()
+    creator_map = get_usernm_email_map(sb, [row.get("creator") for row in rows])
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"))
-        nm, _ = get_usernm_email(sb, row.get("creator"))
+        nm, _ = creator_map.get(row.get("creator"), ("", ""))
         row["creatornm"] = nm
         acc = account_map.get(row.get("tenantid"))
         row["decemail"] = _decrypt(acc.get("encemail")) if acc else ""

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_sb as _sb, get_user as _get_user
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client
-from utilsPrj.user_lookup import get_usernm_email as _get_usernm_email
+from utilsPrj.user_lookup import get_usernm_email_map as _get_usernm_email_map
 from utilsPrj.audit_log import log_work_action, snapshot_row, get_client_ip
 
 router = APIRouter()
@@ -146,12 +146,13 @@ def list_tenant_users(
 
     # tenantusers 조회
     tu_rows = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("*").eq("tenantid", tenantid).order("useruid", desc=True).execute().data or []
+    uid_map = _get_usernm_email_map(sb, [row.get("useruid") for row in tu_rows] + [row.get("creator") for row in tu_rows])
     for row in tu_rows:
-        nm, email = _get_usernm_email(sb, row.get("useruid", ""))
+        nm, email = uid_map.get(row.get("useruid", ""), ("", ""))
         row["usernm"] = nm
         row["email"] = email
         if row.get("creator"):
-            cnm, _ = _get_usernm_email(sb, row["creator"])
+            cnm, _ = uid_map.get(row["creator"], ("", ""))
             row["creatornm"] = cnm
         else:
             row["creatornm"] = ""
@@ -535,10 +536,11 @@ def list_org_projects(
     tenantnm = t_rows[0]["tenantnm"] if t_rows else ""
 
     rows = sb.schema(SUPABASE_SCHEMA).table("projects").select("*").eq("tenantid", tenantid).order("createdts", desc=True).execute().data or []
+    creator_map = _get_usernm_email_map(sb, [row.get("creator") for row in rows])
     for row in rows:
         row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
         if row.get("creator"):
-            nm, _ = _get_usernm_email(sb, row["creator"])
+            nm, _ = creator_map.get(row["creator"], ("", ""))
             row["creatornm"] = nm
         else:
             row["creatornm"] = ""
@@ -745,17 +747,6 @@ def list_project_users(
 
     # ── 선택된 프로젝트 사용자 ──────────────────────────────────
     pu_rows = sb.schema(SUPABASE_SCHEMA).table("projectusers").select("*").eq("projectid", projectid).order("useruid", desc=True).execute().data or []
-    for row in pu_rows:
-        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
-        nm, email = _get_usernm_email(sb, row.get("useruid", ""))
-        row["usernm"] = nm
-        row["email"] = email
-        if row.get("creator"):
-            cnm, _ = _get_usernm_email(sb, row["creator"])
-            row["creatornm"] = cnm
-        else:
-            row["creatornm"] = ""
-        row["servicecds"] = svc_map.get(row.get("useruid"), [])
 
     # ── 해당 프로젝트에 없는 기업 사용자 (조회 Modal용) ───────────
     existing_uuids = {r["useruid"] for r in pu_rows if r.get("useruid")}
@@ -763,6 +754,24 @@ def list_project_users(
         all_tu = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("useruid").eq("tenantid", tenantid).eq("useyn", True).execute().data or []
     else:
         all_tu = []
+
+    # pu_rows(useruid+creator)와 all_tu(모달 후보) 전체 useruid를 한 번에 조회 (N+1 방지)
+    uid_map = _get_usernm_email_map(
+        sb,
+        [row.get("useruid") for row in pu_rows] + [row.get("creator") for row in pu_rows] + [tu.get("useruid") for tu in all_tu],
+    )
+
+    for row in pu_rows:
+        row["createdts"] = _fmt_dt(row.get("createdts"), offsetminutes)
+        nm, email = uid_map.get(row.get("useruid", ""), ("", ""))
+        row["usernm"] = nm
+        row["email"] = email
+        if row.get("creator"):
+            cnm, _ = uid_map.get(row["creator"], ("", ""))
+            row["creatornm"] = cnm
+        else:
+            row["creatornm"] = ""
+        row["servicecds"] = svc_map.get(row.get("useruid"), [])
 
     # 프로젝트의 서비스(accountuid+servicecd)에 가입된 사용자만 후보로 노출
     service_useruids = None
@@ -776,7 +785,7 @@ def list_project_users(
             continue
         if service_useruids is not None and uid not in service_useruids:
             continue
-        nm, email = _get_usernm_email(sb, uid)
+        nm, email = uid_map.get(uid, ("", ""))
         tenantusers_modal.append({"useruid": uid, "usernm": nm, "email": email, "servicecds": svc_map.get(uid, [])})
 
     return {

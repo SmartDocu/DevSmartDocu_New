@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from backend.app.dependencies import get_token, get_sb
 from utilsPrj.supabase_client import get_service_client, SUPABASE_SCHEMA
-from utilsPrj.user_lookup import get_usernm_email
+from utilsPrj.user_lookup import get_usernm_email_map
 from utilsPrj.audit_log import log_admin_action, snapshot_row, get_client_ip
 
 router = APIRouter()
@@ -444,8 +444,9 @@ def list_helps(token: str = Depends(get_token)):
     _require_admin(token)
     sb = _sb_service()
     rows = sb.schema(SUPABASE_SCHEMA).table("helps").select("*").order("url").order("languagecd").execute().data or []
+    creator_map = get_usernm_email_map(sb, [row.get("creator") for row in rows])
     for row in rows:
-        nm, _ = get_usernm_email(sb, row.get("creator"))
+        nm, _ = creator_map.get(row.get("creator"), ("", ""))
         row["createuser"] = nm
     return {"helps": rows}
 
