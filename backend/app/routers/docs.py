@@ -469,10 +469,9 @@ def delete_doc(docid: int, request: Request, token: str = Depends(get_token), te
         accountuid = resolve_user_accountuid(get_service_client(), int(tenantid), user_id) if tenantid else None
         _delete_storage_file(sb, doc["basetemplateurl"], expected_accountuid=accountuid)
 
-    # 연관 gendocs 삭제
+    # 연관 gendocs 삭제 (감사 로그 스냅샷용으로 먼저 조회한 뒤, 건별 삭제 대신 docid로 한 번에 삭제)
     gendocs = sb.schema(SUPABASE_SCHEMA).table("gendocs").select("gendocuid").eq("docid", docid).execute().data or []
-    for gd in gendocs:
-        sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("gendocuid", gd["gendocuid"]).execute()
+    sb.schema(SUPABASE_SCHEMA).table("gendocs").delete().eq("docid", docid).execute()
 
     docparams = sb.schema(SUPABASE_SCHEMA).table("docparams").select("*").eq("docid", docid).execute().data or []
     sb.schema(SUPABASE_SCHEMA).table("docparams").delete().eq("docid", docid).execute()
