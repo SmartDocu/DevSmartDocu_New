@@ -132,11 +132,16 @@ export default function MasterChatTablesPage() {
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
 
         {/* 좌측: datas 목록 */}
-        <div style={{ flex: 3, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.list')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="table-container" style={{ height: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
@@ -169,11 +174,16 @@ export default function MasterChatTablesPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: data_meta 상세 폼 */}
-        <div style={{ flex: 7, overflowY: 'auto', maxHeight: 'calc(100vh - 224px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 7, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 224px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {isEditYn && (
               <div style={{ display: 'flex', gap: 8 }}>
@@ -191,6 +201,7 @@ export default function MasterChatTablesPage() {
             )}
           </div>
 
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="form-group">
             <label>{t('lbl.aliases')}</label>
             <input type="text" value={form.aliases} onChange={setField('aliases')} placeholder='"SalesOrderDetail", "OrderDetailID"' />
@@ -292,7 +303,7 @@ export default function MasterChatTablesPage() {
             <input type="text" value={form.child_column} onChange={setField('child_column')} placeholder="SalesOrderID" />
           </div>
 
-
+          </div>
         </div>
 
       </div>

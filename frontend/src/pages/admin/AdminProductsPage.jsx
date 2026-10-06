@@ -29,7 +29,7 @@ const EMPTY_PRODUCT = {
   is_customeraikey: false,
 }
 
-const PAGE_SIZE = 14
+const PAGE_SIZE = 15
 
 export default function AdminProductsPage() {
   const { message, modal } = App.useApp()

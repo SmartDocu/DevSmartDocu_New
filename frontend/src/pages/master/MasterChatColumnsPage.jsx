@@ -172,11 +172,16 @@ export default function MasterChatColumnsPage() {
       <div style={{ display: 'flex', gap: 30, paddingRight: 10 }}>
 
         {/* 좌측: datacols 목록 */}
-        <div style={{ flex: 5, paddingRight: 20, overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 280px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.col.info')}</h3>
             <div />
           </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="table-container" style={{ height: 'auto' }}>
             <table className="table table-bordered table-sm">
               <thead>
@@ -209,11 +214,16 @@ export default function MasterChatColumnsPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
         {/* 우측: 선택 컬럼 상세 */}
-        <div style={{ flex: 5, overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 32, marginBottom: 8 }}>
+        <div className="panel-section" style={{ flex: 5, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: 'calc(100vh - 280px)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, height: 60,
+            margin: '-16px -18px 16px', padding: '16px 18px 12px',
+            borderBottom: '1px solid var(--border-color, #e3e6eb)',
+          }}>
             <h3 style={{ margin: 0 }}>{t('ttl.detail')}</h3>
             {isEditYn && selectedCol && (
               <button className="btn btn-primary" type="button" onClick={handleSave} disabled={isSaving}>
@@ -223,6 +233,7 @@ export default function MasterChatColumnsPage() {
             )}
           </div>
 
+          <div style={{ flex: 1, overflowY: 'auto' }}>
           {selectedCol ? (
             <>
               <div className="form-group">
@@ -310,6 +321,7 @@ export default function MasterChatColumnsPage() {
           ) : (
             <div style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>{t('msg.select')}</div>
           )}
+          </div>
         </div>
 
       </div>
