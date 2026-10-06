@@ -91,7 +91,7 @@ export default function AdminHelpsPage() {
       if (filterLangcd !== 'all' && h.languagecd !== filterLangcd) return false
       const q = searchText.trim().toLowerCase()
       if (!q) return true
-      return (h.help || '').toLowerCase().includes(q)
+      return (h.help || '').toLowerCase().includes(q) || (h.url || '').toLowerCase().includes(q)
     })
     .sort((a, b) => {
       const u = (a.url || '').localeCompare(b.url || '')
@@ -190,13 +190,13 @@ export default function AdminHelpsPage() {
           </div>
         </div>
         <div className="filter-item" style={{ marginLeft: 24 }}>
-          <label style={{ fontWeight: 'bold' }}>{t('lbl.subject')}</label>
+          <label style={{ fontWeight: 'bold' }}>{t('lbl.help.search_label')}</label>
           <Input
-            placeholder={t('inf.help.title_placeholder')}
+            placeholder={t('inf.help.search_placeholder')}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             allowClear
-            style={{ height: 32, width: 220 }}
+            style={{ height: 32, width: 320 }}
           />
         </div>
       </div>
