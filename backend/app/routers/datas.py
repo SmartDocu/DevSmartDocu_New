@@ -1175,6 +1175,33 @@ def _extract_json_columns(data) -> list:
     return result
 
 
+def _sync_datacols(sb, datauid: str, new_records: list[dict]) -> None:
+    """컬럼 자동 생성 결과를 기존 datacols와 병합한다(전체 삭제 후 재삽입 금지).
+
+    - 이름(querycolnm)이 같은 컬럼: 사용자가 설정한 표시명/데이터 타입/측정값/사용여부/설명 등을 그대로 유지하고,
+      순번(orderno)만 새 쿼리 결과 순서에 맞춘다.
+    - 새로 생긴 컬럼: 추가한다.
+    - 없어진 컬럼: 삭제한다.
+    """
+    table = lambda: sb.schema(SUPABASE_SCHEMA).table("datacols")
+    existing = table().select("querycolnm, orderno").eq("datauid", datauid).execute().data or []
+    existing_map = {r["querycolnm"]: r for r in existing}
+    new_names = {r["querycolnm"] for r in new_records}
+
+    to_delete = [n for n in existing_map if n not in new_names]
+    if to_delete:
+        table().delete().eq("datauid", datauid).in_("querycolnm", to_delete).execute()
+
+    inserts = [r for r in new_records if r["querycolnm"] not in existing_map]
+    if inserts:
+        table().insert(inserts).execute()
+
+    for r in new_records:
+        old = existing_map.get(r["querycolnm"])
+        if old is not None and old.get("orderno") != r.get("orderno"):
+            table().update({"orderno": r.get("orderno")}).eq("datauid", datauid).eq("querycolnm", r["querycolnm"]).execute()
+
+
 @router.post("/datacols/create", dependencies=[Depends(require_login)])
 def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     """쿼리를 실행해 컬럼을 자동 생성한다."""
@@ -1208,7 +1235,6 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
         select_query = f"SELECT {col_list} FROM {table_name}"
 
         sb.schema(SUPABASE_SCHEMA).table("dataunits").update({"query": select_query}).eq("datauid", datauid).execute()
-        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
         records = [
             {
                 "datauid":    datauid,
@@ -1222,7 +1248,7 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
             }
             for c in parsed
         ]
-        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
+        _sync_datacols(sb, datauid, records)
         return {"message": "컬럼이 생성되었습니다.", "columns": [c["querycolnm"] for c in parsed]}
 
     # ── api 모드: 실제 API 호출 → 응답 파싱 → 컬럼 생성 ────────────────
@@ -1306,8 +1332,7 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
         if not parsed:
             raise HTTPException(status_code=400, detail="API 응답에서 컬럼을 추출할 수 없습니다.")
 
-        sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
-        sb.schema(SUPABASE_SCHEMA).table("datacols").insert([
+        _sync_datacols(sb, datauid, [
             {
                 "datauid":    datauid,
                 "querycolnm": c["querycolnm"],
@@ -1319,7 +1344,7 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
                 "creator":    str(user.id),
             }
             for c in parsed
-        ]).execute()
+        ])
         return {"message": "컬럼이 생성되었습니다.", "columns": [c["querycolnm"] for c in parsed]}
     # ────────────────────────────────────────────────────────────────────
 
@@ -1367,7 +1392,6 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
             deduped.append(c)
     cols = deduped
 
-    sb.schema(SUPABASE_SCHEMA).table("datacols").delete().eq("datauid", datauid).execute()
     records = [
         {
             "datauid":    datauid,
@@ -1382,7 +1406,7 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
         for i, c in enumerate(cols, 1)
     ]
     if records:
-        sb.schema(SUPABASE_SCHEMA).table("datacols").insert(records).execute()
+        _sync_datacols(sb, datauid, records)
 
     return {"message": "컬럼이 생성되었습니다.", "columns": cols}
 
