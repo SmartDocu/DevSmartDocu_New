@@ -5,6 +5,7 @@ import { PlusOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
+import { DATATYPE_EMOJI } from '@/utils/dataTypeEmoji'
 import {
   useDataParams,
   useConditionDatas,
@@ -17,6 +18,7 @@ const EMPTY_FORM = {
   paramnm: '',
   orderno: '',
   samplevalue: '',
+  datatypecd: '',
   operator: '=',
   datasetyn: 'N',
   datauid: '',
@@ -62,6 +64,7 @@ export default function MasterConditionsPage() {
       paramnm: param.paramnm || '',
       orderno: param.orderno ?? '',
       samplevalue: param.samplevalue || '',
+      datatypecd: param.datatypecd || '',
       operator: param.operator || '=',
       datasetyn: param.datauid ? 'Y' : 'N',
       datauid: param.datauid || '',
@@ -111,6 +114,7 @@ export default function MasterConditionsPage() {
       ...f,
       keycolnm: val,
       keycoldatatypecd: col?.datatypecd || '',
+      datatypecd: col?.datatypecd || f.datatypecd,
     }))
   }
 
@@ -119,6 +123,7 @@ export default function MasterConditionsPage() {
     if (!form.paramnm) { message.warning(t('msg.required') + ': ' + t('lbl.paramnm_lbl')); return }
     if (!form.operator) { message.warning(t('msg.required') + ': ' + t('lbl.operator_lbl')); return }
     if (!form.samplevalue) { message.warning(t('msg.required') + ': ' + t('lbl.samplevalue')); return }
+    if (!form.datatypecd) { message.warning(t('msg.required') + ': ' + t('thd.datatypecd')); return }
     if (form.datasetyn === 'Y' && !form.datauid) {
       message.warning(t('msg.required') + ': ' + t('lbl.datauid'))
       return
@@ -129,6 +134,7 @@ export default function MasterConditionsPage() {
       paramnm: form.paramnm,
       orderno: form.orderno !== '' ? Number(form.orderno) : null,
       samplevalue: form.samplevalue,
+      datatypecd: form.datatypecd || null,
       operator: form.operator,
       datauid: form.datasetyn === 'Y' ? form.datauid || null : null,
       keycolnm: form.datasetyn === 'Y' ? form.keycolnm || null : null,
@@ -204,12 +210,13 @@ export default function MasterConditionsPage() {
                   <th>{t('thd.paramnm_thd')}</th>
                   <th style={{ width: '15%', textAlign: 'center' }}>{t('thd.operator_thd')}</th>
                   <th>{t('thd.samplevalue_thd')}</th>
+                  <th style={{ width: '14%', textAlign: 'center' }}>{t('thd.datatypecd')}</th>
                   <th>{t('thd.datanm_thd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {params.length === 0 ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#aaa' }}>{t('msg.no.data')}</td></tr>
                 ) : params.map((p) => (
                   <tr
                     key={p.paramuid}
@@ -221,6 +228,9 @@ export default function MasterConditionsPage() {
                     <td>{p.paramnm}</td>
                     <td style={{ textAlign: 'center' }}>{p.operator}</td>
                     <td>{p.samplevalue || ''}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {p.datatypecd ? `${DATATYPE_EMOJI[p.datatypecd] || ''} ${t(`cod.keycoldatatypecd_${p.datatypecd}`) || p.datatypecd}`.trim() : ''}
+                    </td>
                     <td>{p.datanm || ''}</td>
                   </tr>
                 ))}
@@ -325,6 +335,26 @@ export default function MasterConditionsPage() {
             />
           </div>
 
+          {/* 데이터 타입 */}
+          <div className="form-group">
+            <label htmlFor="cond-datatypecd">
+              <span style={{ color: 'red', marginRight: 2 }}>*</span>{t('thd.datatypecd')}:
+            </label>
+            <select
+              id="cond-datatypecd"
+              value={form.datatypecd}
+              onChange={(e) => setForm((f) => ({ ...f, datatypecd: e.target.value }))}
+              style={{ height: 38 }}
+            >
+              <option value="">{t('msg.select')}</option>
+              {datatypeOptions.map((c) => (
+                <option key={c.codevalue} value={c.codevalue}>
+                  {DATATYPE_EMOJI[c.codevalue] || ''} {t(c.term_key) || c.default_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* 연동 데이터 radio (필수) */}
           <div className="form-group">
             <label>
@@ -403,7 +433,9 @@ export default function MasterConditionsPage() {
                     >
                       <option value="">{t('msg.select')}</option>
                       {datatypeOptions.map((c) => (
-                        <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
+                        <option key={c.codevalue} value={c.codevalue}>
+                          {DATATYPE_EMOJI[c.codevalue] || ''} {t(c.term_key) || c.default_name}
+                        </option>
                       ))}
                     </select>
                   </div>

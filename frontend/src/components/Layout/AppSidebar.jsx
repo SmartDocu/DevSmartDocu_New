@@ -79,6 +79,7 @@ function canSee(rolecd, user, isAuthenticated) {
   if (!isAuthenticated()) return false
   if (rolecd === 'U') return true
   if (rolecd === 'PM') return user?.projectmanager === 'Y'
+  if (rolecd === 'PS') return user?.projectmanager === 'Y' && !!user?.issystemtenant
   if (rolecd === 'TM') return user?.tenantmanager === 'Y'
   if (rolecd === 'AM') return user?.accountmanager === 'Y'
   if (rolecd === 'S') return user?.roleid === 7

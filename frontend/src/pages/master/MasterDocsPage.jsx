@@ -16,7 +16,7 @@ export default function MasterDocsPage() {
   const deleteDoc = useDeleteDoc()
 
   const [selectedDoc, setSelectedDoc] = useState(null)
-  const [docForm, setDocForm] = useState({ docid: '', projectid: '', docnm: '', docdesc: '', docgroupid: '', docgroupnm: '' })
+  const [docForm, setDocForm] = useState({ docid: '', projectid: '', docnm: '', docdesc: '', docgroupid: '', docgroupnm: '', scheduleperiod: '' })
   const [templateFile, setTemplateFile] = useState(null)
   const [templateName, setTemplateName] = useState(null)
   const [docSaving, setDocSaving] = useState(false)
@@ -28,6 +28,7 @@ export default function MasterDocsPage() {
 
   const { data: docParams = [] } = useDataParams(docForm.docid ? String(docForm.docid) : null)
   const { data: datasetData } = useDocDatasets(docForm.docid ? String(docForm.docid) : null)
+  const { data: schedulePeriodCodes = [] } = useMenuCodes('scheduleperiod')
   const { data: dataSourceCodes = [] } = useMenuCodes('datasourcecd')
   const dataSourceLabel = (code) => {
     const c = dataSourceCodes.find((dc) => dc.codevalue === code)
@@ -36,14 +37,14 @@ export default function MasterDocsPage() {
 
   const selectDoc = (doc) => {
     setSelectedDoc(doc)
-    setDocForm({ docid: doc.docid, projectid: doc.projectid, docnm: doc.docnm, docdesc: doc.docdesc || '', docgroupid: doc.docgroupid || '', docgroupnm: doc.docgroupnm || '' })
+    setDocForm({ docid: doc.docid, projectid: doc.projectid, docnm: doc.docnm, docdesc: doc.docdesc || '', docgroupid: doc.docgroupid || '', docgroupnm: doc.docgroupnm || '', scheduleperiod: doc.scheduleperiod || '' })
     setTemplateName(doc.basetemplatenm || null)
     setTemplateFile(null)
   }
 
   const handleDocNew = () => {
     setSelectedDoc(null)
-    setDocForm({ docid: '', projectid: projects[0]?.projectid || '', docnm: '', docdesc: '', docgroupid: '', docgroupnm: '' })
+    setDocForm({ docid: '', projectid: projects[0]?.projectid || '', docnm: '', docdesc: '', docgroupid: '', docgroupnm: '', scheduleperiod: '' })
     setTemplateName(null)
     setTemplateFile(null)
   }
@@ -51,6 +52,7 @@ export default function MasterDocsPage() {
   const handleDocSave = () => {
     if (!docForm.projectid) { message.warning(t('msg.select.project')); return }
     if (!docForm.docnm) { message.warning(t('msg.docnm.required')); return }
+    if (!docForm.scheduleperiod) { message.warning(t('msg.select')); return }
     setDocSaving(true)
     const fd = new FormData()
     fd.append('projectid', docForm.projectid)
@@ -58,6 +60,7 @@ export default function MasterDocsPage() {
     if (docForm.docdesc) fd.append('docdesc', docForm.docdesc)
     if (docForm.docid) fd.append('docid', docForm.docid)
     if (docForm.docgroupid) fd.append('docgroupid', docForm.docgroupid)
+    if (docForm.scheduleperiod) fd.append('scheduleperiod', docForm.scheduleperiod)
     if (templateFile) fd.append('templatefile', templateFile)
     saveDoc.mutate(fd, {
       onSuccess: () => setDocSaving(false),
@@ -113,10 +116,11 @@ export default function MasterDocsPage() {
             <table className="table table-bordered table-sm" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '20%' }}>{t('lbl.docnm')}</th>
-                  <th style={{ width: '28%' }}>{t('lbl.projectnm_lbl')}</th>
-                  <th style={{ width: '18%' }}>{t('lbl.docgroupnm')}</th>
-                  <th style={{ width: '34%' }}>{t('lbl.desc_lbl')}</th>
+                  <th style={{ width: '18%' }}>{t('lbl.docnm')}</th>
+                  <th style={{ width: '22%' }}>{t('lbl.projectnm_lbl')}</th>
+                  <th style={{ width: '16%' }}>{t('lbl.docgroupnm')}</th>
+                  <th style={{ width: '12%' }}>{t('lbl.scheduleperiod')}</th>
+                  <th style={{ width: '32%' }}>{t('lbl.desc_lbl')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,6 +134,9 @@ export default function MasterDocsPage() {
                     <td style={{ wordBreak: 'break-word' }}>{doc.docnm}</td>
                     <td style={{ wordBreak: 'break-word' }}>{doc.projectnm}</td>
                     <td style={{ wordBreak: 'break-word' }}>{doc.docgroupnm || ''}</td>
+                    <td style={{ wordBreak: 'break-word' }}>
+                      {doc.scheduleperiod ? (t(`cod.scheduleperiod_${doc.scheduleperiod}`) || doc.scheduleperiod) : ''}
+                    </td>
                     <td style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{doc.docdesc || ''}</td>
                   </tr>
                 ))}
@@ -222,6 +229,21 @@ export default function MasterDocsPage() {
               onChange={(e) => setDocForm((f) => ({ ...f, docnm: e.target.value }))}
               style={{ height: 38 }}
             />
+          </div>
+          <div className="form-group">
+            <label htmlFor="doc-scheduleperiod"><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.scheduleperiod')}:</label>
+            <select
+              id="doc-scheduleperiod"
+              value={docForm.scheduleperiod}
+              onChange={(e) => setDocForm((f) => ({ ...f, scheduleperiod: e.target.value }))}
+              disabled={!canEdit}
+              style={{ height: 38 }}
+            >
+              <option value="">{t('msg.select')}</option>
+              {schedulePeriodCodes.map((c) => (
+                <option key={c.codevalue} value={c.codevalue}>{t(c.term_key) || c.default_name}</option>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label htmlFor="doc-docdesc">{t('lbl.desc_lbl')}:</label>

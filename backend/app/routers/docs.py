@@ -121,7 +121,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
     docs_details = (
         sb.schema(SUPABASE_SCHEMA)
         .table("docs")
-        .select("docid, docdesc, createdts, projectid, basetemplatenm, basetemplateurl, docnm, docgroupid")
+        .select("docid, docdesc, createdts, projectid, basetemplatenm, basetemplateurl, docnm, docgroupid, scheduleperiod")
         .in_("docid", docids)
         .execute()
         .data or []
@@ -233,6 +233,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
             "editbuttonyn": editbuttonyn,
             "docgroupid": dgid,
             "docgroupnm": docgroup_map.get(dgid) if dgid else None,
+            "scheduleperiod": details.get("scheduleperiod"),
         })
 
     # 6. 정렬: 샘플 우선, 최신순
@@ -259,6 +260,7 @@ def list_docs(token: str = Depends(get_token), tenantid: Optional[str] = Depends
                 editbuttonyn=d.get("editbuttonyn", "N"),
                 docgroupid=d.get("docgroupid"),
                 docgroupnm=d.get("docgroupnm"),
+                scheduleperiod=d.get("scheduleperiod"),
             )
             for d in result_list
         ]
@@ -351,6 +353,7 @@ async def save_doc(
     docdesc: Optional[str] = Form(None),
     docid: Optional[int] = Form(None),
     docgroupid: Optional[int] = Form(None),
+    scheduleperiod: Optional[str] = Form(None),
     templatefile: Optional[UploadFile] = File(None),
     token: str = Depends(get_token),
     tenantid: Optional[str] = Depends(get_tenantid),
@@ -382,7 +385,17 @@ async def save_doc(
     if dup:
         raise HTTPException(status_code=400, detail="msg.doc.name.duplicate")
 
-    record: dict = {"projectid": projectid, "docnm": docnm, "docdesc": docdesc, "docgroupid": docgroupid}
+    if not scheduleperiod:
+        raise HTTPException(status_code=400, detail="msg.select")
+    valid = (
+        sb.schema(SUPABASE_SCHEMA).table("codes").select("codevalue")
+        .eq("codegroupcd", "scheduleperiod").eq("codevalue", scheduleperiod).eq("useyn", True)
+        .execute().data
+    )
+    if not valid:
+        raise HTTPException(status_code=400, detail="msg.save.error")
+
+    record: dict = {"projectid": projectid, "docnm": docnm, "docdesc": docdesc, "docgroupid": docgroupid, "scheduleperiod": scheduleperiod}
 
     # 템플릿 파일은 private 버킷(d2doc-private, Users/{accountuid}/Doc/{docid}/source/...)에 저장한다.
     # 신규 문서는 docid가 INSERT 이후에야 확정되므로, 파일 내용만 먼저 읽어두고
@@ -503,6 +516,7 @@ class ParamSaveRequest(BaseModel):
     keycoldatatypecd: Optional[str] = None
     nmcolnm: Optional[str] = None
     ordercolnm: Optional[str] = None
+    datatypecd: Optional[str] = None
 
 
 @router.get("/{docid}/params", dependencies=[Depends(require_login)])
@@ -527,6 +541,8 @@ def list_params(docid: int, token: str = Depends(get_token)):
 
 @router.post("/params", dependencies=[Depends(require_login)])
 def save_param(body: ParamSaveRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    if not body.datatypecd:
+        raise HTTPException(status_code=400, detail="msg.select")
     user = _get_user(token)
     sb = _sb(token)
     payload = {
@@ -540,6 +556,7 @@ def save_param(body: ParamSaveRequest, request: Request, token: str = Depends(ge
         "keycoldatatypecd": body.keycoldatatypecd,
         "nmcolnm": body.nmcolnm,
         "ordercolnm": body.ordercolnm,
+        "datatypecd": body.datatypecd,
     }
     if body.paramuid:
         before = snapshot_row(sb, "docparams", "paramuid", body.paramuid)
@@ -589,18 +606,52 @@ def list_condition_datas(docid: int, token: str = Depends(get_token)):
         raise HTTPException(status_code=404, detail="msg.doc.not.found")
     projectid = doc[0]["projectid"]
 
-    datas = (
-        sb.schema(SUPABASE_SCHEMA).table("datas")
-        .select("datauid, datanm, datasourcecd")
-        .eq("projectid", projectid).not_.in_("datasourcecd", ["df", "dfv"])
-        .order("datanm").execute().data or []
+    # 문서 접근 권한은 위 docs 조회(RLS)로 확인된 상태. 이후 조회는 master/datasets(get_doc_params)와 같은 기준으로
+    # 서비스 클라이언트를 쓴다(dataunits/datasetmembers는 사용자 세션으로는 RLS에 막힐 수 있음).
+    from utilsPrj.supabase_client import get_service_client
+    sb_svc = get_service_client()
+    exclude_sources = {"df", "dfv"}
+
+    # (A) datas 뷰에 이 프로젝트로 잡힌 데이터 (ex 등)
+    datas_by_uid = {
+        d["datauid"]: d for d in (
+            sb_svc.schema(SUPABASE_SCHEMA).table("datas")
+            .select("datauid, datanm, datasourcecd")
+            .eq("projectid", projectid).not_.in_("datasourcecd", list(exclude_sources))
+            .execute().data or []
+        )
+    }
+
+    # (B) project_datasets로 이 프로젝트에 연결된 데이터: 직접 연결(is_directdatauid=true) + 데이터 그룹 멤버
+    pd_rows = (
+        sb_svc.schema(SUPABASE_SCHEMA).table("project_datasets")
+        .select("datasetuid, is_directdatauid").eq("projectid", projectid).execute().data or []
     )
+    linked_uids = {r["datasetuid"] for r in pd_rows if r.get("is_directdatauid")}
+    group_ids = [r["datasetuid"] for r in pd_rows if not r.get("is_directdatauid")]
+    if group_ids:
+        member_rows = (
+            sb_svc.schema(SUPABASE_SCHEMA).table("datasetmembers")
+            .select("datauid").in_("datasetuid", group_ids).execute().data or []
+        )
+        linked_uids |= {r["datauid"] for r in member_rows}
+    linked_uids -= set(datas_by_uid)
+    if linked_uids:
+        for d in (
+            sb_svc.schema(SUPABASE_SCHEMA).table("dataunits")
+            .select("datauid, datanm, datasourcecd").in_("datauid", list(linked_uids))
+            .not_.in_("datasourcecd", list(exclude_sources))
+            .execute().data or []
+        ):
+            datas_by_uid[d["datauid"]] = d
+
+    datas = sorted(datas_by_uid.values(), key=lambda d: d["datanm"] or "")
 
     data_ids = [d["datauid"] for d in datas]
     col_map: dict = {}
     if data_ids:
         cols = (
-            sb.schema(SUPABASE_SCHEMA).table("datacols")
+            sb_svc.schema(SUPABASE_SCHEMA).table("datacols")
             .select("datauid, querycolnm, dispcolnm, datatypecd")
             .in_("datauid", data_ids).order("orderno").execute().data or []
         )
@@ -665,7 +716,7 @@ def get_doc_params(docid: int, token: str = Depends(get_token)):
     col_map: dict = {}
     if data_uids:
         all_datacols = sb_svc.schema(SUPABASE_SCHEMA).table("datacols") \
-            .select("datauid, querycolnm, dispcolnm, orderno") \
+            .select("datauid, querycolnm, dispcolnm, orderno, datatypecd") \
             .in_("datauid", data_uids).order("orderno").execute().data or []
         for col in all_datacols:
             col_map.setdefault(col["datauid"], []).append(col)
@@ -726,6 +777,27 @@ def save_doc_params(docid: int, body: DocParamSaveRequest, request: Request, tok
     """doc_datas 선택 및 docparamdtls 매핑 저장"""
     sb = _sb(token)
     user_id = str(_get_user(token).id)
+
+    # 열 매핑(paramnm 없는 레코드)의 열 데이터 타입 ↔ 매개변수 데이터 타입 일치 검증 (프론트와 동일 규칙, 타입 미지정은 string)
+    col_records = [r for r in body.records if not r.get("paramnm") and r.get("querycolnm")]
+    if col_records:
+        from utilsPrj.supabase_client import get_service_client
+        sb_svc = get_service_client()
+        col_types = {
+            (c["datauid"], c["querycolnm"]): c.get("datatypecd") or "string"
+            for c in sb_svc.schema(SUPABASE_SCHEMA).table("datacols").select("datauid, querycolnm, datatypecd")
+            .in_("datauid", list({r["datauid"] for r in col_records})).execute().data or []
+        }
+        param_types = {
+            p["paramuid"]: p.get("datatypecd") or "string"
+            for p in sb_svc.schema(SUPABASE_SCHEMA).table("docparams").select("paramuid, datatypecd")
+            .eq("docid", docid).execute().data or []
+        }
+        for r in col_records:
+            ct = col_types.get((r["datauid"], r["querycolnm"]))
+            pt = param_types.get(r["paramuid"])
+            if ct and pt and ct != pt:
+                raise HTTPException(status_code=400, detail="msg.dataset.datatype.mismatch.title")
 
     before = {
         "doc_datas": sb.schema(SUPABASE_SCHEMA).table("doc_datas").select("*").eq("docid", docid).execute().data or [],

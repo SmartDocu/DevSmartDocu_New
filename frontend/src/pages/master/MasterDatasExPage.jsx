@@ -5,23 +5,13 @@ import { PlusOutlined, SaveOutlined, DeleteOutlined, UploadOutlined } from '@ant
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
+import { DATATYPE_EMOJI } from '@/utils/dataTypeEmoji'
 import {
   useDatasEx, useSaveExData, useDeleteData,
   useDatacols, useCreateDatacols, useSaveDatacols,
 } from '@/hooks/useDatas'
 
 const EMPTY_COLS = []
-
-const DATATYPE_EMOJI = {
-  string: '🔤',
-  number: '🔢',
-  date: '📅',
-  datetime: '⏰',
-  currency: '💰',
-  boolean: '✅',
-  text: '📝',
-  identifier: '🗝️',
-}
 
 export default function MasterDatasExPage() {
   const { message, modal } = App.useApp()

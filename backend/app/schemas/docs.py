@@ -24,6 +24,7 @@ class DocItem(BaseModel):
     editbuttonyn: str = "Y"
     docgroupid: Optional[int] = None
     docgroupnm: Optional[str] = None
+    scheduleperiod: Optional[str] = None
 
 
 class DocsListResponse(BaseModel):

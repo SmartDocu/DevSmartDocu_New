@@ -6,10 +6,11 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { useMenus, useMenuCodes } from '@/hooks/useMenus'
 import { useDocDatasets, useSaveDocDatasets } from '@/hooks/useDocDatasets'
+import { DATATYPE_EMOJI } from '@/utils/dataTypeEmoji'
 
 export default function MasterDatasetPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
 
   const location = useLocation()
   const { data: allMenus = [] } = useMenus()
@@ -38,6 +39,12 @@ export default function MasterDatasetPage() {
   const [mapping, setMapping]       = useState({})  // { datauid: { paramuid: querycolnm } }
   const [apiMapping, setApiMapping] = useState({})  // { datauid: { paramnm: paramuid } }
   const [apiPopupDatauid, setApiPopupDatauid] = useState(null)
+
+  const { data: datatypeCodes = [] } = useMenuCodes('keycoldatatypecd')
+  const datatypeLabel = (code) => {
+    const c = datatypeCodes.find((dc) => dc.codevalue === code)
+    return `${DATATYPE_EMOJI[code] || ''} ${c ? (t(c.term_key) || c.default_name) : code}`.trim()
+  }
 
   useEffect(() => {
     if (!data) return
@@ -81,6 +88,43 @@ export default function MasterDatasetPage() {
           return
         }
       }
+    }
+
+    // 열 데이터 타입 ↔ 매개변수 데이터 타입 일치 검증 (타입 미지정은 string으로 간주)
+    const mismatches = []
+    for (const datauid of checkedDatauids) {
+      const datanm = datas.find((d) => d.datauid === datauid)?.datanm || datauid
+      for (const [paramuid, querycolnm] of Object.entries(mapping[datauid] || {})) {
+        if (!querycolnm) continue
+        const param = dataparams.find((p) => p.paramuid === paramuid)
+        const col = (colMap[datauid] || []).find((c) => c.querycolnm === querycolnm)
+        if (!param || !col) continue
+        const colType = col.datatypecd || 'string'
+        const paramType = param.datatypecd || 'string'
+        if (colType !== paramType) {
+          mismatches.push({ datanm, col: col.dispcolnm || col.querycolnm, colType, param: param.paramnm, paramType })
+        }
+      }
+    }
+    if (mismatches.length > 0) {
+      modal.error({
+        title: t('msg.dataset.datatype.mismatch.title'),
+        width: 560,
+        content: (
+          <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+            {mismatches.map((m, i) => (
+              <div key={i} style={{ marginBottom: 6 }}>
+                [{m.datanm}] {t('msg.dataset.datatype.mismatch')
+                  .replace('{col}', m.col)
+                  .replace('{coltype}', datatypeLabel(m.colType))
+                  .replace('{param}', m.param)
+                  .replace('{paramtype}', datatypeLabel(m.paramType))}
+              </div>
+            ))}
+          </div>
+        ),
+      })
+      return
     }
 
     const records = checkedDatauids.flatMap((datauid) =>
