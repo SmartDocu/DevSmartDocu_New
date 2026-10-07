@@ -25,6 +25,8 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnableBranch 
 
+from utilsPrj import report_style as rs
+from utilsPrj.chapter_making_ai_table import render_table_html
 from utilsPrj.crypto_helper import encrypt_value, decrypt_value
 from utilsPrj.supabase_client import get_service_client, get_supabase_client, SUPABASE_SCHEMA
 
@@ -382,7 +384,7 @@ def _fetch_llm_info(supabase, project_id, tenant_id, user_uid, service_code, acc
                 "projects 또는 llmapikeys 테이블에 llmmodelnm/encapikey를 설정하세요."
             )
     
-    print(f"jeff 0001 encode: {enc_api_key}")    # jeff 20260827 key
+    # print(f"jeff 0001 encode: {enc_api_key}")    # jeff 20260827 key    # jeff 20261006
     dec_api_key = decrypt_value(enc_api_key)
     # print(f"jeff 0001 encode: {enc_api_key} \ntdecode: {dec_api_key}")    # jeff 20260827 key
     # vendor 조회는 항상 모델명 문자열 하나가 필요하다 — multi_grade면 dict에서 하나 뽑아온다.
@@ -592,10 +594,10 @@ def get_charts_prompt(df, column_dict, question, ai_filter_json={}):
     1. pandas와 matplotlib을 사용
     
     2. 한글 깨짐 방지 및 동시성 문제 해결을 위해 아래 코드를 반드시 포함:
-    
+
     import matplotlib
     matplotlib.use('Agg')
-    
+
     from matplotlib.figure import Figure
     import matplotlib.font_manager as fm
     import os
@@ -611,59 +613,58 @@ def get_charts_prompt(df, column_dict, question, ai_filter_json={}):
     fm.fontManager.addfont(font_path)
     font_name = fm.FontProperties(fname=font_path).get_name()
     matplotlib.rcParams['font.family'] = font_name
-    
+
     3. **차트 생성 방법 (반드시 이 방식 사용):**
 
-    # 단일 차트
-    fig = Figure(figsize=(6, 4))
+    # 단일 차트 — 그림 크기는 DEFAULT_FIGSIZE 사용 (사용자가 크기를 지정한 경우만 그 값)
+    fig = Figure(figsize=DEFAULT_FIGSIZE)
     ax = fig.add_subplot(111)
-    
-    # 또는 서브플롯 (예: 3x2)
+    style_axes(ax)           # 기본 스타일 적용 — 축을 만들면 바로 호출
+
+    # 또는 서브플롯 (예: 3x2) — 가로 최대 6, 세로 최대 10
     fig = Figure(figsize=(6, 10))
     axes = [fig.add_subplot(3, 2, i+1) for i in range(6)]
-    # 또는
-    ax1 = fig.add_subplot(321)
-    ax2 = fig.add_subplot(322)
-    # ... 등등
-    
+    for a in axes:
+        style_axes(a)
+
     4. **차트 그리기는 ax 객체 사용:**
-       - ax.plot(), ax.bar(), ax.hist(), ax.scatter() 등
-       - ax.set_title(), ax.set_xlabel(), ax.set_ylabel()
-       - ax.legend(), ax.grid()
-       - ax.axvline(), ax.axhline() 등
-    
+       - ax.plot(), ax.bar(), ax.barh(), ax.pie(), ax.hist(), ax.scatter() 등
+       - ax.set_title(), ax.set_xlabel(), ax.set_ylabel(), ax.legend()
+       - 이중 Y축은 ax.twinx() 대신 반드시 ax2 = twinx(ax) 를 사용 (색이 이어지도록 미리 준비된 함수)
+
     5. **코드 마지막에 반드시 추가:**
-    
+
+    finish_axes(ax)          # 이중 Y축이면 finish_axes(ax, ax2), 서브플롯이면 finish_axes(*axes)
     fig.tight_layout()
     output_fig = fig
 
-    6. **색상 사용 방법:**
-       - plt.cm 대신 matplotlib.cm 사용
-       - 예: colors = matplotlib.cm.tab20(np.linspace(0, 1, n))
-       - 또는 직접 색상 리스트 정의: ['red', 'blue', 'green', ...]    
+    6. **모양(스타일)은 코드에 적지 않습니다 — 기본 스타일이 자동으로 적용됩니다:**
+       - 색(color, colors, cmap), 글자 크기(fontsize), 굵기(fontweight), 선 굵기, 격자(grid),
+         테두리(spines), 범례 위치·글자 크기를 지정하지 마세요.
+       - 단, 사용자가 질문에서 직접 지정한 모양(예: "막대는 빨간색", "제목 글자 크기 16")은 그 값만 코드에 적습니다.
+       - 막대그래프는 막대를 그린 뒤 add_value_labels(ax) 를 호출해 막대 위에 값을 표시합니다
+         (사용자가 값 표시를 원하지 않은 경우 제외).
+       - 선 그래프는 marker='o' 를 사용합니다 (사용자가 다른 모양을 지정한 경우 제외).
+       - 증가/감소를 색으로 구분해야 하는 경우에만 증가는 '{rs.INCREASE}', 감소는 '{rs.DECREASE}'를 사용합니다.
 
-    7. **금지사항:**
+    7. **내용 작성 규칙:**
+       - 제목이 질문에 주어지지 않았으면 차트가 보여주는 내용을 설명하는 문장으로 작성합니다.
+       - 축 라벨에는 단위를 함께 적습니다 (예: "생산량 (개)", "일탈률 (%)").
+
+    8. **금지사항:**
        - plt.show() 사용 금지
        - plt.savefig() 사용 금지
        - plt.figure(), plt.subplots() 사용 금지 (Figure() 직접 생성)
        - seaborn 사용 금지
-    
-    8. 레이아웃 조정이 필요하면 fig.subplots_adjust(hspace=0.3, wspace=0.3) 사용
-    
-    9. **실행 가능한 Python 코드**로 작성
+
+    9. 레이아웃 조정이 필요하면 fig.subplots_adjust(hspace=0.3, wspace=0.3) 사용
+
+    10. **실행 가능한 Python 코드**로 작성
         - 응답은 반드시 ```python 으로 시작하고 ``` 로 끝나야 합니다.
         - 코드 블록 외부에 설명이나 주석을 추가하지 마세요.
         - 오직 실행 가능한 Python 코드만 반환하세요.
 
 {prompt_common_python_text}
-
-matplotlib 설정:
-    - Figure(figsize=(width, height)) 크기는 적당한 값 사용
-        - A4 용지에 좌우 여백 각 3cm를 고려한 크기
-        - width : 최대 6
-        - height : 최대 10
-    - ax.set_title(), ax.set_xlabel(), ax.set_ylabel() 적절히 설정
-    - 한글 표시 시 unicode 문제 방지
 
 코드:"""
     
@@ -706,10 +707,10 @@ def get_tables_prompt(df, column_dict, question, ai_filter_json={}):
     3. 피벗테이블을 이용하여 표를 작성한 경우라도 컬럼명을 한 행에 표기해주세요.
         - 컬럼명은 그 컬럼을 대표힐 수 있는 명칭을 사용하세요.
         - 표의 컬럼명에는 {{column_dict}}의 밸류값인 사용자 컬럼명을 사용합니다.
-    4. 테이블 크기
-        - A4 용지에 좌우 여백 각 3cm를 고려한 크기
-        - width : 최대 5.5 
-        - height : 최대 10 
+    4. 숫자는 숫자형(int/float) 그대로 둡니다. (중요)
+        - 천 단위 쉼표, % 기호, +/- 부호, 소수 자리 맞춤 같은 표시 서식을 문자열로 만들어 넣지 마세요.
+        - 표시 서식은 표를 그릴 때 자동으로 적용됩니다.
+        - 비율·백분율 값은 계산한 숫자만 넣고, 컬럼명에 단위를 적습니다 (예: "일탈률(%)").
     5. 데이터프레임을 별도로 저장하지 않습니다. (중요)
 
 {prompt_common_python_text}
@@ -718,99 +719,68 @@ def get_tables_prompt(df, column_dict, question, ai_filter_json={}):
     return prompt
 
 
-def get_table_style_combined(df, question):
-    first_row = list(df.columns)
-    first_column = df.columns[0] if len(df.columns) > 0 else None
+def get_table_style_prompt(df, question):
+    """표 서식 LLM 프롬프트 — 사용자가 지정한 모양만 뽑고, 컬럼 종류에 이름표를 붙인다.
+    기본 모양은 report_style.TABLE 이 정하므로 여기서는 기본값을 채우지 않는다."""
     all_columns = list(df.columns)
-    
-    prompt = f"""
-다음 DataFrame에 대한 테이블 스타일을 JSON으로 생성하세요.
+    first_column = all_columns[0] if all_columns else None
+    first_values = df[first_column].astype(str).tolist()[:50] if first_column is not None else []
 
-DataFrame 컬럼: {all_columns}
-첫번째 행(첫 행) : {first_row}
-첫번째 열(첫 열) : {first_column}
+    prompt = f"""
+다음 표에 대해 JSON을 생성하세요.
+
+표 컬럼: {all_columns}
+첫 번째 열("{first_column}")의 값: {first_values}
 
 사용자 요구사항:
 {question}
 
 
-스타일 적용 규칙:
-0. 우선규칙
-    - **중요** 기본 스타일보다 사용자가 요청한 스타일 적용이 우선입니다. 
-        - 기본 스타일은 {question}에서 스타일을 요청하지 않을 경우 적용 
-        - 폰트 크기의 단위는 "pt" 입니다. 예를 들어 폰트 크기 : 14 이면 14pt를 의미합니다.
+[1] style — 사용자가 요구사항에서 **직접 지정한 모양만** 담습니다.
+    - 기본 모양(색·글자 크기·선)은 자동으로 적용되므로, 사용자가 말하지 않은 속성은 절대 넣지 마세요.
+    - 사용자가 모양을 전혀 지정하지 않았으면 "style": {{}} 로 둡니다.
+    - 구역:
+        - header       : 표의 첫 행(머리줄) 전체
+        - data         : 두 번째 행부터 마지막 행까지 전체
+        - first_column : 첫 번째 열("{first_column}")의 데이터 칸
+        - columns      : 특정 컬럼의 데이터 칸만 지정한 경우 {{"컬럼명": {{...}}}}
+    - 각 구역에 쓸 수 있는 속성:
+        - bgcolor   : 배경색 "#rrggbb" 또는 "transparent"
+        - color     : 글자색 "#rrggbb"
+        - fontsize  : 글자 크기, 숫자만 (단위 pt)
+        - fontweight: "bold" 또는 "normal"
+        - align     : "left", "center", "right"
+    - 색 이름은 hex로 바꿉니다 (예: 회색 → "#808080", 흰색 → "#FFFFFF").
+    - border : 사용자가 테두리·선(색·모양·굵기)을 지정한 경우에만 넣습니다.
+        - outer(바깥 테두리) / header_sep(머리줄 아래 구분선) / col_sep(1열과 2열 사이) / inner(나머지 안쪽 선)
+          4개 모두 {{"color": "#hex", "style": "solid|dashed|double", "weight": "thin|normal|thick"}} 로 채웁니다.
+        - 사용자가 색만 말했으면 4개 모두 그 색 + "solid" + "normal", 특정 구간만 말했으면 그 구간만 바꾸고
+          나머지는 {{"color": "#000000", "style": "solid", "weight": "normal"}}.
 
-1. 기본스타일
-    - 헤더(header) : 헤더틑 표의 첫 행을 말합니다. 데이터프레임의 첫 행인 df[0]이 아니라 테이블의 첫 행입니다. 
-        - 글자(font) 크기 : 14pt / 진하기 : 진하게(bold)
-        - 배경(background) 색상 : #cccccc
-    - 데이터(data) 영역 : 표의 두번째 행부터 마지막행까지입니다.
-        - 글자(font) 크기 : 12pt / 진하기 : 보통(normal)
-        - 배경(background) 색상 : #ffffff
-    - 제일 왼편 열 : 이 부분은 사용자가 요청하지 않으면 데이터(data) 영역의 스타일을 따릅니다
-        - 첫 번째 컬럼("{first_column}")이 이 영역에 해당합니다.
-    - 테두리(border) : **사용자가 테두리/선 관련(색·모양·굵기) 요청을 한 경우에만** 적용하는 선택 항목입니다.
-        - 사용자 요구사항에 테두리·선 관련 언급이 전혀 없으면 JSON에 "border" 키 자체를 넣지 마세요(화면 기본 테두리를 그대로 씁니다).
-        - 사용자가 테두리 관련 요청을 했다면, 표의 선을 아래 4개 구간으로 나눠 지정하세요. 각 구간의 값은 {{"color": "#hex", "style": "...", "weight": "..."}} 객체입니다.
-            - outer      : 표 전체를 감싸는 바깥 테두리
-            - header_sep : 1행(헤더)과 2행(첫 데이터 행) 사이의 구분선
-            - col_sep    : 1열과 2열 사이의 구분선
-            - inner      : 위 세 가지를 제외한 나머지 내부 선(데이터 행 사이, 2열 이후 열 사이)
-        - 선 모양(style) — 3가지 중 하나:
-            - 실선: "solid" (기본값)
-            - 점선: "dashed"
-            - 두겹(이중선): "double"
-        - 선 굵기(weight) — 3단계 중 하나:
-            - 진하게: "thick"
-            - 보통: "normal" (기본값)
-            - 옅게: "thin"
-        - 사용자가 "테두리 색"처럼 색만 지정하고 구간·모양·굵기를 특정하지 않으면, outer/header_sep/col_sep/inner 4개 모두 그 색을 적용하고 style="solid", weight="normal"을 기본으로 채우세요.
-        - 사용자가 특정 구간만 지정(예: 바깥 테두리만, 또는 헤더 구분선만 점선으로)하면 그 구간만 값을 바꾸고, border 키 안의 나머지 구간은 기본값({{"color": "#000000", "style": "solid", "weight": "normal"}})으로 채우세요.
+[2] formats — 숫자 컬럼마다 값의 종류를 이름표로 붙입니다. (계산하지 말고 종류만 고르세요)
+    - "number"         : 일반 수량·금액
+    - "percent"        : 이미 % 단위인 값 (예: 3.6 이 3.6%를 뜻함)
+    - "ratio"          : 0~1 사이 비율 (예: 0.036 이 3.6%를 뜻함)
+    - "change"         : 증감 수량·금액 (+/- 부호 표시)
+    - "change_percent" : % 단위 증감률 (+/- 부호 표시)
+    - "text"           : 코드·연도·번호처럼 숫자지만 서식을 넣으면 안 되는 값 (예: 2024, 배치번호)
+    - 사용자가 소수 자리를 지정한 컬럼은 {{"kind": "...", "decimals": 자리수}} 형식으로 씁니다.
+    - 문자 컬럼은 넣지 않습니다.
 
-2. 스타일은 아래 JSON 형식으로 지정하여 테이블에 적용합니다. **아래는 예시입니다. 이것을 지정하지 않은 부분에 적용하지 않습니다.**
-    JSON 형식:
-    {{
-        "header": {{
-            "{all_columns[0]}": {{"bgcolor": "#cccccc", "align": "center", "color": "#000000", "fontweight": "bold", "fontsize": "14pt"}},
-            "{all_columns[1]}": {{"bgcolor": "#cccccc", "align": "center", "color": "#000000", "fontweight": "bold", "fontsize": "14pt"}},
-            ...
-        }},
-        "data": {{
-            "{all_columns[0]}": {{"bgcolor": "#ffffff", "align": "left", "color": "#000000", "fontweight": "normal", "fontsize": "12pt"}},
-            "{all_columns[1]}": {{"bgcolor": "transparent", "align": "right", "color": "#000000", "fontweight": "normal", "fontsize": "12pt"}},
-            ...
-        }},
-        "border": {{
-            "outer": {{"color": "#000000", "style": "solid", "weight": "normal"}},
-            "header_sep": {{"color": "#000000", "style": "solid", "weight": "normal"}},
-            "col_sep": {{"color": "#000000", "style": "solid", "weight": "normal"}},
-            "inner": {{"color": "#000000", "style": "solid", "weight": "normal"}}
-        }}
-    }}
-    (※ "border" 키는 사용자가 테두리를 요청했을 때만 포함하는 선택 항목입니다. 요청이 없으면 이 키를 아예 넣지 마세요.)
+[3] total_row_labels — 첫 번째 열의 값 중 합계·총계 행을 나타내는 값 목록 (예: ["합계"]). 없으면 [].
 
-3. 색상 표현:
-    - 단색: "#cccccc" 형식 (회색 = #808080 또는 #cccccc)
-    - 투명도 포함: "rgba(128, 128, 128, 0.3)" 형식 (30% 투명도 = 0.3)
-    - 투명(배경 없음): "transparent"
-
-4. 정렬(align):
-    - 텍스트: "left" 또는 "center"
-    - 숫자: "right" 또는 "center"
-
-5. 글자 진하기(fontweight):
-    - 진하게: "bold"
-    - 보통: "normal"
-
-6. 글자 크기(fontsize):
-    - 숫자만 (예: "14", "10")
+JSON 형식 (예시입니다. 사용자가 말하지 않은 style 속성은 넣지 마세요):
+{{
+    "style": {{
+        "header": {{"bgcolor": "#808080", "color": "#FFFFFF", "fontweight": "bold", "fontsize": "14"}}
+    }},
+    "formats": {{"생산량": "number", "일탈률(%)": "percent", "연도": "text"}},
+    "total_row_labels": ["합계"]
+}}
 
 **중요:**
-- DataFrame의 실제 컬럼명만 사용하세요
-- 모든 컬럼에 대해 header와 data 스타일을 정의하세요
-- 테두리 요청이 없으면 "border" 키를 응답에서 완전히 생략하세요. 테두리 요청이 있을 때만 outer/header_sep/col_sep/inner 4개 키를 모두 채워 포함하세요 (요청받지 않은 구간은 {{"color": "#000000", "style": "solid", "weight": "normal"}})
-- 값은 모두 문자열로 표현하세요
-- 설명 없이 JSON만 출력하세요
+- 표의 실제 컬럼명만 사용하세요.
+- 설명 없이 JSON만 출력하세요.
 
 답변(JSON만):
 """
@@ -1432,6 +1402,8 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
         '__file__': os.path.abspath(__file__) if '__file__' in globals() else '',
         '__name__': '__main__',
     }
+    if output_type == "CA":
+        local_namespace.update(rs.CHART_HELPERS)
 
     # object 타입 컬럼: null이 새로 생기지 않은 경우에만 숫자로 변환
     for col in df.columns:
@@ -1478,11 +1450,10 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
         if fig is None:
             raise ValueError("LLM이 output_fig를 생성하지 않았습니다.")
         
-        buf = BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight")
-        buf.seek(0)
-        
-        img_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        # 저장 직전 마무리(본문 폭 맞춤·기본 색·글자 크기·위쪽 여유·테두리) 후 PNG로 저장
+        png_bytes = rs.save_chart_png(fig, question)
+
+        img_base64 = base64.b64encode(png_bytes).decode('utf-8')
         
         # figure 정리 (메모리 누수 방지)
         import matplotlib.pyplot as plt
@@ -1515,7 +1486,9 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
             num_cols = df_result.select_dtypes(include=["number"]).columns
             df_result[num_cols] = df_result[num_cols].round(2)
 
-            table_style_prompt = get_table_style_combined(df_result, question)
+            # 모양: 서식 LLM은 사용자가 지정한 속성과 숫자 컬럼 종류(이름표)만 돌려주고,
+            # 기본 스타일 위에 덮어써서 그리는 것은 render_table_html이 한다.
+            table_style_prompt = get_table_style_prompt(df_result, question)
             response_style = llm.invoke(table_style_prompt)
             style_json = clean_json_response(response_style.content)
 
@@ -1528,40 +1501,25 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 style_dict = json.loads(style_json)
             except (json.JSONDecodeError, ValueError):
                 style_dict = {}
-            table_header_json = json.dumps(style_dict.get("header", {}))
-            table_data_json = json.dumps(style_dict.get("data", {}))
-
-            # 테두리: outer(바깥)/header_sep(헤더-데이터 구분선)/col_sep(1-2열 구분선)/inner(나머지),
-            # 각 구간은 {"color","style"(solid/dashed/double),"weight"(thin/normal/thick)} 객체.
-            # 사용자가 테두리를 요청하지 않았으면 LLM이 "border" 키 자체를 생략한다 — 그 경우
-            # table_border_json을 빈 문자열로 두어 프론트가 화면 기본 테두리를 그대로 쓰게 한다.
-            # 테두리를 요청했다면 지정되지 않은 구간/속성만 기본값(검정·실선·보통)으로 채운다.
-            def _normalize_border_entry(entry):
-                default = {"color": "#000000", "style": "solid", "weight": "normal"}
-                if isinstance(entry, str):
-                    return {**default, "color": entry}
-                if isinstance(entry, dict):
-                    return {**default, **{k: v for k, v in entry.items() if k in default and v}}
-                return default
-
-            raw_border = style_dict.get("border")
-            if isinstance(raw_border, dict) and raw_border:
-                border_dict = {key: _normalize_border_entry(raw_border.get(key)) for key in ("outer", "header_sep", "col_sep", "inner")}
-                table_border_json = json.dumps(border_dict)
-            else:
-                table_border_json = ""
+            if not isinstance(style_dict, dict):
+                style_dict = {}
 
             # NaN → None 변환 (JSON 직렬화 안전, std() 단일항목 등)
             df_result = df_result.where(pd.notnull(df_result), other=None)
             data = df_result.to_dict(orient="records")
 
+            table_html = render_table_html(
+                data,
+                user_style=style_dict.get("style"),
+                formats=style_dict.get("formats"),
+                total_row_labels=style_dict.get("total_row_labels"),
+            )
+
             return {
                 "result": data,
                 "status": "data_table",
                 "question": question,
-                "table_header_json": table_header_json,
-                "table_data_json": table_data_json,
-                "table_border_json": table_border_json,
+                "table_html": table_html,
                 "tokens": tokens
             }
         else:

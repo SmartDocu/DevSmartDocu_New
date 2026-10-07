@@ -181,9 +181,9 @@ def apply_cell_borders(cell, styles):
     cell 스타일의 border-top/bottom/left/right 선언("2px dashed #ff1493" 형식)에서
     굵기(px)·모양(solid/dashed/double)·색상을 읽어 실제 docx 셀 테두리(w:tcBorders)에
     적용한다. 지정 안 된 변은 건드리지 않고 테이블 기본 스타일('Table Grid')의 검정
-    실선을 그대로 둔다 — render_preview_table()이 outer/header_sep/col_sep/inner
+    실선을 그대로 둔다 — render_table_html()이 outer/header_sep/col_sep/inner
     4구간의 색·모양·굵기를 셀 단위 border-*로 이미 계산해 내려주므로 여기서는 그
-    값을 파싱해 옮겨 적용하기만 하면 된다.
+    값을 파싱해 옮겨 적용하기만 하면 된다. 값이 'none'인 변은 선을 지운다(w:val="nil").
 
     px → w:sz(8분의 1pt) 변환은 1px ≈ 0.5pt 기준으로 sz = px * 4 를 사용한다.
     """
@@ -191,6 +191,10 @@ def apply_cell_borders(cell, styles):
     borders = {}
     for side, key in sides.items():
         val = styles.get(key, '')
+        if val.strip().lower() == 'none':
+            # 선 없음 — 'Table Grid' 기본 격자선을 이 변에서 지운다 (가로줄만 있는 표)
+            borders[side] = {'color': 'auto', 'val': 'nil', 'sz': 0}
+            continue
         color_m = re.search(r'#[0-9a-fA-F]{3,8}', val)
         if not color_m:
             continue

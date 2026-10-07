@@ -1100,26 +1100,34 @@ def rewrite_chapter(genchapteruid: str, request: Request, body: RewriteChapterRe
         "genchapterjobuid": genchapterjobuid,
     }).eq("genchapteruid", genchapteruid).execute()
 
-    # SQS 메시지 전송
-    sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
-    sqs.send_message(
-        QueueUrl=settings.SQS_CHAPTER_QUEUE_URL,
-        MessageBody=json.dumps({
-            "genchapteruid": genchapteruid,
-            "genchapterjobuid": genchapterjobuid,
-            "gendocuid": gendocuid,
-            "gendocjobuid": None,  # 챕터 단독 작성 — gendocjobuid는 공백으로 둔다 (genobjects gencontenttypecd='C' 판정 근거)
-            "chapteruid": chapteruid,
-            "docid": docid,
-            "tenantid": body.tenantid,
-            "projectid": body.projectid,
-            "accountuid": body.accountuid,
-            "user_id": user_id,
-            "access_token": token,
-            "is_start_doc": False,
-            "gendocnm": gendocnm,
-        }, ensure_ascii=False),
-    )
+    message_body = json.dumps({
+        "genchapteruid": genchapteruid,
+        "genchapterjobuid": genchapterjobuid,
+        "gendocuid": gendocuid,
+        "gendocjobuid": None,  # 챕터 단독 작성 — gendocjobuid는 공백으로 둔다 (genobjects gencontenttypecd='C' 판정 근거)
+        "chapteruid": chapteruid,
+        "docid": docid,
+        "tenantid": body.tenantid,
+        "projectid": body.projectid,
+        "accountuid": body.accountuid,
+        "user_id": user_id,
+        "access_token": token,
+        "is_start_doc": False,
+        "gendocnm": gendocnm,
+    }, ensure_ascii=False)
+
+    # 로컬 확인용 — DOC_RUN_LOCAL이 켜져 있으면 SQS 대신 이 프로세스의 스레드에서 워커의
+    # 챕터 처리 함수를 직접 부른다(로컬에서 고친 코드로 DOCX까지 확인). 배포 환경은 끈다.
+    import os
+    if os.getenv("DOC_RUN_LOCAL", "").strip().lower() in ("1", "true", "yes"):
+        import threading
+        from worker.main import process_chapter_message
+        threading.Thread(
+            target=process_chapter_message, args=({"Body": message_body},), daemon=True,
+        ).start()
+    else:
+        sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+        sqs.send_message(QueueUrl=settings.SQS_CHAPTER_QUEUE_URL, MessageBody=message_body)
 
     # SQS 비동기 — 실제 작성 완료는 worker/main.py가 처리(여기선 아직 콘텐츠가 없음).
     # 완료 시점 기록은 후속 작업으로 worker/main.py에도 로깅을 추가해야 한다(TODO).

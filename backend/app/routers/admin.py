@@ -410,8 +410,7 @@ def sample_prompt_preview(body: SamplePromptPreviewRequest, token: str = Depends
     elif status_val == "data_table":
         return {"message_type": "table", "message": "",
                 "data": response.get("result", ""),
-                "table_header_json": response.get("table_header_json", ""),
-                "table_data_json": response.get("table_data_json", "")}
+                "table_html": response.get("table_html", "")}
     else:
         error_msg = response.get("error", "알 수 없는 응답 형식입니다.")
         return {"message_type": "error", "message": error_msg}

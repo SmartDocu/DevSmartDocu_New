@@ -39,7 +39,6 @@ from utilsPrj.sentences_utils import draw_sentences    # 문자 용
 from utilsPrj.docx_read import convert_docx_to_html_2    # 업로드 용
 from utilsPrj.private_storage import resolve_template_bytes
 from docx import Document as _DocxDocument
-from utilsPrj.chapter_making_ai_table import render_preview_table
 
 from utilsPrj.supabase_client import get_thread_supabase, cleanup_thread_client, SUPABASE_SCHEMA
 from d2shared.llm_logger import log_doc_llm_call
@@ -376,7 +375,8 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
         if _is_success:
             _error_message = None
         elif isinstance(response, dict):
-            _error_message = f'알 수 없는 응답 상태: {response.get("status")}'
+            # 실제 오류 내용(예: "코드 실행 오류: ...")까지 남겨야 원인을 볼 수 있다
+            _error_message = f'알 수 없는 응답 상태: {response.get("status")} — {response.get("error", "")}'
         else:
             _error_message = '응답 형식이 딕셔너리가 아닙니다.'
 
@@ -397,32 +397,14 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
                 final_result = response.get("result", "")
             
             elif response.get("status") == "data_table":
-                data = response.get("result", "")
-                table_header_json = response.get("table_header_json", "")
-                table_data_json = response.get("table_data_json", "")
-                table_border_json = response.get("table_border_json", "")
-
-                header_json = json.loads(table_header_json)
-                data_json = json.loads(table_data_json)
-                try:
-                    border_json = json.loads(table_border_json) if table_border_json else {}
-                except (json.JSONDecodeError, ValueError):
-                    border_json = {}
-
-                if isinstance(data_json, list):
-                    # print(f"WARNING: data_json is list, converting to dict")
-                    # print(f"Original value: {data_json}")
-                    data_json = {}  # 또는 적절한 변환 로직
-
-                final_result = render_preview_table(header_json, data_json, data, border_json)
-                final_result = final_result.replace('<div id="output-box"><table', '<table')
-                final_result = final_result.replace('</table></div>', '</table>')
+                # 미리보기와 같은 HTML (ai_chain → render_table_html)
+                final_result = response.get("table_html", "")
 
             else:
                 # print(f"!!! Unknown status: {response.get('status')}")
                 return {
                     'success': False,
-                    'error': f'알 수 없는 응답 상태: {response.get("status")}'
+                    'error': f'알 수 없는 응답 상태: {response.get("status")} — {response.get("error", "")}'
                 }
         else:
             return {

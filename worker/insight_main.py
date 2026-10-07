@@ -22,6 +22,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+# Supabase 등 HTTP 요청마다 찍히는 INFO 로그는 끈다 (경고·오류는 그대로 남는다)    # jeff 20261006
+logging.getLogger("httpx").setLevel(logging.WARNING)    # jeff 20261006
+logging.getLogger("httpcore").setLevel(logging.WARNING)    # jeff 20261006
 logger = logging.getLogger(__name__)
 
 SQS_INSIGHT_QUEUE_URL = settings.SQS_INSIGHT_QUEUE_URL

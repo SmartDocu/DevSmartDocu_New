@@ -164,6 +164,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+# Supabase 등 HTTP 요청마다 찍히는 INFO 로그는 끈다 (경고·오류는 그대로 남는다)    # jeff 20261006
+logging.getLogger("httpx").setLevel(logging.WARNING)    # jeff 20261006
+logging.getLogger("httpcore").setLevel(logging.WARNING)    # jeff 20261006
 logger = logging.getLogger(__name__)
 
 SQS_QUEUE_URL = settings.SQS_QUEUE_URL
@@ -498,7 +501,8 @@ def process_chapter_message(msg):
     access_token = body["access_token"]
     gendocnm = body.get("gendocnm", "")
     is_start_doc = body.get("is_start_doc", False)
-    receipt_handle = msg["ReceiptHandle"]
+    # 로컬 확인용(DOC_RUN_LOCAL)으로 라우터가 직접 부르면 SQS 메시지가 없어 ReceiptHandle도 없다.
+    receipt_handle = msg.get("ReceiptHandle")
 
     sb = get_thread_supabase(access_token=access_token)
     sb_svc = get_service_client()
@@ -520,7 +524,8 @@ def process_chapter_message(msg):
     if not claim.data:
         logger.info("챕터 중복 처리 스킵 (이미 선점됨): %s", genchapteruid)
         try:
-            sqs.delete_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, ReceiptHandle=receipt_handle)
+            if receipt_handle:
+                sqs.delete_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, ReceiptHandle=receipt_handle)
         except Exception:
             logger.exception("SQS 챕터 메시지 삭제 실패 (중복 스킵): %s", genchapteruid)
         return
@@ -680,7 +685,8 @@ def process_chapter_message(msg):
         except Exception:
             logger.exception("챕터 잠금 해제 실패: %s", genchapteruid)
         try:
-            sqs.delete_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, ReceiptHandle=receipt_handle)
+            if receipt_handle:
+                sqs.delete_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, ReceiptHandle=receipt_handle)
         except Exception:
             logger.exception("SQS 챕터 메시지 삭제 실패: %s", genchapteruid)
 

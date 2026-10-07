@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { App, Modal, Spin, Table } from 'antd'
+import { App, Modal, Spin } from 'antd'
 import { BulbOutlined, EyeOutlined, RedoOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -543,91 +543,6 @@ export default function AiLlmPage({ objecttypecd, pageTitle }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI 테이블 스타일(JSON) → React 인라인 style 변환
-// backend가 [양식지정] 프롬프트를 해석해 내려주는 컬럼별 스타일(bgcolor/color/
-// fontweight/fontsize/align)을 그대로 셀에 적용한다. 값이 없으면 undefined를
-// 반환해 AntD Table 기본 스타일을 그대로 쓰게 둔다.
-// ─────────────────────────────────────────────────────────────────────────────
-function sizeToCss(value) {
-  if (value === undefined || value === null || value === '') return undefined
-  const str = String(value).trim()
-  if (/^-?\d+(\.\d+)?(pt|px|em|rem|%)$/i.test(str)) return str
-  if (/^-?\d+(\.\d+)?$/.test(str)) return `${str}pt`
-  return undefined
-}
-
-function tableCellStyle(conf) {
-  if (!conf || typeof conf !== 'object') return undefined
-  const style = {}
-  if (conf.bgcolor) style.backgroundColor = conf.bgcolor
-  if (conf.color) style.color = conf.color
-  if (conf.fontweight) style.fontWeight = conf.fontweight
-  if (conf.align) style.textAlign = conf.align
-  const fontSize = sizeToCss(conf.fontsize)
-  if (fontSize) style.fontSize = fontSize
-  return style
-}
-
-// 선 모양(style)별·굵기(weight)별 실제 두께(px). double은 두 줄이 보이도록 더 두껍게 잡는다.
-// utilsPrj/chapter_making_ai_table.py의 BORDER_WIDTH_PX와 동일하게 맞춰야 미리보기와
-// 최종 DOCX의 선 굵기가 일치한다.
-const BORDER_WIDTH_PX = {
-  solid: { thin: 1, normal: 2, thick: 4 },
-  dashed: { thin: 1, normal: 2, thick: 4 },
-  double: { thin: 3, normal: 4, thick: 6 },
-}
-const BORDER_DEFAULT_CONF = { color: '#000000', style: 'solid', weight: 'normal' }
-
-function normalizeBorderConf(conf) {
-  if (typeof conf === 'string') return { ...BORDER_DEFAULT_CONF, color: conf }
-  if (conf && typeof conf === 'object') {
-    const merged = { ...BORDER_DEFAULT_CONF }
-    if (conf.color) merged.color = conf.color
-    if (conf.style) merged.style = conf.style
-    if (conf.weight) merged.weight = conf.weight
-    return merged
-  }
-  return { ...BORDER_DEFAULT_CONF }
-}
-
-// {color, style, weight} → "2px dashed #ff1493" 같은 CSS 변 선언 값
-function borderCss(conf) {
-  const widths = BORDER_WIDTH_PX[conf.style] || BORDER_WIDTH_PX.solid
-  const width = widths[conf.weight] ?? widths.normal
-  return `${width}px ${conf.style} ${conf.color}`
-}
-
-// 테두리: idx번째 경계선(0=맨 앞 바깥, total=맨 뒤 바깥, sepIdx=구분선)의 스타일을 반환
-function edgeConf(idx, total, sepIdx, sepConf, outerConf, innerConf) {
-  if (idx === 0 || idx === total) return outerConf
-  if (idx === sepIdx) return sepConf
-  return innerConf
-}
-
-// rowIdx/colIdx(0-based, 헤더 행 포함) 위치의 셀에 적용할 4변 테두리 스타일.
-// borders: {outer, header_sep, col_sep, inner} — 각 값은 {color, style, weight}.
-// backend가 [양식지정]에서 테두리를 요청한 경우에만 채워서 내려준다. 프롬프트에
-// 테두리 언급이 전혀 없으면 borders가 빈 객체로 오므로, 이때는 undefined를 반환해
-// AntD 기본 테두리를 그대로 둔다.
-function cellBorderStyle(rowIdx, colIdx, totalRows, totalCols, borders) {
-  if (!borders || Object.keys(borders).length === 0) return undefined
-  const outer = normalizeBorderConf(borders.outer)
-  const headerSep = normalizeBorderConf(borders.header_sep)
-  const colSep = normalizeBorderConf(borders.col_sep)
-  const inner = normalizeBorderConf(borders.inner)
-  const top = edgeConf(rowIdx, totalRows, 1, headerSep, outer, inner)
-  const bottom = edgeConf(rowIdx + 1, totalRows, 1, headerSep, outer, inner)
-  const left = edgeConf(colIdx, totalCols, 1, colSep, outer, inner)
-  const right = edgeConf(colIdx + 1, totalCols, 1, colSep, outer, inner)
-  return {
-    borderTop: borderCss(top),
-    borderBottom: borderCss(bottom),
-    borderLeft: borderCss(left),
-    borderRight: borderCss(right),
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 미리보기 결과 표시
 // ─────────────────────────────────────────────────────────────────────────────
 function PreviewDisplay({ result }) {
@@ -649,39 +564,13 @@ function PreviewDisplay({ result }) {
     )
   }
 
-  if (result.message_type === 'table' && Array.isArray(result.data) && result.data.length > 0) {
-    let headerStyles = {}
-    let dataStyles = {}
-    let borders = {}
-    try { headerStyles = JSON.parse(result.table_header_json || '{}') } catch { /* ignore */ }
-    try { dataStyles = JSON.parse(result.table_data_json || '{}') } catch { /* ignore */ }
-    try { borders = JSON.parse(result.table_border_json || '{}') } catch { /* ignore */ }
-
-    const columnKeys = Object.keys(result.data[0])
-    const totalCols = columnKeys.length
-    const totalRows = 1 + result.data.length // 헤더 1행 + 데이터 행
-
-    const cols = columnKeys.map((k, colIdx) => ({
-      title: k, dataIndex: k, key: k, ellipsis: true, width: 120,
-      onHeaderCell: () => ({
-        style: { ...tableCellStyle(headerStyles[k]), ...cellBorderStyle(0, colIdx, totalRows, totalCols, borders) },
-      }),
-      onCell: (_record, rowIdx) => ({
-        style: { ...tableCellStyle(dataStyles[k]), ...cellBorderStyle(rowIdx + 1, colIdx, totalRows, totalCols, borders) },
-      }),
-    }))
+  // 표는 백엔드가 문서(DOCX)와 같은 함수로 그린 HTML을 그대로 보여준다
+  if (result.message_type === 'table' && result.table_html) {
     return (
-      <div style={{ width: '100%', overflow: 'hidden' }}>
-        <Table
-          columns={cols}
-          dataSource={result.data.map((row, i) => ({ ...row, _key: i }))}
-          rowKey="_key"
-          size="small"
-          pagination={false}
-          scroll={{ x: true }}
-          style={{ width: '100%' }}
-        />
-      </div>
+      <div
+        style={{ width: '100%', overflowX: 'auto' }}
+        dangerouslySetInnerHTML={{ __html: result.table_html }}
+      />
     )
   }
 
