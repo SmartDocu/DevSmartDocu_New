@@ -40,13 +40,13 @@ frontend/src/
 │   ├── Auth/RequireAuth.jsx
 │   ├── Layout/AppLayout.jsx / AppSidebar.jsx
 │   ├── DocSelectModal/DocSelectModal.jsx
-│   ├── LoginModal/LoginModal.jsx
 │   ├── RegisterModal/RegisterModal.jsx
 │   ├── TenantRequestModal/TenantRequestModal.jsx
 │   └── llm/AiLlmPage.jsx
 └── pages/
     ├── HomePage.jsx / MyInfoPage.jsx
-    ├── auth/     (LoginPage, RegisterPage, PasswordResetPage)
+    ├── auth/     (LoginPage[/login, 모달 아님], RegisterPage, PasswordResetPage)
+    ├── withdraw/ (WithdrawPage[/app/:appcd/withdraw, 탭], WithdrawDonePage[/withdraw/done, 공개])
     ├── master/   (Docs, Chapters, Objects, Datas*, Tables, Charts, Sentences, AI*, DocParams, ChapterTemplate)
     ├── req/      (DocList, DocRead, DocWrite, DocSetting, DocStatus, ChaptersRead, ChapterObjects)
     ├── settings/ (Servers, Tenants)
