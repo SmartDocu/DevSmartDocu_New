@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
-  App, Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag,
+  App, Button, Card, Col, Descriptions, Popconfirm, Row, Space, Switch, Table, Tag,
 } from 'antd'
-import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
 import {
-  useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions,
+  useMyInfo, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions,
   useMyInfoCreditPurchase, useProCancel, useProCancelUndo,
 } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
@@ -14,16 +12,14 @@ import { useMenuCodes } from '@/hooks/useMenus'
 import { useSelectFreeServices } from '@/hooks/useApps'
 import { useLangStore, t } from '@/stores/langStore'
 import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
+import AccountSettingsSection from '@/components/Account/AccountSettingsSection'
 import { getErrorMessage } from '@/utils/apiError'
 
 export default function MyInfoPage() {
   useLangStore((s) => s.translations)
   const { message } = App.useApp()
   const openInTab = useOpenInTab()
-  const navigate = useNavigate()
   const { data = {}, isLoading } = useMyInfo()
-  const updateUsername = useUpdateUsername()
-  const updateTimezone = useUpdateTimezone()
   const updateMarketing = useUpdateMarketing()
 
   const { data: factorsData, isLoading: factorsLoading } = useMfaFactors()
@@ -33,10 +29,6 @@ export default function MyInfoPage() {
   const { data: serviceCodes = [] } = useMenuCodes('servicecd')
   const selectFreeServiceMutation = useSelectFreeServices()
   const hasMfaFeature = (otherSubData?.owned || []).some((o) => o.productcd === 'mfa')
-  const [editingName, setEditingName] = useState(false)
-  const [editingTimezone, setEditingTimezone] = useState(false)
-  const [timezoneVal, setTimezoneVal] = useState(null)
-  const [form] = Form.useForm()
 
   const proCancelMutation = useProCancel()
   const proCancelUndoMutation = useProCancelUndo()
@@ -47,7 +39,6 @@ export default function MyInfoPage() {
   const tenant = data.tenant || {}
   const tenantuser = data.tenantuser || {}
   const projectUsers = data.project_users || []
-  const timezones = data.timezones || []
   const currentTimezone = data.timezone || null
 
   const isMfaEnabled = factorsData?.mfa_enabled ?? false
@@ -85,25 +76,6 @@ export default function MyInfoPage() {
   const ownedCredits = creditPurchaseData?.owned || []
 
   const isAgreed = (v) => v === 'Y' || v === true
-
-  const handleEditName = () => {
-    form.setFieldsValue({ usernm: userInfo.usernm || '' })
-    setEditingName(true)
-  }
-
-  const handleSaveName = async () => {
-    const values = await form.validateFields()
-    updateUsername.mutate({ usernm: values.usernm }, { onSuccess: () => setEditingName(false) })
-  }
-
-  const handleEditTimezone = () => {
-    setTimezoneVal(currentTimezone)
-    setEditingTimezone(true)
-  }
-
-  const handleSaveTimezone = () => {
-    updateTimezone.mutate({ timezone: timezoneVal }, { onSuccess: () => setEditingTimezone(false) })
-  }
 
   const handleToggleMarketing = () => {
     updateMarketing.mutate({ marketingyn: isAgreed(userInfo.marketingyn) ? 'N' : 'Y' })
@@ -152,55 +124,17 @@ export default function MyInfoPage() {
         </div>
       </div>
 
+      {/* 계정 설정: 환경 설정 / 내 사용량 / 계정(이름·비밀번호) / 회원 탈퇴 */}
+      <AccountSettingsSection usernm={userInfo.usernm} email={userInfo.email} />
+
       <Row gutter={16} style={{ marginBottom: 16 }}>
         {/* 개인 정보 */}
         <Col span={12}>
           <Card size="small" title={t('ttl.myinfo.personal')} loading={isLoading} style={{ height: '100%', borderRadius: 12 }}>
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={t('lbl.email')}>{userInfo.email || '-'}</Descriptions.Item>
-              <Descriptions.Item label={t('lbl.usernm')}>
-                {editingName ? (
-                  <Form form={form} layout="inline" size="small">
-                    <Form.Item name="usernm" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                      <Input style={{ width: 160 }} />
-                    </Form.Item>
-                    <Space>
-                      <Button size="small" type="primary" icon={<SaveOutlined />} loading={updateUsername.isPending} onClick={handleSaveName}>
-                        {t('btn.save')}
-                      </Button>
-                      <Button size="small" onClick={() => setEditingName(false)}>{t('btn.cancel')}</Button>
-                    </Space>
-                  </Form>
-                ) : (
-                  <Space>
-                    <span>{userInfo.usernm || '-'}</span>
-                    <Button size="small" icon={<EditOutlined />} onClick={handleEditName} type="text" />
-                  </Space>
-                )}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('lbl.timezone')}>
-                {editingTimezone ? (
-                  <Space>
-                    <Select
-                      value={timezoneVal}
-                      onChange={setTimezoneVal}
-                      style={{ width: 220 }}
-                      size="small"
-                      showSearch
-                      options={timezones.map((tz) => ({ label: tz, value: tz }))}
-                    />
-                    <Button size="small" type="primary" icon={<SaveOutlined />} loading={updateTimezone.isPending} onClick={handleSaveTimezone}>
-                      {t('btn.save')}
-                    </Button>
-                    <Button size="small" onClick={() => setEditingTimezone(false)}>{t('btn.cancel')}</Button>
-                  </Space>
-                ) : (
-                  <Space>
-                    <span>{currentTimezone || '-'}</span>
-                    <Button size="small" icon={<EditOutlined />} onClick={handleEditTimezone} type="text" />
-                  </Space>
-                )}
-              </Descriptions.Item>
+              <Descriptions.Item label={t('lbl.usernm')}>{userInfo.usernm || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('lbl.timezone')}>{currentTimezone || '-'}</Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>
@@ -394,13 +328,6 @@ export default function MyInfoPage() {
           pagination={false}
         />
       </Card>
-
-      {/* 회원 탈퇴 — 계정 전체 탈퇴(어느 테넌트를 선택 중이든 동일), 별도 페이지에서 진행 */}
-      <div style={{ textAlign: 'right' }}>
-        <Button type="text" danger size="small" onClick={() => openInTab('withdraw', '', t('btn.account.withdraw'))}>
-          {t('btn.account.withdraw')}
-        </Button>
-      </div>
 
       <CancelSubscriptionModal
         open={!!cancelTarget}

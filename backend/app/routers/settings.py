@@ -602,6 +602,8 @@ def update_username(body: UpdateUsernameRequest, request: Request, token: str = 
     sb = _sb(token)
     before = sb.schema(SUPABASE_SCHEMA).table("users").select("usernm").eq("useruid", user.id).maybe_single().execute()
     sb.schema(SUPABASE_SCHEMA).table("users").update({"usernm": body.usernm}).eq("useruid", user.id).execute()
+    from backend.app.routers.auth import sync_auth_metadata
+    sync_auth_metadata(str(user.id), usernm=body.usernm)
     log_work_action(
         useruid=str(user.id), servicecd="Tenant",
         actioncd="update", targettype="settings/myinfo/username", targetid=str(user.id),
@@ -4307,27 +4309,36 @@ def create_tenant_subscription(body: TenantSubscriptionRequest, request: Request
 
 @router.get("/timezone-options")
 def get_timezone_options(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
-    """사용자 메뉴의 시간대 선택용 — 선택 가능한 시간대(+UTC 오프셋)와 현재 유효 시간대(tenantusers → tenants 순)."""
+    """사용자 메뉴의 시간대 선택용.
+
+    - 시스템(개인) 테넌트: 선택 가능한 시간대 목록 + 내 현재 시간대(tenantusers → tenants 순), editable=True
+    - 회사 테넌트: 시간대는 회사 설정(tenants.timezone)으로 고정 — 그 값을 내려주고 editable=False"""
     user = _get_user(token)
-    sb = _sb(token)
-    sd = sb.schema(SUPABASE_SCHEMA)
-    rows = sd.table("timezones").select("timezone,offsetminutes").eq("useyn", True).execute().data or []
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+    tenantid, is_system = _get_tenant_and_issystemtenant(svc, str(user.id), tenantid)
+
+    rows = svc.table("timezones").select("timezone,offsetminutes").eq("useyn", True).execute().data or []
     rows.sort(key=lambda r: (r.get("offsetminutes") if r.get("offsetminutes") is not None else 0, r["timezone"]))
 
-    q = sd.table("tenantusers").select("timezone,tenantid").eq("useruid", user.id)
-    q = q.eq("tenantid", int(tenantid)) if tenantid else q.eq("useyn", True)
-    tu = (q.limit(1).execute().data or [None])[0]
-    tz = tu.get("timezone") if tu else None
-    if not tz and tu and tu.get("tenantid"):
-        t_row = sd.table("tenants").select("timezone").eq("tenantid", tu["tenantid"]).maybe_single().execute()
-        tz = t_row.data.get("timezone") if t_row and t_row.data else None
-    return {"options": rows, "timezone": tz}
+    t_row = svc.table("tenants").select("timezone").eq("tenantid", int(tenantid)).maybe_single().execute()
+    tenant_tz = t_row.data.get("timezone") if t_row and t_row.data else None
+
+    if is_system:
+        tu = svc.table("tenantusers").select("timezone").eq("useruid", str(user.id)).eq("tenantid", int(tenantid)).limit(1).execute().data or []
+        tz = (tu[0].get("timezone") if tu else None) or tenant_tz
+    else:
+        tz = tenant_tz
+    return {"options": rows, "timezone": tz, "editable": bool(is_system)}
 
 
 @router.post("/myinfo/timezone")
 def update_timezone(body: UpdateTimezoneRequest, request: Request, token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
     user = _get_user(token)
     sb = _sb(token)
+    # 회사 테넌트의 시간대는 회사 설정으로 고정 — 개인이 바꿀 수 있는 건 시스템(개인) 테넌트뿐이다
+    _, _is_system = _get_tenant_and_issystemtenant(get_service_client().schema(SUPABASE_SCHEMA), str(user.id), tenantid)
+    if not _is_system:
+        raise HTTPException(status_code=400, detail="msg.timezone.company_locked")
     before_q = sb.schema(SUPABASE_SCHEMA).table("tenantusers").select("timezone").eq("useruid", user.id)
     if tenantid:
         before_q = before_q.eq("tenantid", tenantid)

@@ -8,6 +8,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
 import { getErrorMessage } from '@/utils/apiError'
 import { clearClosedPopups } from '@/utils/popupSession'
+import FindEmailModal from '@/components/FindEmailModal/FindEmailModal'
 
 const RegisterModal = lazy(() => import('@/components/RegisterModal/RegisterModal'))
 
@@ -54,6 +55,7 @@ export default function LoginPage() {
   const [resetEmail, setResetEmail] = useState('')
   const [resetMsg, setResetMsg] = useState('')
   const [registerOpen, setRegisterOpen] = useState(false)
+  const [findOpen, setFindOpen] = useState(false)
 
   // 로그인 진행 단계: 'login' | 'mfa'(TOTP 챌린지) | 'tenant'(테넌트 선택) | 'mfaSetup'(강제 MFA 등록)
   const [step, setStep] = useState('login')
@@ -251,7 +253,7 @@ export default function LoginPage() {
     if (!resetEmail.trim()) { setResetMsg(t('msg.email.required')); return }
     try {
       const res = await apiClient.post('/auth/send-reset-email', { email: resetEmail })
-      setResetMsg(res.data?.message || t('msg.reset.sent'))
+      setResetMsg(t('msg.reset.sent'))
       setTimeout(() => {
         setResetMsg('')
         setShowReset(false)
@@ -457,9 +459,9 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 18 }}>
-                {/* 아이디 찾기 — 추후 개발 예정, 링크만 배치 */}
-                <a href="#" className="lg-link" onClick={(e) => e.preventDefault()}>{t('lbl.login.find_id')}</a>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 18, flexWrap: 'wrap' }}>
+                {/* 가입한 이메일(=아이디)이 기억나지 않을 때의 안내 팝업 */}
+                <button type="button" className="lg-link" onClick={() => setFindOpen(true)}>{t('lbl.login.find_id')}</button>
                 <span style={{ width: 1, height: 12, background: '#d9d5cd' }} />
                 <button type="button" className="lg-link" onClick={() => setShowReset((v) => !v)}>
                   {showReset ? t('btn.reset.close') : t('btn.reset.password')}
@@ -542,6 +544,8 @@ export default function LoginPage() {
           </div>
         </div>
       )}
+
+      <FindEmailModal open={findOpen} onClose={() => setFindOpen(false)} onContact={() => navigate('/contact')} />
 
       <Suspense fallback={null}>
         {registerOpen && <RegisterModal open onClose={() => setRegisterOpen(false)} />}

@@ -119,6 +119,11 @@ class UpdatePasswordRequest(BaseModel):
     new_password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class MessageResponse(BaseModel):
     ok: bool
     message: str = ""

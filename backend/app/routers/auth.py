@@ -16,6 +16,7 @@ from utilsPrj.supabase_client import get_thread_supabase, get_service_client, SU
 from utilsPrj.credit_helper import upsert_ba_creditbucket
 from utilsPrj.private_storage import resolve_display_url
 from backend.app.schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
     LoginResponse,
     MessageResponse,
@@ -937,7 +938,37 @@ def send_reset_email(body: SendResetEmailRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    return MessageResponse(ok=True, message="비밀번호 재설정 이메일을 발송했습니다.")
+    # 계정 존재 여부가 드러나지 않도록(Supabase도 없는 이메일엔 조용히 성공 응답) 가입 여부와 무관한 문구를 쓴다
+    return MessageResponse(ok=True, message="가입된 이메일이면 비밀번호 재설정 메일이 발송됩니다.")
+
+
+@router.post("/change-password", response_model=MessageResponse)
+def change_password(body: ChangePasswordRequest, token: str = Depends(get_token)):
+    """로그인한 사용자가 현재 비밀번호를 확인한 뒤 새 비밀번호로 변경한다(내 정보 화면).
+
+    - 비밀번호가 없는 가입(소셜 등)은 변경 대상이 아니다.
+    - 현재 비밀번호 확인은 탈퇴 본인 확인과 같은 실패 횟수/잠금(5회 → 30초)을 공유한다.
+    - 새 비밀번호 정책: 8자 이상 + 영문·숫자·특수문자 모두 포함(프론트와 동일)."""
+    from backend.app.dependencies import get_user as _get_user_obj
+    from backend.app.routers.withdraw import _auth_method, _verify_identity
+
+    user = _get_user_obj(token)
+    if _auth_method(user) != "password":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.change.not_supported")
+
+    pw = body.new_password
+    if len(pw) < 8 or not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw) or not re.search(r"[^A-Za-z0-9]", pw):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.policy")
+    if pw == body.current_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.same_as_current")
+
+    _verify_identity(user, body.current_password)
+
+    try:
+        get_service_client().auth.admin.update_user_by_id(str(user.id), {"password": pw})
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return MessageResponse(ok=True, message="비밀번호가 변경되었습니다.")
 
 
 @router.post("/update-password", response_model=MessageResponse)
@@ -1566,6 +1597,21 @@ def switch_tenant(body: SwitchTenantRequest, request: Request, token: str = Depe
     }
 
 
+def sync_auth_metadata(user_id: str, **fields) -> None:
+    """auth.users.user_metadata에 languagecd/usernm 등을 합쳐 넣는다.
+
+    Supabase 메일 템플릿(가입 확인·비밀번호 재설정)이 {{ .Data.languagecd }}/{{ .Data.usernm }}로
+    언어별 문구를 고르므로, 값이 바뀔 때마다 여기도 맞춰 둔다. 실패해도 본 작업을 막지 않는다."""
+    try:
+        admin = get_service_client().auth.admin
+        current = admin.get_user_by_id(user_id).user
+        meta = dict(current.user_metadata or {})
+        meta.update({k: v for k, v in fields.items() if v is not None})
+        admin.update_user_by_id(user_id, {"user_metadata": meta})
+    except Exception:
+        pass
+
+
 @router.patch("/language", response_model=MessageResponse)
 def update_language(body: dict, token: str = Depends(get_token)):
     """로그인 사용자의 TenantUsers.languagecd를 업데이트한다."""
@@ -1581,6 +1627,7 @@ def update_language(body: dict, token: str = Depends(get_token)):
         user_id = str(user.id)
         sd = supabase.schema(SUPABASE_SCHEMA)
         sd.table("tenantusers").update({"languagecd": languagecd}).eq("useruid", user_id).execute()
+        sync_auth_metadata(user_id, languagecd=languagecd)
     except HTTPException:
         raise
     except Exception as e:

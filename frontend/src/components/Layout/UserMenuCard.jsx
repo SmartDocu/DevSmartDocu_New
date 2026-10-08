@@ -1,6 +1,7 @@
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useTimezoneOptions, useUpdateTimezone } from '@/hooks/useSettings'
+import { fmtOffset } from '@/utils/timezone'
 
 // 헤더 사람 아이콘 클릭 시 내려오는 사용자 메뉴 카드 (Dropdown의 popupRender 내용)
 export default function UserMenuCard({
@@ -21,14 +22,9 @@ export default function UserMenuCard({
   const name = user?.usernm || user?.email || ''
   const initial = name ? Array.from(name)[0].toUpperCase() : ''
 
-  const fmtOffset = (min) => {
-    const m = Number(min) || 0
-    const sign = m < 0 ? '-' : '+'
-    const abs = Math.abs(m)
-    return `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`
-  }
   const tzOptions = tzData?.options || []
   const currentTz = tzData?.timezone || ''
+  const tzEditable = tzData?.editable !== false
 
   const divider = <div style={{ height: 1, background: c.line }} />
   const rowStyle = { display: 'grid', gridTemplateColumns: '64px 1fr', alignItems: 'center', gap: 10 }
@@ -111,17 +107,23 @@ export default function UserMenuCard({
 
         <div style={rowStyle}>
           <span style={rowLabel}>{t('lbl.timezone')}</span>
-          <select
-            value={currentTz}
-            onChange={(e) => updateTimezone.mutate({ timezone: e.target.value })}
-            disabled={!tzData || updateTimezone.isPending}
-            style={selectStyle}
-          >
-            {!currentTz && <option value="" />}
-            {tzOptions.map((o) => (
-              <option key={o.timezone} value={o.timezone}>({fmtOffset(o.offsetminutes)}) {o.timezone}</option>
-            ))}
-          </select>
+          <div>
+            <select
+              value={currentTz}
+              onChange={(e) => updateTimezone.mutate({ timezone: e.target.value })}
+              disabled={!tzData || !tzEditable || updateTimezone.isPending}
+              style={{ ...selectStyle, ...(tzEditable ? {} : { cursor: 'not-allowed', opacity: 0.7 }) }}
+            >
+              {!currentTz && <option value="" />}
+              {currentTz && !tzOptions.some((o) => o.timezone === currentTz) && <option value={currentTz}>{currentTz}</option>}
+              {tzOptions.map((o) => (
+                <option key={o.timezone} value={o.timezone}>({fmtOffset(o.offsetminutes)}) {o.timezone}</option>
+              ))}
+            </select>
+            {tzData && !tzEditable && (
+              <div style={{ marginTop: 4, fontSize: 12, color: c.sub }}>{t('inf.usermenu.tz_company_fixed')}</div>
+            )}
+          </div>
         </div>
       </div>
 

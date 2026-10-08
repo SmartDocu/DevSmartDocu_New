@@ -56,7 +56,7 @@ export default function AppLauncher() {
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 0' }}>
       <PopupManager popups={loginPopups} rememberClose />
       <h2 style={{ textAlign: 'center', marginBottom: 48, color: '#163E64', fontSize: 24, fontWeight: 700 }}>
-        {user?.tenantnm}
+        {user?.disptenantnm || user?.tenantnm}
       </h2>
 
       {isAccountInactive ? (

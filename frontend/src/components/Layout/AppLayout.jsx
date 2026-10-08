@@ -597,26 +597,28 @@ export default function AppLayout() {
               </div>
             )}
 
-            {/* 언어 선택기 — 지구본 + Select 붙이기 */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 2, marginLeft: isLoggedIn ? 20 : 0,
-              height: 34, padding: '0 8px 0 12px',
-              background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
-            }}>
-              <GlobalOutlined style={{ color: '#fff', fontSize: 15 }} />
-              {languages.length > 0 && (
-                <Select
-                  value={languageCd || undefined}
-                  onChange={handleLanguageChange}
-                  size="small"
-                  variant="borderless"
-                  style={{ minWidth: 76, color: '#fff' }}
-                  popupMatchSelectWidth={false}
-                  options={languages.map((l) => ({ value: l.languagecd, label: l.languagenm }))}
-                  className="lang-select"
-                />
-              )}
-            </div>
+            {/* 언어 선택기 — 지구본 + Select. 로그인 후에는 사용자 메뉴(UserMenuCard)의 언어 항목으로 대체 */}
+            {!isLoggedIn && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 2, marginLeft: isLoggedIn ? 20 : 0,
+                height: 34, padding: '0 8px 0 12px',
+                background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+              }}>
+                <GlobalOutlined style={{ color: '#fff', fontSize: 15 }} />
+                {languages.length > 0 && (
+                  <Select
+                    value={languageCd || undefined}
+                    onChange={handleLanguageChange}
+                    size="small"
+                    variant="borderless"
+                    style={{ minWidth: 76, color: '#fff' }}
+                    popupMatchSelectWidth={false}
+                    options={languages.map((l) => ({ value: l.languagecd, label: l.languagenm }))}
+                    className="lang-select"
+                  />
+                )}
+              </div>
+            )}
 
             {isLoggedIn ? (
               <>
