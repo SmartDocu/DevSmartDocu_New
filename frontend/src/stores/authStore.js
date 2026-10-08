@@ -2,8 +2,42 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import axios from 'axios'
 
+const AUTH_KEY = 'smart-doc-auth'
+const KEEP_KEY = 'smart-doc-keep'
+
+function _isKeep() {
+  try { return localStorage.getItem(KEEP_KEY) === '1' } catch { return false }
+}
+
+// "로그인 상태 유지" 플래그 — 켜져 있으면 인증 정보를 localStorage(브라우저를 닫아도 유지)에,
+// 꺼져 있으면 sessionStorage(탭 단위)에 저장한다. 로그인 직전에 호출할 것.
+export function setKeepLogin(keep) {
+  try {
+    if (keep) localStorage.setItem(KEEP_KEY, '1')
+    else localStorage.removeItem(KEEP_KEY)
+  } catch (_) {}
+}
+
+const authStorage = {
+  getItem: (name) => {
+    try {
+      return (_isKeep() ? localStorage : sessionStorage).getItem(name)
+    } catch { return null }
+  },
+  setItem: (name, value) => {
+    try {
+      if (_isKeep()) { localStorage.setItem(name, value); sessionStorage.removeItem(name) }
+      else { sessionStorage.setItem(name, value); localStorage.removeItem(name) }
+    } catch (_) {}
+  },
+  removeItem: (name) => {
+    try { localStorage.removeItem(name); sessionStorage.removeItem(name) } catch (_) {}
+  },
+}
+
+// 유지 플래그 없이 남은 예전 localStorage 인증 정보는 정리
 try {
-  localStorage.removeItem('smart-doc-auth')
+  if (!_isKeep()) localStorage.removeItem(AUTH_KEY)
 } catch (_) {}
 
 let _refreshTimer = null
@@ -76,6 +110,7 @@ export const useAuthStore = create(
 
       clearAuth: () => {
         if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null }
+        setKeepLogin(false)
         set({ accessToken: null, refreshToken: null, user: null })
       },
 
@@ -87,8 +122,8 @@ export const useAuthStore = create(
       },
     }),
     {
-      name: 'smart-doc-auth',
-      storage: createJSONStorage(() => sessionStorage),
+      name: AUTH_KEY,
+      storage: createJSONStorage(() => authStorage),
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
@@ -97,3 +132,20 @@ export const useAuthStore = create(
     },
   ),
 )
+
+// 로그인 유지(localStorage) 모드에서 여러 탭이 같은 리프레시 토큰을 각자 갱신하면 서로의 토큰을 무효화하므로,
+// 다른 탭이 갱신/로그아웃한 결과를 토큰만 따라간다(user 컨텍스트는 탭별로 독립 유지).
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.storageArea !== localStorage || e.key !== AUTH_KEY) return
+    try {
+      const next = e.newValue ? JSON.parse(e.newValue)?.state : null
+      const st = useAuthStore.getState()
+      if (!next?.accessToken) {
+        if (st.accessToken) st.clearAuth()
+      } else if (next.accessToken !== st.accessToken) {
+        st.updateTokens({ accessToken: next.accessToken, refreshToken: next.refreshToken })
+      }
+    } catch (_) {}
+  })
+}

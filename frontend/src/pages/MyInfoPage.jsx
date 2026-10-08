@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import {
   App, Button, Card, Col, Descriptions, Form, Input, Popconfirm, Row, Select, Space, Switch, Table, Tag,
@@ -8,16 +7,13 @@ import {
 import { EditOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons'
 import {
   useMyInfo, useUpdateUsername, useUpdateTimezone, useUpdateMarketing, useMySubscriptions, useTenantManageOtherSubscriptions,
-  useMyInfoCreditPurchase, useProCancel, useProCancelUndo, useWithdrawAccount,
+  useMyInfoCreditPurchase, useProCancel, useProCancelUndo,
 } from '@/hooks/useSettings'
 import { useMfaFactors } from '@/hooks/useMfa'
 import { useMenuCodes } from '@/hooks/useMenus'
 import { useSelectFreeServices } from '@/hooks/useApps'
 import { useLangStore, t } from '@/stores/langStore'
-import { useAuthStore } from '@/stores/authStore'
-import { useTabStore } from '@/stores/tabStore'
 import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
-import WithdrawAccountModal from '@/components/payment/WithdrawAccountModal'
 import { getErrorMessage } from '@/utils/apiError'
 
 export default function MyInfoPage() {
@@ -25,10 +21,6 @@ export default function MyInfoPage() {
   const { message } = App.useApp()
   const openInTab = useOpenInTab()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const { clearAuth } = useAuthStore()
-  const { clearTabs } = useTabStore()
-  const resetLang = useLangStore((s) => s.resetLang)
   const { data = {}, isLoading } = useMyInfo()
   const updateUsername = useUpdateUsername()
   const updateTimezone = useUpdateTimezone()
@@ -50,8 +42,6 @@ export default function MyInfoPage() {
   const proCancelUndoMutation = useProCancelUndo()
   const [cancelTarget, setCancelTarget] = useState(null)
 
-  const withdrawMutation = useWithdrawAccount()
-  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   const userInfo = data.user_info || {}
   const tenant = data.tenant || {}
@@ -141,25 +131,6 @@ export default function MyInfoPage() {
         onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
       },
     )
-  }
-
-  const handleWithdrawSubmit = (payload) => {
-    withdrawMutation.mutate(payload, {
-      onSuccess: () => {
-        message.success(t('msg.withdraw.success'))
-        setWithdrawOpen(false)
-        // 계정 자체가 삭제되어 이 토큰은 더 이상 쓸 수 없다 — 로그아웃과 동일하게 정리 후 이동
-        clearTabs()
-        resetLang()
-        clearAuth()
-        queryClient.clear()
-        navigate('/')
-      },
-      onError: (err) => {
-        const detail = err.response?.data?.detail
-        message.error(detail ? t(detail) : t('msg.save.error'))
-      },
-    })
   }
 
   const roleLabel = (v) => v === 'M' ? t('cod.rolecd_M') : v === 'U' ? t('cod.rolecd_U') : v || '-'
@@ -424,14 +395,12 @@ export default function MyInfoPage() {
         />
       </Card>
 
-      {/* 회원 탈퇴 — 개인(시스템 테넌트) 계정 전용 */}
-      {isSystemTenant && (
-        <div style={{ textAlign: 'right' }}>
-          <Button type="text" danger size="small" onClick={() => setWithdrawOpen(true)}>
-            {t('btn.account.withdraw')}
-          </Button>
-        </div>
-      )}
+      {/* 회원 탈퇴 — 계정 전체 탈퇴(어느 테넌트를 선택 중이든 동일), 별도 페이지에서 진행 */}
+      <div style={{ textAlign: 'right' }}>
+        <Button type="text" danger size="small" onClick={() => openInTab('withdraw', '', t('btn.account.withdraw'))}>
+          {t('btn.account.withdraw')}
+        </Button>
+      </div>
 
       <CancelSubscriptionModal
         open={!!cancelTarget}
@@ -440,14 +409,6 @@ export default function MyInfoPage() {
         loading={proCancelMutation.isPending}
         cancelReasonCodes={cancelReasonCodes}
         allowDowngrade
-      />
-
-      <WithdrawAccountModal
-        open={withdrawOpen}
-        onClose={() => setWithdrawOpen(false)}
-        onSubmit={handleWithdrawSubmit}
-        loading={withdrawMutation.isPending}
-        reasonCodes={cancelReasonCodes}
       />
     </div>
   )

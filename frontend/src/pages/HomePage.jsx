@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import PopupManager from '@/components/Popup/PopupManager'
-import LoginModal from '@/components/LoginModal/LoginModal'
 import { usePopups } from '@/hooks/usePopups'
 
 const slides = [
@@ -29,8 +28,8 @@ export default function HomePage() {
   const openInTab = useOpenInTab()
   useLangStore((s) => s.translations)
   const isLoggedIn = useAuthStore((s) => !!s.accessToken)
-  const [loginOpen, setLoginOpen] = useState(false)
-  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { data: popups = [] } = usePopups('M')
   const [current, setCurrent] = useState(0)
   const timerRef = useRef(null)
@@ -52,14 +51,12 @@ export default function HomePage() {
     return () => clearInterval(timerRef.current)
   }, [])
 
-  // 외부(D2Doc 소개 사이트)에서 ?login=1 로 들어오면 로그인 모달을 자동으로 연다.
+  // 외부(D2Doc 소개 사이트)에서 ?login=1 로 들어오면 로그인 페이지로 보낸다.
   useEffect(() => {
     if (searchParams.get('login')) {
-      setLoginOpen(true)
-      searchParams.delete('login')
-      setSearchParams(searchParams, { replace: true })
+      navigate('/login', { replace: true })
     }
-  }, [searchParams, setSearchParams])
+  }, [searchParams, navigate])
 
   return (
     <div>
@@ -192,7 +189,7 @@ export default function HomePage() {
             </a>
             <button
               style={{ backgroundColor: '#17a2b8', color: '#fff', padding: '8px 16px', borderRadius: 4, textDecoration: 'none', cursor: 'pointer', border: 'none', fontSize: 14 }}
-              onClick={() => isLoggedIn ? openInTab('qna', '', 'Q&A') : setLoginOpen(true)}
+              onClick={() => isLoggedIn ? openInTab('qna', '', 'Q&A') : navigate('/login')}
             >
               Q&A
             </button>
@@ -200,8 +197,6 @@ export default function HomePage() {
         </div>
 
       </div>
-
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
 
       {/* 푸터 */}
       <div style={{ backgroundColor: '#000', padding: '20px 0' }}>

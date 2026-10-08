@@ -6,6 +6,8 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useApps } from '@/hooks/useApps'
 import { useMenuCodes } from '@/hooks/useMenus'
 import FreeServiceGate from '@/components/Launcher/FreeServiceGate'
+import PopupManager from '@/components/Popup/PopupManager'
+import { usePopups } from '@/hooks/usePopups'
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -29,6 +31,8 @@ export default function AppLauncher() {
   const { data = {}, isLoading } = useApps({ tenantid, languagecd: languageCd })
   const { apps = [], subscribed_servicecds = [] } = data
   const { data: accountStatusCodes = [] } = useMenuCodes('accountstatus')
+  // 노출 시점 '로그인 후'(mainlogin='L') 팝업 — 로그인/테넌트 전환의 공통 종착점인 이 화면에서 띄운다
+  const { data: loginPopups = [] } = usePopups('L')
 
   useLangStore((s) => s.translations)
 
@@ -50,6 +54,7 @@ export default function AppLauncher() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '40px 0' }}>
+      <PopupManager popups={loginPopups} rememberClose />
       <h2 style={{ textAlign: 'center', marginBottom: 48, color: '#163E64', fontSize: 24, fontWeight: 700 }}>
         {user?.tenantnm}
       </h2>

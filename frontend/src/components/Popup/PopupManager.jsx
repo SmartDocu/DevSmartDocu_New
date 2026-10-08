@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import { useLangStore, t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useDeactivatePopup } from '@/hooks/usePopups'
+import { isClosedInSession, saveClosedInSession } from '@/utils/popupSession'
 
 // 비로그인 사용자용 localStorage fallback
 function isDeactivatedLocally(popupid) {
@@ -30,7 +31,7 @@ function localizePopup(popup, langCd) {
   }
 }
 
-export default function PopupManager({ popups = [] }) {
+export default function PopupManager({ popups = [], rememberClose = false }) {
   const langCd = useLangStore(s => s.languageCd) || 'en'
   const isAuthenticated = useAuthStore(s => s.isAuthenticated())
   const deactivateMutation = useDeactivatePopup()
@@ -38,12 +39,15 @@ export default function PopupManager({ popups = [] }) {
 
   // 서버에서 이미 기간·DB비활성화 필터 완료 → 비로그인은 localStorage 추가 확인
   const visible = popups.filter(p =>
-    !closed[p.popupid] && (isAuthenticated || !isDeactivatedLocally(p.popupid))
+    !closed[p.popupid] && !(rememberClose && isClosedInSession(p.popupid)) && (isAuthenticated || !isDeactivatedLocally(p.popupid))
   )
 
   if (!visible.length) return null
 
-  const handleClose = (id) => setClosed(prev => ({ ...prev, [id]: true }))
+  const handleClose = (id) => {
+    if (rememberClose) saveClosedInSession(id)
+    setClosed(prev => ({ ...prev, [id]: true }))
+  }
 
   const handleDeactivate = (popup) => {
     if (isAuthenticated) {

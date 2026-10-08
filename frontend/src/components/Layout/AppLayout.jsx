@@ -17,12 +17,12 @@ import { useTabStore } from '@/stores/tabStore'
 import { useHelpSearch } from '@/hooks/useAdmin'
 import { useDatasProjects, useUpdateMyProject } from '@/hooks/useDatas'
 import { useApps } from '@/hooks/useApps'
+import UserMenuCard from '@/components/Layout/UserMenuCard'
 import { useNotifications, navigateToNotificationTarget, translateNotification } from '@/hooks/useNotifications'
 
 // 대부분의 방문에서 열리지 않는 모달 — 실제로 열릴 때만 청크를 내려받도록 지연 로드
 const DocSelectModal = lazy(() => import('@/components/DocSelectModal/DocSelectModal'))
 const RegisterModal = lazy(() => import('@/components/RegisterModal/RegisterModal'))
-const LoginModal = lazy(() => import('@/components/LoginModal/LoginModal'))
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -50,7 +50,7 @@ export default function AppLayout() {
   const location = useLocation()
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [registerModalOpen, setRegisterModalOpen] = useState(false)
-  const [loginModalOpen, setLoginModalOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [helpModalOpen, setHelpModalOpen] = useState(false)
   const [mfaChallenge, setMfaChallenge] = useState(null) // { tenantid, tenant, factor_id, code }
   const [tenantSwitching, setTenantSwitching] = useState(false)
@@ -542,7 +542,12 @@ export default function AppLayout() {
                   variant="borderless"
                   style={{ minWidth: 120, color: '#fff' }}
                   popupMatchSelectWidth={false}
-                  options={user.tenants.map((t) => ({ value: t.tenantid, label: t.tenantnm }))}
+                  options={[...user.tenants]
+                    .sort((a, b) => Number(!!a.issystemtenant) - Number(!!b.issystemtenant))
+                    .map((tn) => ({
+                      value: tn.tenantid,
+                      label: tn.issystemtenant ? `${tn.tenantnm} (${t('lbl.tenant.personal')})` : (tn.disptenantnm || tn.tenantnm),
+                    }))}
                   className="lang-select"
                 />
               </div>
@@ -743,65 +748,32 @@ export default function AppLayout() {
                 </Popover>
                 {/* 사람 아이콘 */}
                 <Dropdown
-                  menu={{
-                    items: [
-                      {
-                        key: 'myinfo',
-                        label: user?.email,
-                        onClick: openMyInfoInTab,
-                      },
-                      {
-                        key: 'myusage',
-                        label: t('ttl.myusage', 'My Usage') || 'My Usage',
-                        onClick: openMyUsageInTab,
-                      },
-                      { type: 'divider' },
-                      {
-                        key: 'theme',
-                        label: (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ marginRight: 4 }}>{t('lbl.theme')}</span>
-                            <span
-                              onClick={(e) => { e.stopPropagation(); setColorTheme('light') }}
-                              style={{
-                                cursor: 'pointer',
-                                padding: '2px 10px',
-                                borderRadius: 4,
-                                fontSize: 12,
-                                fontWeight: !isDark ? 600 : 400,
-                                backgroundColor: !isDark ? '#245F97' : 'transparent',
-                                color: !isDark ? '#fff' : '#888',
-                                border: !isDark ? '1px solid #245F97' : '1px solid #d9d9d9',
-                              }}
-                            >Light</span>
-                            <span
-                              onClick={(e) => { e.stopPropagation(); setColorTheme('dark') }}
-                              style={{
-                                cursor: 'pointer',
-                                padding: '2px 10px',
-                                borderRadius: 4,
-                                fontSize: 12,
-                                fontWeight: isDark ? 600 : 400,
-                                backgroundColor: isDark ? '#245F97' : 'transparent',
-                                color: isDark ? '#fff' : '#888',
-                                border: isDark ? '1px solid #245F97' : '1px solid #d9d9d9',
-                              }}
-                            >Dark</span>
-                          </div>
-                        ),
-                      },
-                      { type: 'divider' },
-                      { key: 'logout', label: t('btn.logout'), onClick: handleLogout },
-                    ],
-                  }}
+                  open={userMenuOpen}
+                  onOpenChange={setUserMenuOpen}
                   trigger={['click']}
                   placement="bottomRight"
+                  popupRender={() => (
+                    <UserMenuCard
+                      isDark={isDark}
+                      colorTheme={colorTheme}
+                      onThemeChange={setColorTheme}
+                      languages={languages}
+                      languageCd={languageCd}
+                      onLanguageChange={handleLanguageChange}
+                      onOpenMyInfo={() => { setUserMenuOpen(false); openMyInfoInTab() }}
+                      onOpenMyUsage={() => { setUserMenuOpen(false); openMyUsageInTab() }}
+                      onLogout={() => { setUserMenuOpen(false); handleLogout() }}
+                    />
+                  )}
                 >
-                  <div style={{
-                    width: 34, height: 34, marginLeft: 8, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
-                  }}>
+                  <div
+                    title={t('lbl.usermenu.profile')}
+                    style={{
+                      width: 34, height: 34, marginLeft: 8, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'transparent', border: '1px solid rgba(255,255,255,.28)', borderRadius: 9,
+                    }}
+                  >
                     <UserOutlined style={{ color: '#fff', fontSize: 17 }} />
                   </div>
                 </Dropdown>
@@ -824,7 +796,7 @@ export default function AppLayout() {
                   {t('btn.register_btn')}
                 </button>
                 <button
-                  onClick={() => setLoginModalOpen(true)}
+                  onClick={() => navigate('/login')}
                   style={{
                     backgroundColor: '#17a2b8',
                     color: '#fff',
@@ -969,7 +941,6 @@ export default function AppLayout() {
       <Suspense fallback={null}>
         {docModalOpen && <DocSelectModal open onClose={() => setDocModalOpen(false)} />}
         {registerModalOpen && <RegisterModal open onClose={() => setRegisterModalOpen(false)} />}
-        {loginModalOpen && <LoginModal open onClose={() => setLoginModalOpen(false)} />}
       </Suspense>
 
       {/* 테넌트 전환 진행 중 오버레이 — MFA 모달이 닫힌 뒤 실제 전환까지의 공백 구간 안내 */}

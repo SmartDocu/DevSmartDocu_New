@@ -16,6 +16,7 @@ class TokenResponse(BaseModel):
 class UserContext(BaseModel):
     id: str
     email: str
+    usernm: Optional[str] = None
     roleid: Optional[int] = None
     docid: Optional[str] = None
     docnm: Optional[str] = None

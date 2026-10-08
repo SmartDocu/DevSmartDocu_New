@@ -325,13 +325,14 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
     try:
         user_row = (
             sd.table("users")
-            .select("roleid,default_tenantid")
+            .select("roleid,default_tenantid,usernm")
             .eq("useruid", user_id)
             .maybe_single()
             .execute()
         )
         if user_row.data:
             ctx.roleid = user_row.data.get("roleid")
+            ctx.usernm = user_row.data.get("usernm")
     except Exception:
         pass
 
@@ -349,13 +350,18 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
 
             tenants_info = (
                 sd.table("tenants")
-                .select("tenantid,tenantnm,disptenantnm,iconfileurl")
+                .select("tenantid,tenantnm,disptenantnm,iconfileurl,issystemtenant")
                 .in_("tenantid", tenantids)
                 .execute()
             )
             tenants_map = {t["tenantid"]: t for t in (tenants_info.data or [])}
             ctx.tenants = [
-                {"tenantid": str(t["tenantid"]), "tenantnm": t.get("tenantnm", "")}
+                {
+                    "tenantid": str(t["tenantid"]),
+                    "tenantnm": t.get("tenantnm", ""),
+                    "disptenantnm": t.get("disptenantnm") or t.get("tenantnm", ""),
+                    "issystemtenant": bool(t.get("issystemtenant")),
+                }
                 for t in (tenants_info.data or [])
             ]
 

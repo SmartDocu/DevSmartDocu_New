@@ -12,6 +12,9 @@ import PasswordResetPage from '@/pages/auth/PasswordResetPage'
 import RegisterInvitePage from '@/pages/auth/RegisterInvitePage'
 
 // ── 코드 스플리팅: 로그인 직후 곧바로 필요한 소수(위)만 정적 import, 나머지 페이지는 lazy ──
+const WithdrawPage = lazy(() => import('@/pages/withdraw/WithdrawPage'))
+const WithdrawDonePage = lazy(() => import('@/pages/withdraw/WithdrawDonePage'))
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
 const TermsPage = lazy(() => import('@/pages/public/TermsPage'))
 const FaqPage = lazy(() => import('@/pages/public/FaqPage'))
 const QnaPage = lazy(() => import('@/pages/public/QnaPage'))
@@ -107,6 +110,8 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomeOrLauncher /> },
+      { path: 'login', element: <LoginPage /> },
+      { path: 'withdraw/done', element: <WithdrawDonePage /> },
       { path: 'terms', element: <TermsPage /> },
       { path: 'faq', element: <FaqPage /> },
       { path: 'follow', element: <FollowPage /> },
@@ -174,6 +179,7 @@ export const router = createBrowserRouter([
       { path: 'settings/datasets', element: <SettingsDatasetsPage /> },
       { path: 'settings/llm-keys', element: <SettingsLlmKeysPage /> },
       { path: 'myinfo', element: <MyInfoPage /> },
+      { path: 'withdraw', element: <WithdrawPage /> },
       { path: 'myusage', element: <MyUsagePage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'upgrade', element: <UpgradePlanPage /> },

@@ -1,0 +1,156 @@
+/* ═══════════════════════════════════════════════════
+   다크 테마 — main.jsx가 로그인 사용자의 colorTheme === 'dark'일 때
+   <html data-theme="dark">로 켠다. antd 컴포넌트는 darkAlgorithm이 처리하고,
+   여기서는 CSS 변수 · 전역 클래스 · 인라인 style에 박힌 밝은 색을 덮어쓴다.
+   (index.css보다 뒤에 import되어야 한다)
+   ═══════════════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --body-background-color: #14171c;
+  --font-color: #d7dbe2;
+  --pagetitle-font-color: #e8ebf0;
+
+  --panel-bg: #1d2128;
+  --panel-border: #2c323b;
+  --border-color: #2c323b;
+
+  --table-header: #242a33;
+  --table-header-text: #aeb5c0;
+  --tbody-even: #1f242b;
+  --tbody-hover: #252b34;
+  --tbody-font: #d7dbe2;
+  --selected-row-bg: #22365a;
+  --selected-row: #8fb8e8;
+
+  --primary-btn: #243a5c;
+  --primary-btn-hover: #2c4670;
+  --primary-btn-text: #9cc2ff;
+  --primary-btn-border: #35568a;
+  --secondary-btn: #232830;
+  --secondary-btn-hover: #2b313a;
+  --secondary-btn-text: #c9ced6;
+  --secondary-btn-border: #3a414c;
+  --danger-btn: #232830;
+  --danger-btn-hover: #3a2326;
+  --danger-btn-text: #ff8a80;
+  --danger-btn-border: #5a3438;
+  --back-btn: #3a414c;
+  --back-btn-hover: #4a525e;
+
+  /* 폼 라벨(.form-group label) 등이 쓰는 회색 계열 — 어두운 배경에서 읽히도록 밝게 */
+  --gray-600: #b3bac5;
+  --gray-700: #d0d5dd;
+
+  --successmessage-color: #8be0a4;
+  --succesback-color: #1e3a28;
+  --errormessage-color: #ff9c9c;
+  --errorback-color: #3a2224;
+  --loadingback-color: #2e3320;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background-color: #1b1f26;
+  color: #d7dbe2;
+}
+:root[data-theme="dark"] input:disabled,
+:root[data-theme="dark"] select:disabled,
+:root[data-theme="dark"] textarea:disabled {
+  background-color: #252a32;
+  color: #7d8591;
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder,
+:root[data-theme="dark"] .form-group input::placeholder,
+:root[data-theme="dark"] .form-group textarea::placeholder { color: #6f7783; }
+
+/* 전역 클래스 */
+:root[data-theme="dark"] .sidebar-logo,
+:root[data-theme="dark"] .sidebar-copyright { border-color: #2c323b; }
+:root[data-theme="dark"] .sidebar-fav-item { color: #c9ced6; }
+:root[data-theme="dark"] .sidebar-fav-item:hover,
+:root[data-theme="dark"] .sidebar-fav-item.active { background: #22365a; color: #cfe3fa; }
+:root[data-theme="dark"] .icon-label { color: #aeb5c0; }
+:root[data-theme="dark"] .segmented { background: #232830; border-color: #3a414c; }
+:root[data-theme="dark"] .segmented-item { color: #9aa1ad; }
+:root[data-theme="dark"] .segmented-item.active { color: #f2f3f5; background: #3a414c; box-shadow: none; }
+:root[data-theme="dark"] .btn-link { background-color: #1f2a3a; border-color: #35568a; color: #9cc2ff; }
+:root[data-theme="dark"] .btn-link:hover { background-color: transparent; }
+:root[data-theme="dark"] .new-icon,
+:root[data-theme="dark"] .save-icon,
+:root[data-theme="dark"] .del-icon,
+:root[data-theme="dark"] .config-icon { filter: invert(70%) sepia(30%) saturate(700%) hue-rotate(185deg) brightness(105%); }
+:root[data-theme="dark"] .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab { background: #232a33 !important; border-color: #343c47 !important; color: #8d99a8 !important; }
+:root[data-theme="dark"] .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-remove { color: #8d99a8 !important; }
+:root[data-theme="dark"] .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active { background: #163E64 !important; border-color: #163E64 !important; }
+
+/* ── 인라인 style에 박힌 밝은 색 덮어쓰기 ─────────────────────────────
+   React 인라인 스타일은 DOM에서 rgb(...)로 직렬화되므로 값 부분 문자열로 매칭한다.
+   문서 미리보기(.a4-frame) 안쪽은 실제 문서 모양 그대로 두기 위해 제외. */
+
+/* 밝은 중립 배경 → 패널/표면 색 */
+:root[data-theme="dark"] [style*="background: rgb(255, 255, 255)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(255, 255, 255)"]:not(.a4-frame *) { background-color: var(--panel-bg) !important; }
+
+:root[data-theme="dark"] [style*="background: rgb(250, 250, 250)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(250, 250, 250)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(249, 249, 249)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(249, 249, 249)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(248, 249, 250)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(248, 249, 250)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(247, 245, 241)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(247, 245, 241)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(245, 245, 245)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(245, 245, 245)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(240, 242, 245)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(240, 242, 245)"]:not(.a4-frame *) { background-color: #222730 !important; }
+
+:root[data-theme="dark"] [style*="background: rgb(240, 240, 240)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(240, 240, 240)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(242, 239, 233)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(242, 239, 233)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background-color: rgb(230, 230, 230)"]:not(.a4-frame *) { background-color: #2a303a !important; }
+
+/* 색조가 있는 연한 배경(경고/오류/정보) → 어두운 같은 계열 */
+:root[data-theme="dark"] [style*="background: rgb(255, 247, 230)"]:not(.a4-frame *) { background-color: #3a2f1a !important; }
+:root[data-theme="dark"] [style*="background: rgb(255, 241, 240)"]:not(.a4-frame *) { background-color: #3a2224 !important; }
+:root[data-theme="dark"] [style*="background: rgb(249, 251, 231)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(250, 250, 229)"]:not(.a4-frame *) { background-color: #2e3320 !important; }
+:root[data-theme="dark"] [style*="background: rgb(240, 246, 255)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="background: rgb(240, 244, 248)"]:not(.a4-frame *) { background-color: #1f2a3a !important; }
+
+/* 어두운 글자색 → 밝은 글자색 */
+:root[data-theme="dark"] [style*="color: rgb(51, 51, 51)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(57, 57, 57)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(58, 58, 58)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(85, 85, 85)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(102, 102, 102)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(119, 119, 119)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(0, 0, 0)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: black"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(75, 80, 88)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(43, 47, 54)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(20, 22, 26)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(33, 37, 41)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(73, 80, 87)"]:not(.a4-frame *) { color: #c9ced6 !important; }
+:root[data-theme="dark"] [style*="color: rgb(22, 62, 100)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(36, 95, 151)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: darkblue"]:not(.a4-frame *) { color: #8fb8e8 !important; }
+:root[data-theme="dark"] [style*="color: rgb(47, 125, 79)"]:not(.a4-frame *) { color: #5fbf86 !important; }
+:root[data-theme="dark"] [style*="color: rgb(106, 125, 60)"]:not(.a4-frame *) { color: #a3b86c !important; }
+:root[data-theme="dark"] [style*="color: rgb(198, 40, 40)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="color: rgb(207, 19, 34)"]:not(.a4-frame *) { color: #ff7875 !important; }
+
+/* 밝은 테두리 → 어두운 테두리 */
+:root[data-theme="dark"] [style*="solid rgb(204, 204, 204)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(221, 221, 221)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(238, 238, 238)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(232, 232, 232)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(240, 240, 240)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(217, 217, 217)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(228, 228, 228)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(217, 213, 205)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="solid rgb(224, 224, 224)"]:not(.a4-frame *),
+:root[data-theme="dark"] [style*="border-color: rgb(240, 240, 240)"]:not(.a4-frame *) { border-color: #3a414c !important; }

@@ -74,13 +74,25 @@ export function useMyInfo() {
   })
 }
 
+// 사용자 메뉴(헤더 사람 아이콘)의 시간대 선택용 — { options: [{timezone, offsetminutes}], timezone }
+export function useTimezoneOptions(enabled = true) {
+  const tenantid = useAuthStore((s) => s.user?.tenantid)
+  return useQuery({
+    queryKey: ['timezone-options', tenantid],
+    queryFn: () => apiClient.get('/settings/timezone-options').then((r) => r.data),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useUpdateUsername() {
   const qc = useQueryClient()
   const { message } = App.useApp()
   return useMutation({
     mutationFn: (body) => apiClient.post('/settings/myinfo/username', body).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       message.success(t('msg.save.success'))
+      useAuthStore.getState().updateUser({ usernm: variables.usernm })
       qc.invalidateQueries({ queryKey: ['myinfo'] })
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
@@ -96,6 +108,7 @@ export function useUpdateTimezone() {
       message.success(t('msg.save.success'))
       useAuthStore.getState().updateUser({ offsetminutes: data.offsetminutes ?? null })
       qc.invalidateQueries({ queryKey: ['myinfo'] })
+      qc.invalidateQueries({ queryKey: ['timezone-options'] })
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -165,12 +178,6 @@ export function useProCancelUndo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['myinfo-subscriptions'] })
     },
-  })
-}
-
-export function useWithdrawAccount() {
-  return useMutation({
-    mutationFn: (body) => apiClient.post('/settings/myinfo/withdraw', body).then((r) => r.data),
   })
 }
 

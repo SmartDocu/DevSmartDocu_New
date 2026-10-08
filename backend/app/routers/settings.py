@@ -2000,103 +2000,6 @@ def undo_pro_cancel(
     return {"result": "success"}
 
 
-class WithdrawAccountRequest(BaseModel):
-    confirm_deletion_policy: bool = False
-    reasoncd: Optional[str] = None
-    reasondesc: Optional[str] = None
-
-
-@router.post("/myinfo/withdraw")
-def withdraw_personal_account(
-    body: WithdrawAccountRequest,
-    request: Request,
-    token: str = Depends(get_token),
-    tenantid: Optional[str] = Depends(get_tenantid),
-):
-    """개인(시스템 테넌트) 계정 탈퇴.
-
-    1. 보유 중인 모든 활성 서비스(Do/Ch/In, Free 포함)를 90일 유예 삭제(ArchiveDelete)로
-       일괄 예약한다 — 실제 콘텐츠 물리 삭제는 기존 배치(content_purge.py)가 처리한다.
-    2. sdoc.users 행을 초기화한다: email/usernm은 공백(재가입을 허용하는 의도 — 결제/세금계산서
-       등 법적 보존이 필요한 이메일은 accounts.encemail이 이미 암호화해 별도 보관 중이라 여기서
-       따로 암호화 보존할 필요가 없다), isemailconfirm/default_tenantid/electronicfinancialtermsyn은
-       null, useyn=False. termsofuseyn/userinfoyn/marketingyn(동의 이력)은 그대로 둔다.
-    3. Supabase Auth(GoTrue) 사용자를 하드 삭제한다 — sdoc.users.useyn만 바꿔서는 로그인이
-       막히지 않는다(어떤 라우터의 인증 흐름도 이 필드를 확인하지 않음, get_user()는 JWT
-       유효성만 봄). 실제 재로그인 차단을 보장하려면 Auth 쪽도 반드시 같이 지워야 한다 —
-       그래서 이 호출을 마지막에 둔다(이후 이 토큰으로는 어떤 API도 호출할 수 없게 됨)."""
-    if not body.confirm_deletion_policy:
-        raise HTTPException(status_code=400, detail="msg.withdraw.policy.confirm.required")
-
-    user = _get_user(token)
-    user_id = str(user.id)
-    svc = get_service_client().schema(SUPABASE_SCHEMA)
-
-    tenantid, issystemtenant = _get_tenant_and_issystemtenant(svc, user_id, tenantid)
-    if not issystemtenant:
-        raise HTTPException(status_code=400, detail="msg.withdraw.system_tenant_only")
-
-    # 지금 선택된 테넌트가 개인 테넌트여도, 이 사람이 다른 "기업" 테넌트의 관리자(rolecd='M')로
-    # 등록돼 있으면 탈퇴를 막는다 — 관리자가 사라지면 그 테넌트가 고아 상태가 되기 때문.
-    mgr_tenantids = [
-        r["tenantid"] for r in (
-            svc.table("tenantusers").select("tenantid")
-            .eq("useruid", user_id).eq("useyn", True).eq("rolecd", "M").execute().data or []
-        )
-    ]
-    if mgr_tenantids:
-        org_tenants = svc.table("tenants").select("tenantid").in_(
-            "tenantid", mgr_tenantids
-        ).eq("issystemtenant", False).execute().data or []
-        if org_tenants:
-            raise HTTPException(status_code=400, detail="msg.withdraw.org_manager_blocked")
-
-    acc = svc.table("accounts").select("accountuid").eq("useruid", user_id).maybe_single().execute()
-    accountuid = acc.data["accountuid"] if acc and acc.data else None
-
-    reserved_services: list[str] = []
-    if accountuid:
-        accsvcs = svc.table("accountservices").select(
-            "servicecd,subscriptionuid"
-        ).eq("accountuid", accountuid).eq("servicestatus", "Active").execute().data or []
-        for row in accsvcs:
-            subscriptionuid = row.get("subscriptionuid")
-            if not subscriptionuid:
-                continue
-            sub_row = svc.table("subscriptions").select("canceldts").eq(
-                "subscriptionuid", subscriptionuid
-            ).maybe_single().execute()
-            if sub_row and sub_row.data and sub_row.data.get("canceldts"):
-                continue  # 이미 별도로 해지가 예약된 서비스는 건드리지 않는다
-            _reserve_service_cancellation(
-                svc, accountuid, row["servicecd"], subscriptionuid, user_id, "ArchiveDelete",
-            )
-            reserved_services.append(row["servicecd"])
-
-    before_user = svc.table("users").select("*").eq("useruid", user_id).maybe_single().execute()
-    svc.table("users").update({
-        "email": "",
-        "usernm": "",
-        "isemailconfirm": None,
-        "default_tenantid": None,
-        "electronicfinancialtermsyn": None,
-        "useyn": False,
-    }).eq("useruid", user_id).execute()
-
-    log_work_action(
-        useruid=user_id, tenantid=int(tenantid) if tenantid else None, servicecd="Tenant",
-        actioncd="update", targettype="settings/myinfo/withdraw", targetid=user_id,
-        before=before_user.data if before_user else None,
-        after={"useyn": False, "reserved_services": reserved_services},
-        detail={"reasoncd": body.reasoncd, "reasondesc": body.reasondesc},
-        ip=get_client_ip(request),
-    )
-
-    get_service_client().auth.admin.delete_user(user_id)
-
-    return {"result": "success", "reserved_services": reserved_services}
-
-
 # ══════════════════════════════════════════════════════
 #  TENANT MANAGE — 구독 관리 (좌: 현재 구독 / 우: Team·Enterprise 상품 선택)
 # ══════════════════════════════════════════════════════
@@ -4400,6 +4303,25 @@ def create_tenant_subscription(body: TenantSubscriptionRequest, request: Request
         ip=get_client_ip(request),
     )
     return {"tenantid": new_tenantid, "tenantnm": body.tenantnm}
+
+
+@router.get("/timezone-options")
+def get_timezone_options(token: str = Depends(get_token), tenantid: Optional[str] = Depends(get_tenantid)):
+    """사용자 메뉴의 시간대 선택용 — 선택 가능한 시간대(+UTC 오프셋)와 현재 유효 시간대(tenantusers → tenants 순)."""
+    user = _get_user(token)
+    sb = _sb(token)
+    sd = sb.schema(SUPABASE_SCHEMA)
+    rows = sd.table("timezones").select("timezone,offsetminutes").eq("useyn", True).execute().data or []
+    rows.sort(key=lambda r: (r.get("offsetminutes") if r.get("offsetminutes") is not None else 0, r["timezone"]))
+
+    q = sd.table("tenantusers").select("timezone,tenantid").eq("useruid", user.id)
+    q = q.eq("tenantid", int(tenantid)) if tenantid else q.eq("useyn", True)
+    tu = (q.limit(1).execute().data or [None])[0]
+    tz = tu.get("timezone") if tu else None
+    if not tz and tu and tu.get("tenantid"):
+        t_row = sd.table("tenants").select("timezone").eq("tenantid", tu["tenantid"]).maybe_single().execute()
+        tz = t_row.data.get("timezone") if t_row and t_row.data else None
+    return {"options": rows, "timezone": tz}
 
 
 @router.post("/myinfo/timezone")
