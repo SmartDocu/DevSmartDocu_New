@@ -1103,8 +1103,13 @@ def create_anonymization_mapping(df, sensitive_columns=None):
         used_prefixes.add(val_prefix)
         
         # 번호 부여
+        # 영문·숫자로만 된 2글자 이하 값(Y/N, 단위, 등급 등)은 익명화하지 않는다.    # jeff 20261008
+        # 지킬 정보가 아니고, 치환이 차례로 일어나 앞서 만든 가명(V+대문자 2개) 속 글자까지
+        # 바꿔 버려 역변환이 안 되는 문제(예: 'N'이 'VNK_001'의 N을 바꿈)가 생긴다.    # jeff 20261008
         value_mapping[col] = {}
-        for idx, value in enumerate(sorted(unique_values.astype(str)), start=1):
+        targets = [v for v in sorted(unique_values.astype(str))
+                   if not re.fullmatch(r"[A-Za-z0-9]{1,2}", v.strip())]    # jeff 20261008
+        for idx, value in enumerate(targets, start=1):
             anonymized_value = f"{val_prefix}_{idx:03d}"
             value_mapping[col][str(value)] = anonymized_value
     

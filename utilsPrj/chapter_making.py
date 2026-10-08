@@ -1012,7 +1012,7 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                 elif place_holder in text_template:
                     text_template = text_template.replace(place_holder, final_result)
 
-                text_template += '<p></p>'
+                # text_template += '<p></p>'
 
                 if sep == "Not":
                     update_genchapters(supabase, {
