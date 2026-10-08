@@ -184,7 +184,7 @@ def finish_axes(*axes):
             axis_obj.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
 
     for ax in axes:
-        if ax is None or _is_pie(ax):
+        if ax is None or _is_pie(ax) or _is_image(ax):
             continue
         horizontal = any(isinstance(c, BarContainer) and getattr(c, "orientation", None) == "horizontal"
                          for c in ax.containers)
@@ -208,6 +208,11 @@ def finish_axes(*axes):
 def _is_pie(ax):
     from matplotlib.patches import Wedge
     return any(isinstance(p, Wedge) for p in ax.patches)
+
+
+def _is_image(ax):
+    """히트맵(imshow) 축이나 컬러바 축 — 격자·테두리·위쪽 여유를 적용하지 않는다."""
+    return bool(ax.images) or getattr(ax, "_colorbar", None) is not None
 
 
 def _is_twin(ax):
@@ -333,7 +338,7 @@ def _make_room(fig):
             legend_frac = max(legend_frac, rows * CHART["legend_size"] * 1.8 / 72 / max(ax_h, 0.1))
 
     for ax in fig.axes:
-        if _is_pie(ax):
+        if _is_pie(ax) or _is_image(ax):
             continue
         ax_w, ax_h = _inches(fig, ax)
         bars = [c for c in ax.containers if isinstance(c, BarContainer)
@@ -397,6 +402,8 @@ def save_chart_png(fig, user_text: str = "") -> bytes:
             for p in ax.patches:
                 p.set_edgecolor("white")
                 p.set_linewidth(1.2)
+        elif _is_image(ax):
+            ax.grid(False)          # 히트맵 칸 위에 격자선이 그어지지 않게
         elif not getattr(ax, "_d2_styled", False):
             _style_frame(ax, twin=_is_twin(ax))
             ax.tick_params(labelsize=CHART["tick_size"])

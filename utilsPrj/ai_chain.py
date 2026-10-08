@@ -1505,7 +1505,9 @@ def create_python_code(llm, prompt, df, question, column_dict, output_type):
                 style_dict = {}
 
             # NaN → None 변환 (JSON 직렬화 안전, std() 단일항목 등)
-            df_result = df_result.where(pd.notnull(df_result), other=None)
+            # 숫자 컬럼은 None을 담지 못해 where()만으로는 NaN이 그대로 남는다 → object로 바꾼 뒤 채운다
+            # (NaN이 남으면 미리보기 응답 JSON 변환이 실패한다 — 예: 한쪽 규격 항목의 빈 Cp)    # jeff 20261007
+            df_result = df_result.astype(object).where(pd.notnull(df_result), None)
             data = df_result.to_dict(orient="records")
 
             table_html = render_table_html(
