@@ -204,21 +204,27 @@ export default function AccountSettingsSection({ usernm, email }) {
         </div>
       </Panel>
 
-      {/* ── 회원 탈퇴 ─────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
-        padding: '14px 4px 6px', marginBottom: 24,
-      }}>
-        <div>
-          <div style={labelStyle}>{t('btn.account.withdraw')}</div>
-          <div style={{ ...descStyle, marginTop: 2 }}>{t('inf.account.withdraw_desc')}</div>
-        </div>
-        <button className="btn btn-danger" type="button" onClick={() => openInTab('withdraw', '', t('btn.account.withdraw'))}>
-          {t('btn.account.withdraw')}<RightOutlined style={{ marginLeft: 6, fontSize: 11 }} />
-        </button>
-      </div>
-
       <PasswordChangeModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
+    </div>
+  )
+}
+
+/** 회원 탈퇴 — 내 정보 화면 최하단에 둔다. 누르면 탈퇴 탭이 열린다. */
+export function AccountWithdrawRow() {
+  useLangStore((s) => s.translations)
+  const openInTab = useOpenInTab()
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+      padding: '14px 4px 6px', marginTop: 8, borderTop: '1px solid var(--border-color, #e3e6eb)',
+    }}>
+      <div>
+        <div style={labelStyle}>{t('btn.account.withdraw')}</div>
+        <div style={{ ...descStyle, marginTop: 2 }}>{t('inf.account.withdraw_desc')}</div>
+      </div>
+      <button className="btn btn-danger" type="button" onClick={() => openInTab('withdraw', '', t('btn.account.withdraw'))}>
+        {t('btn.account.withdraw')}<RightOutlined style={{ marginLeft: 6, fontSize: 11 }} />
+      </button>
     </div>
   )
 }

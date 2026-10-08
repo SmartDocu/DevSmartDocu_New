@@ -12,7 +12,7 @@ import { useMenuCodes } from '@/hooks/useMenus'
 import { useSelectFreeServices } from '@/hooks/useApps'
 import { useLangStore, t } from '@/stores/langStore'
 import CancelSubscriptionModal from '@/components/payment/CancelSubscriptionModal'
-import AccountSettingsSection from '@/components/Account/AccountSettingsSection'
+import AccountSettingsSection, { AccountWithdrawRow } from '@/components/Account/AccountSettingsSection'
 import { getErrorMessage } from '@/utils/apiError'
 
 export default function MyInfoPage() {
@@ -328,6 +328,9 @@ export default function MyInfoPage() {
           pagination={false}
         />
       </Card>
+
+      {/* 회원 탈퇴 — 화면 최하단 */}
+      <AccountWithdrawRow />
 
       <CancelSubscriptionModal
         open={!!cancelTarget}
