@@ -957,8 +957,7 @@ def change_password(body: ChangePasswordRequest, token: str = Depends(get_token)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.change.not_supported")
 
     pw = body.new_password
-    if len(pw) < 8 or not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw) or not re.search(r"[^A-Za-z0-9]", pw):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.policy")
+    validate_password_policy(pw)
     if pw == body.current_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.same_as_current")
 
@@ -979,6 +978,8 @@ def update_password(body: UpdatePasswordRequest):
     1회용 토큰을 소진시키는 문제를 피하기 위해, token_hash 검증은 페이지 진입 시가 아니라
     사용자가 "비밀번호 변경" 버튼을 눌러 이 API를 호출하는 시점에만 수행한다.
     """
+    # 정책 검사는 토큰 검증(verify_otp, 1회용 토큰 소진) 전에 해서, 약한 비밀번호로 링크가 낭비되지 않게 한다
+    validate_password_policy(body.new_password)
     try:
         from utilsPrj.supabase_client import get_supabase_client, get_thread_supabase
         client = get_supabase_client()
@@ -1118,6 +1119,13 @@ def _subscribe_account_to_free_service(sb_service, tenantid, accountuid: str, us
     )
 
 
+def validate_password_policy(pw: str) -> None:
+    """비밀번호 정책(가입·초대 가입·비밀번호 변경 공통): 8자 이상 + 영문·숫자·특수문자를 모두 포함.
+    프론트 utils/passwordPolicy.js와 같은 규칙이다."""
+    if len(pw or "") < 8 or not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw) or not re.search(r"[^A-Za-z0-9]", pw):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="msg.password.policy")
+
+
 @router.post("/register", response_model=MessageResponse)
 def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional[int] = None):
     """회원가입: Supabase auth + users 테이블 + 기본 권한 할당.
@@ -1135,11 +1143,7 @@ def register(body: RegisterRequest, request: Request, _invite_tenantid: Optional
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="비밀번호가 일치하지 않습니다.",
         )
-    if len(body.password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="비밀번호는 최소 8자 이상이어야 합니다.",
-        )
+    validate_password_policy(body.password)
 
     service = _get_service_client()
 

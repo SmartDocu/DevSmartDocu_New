@@ -1,25 +1,28 @@
 import { useState } from 'react'
 import { App } from 'antd'
+import { SendOutlined } from '@ant-design/icons'
 import apiClient from '@/api/client'
 import { useLangStore, t } from '@/stores/langStore'
 import { getErrorMessage } from '@/utils/apiError'
 
-const leftBoxStyle = {
-  border: '1px solid #d8dfeb',
-  padding: 20,
-  borderRadius: 10,
-  background: '#000000',
-  lineHeight: 1.8,
-  fontSize: 15,
-  color: '#ffffff',
-  height: '100%',
-  boxSizing: 'border-box',
-}
+const infoLabel = { color: '#888', fontSize: 13 }
+const infoRow = { padding: '12px 0', borderBottom: '1px solid var(--border-color, #e3e6eb)' }
 
-const hrStyle = {
-  border: 0,
-  borderTop: '1px solid #ffffff55',
-  margin: '12px 0',
+// 패널 카드(ReqDocListPage 표준) — 헤더 줄이 카드 폭 전체를 가로지르는 구분선을 가진다
+function Panel({ title, extra, children, style }) {
+  return (
+    <div className="panel-section" style={style}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, flexShrink: 0,
+        margin: '-16px -18px 16px', padding: '16px 18px 12px',
+        borderBottom: '1px solid var(--border-color, #e3e6eb)',
+      }}>
+        <h3 style={{ margin: 0, lineHeight: 1 }}>{title}</h3>
+        {extra}
+      </div>
+      {children}
+    </div>
+  )
 }
 
 const EMPTY = { name: '', email: '', title: '', message: '' }
@@ -38,6 +41,10 @@ export default function ContactPage() {
       message.warning(t('msg.contact.required'))
       return
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      message.warning(t('msg.email.invalid'))
+      return
+    }
     setLoading(true)
     try {
       await apiClient.post('/misc/contact', form)
@@ -54,80 +61,66 @@ export default function ContactPage() {
     <div>
       <div className="page-title">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className="gradient-bar" />
+          <div style={{
+            display: 'block', width: 6, height: 28, marginRight: 10, flexShrink: 0,
+            borderRadius: 4, background: 'linear-gradient(180deg, var(--primary-600) 0%, var(--primary-800) 100%)',
+          }} />
           <div>{t('mnu.contact')}</div>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div style={{ display: 'flex', gap: 40, maxWidth: 1000, margin: '30px auto 0', alignItems: 'stretch' }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
 
           {/* 좌측: 연락처 */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={leftBoxStyle}>
-              <div>{t('lbl.telno')}</div>
+          <Panel title={t('ttl.contact.info')} style={{ flex: 4 }}>
+            <div style={infoRow}>
+              <div style={infoLabel}>{t('lbl.telno')}</div>
               <div>010-4255-7999</div>
-              <br />
-              <hr style={hrStyle} />
-              <div>{t('lbl.email')}</div>
+            </div>
+            <div style={infoRow}>
+              <div style={infoLabel}>{t('lbl.email')}</div>
               <div>sales@rootel.kr</div>
-              <br />
-              <hr style={hrStyle} />
-              <div>{t('lbl.address')}</div>
+            </div>
+            <div style={{ ...infoRow, borderBottom: 'none', paddingBottom: 0 }}>
+              <div style={infoLabel}>{t('lbl.address')}</div>
               <div>서울시 강남구 논현로 80 3층</div>
             </div>
-          </div>
+          </Panel>
 
-          {/* 우측: 입력 필드 */}
-          <div style={{ flex: 1 }}>
-            <div style={{ marginBottom: 20 }}>
-              <input
-                type="text"
-                placeholder={t('lbl.name')}
-                value={form.name}
-                onChange={handleChange('name')}
-                style={{ height: 50, width: '100%', boxSizing: 'border-box' }}
-              />
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <input
-                type="text"
-                placeholder={t('lbl.email')}
-                value={form.email}
-                onChange={handleChange('email')}
-                style={{ height: 50, width: '100%', boxSizing: 'border-box' }}
-              />
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <input
-                type="text"
-                placeholder={t('lbl.subject')}
-                value={form.title}
-                onChange={handleChange('title')}
-                style={{ height: 50, width: '100%', boxSizing: 'border-box' }}
-              />
-            </div>
-            <div>
+          {/* 우측: 문의 입력 */}
+          <Panel title={t('ttl.contact.inquiry')} style={{ flex: 6 }}>
+            {[
+              ['name', 'lbl.name'],
+              ['email', 'lbl.email'],
+              ['title', 'lbl.subject'],
+            ].map(([field, labelKey]) => (
+              <div className="form-group" key={field}>
+                <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t(labelKey)}</label>
+                <input
+                  type="text"
+                  value={form[field]}
+                  onChange={handleChange(field)}
+                  style={{ height: 38 }}
+                />
+              </div>
+            ))}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label><span style={{ color: 'red', marginRight: 2 }}>*</span>{t('lbl.message_lbl')}</label>
               <textarea
-                rows={11}
-                placeholder={t('lbl.message_lbl')}
+                rows={10}
                 value={form.message}
                 onChange={handleChange('message')}
-                style={{ resize: 'none', width: '100%', boxSizing: 'border-box' }}
               />
             </div>
-          </div>
+            {/* 전송 버튼은 입력 영역 맨 아래 우측 */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="submit" className="btn btn-primary" disabled={loading}>
+                <SendOutlined style={{ marginRight: 6 }} />{t('btn.send')}
+              </button>
+            </div>
+          </Panel>
 
-        </div>
-
-        {/* 버튼: 우측 컬럼 아래 */}
-        <div style={{ display: 'flex', gap: 40, maxWidth: 1000, margin: '20px auto 0' }}>
-          <div style={{ flex: 1 }} />
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {t('btn.send')}
-            </button>
-          </div>
         </div>
       </form>
     </div>

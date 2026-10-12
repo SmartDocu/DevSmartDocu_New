@@ -8,6 +8,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useLanguages, useTranslations } from '@/hooks/useI18n'
 import { useConfigs } from '@/hooks/useConfigs'
 import { getErrorMessage } from '@/utils/apiError'
+import { isPasswordPolicyOk } from '@/utils/passwordPolicy'
 
 const { Title, Text } = Typography
 
@@ -116,9 +117,10 @@ export default function PasswordResetPage() {
             <Form.Item
               name="password"
               label={t('lbl.new.password')}
+              extra={t('inf.password.policy')}
               rules={[
                 { required: true, message: t('msg.new.password.required') },
-                { min: 6, message: t('msg.password.min6') },
+                { validator: (_, v) => (!v || isPasswordPolicyOk(v) ? Promise.resolve() : Promise.reject(new Error(t('msg.password.policy')))) },
               ]}
             >
               <Input.Password prefix={<LockOutlined />} placeholder={t('lbl.new.password')} />

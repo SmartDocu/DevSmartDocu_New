@@ -15,6 +15,7 @@ import RegisterInvitePage from '@/pages/auth/RegisterInvitePage'
 const WithdrawPage = lazy(() => import('@/pages/withdraw/WithdrawPage'))
 const WithdrawDonePage = lazy(() => import('@/pages/withdraw/WithdrawDonePage'))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
 const TermsPage = lazy(() => import('@/pages/public/TermsPage'))
 const FaqPage = lazy(() => import('@/pages/public/FaqPage'))
 const QnaPage = lazy(() => import('@/pages/public/QnaPage'))
@@ -111,6 +112,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomeOrLauncher /> },
       { path: 'login', element: <LoginPage /> },
+      { path: 'register', element: <RegisterPage /> },
       { path: 'withdraw/done', element: <WithdrawDonePage /> },
       { path: 'terms', element: <TermsPage /> },
       { path: 'faq', element: <FaqPage /> },

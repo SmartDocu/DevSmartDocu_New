@@ -29,3 +29,9 @@ export function useSubmitWithdraw() {
     mutationFn: (body) => apiClient.post('/withdraw/submit', body).then((r) => r.data),
   })
 }
+
+export function useUndoEndOrgSubscription() {
+  return useMutation({
+    mutationFn: (body) => apiClient.post('/withdraw/undo-end-org-subscription', body).then((r) => r.data),
+  })
+}

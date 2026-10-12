@@ -1,9 +1,11 @@
 """Miscellaneous router — FAQ, QnA, Follow, PopupDeactivate, HelpSearch, TenantRequest, Contact"""
 import os
+import re
 import smtplib
 import uuid
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -277,23 +279,42 @@ class ContactRequest(BaseModel):
     message: str
 
 
+_CONTACT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _one_line(text: str) -> str:
+    """메일 헤더에 들어가는 값에서 줄바꿈을 제거한다(헤더 주입 방지)."""
+    return " ".join(str(text or "").split())  # split()이 \r \n \t 등 모든 공백 문자를 단일 공백으로 합친다
+
+
+def _build_contact_message(body: "ContactRequest", sender: str, recipient: str) -> MIMEText:
+    """문의 메일 구성 — 문의자가 입력한 이메일을 Reply-To로 넣어 메일 앱의 '답장'이 문의자에게 바로 가게 한다."""
+    name = _one_line(body.name)
+    visitor_email = body.email.strip()
+    subject = f"[D2Doc 홈페이지 문의] {_one_line(body.title)}"
+    mail_body = f"이름: {name}\n이메일: {visitor_email}\n\n문의 내용:\n{body.message}"
+
+    msg = MIMEText(mail_body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg["Reply-To"] = formataddr((name, visitor_email), charset="utf-8")
+    return msg
+
+
 @router.post("/contact")
 def send_contact(body: ContactRequest):
     if not all([body.name, body.email, body.title, body.message]):
         raise HTTPException(status_code=400, detail="모든 필드를 입력해주세요.")
-
-    subject = f"[D2Doc 홈페이지 문의] {body.title}"
-    mail_body = f"이름: {body.name}\n이메일: {body.email}\n\n문의 내용:\n{body.message}"
+    if not _CONTACT_EMAIL_RE.match(body.email.strip()):
+        raise HTTPException(status_code=400, detail="msg.email.invalid")
 
     login_user = settings.EMAIL_HOST_USER
     sender = "sales@rootel.kr"
     recipient = login_user
 
     try:
-        msg = MIMEText(mail_body, "plain", "utf-8")
-        msg["Subject"] = subject
-        msg["From"] = sender
-        msg["To"] = recipient
+        msg = _build_contact_message(body, sender, recipient)
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(login_user, settings.EMAIL_HOST_PASSWORD)

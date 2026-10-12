@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useTabStore } from '@/stores/tabStore'
 import { useMenuCodes } from '@/hooks/useMenus'
 import {
-  useWithdrawOverview, useTransferAdmin, useEndOrgSubscription, useSubmitWithdraw,
+  useWithdrawOverview, useTransferAdmin, useEndOrgSubscription, useUndoEndOrgSubscription, useSubmitWithdraw,
 } from '@/hooks/useWithdraw'
 import { getErrorMessage } from '@/utils/apiError'
 
@@ -40,7 +40,7 @@ const noticeBox = {
 
 export default function WithdrawPage() {
   useLangStore((s) => s.translations)
-  const { message } = App.useApp()
+  const { message, modal: modalApi } = App.useApp()
   const navigate = useNavigate()
   const openInTab = useOpenInTab()
   const queryClient = useQueryClient()
@@ -53,6 +53,7 @@ export default function WithdrawPage() {
   const { data: serviceCodes = [] } = useMenuCodes('servicecd')
   const transferMutation = useTransferAdmin()
   const endMutation = useEndOrgSubscription()
+  const undoEndMutation = useUndoEndOrgSubscription()
   const submitMutation = useSubmitWithdraw()
 
   const [reason, setReason] = useState('')
@@ -151,6 +152,19 @@ export default function WithdrawPage() {
       setRefreshing(false)
     }
     if (toast) message.success(toast)
+  }
+
+  // 조직 구독 종료 신청 철회("90일 열람" 방식, 보관 단계 전까지만 가능)
+  const undoEnd = (org) => {
+    modalApi.confirm({
+      title: t('msg.withdraw.undo_confirm'),
+      okText: t('btn.withdraw.undo_end'),
+      cancelText: t('btn.cancel'),
+      onOk: () => undoEndMutation.mutateAsync({ tenantid: org.tenantid }).then(
+        () => { reload(t('msg.withdraw.undo_done')) },
+        (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
+      ),
+    })
   }
 
   const openModal = (kind, org) => {
@@ -312,7 +326,18 @@ export default function WithdrawPage() {
                           {t('btn.withdraw.end_sub')}
                         </button>
                       )}
-                      {o.kind === 'soloOrg' && o.resolved && <Tag color="success">{t('lbl.withdraw.end_requested')}</Tag>}
+                      {o.kind === 'soloOrg' && o.resolved && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <Tag color="success" style={{ marginInlineEnd: 0 }}>{t('lbl.withdraw.end_requested')}</Tag>
+                          {o.can_undo_end ? (
+                            <button className="btn btn-secondary" type="button" onClick={() => undoEnd(o)}>
+                              {t('btn.withdraw.undo_end')}
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 12, color: '#888' }}>{t('inf.withdraw.undo_unavailable')}</span>
+                          )}
+                        </div>
+                      )}
                       {o.kind !== 'sole' && o.kind !== 'soloOrg' && <span style={{ color: '#aaa' }}>{t('lbl.withdraw.none')}</span>}
                     </td>
                   </tr>

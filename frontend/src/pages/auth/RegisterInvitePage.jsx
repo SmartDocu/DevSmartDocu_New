@@ -5,6 +5,7 @@ import { useInviteInfo, useRegisterInvite } from '@/hooks/useAuth'
 import { useLanguages, useTranslations } from '@/hooks/useI18n'
 import { useConfigs } from '@/hooks/useConfigs'
 import { getErrorMessage } from '@/utils/apiError'
+import { isPasswordPolicyOk } from '@/utils/passwordPolicy'
 
 export default function RegisterInvitePage() {
   useLangStore((s) => s.translations)
@@ -68,7 +69,7 @@ export default function RegisterInvitePage() {
     if (!usernm.trim()) { alert(t('msg.usernm.required')); return }
     if (!password) { alert(t('msg.password.required')); return }
     if (password !== passwordConfirm) { alert(t('msg.password.mismatch')); return }
-    if (password.length < 8) { alert(t('msg.password.minlength')); return }
+    if (!isPasswordPolicyOk(password)) { alert(t('msg.password.policy')); return }
 
     setSaving(true)
     try {

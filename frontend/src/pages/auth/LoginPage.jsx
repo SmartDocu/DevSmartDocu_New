@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Spin } from 'antd'
 import QRCode from 'qrcode'
@@ -9,27 +9,10 @@ import { useMfaEnroll, useMfaEnrollVerify } from '@/hooks/useMfa'
 import { getErrorMessage } from '@/utils/apiError'
 import { clearClosedPopups } from '@/utils/popupSession'
 import FindEmailModal from '@/components/FindEmailModal/FindEmailModal'
+import AuthPageShell, { AUTH_NAVY as NAVY, authLabelStyle as labelStyle, authLabelTextStyle as labelTextStyle } from '@/components/Auth/AuthPageShell'
 
-const RegisterModal = lazy(() => import('@/components/RegisterModal/RegisterModal'))
-
-const LEGAL_BASE = 'https://d1y3pyhkb7jr6k.cloudfront.net'
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const NAVY = '#0B2A6B'
-const FOCUS_CSS = `
-.lg-input{height:46px;padding:0 14px;font-family:inherit;font-size:15px;color:#14161a;background:#fff;border:1px solid #d9d5cd;border-radius:10px;outline:none;width:100%;box-sizing:border-box}
-.lg-input:focus{border-color:oklch(.52 .17 264);box-shadow:0 0 0 3px oklch(.93 .04 264)}
-.lg-btn{width:100%;height:48px;border:none;border-radius:11px;background:${NAVY};color:#fff;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer}
-.lg-btn:hover:not(:disabled){background:#123a8f}
-.lg-btn:disabled{opacity:.55;cursor:default}
-.lg-btn-sub{background:#fff;color:#4b5058;border:1px solid #d9d5cd}
-.lg-btn-sub:hover:not(:disabled){background:#f4f2ee}
-.lg-link{color:#4b5058;text-decoration:none;background:none;border:none;padding:0;font-family:inherit;font-size:14px;cursor:pointer}
-.lg-link:hover{color:oklch(.4 .17 264)}
-`
-
-const labelStyle = { display: 'flex', flexDirection: 'column', gap: 7 }
-const labelTextStyle = { fontSize: 13, fontWeight: 600, color: '#4b5058' }
 const otpInputStyle = {
   width: 180, height: 50, textAlign: 'center', letterSpacing: 8, fontFamily: 'monospace',
   fontSize: 22, borderRadius: 10, border: '1px solid #d9d5cd', padding: '4px 8px',
@@ -42,7 +25,6 @@ export default function LoginPage() {
   const clearAuth = useAuthStore((s) => s.clearAuth)
   // 로그인 완료(사용자 정보까지 있음) 상태에서 접근하면 홈으로. 강제 MFA 등록 중엔 user가 null이라 해당 없음
   const alreadyLoggedIn = useAuthStore((s) => !!s.accessToken && !!s.user)
-  const languageCd = useLangStore((s) => s.languageCd)
   useLangStore((s) => s.translations)
 
   const [email, setEmail] = useState('')
@@ -54,7 +36,6 @@ export default function LoginPage() {
   const [showReset, setShowReset] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
   const [resetMsg, setResetMsg] = useState('')
-  const [registerOpen, setRegisterOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
 
   // 로그인 진행 단계: 'login' | 'mfa'(TOTP 챌린지) | 'tenant'(테넌트 선택) | 'mfaSetup'(강제 MFA 등록)
@@ -105,7 +86,6 @@ export default function LoginPage() {
 
   if (alreadyLoggedIn) return <Navigate to="/" replace />
 
-  const legalLang = languageCd === 'ko' ? 'ko' : 'en'
   const submitDisabled = loading || !email.trim() || !password.trim()
 
   // 로그인 백엔드 응답을 단계별로 분기 처리 (login / select-tenant / mfa-enroll-verify 재개 지점에서 공용 사용)
@@ -278,21 +258,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      // AppLayout Content의 좌우·하단 padding(24px)을 상쇄해 푸터가 화면 좌우 끝·바닥에 붙도록 한다(헤더 60px 제외 전체 높이)
-      minHeight: 'calc(100vh - 60px)', margin: '0 -24px -24px', display: 'flex', flexDirection: 'column',
-      background: '#f4f2ee', color: '#14161a', overflow: 'hidden',
-      fontFamily: "Pretendard, system-ui, sans-serif",
-    }}>
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" precedence="default" />
-      <style>{FOCUS_CSS}</style>
-
-      {/* 본문 */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{
-          width: '100%', maxWidth: step === 'mfaSetup' ? 460 : 420, background: '#fff', border: '1px solid #e6e2da',
-          borderRadius: 18, padding: '40px 36px 32px', boxShadow: '0 24px 60px -40px rgba(11,42,107,.35)',
-        }}>
+    <>
+      <AuthPageShell cardMaxWidth={step === 'mfaSetup' ? 460 : 420}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-.03em' }}>{cardTitle()}</h1>
             {step === 'login' && (
@@ -493,41 +460,18 @@ export default function LoginPage() {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14.5, flexWrap: 'wrap' }}>
                 <span style={{ color: '#6b707a' }}>{t('lbl.login.no_account')}</span>
-                {/* 회원가입 전용 페이지가 생기기 전까지 기존 회원가입 팝업을 임시 연결 */}
                 <button
                   type="button"
                   className="lg-link"
                   style={{ fontSize: 14.5, fontWeight: 700, color: 'oklch(.48 .17 264)' }}
-                  onClick={() => setRegisterOpen(true)}
+                  onClick={() => navigate('/register')}
                 >
                   {t('btn.login.signup')}
                 </button>
               </div>
             </>
           )}
-        </div>
-      </div>
-
-      {/* 푸터 */}
-      <div style={{
-        flex: 'none', borderTop: '1px solid #e6e2da', background: '#fff', padding: '20px 24px',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
-          <a className="lg-link" style={{ fontSize: 13.5 }} href={`${LEGAL_BASE}/${legalLang}/terms`} target="_blank" rel="noopener noreferrer">
-            {t('lbl.login.terms')}
-          </a>
-          <span style={{ color: '#c3bfb7' }}>·</span>
-          <a className="lg-link" style={{ fontSize: 13.5, fontWeight: 600 }} href={`${LEGAL_BASE}/${legalLang}/privacy`} target="_blank" rel="noopener noreferrer">
-            {t('lbl.login.privacy')}
-          </a>
-          <span style={{ color: '#c3bfb7' }}>·</span>
-          <a className="lg-link" style={{ fontSize: 13.5 }} href="/contact" onClick={(e) => { e.preventDefault(); navigate('/contact') }}>
-            {t('lbl.login.support')}
-          </a>
-        </div>
-        <div style={{ fontSize: 12.5, color: '#9a9ea6' }}>© 2026 D2Doc. All rights reserved.</div>
-      </div>
+      </AuthPageShell>
 
       {/* 테넌트 선택 후 처리 중 안내 — 잠시 멈춘 것처럼 보이지 않도록 */}
       {loading && step === 'tenant' && (
@@ -546,10 +490,6 @@ export default function LoginPage() {
       )}
 
       <FindEmailModal open={findOpen} onClose={() => setFindOpen(false)} onContact={() => navigate('/contact')} />
-
-      <Suspense fallback={null}>
-        {registerOpen && <RegisterModal open onClose={() => setRegisterOpen(false)} />}
-      </Suspense>
-    </div>
+    </>
   )
 }

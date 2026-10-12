@@ -22,7 +22,6 @@ import { useNotifications, navigateToNotificationTarget, translateNotification }
 
 // 대부분의 방문에서 열리지 않는 모달 — 실제로 열릴 때만 청크를 내려받도록 지연 로드
 const DocSelectModal = lazy(() => import('@/components/DocSelectModal/DocSelectModal'))
-const RegisterModal = lazy(() => import('@/components/RegisterModal/RegisterModal'))
 
 function canSeeApp(app, user, subscribedServicecds) {
   const { rolecd, servicecd } = app
@@ -49,7 +48,6 @@ export default function AppLayout() {
 
   const location = useLocation()
   const [docModalOpen, setDocModalOpen] = useState(false)
-  const [registerModalOpen, setRegisterModalOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [helpModalOpen, setHelpModalOpen] = useState(false)
   const [mfaChallenge, setMfaChallenge] = useState(null) // { tenantid, tenant, factor_id, code }
@@ -783,7 +781,7 @@ export default function AppLayout() {
             ) : (
               <>
                 <button
-                  onClick={() => setRegisterModalOpen(true)}
+                  onClick={() => navigate('/register')}
                   style={{
                     backgroundColor: 'var(--primary-500, #245F97)',
                     color: '#fff',
@@ -942,7 +940,6 @@ export default function AppLayout() {
 
       <Suspense fallback={null}>
         {docModalOpen && <DocSelectModal open onClose={() => setDocModalOpen(false)} />}
-        {registerModalOpen && <RegisterModal open onClose={() => setRegisterModalOpen(false)} />}
       </Suspense>
 
       {/* 테넌트 전환 진행 중 오버레이 — MFA 모달이 닫힌 뒤 실제 전환까지의 공백 구간 안내 */}

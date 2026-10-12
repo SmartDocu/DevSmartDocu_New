@@ -5,12 +5,11 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { getErrorMessage } from '@/utils/apiError'
+import { isPasswordPolicyOk as isPolicyOk } from '@/utils/passwordPolicy'
 
 const ERR = '#cf1322'
 const OK = '#389e0d'
 const fill = (s, vars) => Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v ?? ''), s)
-// 서버(auth.py change_password)와 같은 정책: 8자 이상 + 영문·숫자·특수문자 모두 포함
-const isPolicyOk = (pw) => pw.length >= 8 && /[A-Za-z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)
 
 /**
  * 비밀번호 변경 팝업 (내 정보 화면). 현재 비밀번호 확인 후 새 비밀번호로 변경한다.
