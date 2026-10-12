@@ -44,14 +44,27 @@ def _bulk_delete(sd, table: str, col: str, ids: list) -> None:
             sd.table(table).delete().in_(col, chunk).execute()
 
 
-def _purge_do_service_content(sd, accountuid: str, tenantid: int) -> dict:
+def _is_personal_tenant(sd, tenantid: int) -> bool:
+    """개인(시스템) 테넌트 여부. 개인 영역은 모든 개인 사용자가 같은 tenantid(시스템 테넌트)를 공유하므로,
+    tenantid만으로 하위 데이터를 찾으면 다른 사용자의 데이터까지 지우게 된다 — 반드시 계정(accountuid) 기준으로 좁혀야 한다."""
+    row = sd.table("tenants").select("issystemtenant").eq("tenantid", tenantid).maybe_single().execute()
+    # 조회 실패/없음은 "개인"으로 취급 — 범위를 넓히는 쪽이 아니라 좁히는 쪽으로 안전하게 실패한다
+    return bool(row.data.get("issystemtenant", True)) if row and row.data else True
+
+
+def _scope_project_ids(sd, accountuid: str, tenantid: int, servicecd: str, personal: bool) -> list:
+    """삭제 대상 프로젝트 id. 개인: 이 계정의 프로젝트만(projects.accountuid). 조직: 테넌트의 해당 서비스 프로젝트 전부."""
+    q = sd.table("projects").select("projectid").eq("servicecd", servicecd)
+    q = q.eq("accountuid", accountuid) if personal else q.eq("tenantid", tenantid)
+    return [p["projectid"] for p in (q.execute().data or [])]
+
+
+def _purge_do_service_content(sd, accountuid: str, tenantid: int, personal: bool) -> dict:
     """docs.py:delete_doc()/chapters.py:delete_chapter()는 이미 cascade가 불완전해서(고아 데이터
     남기는 기존 버그) 재사용하지 않고, 여기서 자식→부모 순으로 직접 순회 삭제한다.
     datasets/project_datasets/dataunits(datas) 계열은 프로젝트가 아니라 테넌트 전체가
     공유하는 리소스라 이번 삭제 대상에서 제외한다."""
-    projects = sd.table("projects").select("projectid").eq(
-        "tenantid", tenantid).eq("servicecd", "Do").execute().data or []
-    projectids = [p["projectid"] for p in projects]
+    projectids = _scope_project_ids(sd, accountuid, tenantid, "Do", personal)
     if not projectids:
         return {"projects": 0}
 
@@ -93,12 +106,17 @@ def _purge_do_service_content(sd, accountuid: str, tenantid: int) -> dict:
     }
 
 
-def _purge_ch_service_content(sd, accountuid: str, tenantid: int) -> dict:
+def _purge_ch_service_content(sd, accountuid: str, tenantid: int, personal: bool) -> dict:
     """chat_sessions/chat_qas는 projects를 거치지 않고 tenantid를 직접 갖고 있어(Do와 달리)
     바로 스코핑한다. Chat은 자체 파일을 스토리지에 올리지 않으므로(기존 데이터셋/DB 커넥터를
     조회만 함) Storage 정리는 불필요."""
-    sessions = sd.table("chat_sessions").select("sessionuid").eq("tenantid", tenantid).execute().data or []
-    sessionuids = [s["sessionuid"] for s in sessions]
+    if personal:
+        # 개인 영역: 이 계정의 Chat 프로젝트에 속한 세션만(시스템 테넌트의 다른 사용자 세션은 절대 건드리지 않는다)
+        projectids = _scope_project_ids(sd, accountuid, tenantid, "Ch", True)
+        sessionuids = [s["sessionuid"] for s in _select_in(sd, "chat_sessions", "sessionuid", "projectid", projectids)]
+    else:
+        sessions = sd.table("chat_sessions").select("sessionuid").eq("tenantid", tenantid).execute().data or []
+        sessionuids = [s["sessionuid"] for s in sessions]
     if not sessionuids:
         return {"sessions": 0}
 
@@ -115,19 +133,25 @@ def _purge_ch_service_content(sd, accountuid: str, tenantid: int) -> dict:
     return {"sessions": len(sessionuids)}
 
 
-def _purge_in_service_content(sd, accountuid: str, tenantid: int) -> dict:
+def _purge_in_service_content(sd, accountuid: str, tenantid: int, personal: bool) -> dict:
     """insight_sessions도 tenantid를 직접 갖고 있어 바로 스코핑한다. analytics/analyticsteps/
     analyticmodules는 세션이 아니라 tenantid+projectid 단위로만 연결되므로 tenantid로 직접
     정리하고, insight_folders(테넌트별 보고서 폴더)도 동일하게 tenantid 스코프로 정리한다."""
-    sessions = sd.table("insight_sessions").select("sessionuid").eq("tenantid", tenantid).execute().data or []
-    sessionuids = [s["sessionuid"] for s in sessions]
-
-    analyticuids = [a["analyticuid"] for a in sd.table("analytics").select("analyticuid").eq(
-        "tenantid", tenantid).execute().data or []]
+    if personal:
+        # 개인 영역: 이 계정의 Insight 프로젝트에 속한 세션/분석만. insight_folders는 프로젝트 연결이 없는
+        # 테넌트 공용 데이터라 개인 영역에서는 건드리지 않는다(다른 사용자 폴더 보호).
+        projectids = _scope_project_ids(sd, accountuid, tenantid, "In", True)
+        sessionuids = [s["sessionuid"] for s in _select_in(sd, "insight_sessions", "sessionuid", "projectid", projectids)]
+        analyticuids = [a["analyticuid"] for a in _select_in(sd, "analytics", "analyticuid", "projectid", projectids)]
+    else:
+        sessions = sd.table("insight_sessions").select("sessionuid").eq("tenantid", tenantid).execute().data or []
+        sessionuids = [s["sessionuid"] for s in sessions]
+        analyticuids = [a["analyticuid"] for a in sd.table("analytics").select("analyticuid").eq(
+            "tenantid", tenantid).execute().data or []]
 
     _bulk_delete(sd, "analyticmodules", "analyticuid", analyticuids)
     _bulk_delete(sd, "analyticsteps", "analyticuid", analyticuids)
-    _bulk_delete(sd, "analytics", "tenantid", [tenantid])
+    _bulk_delete(sd, "analytics", "analyticuid", analyticuids)
     _bulk_delete(sd, "analytictemplates", "sessionuid", sessionuids)
     _bulk_delete(sd, "insightscheduleshares", "sessionuid", sessionuids)
     _bulk_delete(sd, "insight_qa_shares", "sessionuid", sessionuids)
@@ -135,7 +159,8 @@ def _purge_in_service_content(sd, accountuid: str, tenantid: int) -> dict:
     _bulk_delete(sd, "llminsightlogs", "sessionuid", sessionuids)
     _bulk_delete(sd, "insight_qas", "sessionuid", sessionuids)
     _bulk_delete(sd, "insight_sessions", "sessionuid", sessionuids)
-    _bulk_delete(sd, "insight_folders", "tenantid", [tenantid])
+    if not personal:
+        _bulk_delete(sd, "insight_folders", "tenantid", [tenantid])
 
     deleted_files = delete_private_prefix(get_service_client(), build_private_path(accountuid, "Insight"))
 
@@ -147,12 +172,13 @@ def _purge_accountservice_content(sd, accsvc_row: dict) -> dict:
     tenantid = accsvc_row["tenantid"]
     servicecd = accsvc_row["servicecd"]
 
+    personal = _is_personal_tenant(sd, tenantid)
     if servicecd == "Do":
-        detail = _purge_do_service_content(sd, accountuid, tenantid)
+        detail = _purge_do_service_content(sd, accountuid, tenantid, personal)
     elif servicecd == "Ch":
-        detail = _purge_ch_service_content(sd, accountuid, tenantid)
+        detail = _purge_ch_service_content(sd, accountuid, tenantid, personal)
     elif servicecd == "In":
-        detail = _purge_in_service_content(sd, accountuid, tenantid)
+        detail = _purge_in_service_content(sd, accountuid, tenantid, personal)
     else:
         detail = {"note": f"알 수 없는 servicecd={servicecd} — 상태만 전이"}
 
@@ -170,7 +196,7 @@ def _purge_accountservice_content(sd, accsvc_row: dict) -> dict:
     log_work_action(
         useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd=servicecd,
         actioncd="delete", targettype="content-purge/service", targetid=accountuid,
-        after={"servicestatus": "Deleted", **detail},
+        after={"servicestatus": "Deleted", "scope": "account" if personal else "tenant", **detail},
     )
 
     _lock_tenant_if_fully_deleted(sd, accountuid, tenantid)

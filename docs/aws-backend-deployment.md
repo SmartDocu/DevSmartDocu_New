@@ -76,9 +76,11 @@ aws ecs update-service --cluster smartdocu-cluster --service d2doc-service --for
 
 ## 후속 작업 (미완료)
 
+- [ ] **`d2doc-purge-daily-cron`(콘텐츠 삭제 스케줄) 재활성화 — 보류 중** — 2026-10-12 사용자가 DISABLED로 전환(삭제 범위 버그 발견). 원인: `content_purge.py`가 하위 데이터를 `tenantid`로만 찾는데 개인 영역은 모든 개인 사용자가 시스템 테넌트(tenantid=1)를 공유해, 한 사용자의 탈퇴/즉시삭제가 다른 사용자의 Doc/Chat/Insight까지 지울 수 있었음(10/08 Doc 6문서·9생성문서·20프로젝트 삭제 기록, Chat은 timeout으로 매일 실패 중이라 미삭제). 코드 수정 완료(개인 계정은 `projects.accountuid` 기준으로 범위 제한, insight_folders는 개인 영역에서 제외) — **백엔드 배포 후** 재활성화할 것. 재활성화 전 확인: 10/08 삭제분이 탈퇴 본인 데이터였는지(피해 확인) 및 Supabase 복구 가능 여부, 2026-10-12
+
 - [x] ~~다크 테마를 본문 영역까지 확대 적용~~ — 2026-10-08 적용. `main.jsx`가 로그인 사용자의 `colorTheme==='dark'`일 때 antd `darkAlgorithm` + `<html data-theme="dark">`를 켜고, `frontend/src/theme-dark.css`가 CSS 변수(--panel-bg 등)와 인라인 style에 박힌 밝은 색(rgb 값 매칭)을 덮어씀. 문서 미리보기(.a4-frame)는 흰 바탕 유지. **남은 위험**: 위 목록에 없는 색을 직접 박은 화면, d2chat/d2insight 자체 CSS는 화면별 눈으로 확인 후 theme-dark.css에 규칙 추가 필요
 
-- [ ] **로그인 페이지 "아이디 찾기" 기능 개발** — `/login`(frontend/src/pages/auth/LoginPage.jsx)에 링크(`lbl.login.find_id`)만 배치해 둔 상태(클릭 시 동작 없음). 아이디 찾기 화면/백엔드 API 신규 개발 후 연결 필요, 2026-10-08
+- [x] ~~로그인 페이지 "아이디 찾기"~~ — 2026-10-08 방향 변경·완료: 별도 아이디 찾기 API는 만들지 않고(이메일이 곧 아이디), 링크를 "가입한 이메일이 기억나지 않으세요?"로 바꿔 안내 팝업(`FindEmailModal.jsx`: 메일함 검색 → 이메일 입력해 재설정 메일 받기 → 회사 계정이면 관리자 문의 → 고객지원)을 띄움
 - [ ] **회원가입 전용 페이지 개발 후 로그인 페이지 "회원가입하기" 연결 교체** — 현재는 기존 RegisterModal(팝업)을 임시 연결해 둠(LoginPage.jsx의 `btn.login.signup` 버튼). 회원가입 페이지 완성 시 팝업 대신 해당 페이지로 이동하도록 교체, 2026-10-08
 
 - [x] ~~`creditbuckets_daily_batch.sql` 재실행 필요(Supabase SQL 에디터)~~ — 사용자가 2026-08-31 SQL 에디터에서 실행 완료 확인. `sdoc.fn_process_creditbuckets_daily()`의 Ba 크레딧 갱신(Part B) 대상 조회에 `account_billing`에 등록된 계정은 건너뛰는 `NOT EXISTS` 조건이 반영됨(안 그러면 EventBridge(`run-billing-cycle`)를 켰을 때 실제 청구 성공 후 Python이 갱신한 Ba 크레딧을 이 배치가 결제 여부와 무관하게 또 갱신해 이중 갱신되는 문제). **검증**: 사용자가 배포된 함수 소스(`pg_get_functiondef` 결과로 추정)를 그대로 붙여넣어 확인해줌 — 로컬 `creditbuckets_daily_batch.sql`과 한 글자도 다르지 않고 일치, 위 `NOT EXISTS` 조건 포함해 정확히 반영됨. 다음 EventBridge 재청구(첫 대상: `d022f771` 계정 2026-09-26, `0aeded61` 계정 2026-09-20) 시점에 실제 이중 갱신이 안 일어나는지 최종 확인하면 완전히 끝남.

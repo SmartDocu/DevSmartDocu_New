@@ -19,7 +19,9 @@ from pydantic import BaseModel
 
 from backend.app.config import settings
 from backend.app.dependencies import get_token, get_tenantid, get_user as _get_user
-from backend.app.routers.settings import _reserve_service_cancellation, _get_offsetminutes, _fmt_dt
+from backend.app.routers.settings import (
+    _reserve_service_cancellation, _undo_service_cancellation, _get_offsetminutes, _fmt_dt,
+)
 from utilsPrj.audit_log import log_work_action, get_client_ip
 from utilsPrj.notifications import create_notification
 from utilsPrj.supabase_client import SUPABASE_SCHEMA, get_service_client, get_supabase_client
@@ -114,9 +116,13 @@ def _load_orgs(svc, user_id: str) -> list[dict]:
     accsvcs = svc.table("accountservices").select("accountuid,servicecd,subscriptionuid").in_(
         "accountuid", acc_ids).eq("servicestatus", "Active").execute().data if acc_ids else []
     sub_ids = [a["subscriptionuid"] for a in (accsvcs or []) if a.get("subscriptionuid")]
-    subs = svc.table("subscriptions").select("subscriptionuid,canceldts,cancel_typecd").in_(
+    subs = svc.table("subscriptions").select("subscriptionuid,canceldts,cancel_typecd,cancel_reasondesc").in_(
         "subscriptionuid", sub_ids).execute().data if sub_ids else []
     sub_map = {s["subscriptionuid"]: s for s in (subs or [])}
+    # 이미 보관(Archived)/삭제 단계로 넘어간 서비스가 있는 조직은 구독 종료 신청을 철회할 수 없다
+    past_rows = svc.table("accountservices").select("accountuid").in_(
+        "accountuid", acc_ids).in_("servicestatus", ["Archived", "Deleted"]).execute().data if acc_ids else []
+    past_accounts = {r["accountuid"] for r in (past_rows or [])}
 
     other_member_ids = [m["useruid"] for m in members if m["useruid"] != user_id]
     user_map = get_usernm_email_map(svc, other_member_ids)
@@ -153,6 +159,11 @@ def _load_orgs(svc, user_id: str) -> list[dict]:
             "kind": kind,
             "resolved": bool(t.get("cancel_requested_dt")) if kind == "soloOrg" else False,
             "end_mode": end_mode,
+            # "90일 열람" 방식으로 신청했고 아직 보관 단계 전이면 탈퇴 전까지 철회할 수 있다("오늘 야간 삭제"는 철회 불가)
+            "can_undo_end": bool(
+                kind == "soloOrg" and t.get("cancel_requested_dt")
+                and end_mode != "delete" and acc_id not in past_accounts
+            ),
             "servicecds": sorted({a["servicecd"] for a in t_svcs}),
         }
         if kind == "sole":
@@ -330,6 +341,57 @@ def end_org_subscription(body: EndOrgSubscriptionRequest, request: Request, toke
         ip=get_client_ip(request),
     )
     return {"result": "success", "mode": body.mode}
+
+
+class UndoEndOrgSubscriptionRequest(BaseModel):
+    tenantid: str
+
+
+@router.post("/undo-end-org-subscription")
+def undo_end_org_subscription(body: UndoEndOrgSubscriptionRequest, request: Request, token: str = Depends(get_token)):
+    """탈퇴 페이지에서 한 "조직 구독 종료 신청"을 철회한다 — 90일 열람 방식이고 아직 보관 단계 전일 때만.
+    이 흐름에서 예약한 해지(cancel_reasondesc='account withdrawal')와 조직 해지 신청만 되돌리고,
+    관리자가 별도로 예약해 둔 서비스 해지는 건드리지 않는다."""
+    user = _get_user(token)
+    user_id = str(user.id)
+    svc = get_service_client().schema(SUPABASE_SCHEMA)
+
+    org = next((o for o in _load_orgs(svc, user_id) if o["tenantid"] == body.tenantid), None)
+    if not org or not org.get("can_undo_end"):
+        raise HTTPException(status_code=400, detail="msg.withdraw.undo.not_allowed")
+
+    tid = int(body.tenantid)
+    acc = svc.table("accounts").select("accountuid").eq("tenantid", tid).limit(1).execute().data or []
+    accountuid = acc[0]["accountuid"] if acc else None
+    undone = 0
+    if accountuid:
+        rows = svc.table("accountservices").select("subscriptionuid").eq(
+            "accountuid", accountuid).eq("servicestatus", "Active").execute().data or []
+        for r in rows:
+            sub_uid = r.get("subscriptionuid")
+            if not sub_uid:
+                continue
+            sub = svc.table("subscriptions").select("canceldts,cancel_typecd,cancel_reasondesc").eq(
+                "subscriptionuid", sub_uid).maybe_single().execute()
+            d = sub.data if sub else None
+            if d and d.get("canceldts") and d.get("cancel_typecd") == "ArchiveDelete"                     and d.get("cancel_reasondesc") == "account withdrawal":
+                _undo_service_cancellation(svc, sub_uid, user_id)
+                undone += 1
+
+    svc.table("tenants").update({
+        "cancel_requested_dt": None,
+        "cancel_useruid": None,
+        "cancel_reasoncd": None,
+        "cancel_reasondesc": None,
+    }).eq("tenantid", tid).execute()
+
+    log_work_action(
+        useruid=user_id, tenantid=tid, servicecd="Tenant",
+        actioncd="update", targettype="withdraw/undo-end-org-subscription", targetid=body.tenantid,
+        before={"cancel_requested": True}, after={"cancel_requested": False, "services_restored": undone},
+        ip=get_client_ip(request),
+    )
+    return {"result": "success", "restored": undone}
 
 
 # ─── 탈퇴 ────────────────────────────────────────────────────────────────────
