@@ -196,7 +196,7 @@ def run(ctx, params, tools) -> ModuleResult:
         ),
         params={"기준": schema.logical_name(amount_col), "집계": params.get("aggregate") or "sum", "분류 항목수": len(classification)},
         label="abc_classification", chart_df=chart_df,
-        cache=params.get("_llm_render_cache"),
+        required_columns=["규모(창합계)", "점유율", "등급"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
         "분류 항목수": len(classification), "등급 종류": len(by_grade),

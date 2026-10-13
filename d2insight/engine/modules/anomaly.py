@@ -234,7 +234,7 @@ def run(ctx, params, tools) -> ModuleResult:
             + (f" {note}" if note else "")
         ),
         params={"측정값": measure_name, "탐지 기준": tool, "임계값": f"±{threshold:g}"},
-        label="anomaly_detection", cache=params.get("_llm_render_cache"),
+        label="anomaly_detection", required_columns=["Variance", "Rate", "Reason"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
         "측정값": measure_name,

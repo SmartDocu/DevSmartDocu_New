@@ -53,6 +53,7 @@ from reportlab.platypus import (
 )
 
 import d2insight.config as config
+from utilsPrj import report_style as rs
 from d2insight.report.markdown_ir import (
     Blockquote,
     CodeBlock,
@@ -156,20 +157,43 @@ def _detect_numeric_columns(col_values: list[list[str]]) -> list[bool]:
     return result
 
 
+_SHORT_HEADER_CHARS = 4   # 이 글자 수 이하의 헤더 단어("순위", "증감률", "Rate")는 단어 중간에서 끊지 않는다
+
+
+def _header_pieces(header: str) -> list[str]:
+    """헤더를 줄바꿈이 가능한 조각으로 나눈다 — '_' 뒤와 공백에서만 끊는다."""
+    pieces: list[str] = []
+    for word in (header or "").split():
+        pieces += [p for p in re.split(r"(?<=_)", word) if p]
+    return pieces
+
+
+def _shrink_toward(widths: list[float], floors: list[float], idx: list[int], deficit: float) -> float:
+    """idx 열들의 폭을 각자의 하한(floors)까지, 줄일 수 있는 양에 비례해 줄인다. 남은 부족분을 반환."""
+    room = {i: max(0.0, widths[i] - floors[i]) for i in idx}
+    total_room = sum(room.values())
+    if total_room <= 0 or deficit <= 0:
+        return deficit
+    take = min(deficit, total_room)
+    for i in idx:
+        widths[i] -= take * (room[i] / total_room)
+    return deficit - take
+
+
 def _calculate_table_column_widths(headers: list[str], rows: list[list[str]]) -> list[float]:
     """표 컬럼별 pt 폭을 계산한다 — 순수 함수(list[str] 입력 → list[float] 출력).
 
-    IR 2단계 구조 도입에 맞춰, 기존 `_apply_table_column_widths`(HTML에 <colgroup> 주입,
-    현재는 xhtml2pdf 폴백 전용으로 보존)의 핵심 알고리즘을 그대로 옮겼다 — 알고리즘
-    자체는 변경 없음:
-    - 헤더는 bold 폰트, 값은 regular 폰트로 각각 실측 (굵은 글씨가 더 넓다는 걸
-      반영하지 않으면 헤더가 실제보다 좁게 계산돼 다시 넘친다).
-    - 값 폭은 최댓값이 아니라 90퍼센타일 (이상치 행 하나가 열 전체 폭을 왜곡하는 것 방지) —
-      단, 숫자 컬럼은 최댓값을 쓴다(문장과 달리 숫자는 줄바꿈되면 자릿수를 읽기 어려워지고,
-      값 길이가 대체로 비슷해 최댓값을 써도 폭 손해가 크지 않다).
-    - 한 컬럼이 표 전체 폭의 40%를 넘으면 상한을 걸고, 넘는 만큼을 나머지 컬럼에
-      비율대로 재분배.
-    - 최종적으로 모든 컬럼 폭의 합이 페이지 사용 가능 폭과 정확히 일치하도록 정규화.
+    원칙: 여유 있게 잡고 남는 폭은 나눠 갖는다. 문제는 모자랄 때이므로 무엇부터 양보할지 정해 둔다.
+    - 각 열이 원하는 폭 = 값이 필요한 폭 vs 헤더 조각 중 넓은 쪽. 헤더는 '_'·공백에서 줄바꿈된다고
+      보고 가장 넓은 조각만 잰다(헤더 전체가 아니다). 글자 열은 값 전체 폭(90퍼센타일)을 원하지만,
+      항목 이름 열(첫 글자 열)은 이름이 잘리지 않게 최댓값을 원한다.
+    - 폭이 남으면 원하는 폭에 비례해 나눠 본문 폭을 채운다.
+    - 모자라면 아래 순서로 양보한다.
+        1) 값보다 헤더 때문에 넓어진 열: 헤더가 단어 중간에서 끊기도록 줄인다(짧은 헤더는 제외).
+        2) 항목 이름 열이 아닌 글자 열: 가장 긴 단어까지 줄바꿈으로 줄인다.
+        3) 항목 이름 열: 가장 긴 단어까지.
+        4) 그래도 모자라면 전체를 비례해서 줄인다.
+    - 어느 열이 항목 이름 열인지는 컬럼명이 아니라 형태(숫자가 아닌 첫 열)로 판단한다.
     """
     n_cols = len(headers)
     if n_cols == 0:
@@ -177,69 +201,79 @@ def _calculate_table_column_widths(headers: list[str], rows: list[list[str]]) ->
 
     regular_font, bold_font = _resolve_font_family()
     usable_pt = _usable_table_width_pt()
+    size = _TABLE_FONT_SIZE
+    pad = _CELL_HPADDING_PT + _CELL_BORDER_PT
 
     col_values: list[list[str]] = [[] for _ in range(n_cols)]
     for row in rows:
         for i, cell in enumerate(row[:n_cols]):
             col_values[i].append(cell)
     numeric_cols = _detect_numeric_columns(col_values)
-
-    col_widths_pt: list[float] = []
-    for i, header in enumerate(headers):
-        header_w = _longest_token_width(header, bold_font, _TABLE_FONT_SIZE)
-        value_tok_widths = [
-            _longest_token_width(v, regular_font, _TABLE_FONT_SIZE) for v in col_values[i]
-        ]
-        pct = 1.0 if numeric_cols[i] else 0.90
-        value_w = _percentile(value_tok_widths, pct) if value_tok_widths else 0.0
-        content_w = max(header_w, value_w)
-        col_widths_pt.append(content_w + _CELL_HPADDING_PT + _CELL_BORDER_PT)
-
-    # 최소 폭 보장
-    col_widths_pt = [max(w, _MIN_COLUMN_PT) for w in col_widths_pt]
-
-    # 컬럼별 40% 상한 적용 → 초과분을 나머지 컬럼에 비율 재분배
+    label_idx = next((i for i in range(n_cols) if not numeric_cols[i]), None)
     cap = usable_pt * _MAX_COLUMN_RATIO
-    overflow = 0.0
-    capped_idx: set[int] = set()
-    for i, w in enumerate(col_widths_pt):
-        if w > cap:
-            overflow += w - cap
-            col_widths_pt[i] = cap
-            capped_idx.add(i)
-    if overflow > 0 and len(capped_idx) < n_cols:
-        free_idx = [i for i in range(n_cols) if i not in capped_idx]
-        free_total = sum(col_widths_pt[i] for i in free_idx)
-        if free_total > 0:
-            for i in free_idx:
-                col_widths_pt[i] += overflow * (col_widths_pt[i] / free_total)
 
-    # 표 전체 폭을 usable_pt에 맞춘다. 부족하면 전체에 비례 배분해서 늘리고,
-    # 넘치면 텍스트 컬럼부터 줄인다 — 숫자 컬럼을 줄이면 줄바꿈으로 자릿수를 읽기
-    # 어려워지지만 텍스트는 여러 줄로 접혀도 손실이 적다(줄일 여지가 없을 때만
-    # 최후 수단으로 전체에 비례 배분해서 줄인다).
-    total = sum(col_widths_pt)
-    if total > usable_pt:
-        deficit = total - usable_pt
-        text_idx = [i for i in range(n_cols) if not numeric_cols[i]]
-        shrinkable = sum(col_widths_pt[i] - _MIN_COLUMN_PT for i in text_idx)
-        if shrinkable > 0:
-            take = min(deficit, shrinkable)
-            for i in text_idx:
-                room = col_widths_pt[i] - _MIN_COLUMN_PT
-                if room > 0:
-                    col_widths_pt[i] -= take * (room / shrinkable)
-            deficit -= take
-        if deficit > 1e-6:
-            total_now = sum(col_widths_pt)
-            if total_now > 0:
-                scale = usable_pt / total_now
-                col_widths_pt = [w * scale for w in col_widths_pt]
-    elif total > 0:
-        scale = usable_pt / total
-        col_widths_pt = [w * scale for w in col_widths_pt]
+    widths: list[float] = []
+    floor_header: list[float] = []   # 1단계 하한: 값 폭 + (끊지 않는 짧은 헤더)
+    floor_word: list[float] = []     # 2·3단계 하한: 값의 가장 긴 단어
+    for i, header in enumerate(headers):
+        pieces = _header_pieces(header)
+        piece_w = max((pdfmetrics.stringWidth(p, bold_font, size) for p in pieces), default=0.0)
+        protected_w = piece_w if all(len(p) <= _SHORT_HEADER_CHARS for p in pieces) else 0.0
 
-    return col_widths_pt
+        whole = [pdfmetrics.stringWidth(v.strip(), regular_font, size) for v in col_values[i]]
+        words = [_longest_token_width(v, regular_font, size) for v in col_values[i]]
+        if numeric_cols[i]:
+            value_ideal = max(whole, default=0.0)
+            value_min = value_ideal
+        else:
+            pct = 1.0 if i == label_idx else 0.90
+            value_ideal = _percentile(whole, pct) if whole else 0.0
+            value_min = _percentile(words, pct) if words else 0.0
+
+        ideal = max(value_ideal, piece_w) + pad
+        if not numeric_cols[i]:
+            ideal = min(ideal, max(cap, value_min + pad))
+        ideal = max(ideal, _MIN_COLUMN_PT)
+        widths.append(ideal)
+        floor_header.append(min(ideal, max(value_ideal, protected_w) + pad, ideal))
+        floor_word.append(min(ideal, max(value_min, protected_w) + pad))
+    floor_header = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_header, widths)]
+    floor_word = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_word, widths)]
+
+    total = sum(widths)
+    if total <= usable_pt:
+        scale = usable_pt / total if total > 0 else 1.0
+        return [w * scale for w in widths]
+
+    deficit = total - usable_pt
+    all_idx = list(range(n_cols))
+    deficit = _shrink_toward(widths, floor_header, all_idx, deficit)
+    text_idx = [i for i in all_idx if not numeric_cols[i] and i != label_idx]
+    deficit = _shrink_toward(widths, floor_word, text_idx, deficit)
+    if label_idx is not None:
+        deficit = _shrink_toward(widths, floor_word, [label_idx], deficit)
+    if deficit > 1e-6:
+        scale = usable_pt / sum(widths)
+        widths = [w * scale for w in widths]
+    return widths
+
+
+def _wrap_header(header: str, col_width_pt: float, bold_font: str) -> str:
+    """헤더를 열 폭에 맞춰 '_' 뒤·공백에서 줄바꿈한 마크업으로 만든다. 한 조각이 폭보다 넓으면
+    그 조각은 그대로 두고 reportlab이 글자 단위로 끊는다(마지막 수단)."""
+    avail = col_width_pt - _CELL_HPADDING_PT
+    lines: list[str] = []
+    current = ""
+    for piece in _header_pieces(header):
+        trial = current + piece if current.endswith("_") or not current else current + " " + piece
+        if current and pdfmetrics.stringWidth(trial, bold_font, _TABLE_FONT_SIZE) > avail:
+            lines.append(current)
+            current = piece
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return "<br/>".join(_escape(line) for line in lines) if lines else _escape(header)
 
 
 # ── 한글 폰트 등록 ───────────────────────────────────────────────
@@ -386,7 +420,7 @@ def _build_paragraph_styles(family: str, bold_family: str) -> dict[str, Paragrap
         ),
         "TableHeader": ParagraphStyle(
             "TableHeader", fontName=bold_family, fontSize=_TABLE_FONT_SIZE,
-            leading=_TABLE_FONT_SIZE * 1.3, textColor=body_color, alignment=TA_CENTER,
+            leading=_TABLE_FONT_SIZE * 1.3, textColor=HexColor(rs.TABLE["header"]["color"]), alignment=TA_CENTER,
         ),
         "TableBody": ParagraphStyle(
             "TableBody", fontName=family, fontSize=_TABLE_FONT_SIZE,
@@ -432,14 +466,18 @@ def _render_table(node: TableBlock, styles: dict[str, ParagraphStyle]) -> Table:
     numeric_cols = _detect_numeric_columns(col_values)
     body_styles = [styles["TableBodyRight"] if numeric else styles["TableBody"] for numeric in numeric_cols]
 
-    data = [[RLParagraph(_escape(h), styles["TableHeader"]) for h in node.headers]]
+    _, bold_font = _resolve_font_family()
+    data = [[RLParagraph(_wrap_header(h, col_widths[i], bold_font), styles["TableHeader"])
+             for i, h in enumerate(node.headers)]]
     for row in node.rows:
         data.append([RLParagraph(_escape(c), body_styles[i]) for i, c in enumerate(row)])
 
     table = Table(data, colWidths=col_widths, hAlign="LEFT")
+    # 모양은 d2doc 표와 같은 기본 스타일(utilsPrj/report_style.py): 남색 머리줄, 한 줄 걸러 옅은 바탕, 가로줄만
     table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#888888")),
-        ("BACKGROUND", (0, 0), (-1, 0), HexColor("#ececec")),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, HexColor("#DDDDDD")),
+        ("BACKGROUND", (0, 0), (-1, 0), HexColor(rs.TABLE["header"]["bgcolor"])),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [HexColor("#FFFFFF"), HexColor(rs.TABLE["stripe_bgcolor"])]),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
@@ -755,14 +793,15 @@ def _build_css() -> str:
     }}
     th, td {{
         font-family: {body_family};
-        border: 0.5pt solid #888;
+        border-bottom: 0.5pt solid #ddd;
         padding: 3pt 5pt;
         vertical-align: top;
         text-align: left;
         font-size: 10pt;
     }}
     th {{
-        background-color: #ececec;
+        background-color: {rs.TABLE["header"]["bgcolor"]};
+        color: {rs.TABLE["header"]["color"]};
         font-weight: bold;
     }}
     pre {{

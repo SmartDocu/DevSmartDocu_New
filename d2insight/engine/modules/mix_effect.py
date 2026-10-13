@@ -57,6 +57,21 @@ def _run_bridge_effect(ctx, params, *, effect_col: str, effect_label: str,
     direction = direction_up if amount >= 0 else direction_down
     top_n = int(params.get("top_n") or 10)
 
+    # 표에는 상위 top_n개만 보인다. 전체 항목에 대한 사실(몇 개 중 양수가 몇 개인지, 상위 몇 개의 비중)은
+    # LLM이 보이는 행만 보고 일반화하거나 암산하지 않도록 여기서 pandas로 계산해 넘긴다.
+    all_effects = item_df[effect_col].astype(float)
+    shown_effects = item_df.reindex(all_effects.abs().sort_values(ascending=False).index).head(top_n)[effect_col]
+    extra_facts = [
+        f"두 기간 모두 판매된 항목 {len(all_effects):,}개 중 {effect_label} 효과가 양수인 항목 "
+        f"{int((all_effects > 0).sum()):,}개, 음수인 항목 {int((all_effects < 0).sum()):,}개",
+        f"표에 보이는 상위 {len(shown_effects)}개 항목의 효과 합계 {shown_effects.sum():+,.0f}",
+    ]
+    if amount:
+        top3 = float(shown_effects.head(3).sum())
+        extra_facts.append(
+            f"상위 3개 항목의 효과 합계 {top3:+,.0f} (전체 효과 합계 {amount:+,.0f}의 {top3 / amount * 100:.1f}%)"
+        )
+
     render = render_from_dataframe(
         _bridge_item_top(item_df, effect_col, top_n),
         purpose=f"두 기간 모두 판매된 기존 항목 기준 {effect_label} 효과 상위 항목을 제시.",
@@ -67,7 +82,7 @@ def _run_bridge_effect(ctx, params, *, effect_col: str, effect_label: str,
             + "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in effects.get("notes") or [])
         ),
         params={"효과": effect_label}, label="bridge_item_effect",
-        cache=params.get("_llm_render_cache"),
+        required_columns=[effect_col], extra_facts=extra_facts, cache=params.get("_llm_render_cache"),
     )
     render.key_value = {f"{effect_label}(전체 증감액 대비)": f"{share:+.1f}%",
                         effect_label: f"{amount:+,.0f}"}

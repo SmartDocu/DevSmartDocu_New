@@ -87,7 +87,7 @@ def run(ctx, params, tools) -> ModuleResult:
         ),
         params={"전체 증감액": f"{total:+,.0f}", "기준 관점": item_view or "-"},
         label="sales_bridge",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["금액", "전체 증감 대비(%)"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {"전체 증감액": f"{total:+,.0f}",
                         "신규/이탈 기준": "생애주기" if lifecycle_available else "2기간 산술"}

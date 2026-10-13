@@ -189,7 +189,7 @@ def run(ctx, params, tools) -> ModuleResult:
         purpose="측정값 전체 증감 총평을 제시.",
         narrative_hint=hint,
         params={"핵심 측정값": schema.logical_name(key_measure)}, label="measure_summary",
-        cache=params.get("_llm_render_cache"),
+        required_columns="all", cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
         "실적": f"{total_variance['actual_value']:,.0f}",

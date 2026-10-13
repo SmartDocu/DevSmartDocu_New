@@ -878,13 +878,16 @@
   margin: 10px 0;
   font-size: 12px;
 }
+/* 표 모양은 d2doc 기본 스타일(utilsPrj/report_style.py TABLE)과 같은 값 — 남색 머리줄, 줄무늬, 가로줄만 */
 .report-preview-html th,
 .report-preview-html td {
-  border: 1px solid #d0d0d0;
-  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid #ddd;
+  padding: 3px 6px;
   text-align: left;
 }
-.report-preview-html th { background: #f0f4f7; color: #1a1a1a; font-weight: 600; }
+.report-preview-html th { background: #1F4E79; color: #fff; font-weight: 700; }
+.report-preview-html tbody tr:nth-child(even) td { background: #F4F8FB; }
 .report-preview-html blockquote {
   border-left: 3px solid #1a7a8a;
   margin: 8px 0;

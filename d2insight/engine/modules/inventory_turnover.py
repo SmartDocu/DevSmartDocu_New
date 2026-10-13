@@ -183,7 +183,7 @@ def run(ctx, params, tools) -> ModuleResult:
             summary + f" 재고일수가 긴 항목({FLAG_SLOW}/{FLAG_DEAD})을 처분·폐기 검토 대상으로 지목하라."
         ),
         params={"기준": schema.logical_name(cost_col)}, label="inventory_turnover",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["회전율", "재고일수", "구분"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(outputs=outputs, render=render)
@@ -226,7 +226,7 @@ def run_dead_stock(ctx, params, tools) -> ModuleResult:
             f"미회전 {count}개, 묶인 평균재고 {tied_up:,.0f}을 밝히고, 처분·폐기 검토 대상임을 짚어라."
         ),
         params={"미회전 항목수": count}, label="dead_stock",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["회전율", "재고일수", "구분"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(render=render)
@@ -258,7 +258,7 @@ def run_slow_moving(ctx, params, tools) -> ModuleResult:
             "밝히고, 재고일수가 가장 긴 항목을 짚어라."
         ),
         params={"장기체화 항목수": count}, label="slow_moving",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["회전율", "재고일수", "구분"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(render=render)

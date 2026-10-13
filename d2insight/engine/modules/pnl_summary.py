@@ -71,7 +71,7 @@ def run(ctx, params, tools) -> ModuleResult:
     render = render_from_dataframe(
         _display_table(pnl_df), purpose="손익 계단(매출→매출총이익→영업이익)을 한눈에 제시.",
         narrative_hint=summary, params={"기준": "손익 계단"}, label="pnl_summary",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["분석기간", "증감", "증감률(%)"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(outputs={"pnl_steps": pnl_df}, render=render)

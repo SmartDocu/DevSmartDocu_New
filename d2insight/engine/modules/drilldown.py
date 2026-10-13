@@ -167,7 +167,7 @@ def run(ctx, params, tools) -> ModuleResult:
             "다른 표현으로 바꿔 쓰지 마라." + note
         ),
         params={"이상 항목 수": result["Outlier"].nunique()}, label="cross_drilldown",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["Variance", "Share", "Factor"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {"교차 분석 대상": result["Outlier"].nunique(),
                         "교차 차원": ", ".join(sorted(result["Cross_Dimension"].unique()))}

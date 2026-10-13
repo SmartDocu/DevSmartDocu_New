@@ -159,7 +159,7 @@ def run(ctx, params, tools) -> ModuleResult:
             "가장 심각한 항목과 부족 정도를 짚고, 보충 발주가 필요함을 말하라."
         ),
         params={"기준": source_label}, label="safety_stock",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["차이"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(render=render)

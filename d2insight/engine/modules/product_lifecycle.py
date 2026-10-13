@@ -118,7 +118,7 @@ def run(ctx, params, tools) -> ModuleResult:
             f"짚어라. 판정 구간: {months[0]}~{months[-1]}({len(months)}개월).{window_note}"
         ),
         params={"기준": schema.logical_name(amount_col)}, label="product_lifecycle", chart_df=chart_df,
-        cache=params.get("_llm_render_cache"),
+        required_columns=["단계", "성장률"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {"분류 항목수": len(res), "쇠퇴 단계": f"{decline_n}개"}
     return ModuleResult(outputs={"lifecycle_stages": res}, render=render)

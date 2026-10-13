@@ -31,6 +31,8 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import matplotlib.ticker
 
+from utilsPrj import report_style as rs
+
 # pr_module_insight(단독앱)에서 역이식(2026-08-20) — 폰트 설정은 프로세스당 한 번만
 # 하면 되는데 dataframe_to_chart_image() 안에서 호출마다 반복 계산했었다.
 _FONT_PATH = os.path.abspath(
@@ -596,38 +598,12 @@ def dataframe_to_html_table(df: pd.DataFrame, max_rows: int = 100) -> tuple:
     data_json = json.dumps(df.to_dict(orient="records"), ensure_ascii=False, default=str)
     display_df = df.head(max_rows)
 
+    # 모양·숫자 서식은 d2doc 표와 같은 렌더러를 쓴다 (utilsPrj/report_style.py 의 TABLE 기본값).
+    # 첫 컬럼은 항목명·연도 등 구분자이므로 천 단위 구분 없이 그대로 보인다.
+    from utilsPrj.chapter_making_ai_table import render_table_html
     first_col = display_df.columns[0]
-    numeric_cols = [
-        col for col in display_df.select_dtypes(include='number').columns
-        if col != first_col
-    ]
-    text_cols = [col for col in display_df.columns if col not in numeric_cols]
-
-    def smart_format(series):
-        abs_max = series.abs().max()
-        if pd.isna(abs_max):
-            return lambda x: ""
-        if abs_max >= 100:
-            return lambda x: f"{x:,.0f}" if pd.notna(x) else ""
-        elif abs_max >= 1:
-            return lambda x: f"{x:,.2f}" if pd.notna(x) else ""
-        else:
-            return lambda x: f"{x:,.2f}" if pd.notna(x) else ""
-
-    styler = display_df.style.hide(axis="index")
-    styler = styler.format(
-        {col: smart_format(display_df[col]) for col in numeric_cols},
-        na_rep=""
-    )
-    styler = styler.set_table_styles([
-        {"selector": "th", "props": [("text-align", "center")]}
-    ])
-    if numeric_cols:
-        styler = styler.set_properties(subset=numeric_cols, **{"text-align": "right"})
-    if text_cols:
-        styler = styler.set_properties(subset=text_cols, **{"text-align": "left"})
-
-    return styler.to_html(), data_json
+    records = display_df.astype(object).where(display_df.notna(), None).to_dict(orient="records")
+    return render_table_html(records, formats={first_col: "text"}), data_json
 
 
 # ========================================
@@ -644,13 +620,14 @@ _PROFITABILITY_KEYWORDS = ['순이익률', '마진율', '수익률', '이익률'
 _COUNT_KEYWORDS = ['건수', '수량', '개수', 'count', 'qty', 'quantity', 'cnt']
 
 # 의미 기반 색상 팔레트 (차트 종류에 관계없이 공용으로 사용)
-_C_GREEN = '#1baf7a'        # 증가/달성/집중
-_C_RED = '#e34948'          # 감소/미달/적자/정리검토
-_C_RED_STRONG = '#c0392b'   # 감소폭이 두드러지는 경우 강조
-_C_GRAY = '#b4b2a9'         # 기준값/평균 근처/유지·관찰/보합
-_C_BLUE = '#2a78d6'         # 평균 이상/집중(파레토)
-_C_ORANGE = '#eb6834'       # 평균 이하/최댓값 강조
-_C_LIGHT_BLUE = '#9fc5f0'   # highlight_max에서 강조 대상 외 나머지
+# 색은 d2doc 보고서 스타일(utilsPrj/report_style.py)을 따른다 — 색을 바꾸려면 그 파일에서 바꾼다
+_C_GREEN = rs.INCREASE        # 증가/달성/집중
+_C_RED = rs.DECREASE          # 감소/미달/적자/정리검토
+_C_RED_STRONG = rs.DECREASE   # 감소폭이 두드러지는 경우 강조
+_C_GRAY = rs.NEUTRAL_LIGHT    # 기준값/평균 근처/유지·관찰/보합
+_C_BLUE = rs.PRIMARY          # 평균 이상/집중(파레토)
+_C_ORANGE = rs.ACCENT         # 평균 이하/최댓값 강조
+_C_LIGHT_BLUE = rs.SECONDARY  # highlight_max에서 강조 대상 외 나머지
 
 
 def _is_ratio_column(col_name, series: pd.Series) -> bool:
@@ -821,14 +798,17 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
     if df.empty or len(df.columns) < 2:
         return None, None, None
 
-    def _make_colors(cmap, n):
-        return [cmap(i / n) for i in range(n)]
+    def _cat(i):
+        return rs.CATEGORICAL[i % len(rs.CATEGORICAL)]
+
+    def _make_colors(_unused, n):
+        return [_cat(i) for i in range(n)]
 
     def _set_axes(ax, xlabel='', ylabel='', title='', grid=True, rotate_x=False):
         if xlabel: ax.set_xlabel(xlabel, fontsize=12)
         if ylabel: ax.set_ylabel(ylabel, fontsize=12)
         if title:  ax.set_title(title, fontsize=14, fontweight='bold')
-        if grid:   ax.grid(True, alpha=0.3)
+        if grid:   rs.style_axes(ax)
         if rotate_x:
             ax.tick_params(axis='x', rotation=45)
             for label in ax.get_xticklabels():
@@ -869,9 +849,9 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
         _ensure_font()
 
         question_lower = question.lower()
-        fig = matplotlib.figure.Figure(figsize=(10, 6))
+        fig = matplotlib.figure.Figure(figsize=rs.DEFAULT_FIGSIZE)
         ax = fig.add_subplot(111)
-        cmap = plt.cm.get_cmap("tab20c")
+        cmap = None   # 색은 rs.CATEGORICAL 순서(_cat)로 쓴다
 
         df = _prepare_dataframe_for_visualization(df, chart_type=chart_type)
 
@@ -965,7 +945,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     if _filtered_bar_cols:
                         bar_cols = _filtered_bar_cols
 
-                ax2 = ax.twinx()
+                ax2 = rs.twinx(ax)
                 x_pos = np.arange(len(labels))
                 width = 0.4 if len(bar_cols) == 1 else 0.6 / len(bar_cols)
 
@@ -973,7 +953,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 for idx, col in enumerate(bar_cols):
                     offset = (idx - len(bar_cols) / 2) * width + width / 2
                     ax.bar(x_pos + offset, values[col], width,
-                           color=cmap(idx * 0.2), alpha=0.7, label=col)
+                           color=_cat(idx), label=col)
                 ax.set_ylabel(' / '.join(str(c) for c in bar_cols), fontsize=11)
                 ax.tick_params(axis='y')
                 _format_yaxis(ax)
@@ -981,7 +961,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 # 선 → 오른쪽 축
                 for idx, col in enumerate(line_cols):
                     ax2.plot(x_pos, values[col].values, marker='o',
-                             color=cmap(0.6 + idx * 0.15), linewidth=2,
+                             color=_cat(len(bar_cols) + idx), linewidth=2,
                              linestyle='--', label=col)
                 ax2.set_ylabel(' / '.join(str(c) for c in line_cols), fontsize=11)
                 ax2.tick_params(axis='y')
@@ -990,7 +970,6 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 ax.set_xticklabels(labels, rotation=45, ha='right')
                 ax.set_xlabel(df.columns[0], fontsize=12)
                 ax.set_title(_chart_title('이중축 차트'), fontsize=14, fontweight='bold')
-                ax.grid(True, alpha=0.3)
 
                 lines1, labels1 = ax.get_legend_handles_labels()
                 lines2, labels2 = ax2.get_legend_handles_labels()
@@ -1013,13 +992,13 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             matplotlib.pyplot.close(fig)
             fig, axes = matplotlib.pyplot.subplots(
                 n_rows_grid, n_cols_grid,
-                figsize=(6 * n_cols_grid, 4 * n_rows_grid)
+                figsize=(rs.MAX_FIG_WIDTH_IN, 3.4 * n_rows_grid)
             )
             axes = np.array(axes).flatten() if n_cols_data > 1 else [axes]
 
             for idx, col in enumerate(values.columns):
                 a = axes[idx]
-                color = cmap(idx / n_cols_data)
+                color = _cat(idx)
 
                 if subplot_type == 'line':
                     try:
@@ -1051,10 +1030,10 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                         # barh는 아래→위로 그려지므로, 이미 내림차순인 순서를 뒤집어 상위 항목이 위로 오게 한다.
                         panel_labels = panel_labels.iloc[::-1].reset_index(drop=True)
                         panel_values = panel_values.iloc[::-1].reset_index(drop=True)
-                        a.barh(panel_labels, panel_values, color=color, alpha=0.8)
+                        a.barh(panel_labels, panel_values, color=color)
                         _format_xaxis(a)
                     else:
-                        a.bar(panel_labels, panel_values, color=color, alpha=0.8)
+                        a.bar(panel_labels, panel_values, color=color)
                         a.tick_params(axis='x', rotation=45)
                         _format_yaxis(a)
 
@@ -1063,7 +1042,6 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     a.set_ylabel(df.columns[0], fontsize=10)
                 elif subplot_type != 'pie':
                     a.set_xlabel(df.columns[0], fontsize=10)
-                a.grid(True, alpha=0.3)
 
             for idx in range(n_cols_data, len(axes)):
                 axes[idx].set_visible(False)
@@ -1114,7 +1092,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 left = np.zeros(len(labels))
                 for idx, col in enumerate(plot_values.columns):
                     col_values = plot_values[col].iloc[rev].reset_index(drop=True)
-                    ax.barh(y_pos, col_values, left=left, label=col, color=cmap(idx / n_series))
+                    ax.barh(y_pos, col_values, left=left, label=col, color=_cat(idx))
                     left += col_values.values
                 ax.set_yticks(y_pos)
                 ax.set_yticklabels(h_labels)
@@ -1127,7 +1105,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 x_pos = np.arange(len(labels))
                 bottom = np.zeros(len(labels))
                 for idx, col in enumerate(plot_values.columns):
-                    ax.bar(x_pos, plot_values[col], bottom=bottom, label=col, color=cmap(idx / n_series))
+                    ax.bar(x_pos, plot_values[col], bottom=bottom, label=col, color=_cat(idx))
                     bottom += plot_values[col].values
                 ax.set_xticks(x_pos)
                 ax.set_xticklabels(labels, rotation=45, ha='right')
@@ -1178,7 +1156,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             else:
                 for idx, col in enumerate(values.columns):
                     ax.plot(x_pos, values[col].values, marker="o", label=col,
-                            color=cmap(idx / len(values.columns)), linewidth=2)
+                            color=_cat(idx), linewidth=2)
                 ax.legend(loc="best")
 
             ax.set_xticks(x_pos)
@@ -1194,7 +1172,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 for idx, cat in enumerate(sorted(categories)):
                     subset = df[df[cat_col] == cat]
                     ax.scatter(subset[x_col], subset[y_col],
-                               color=cmap(idx / len(categories)), label=str(cat), alpha=0.7, s=60)
+                               color=_cat(idx), label=str(cat), alpha=0.7, s=60)
                 _set_axes(ax, xlabel=x_col, ylabel=y_col)
                 _format_yaxis(ax)
                 ax.legend(title=cat_col, loc='best')
@@ -1206,16 +1184,15 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             else:
                 num_cols = df.select_dtypes(include='number').columns
                 if len(num_cols) >= 2:
-                    ax.scatter(df[num_cols[0]], df[num_cols[1]], color=cmap(0.6), alpha=0.7, s=60)
+                    ax.scatter(df[num_cols[0]], df[num_cols[1]], color=_cat(0), alpha=0.7, s=60)
                     ax.set_xlabel(num_cols[0], fontsize=12)
                     ax.set_ylabel(num_cols[1], fontsize=12)
             ax.set_title('산점도', fontsize=14, fontweight='bold')
-            ax.grid(True, alpha=0.3)
 
         elif chart_type == 'histogram':
             for idx, col in enumerate(values.columns):
                 ax.hist(values[col], bins=15, alpha=0.6, label=col,
-                        color=cmap(idx / len(values.columns)))
+                        color=_cat(idx))
             ax.legend(loc='best')
             _set_axes(ax, xlabel='값', ylabel='빈도', title='히스토그램')
             _format_yaxis(ax)
@@ -1224,7 +1201,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
             box = ax.boxplot([values[col] for col in values.columns],
                              patch_artist=True, labels=values.columns)
             for patch, idx in zip(box['boxes'], range(len(values.columns))):
-                patch.set_facecolor(cmap(idx / len(values.columns)))
+                patch.set_facecolor(_cat(idx))
             _set_axes(ax, xlabel='항목', ylabel='값', title='박스플롯')
             _format_yaxis(ax)
 
@@ -1309,6 +1286,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
 
                 ax2 = ax.twiny()
+                ax2._d2_styled = True
                 ax2.plot(plot_df['cum_pct'], y_pos, color=line_color, marker='o', linewidth=2)
                 ax2.set_xlim(0, 110)
                 ax2.axvline(80, color='gray', linestyle='--', linewidth=1)
@@ -1325,7 +1303,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 ax.set_ylabel(col, fontsize=12)
                 _format_yaxis(ax)
 
-                ax2 = ax.twinx()
+                ax2 = rs.twinx(ax)
                 ax2.plot(x_pos, sort_df['cum_pct'], color=line_color, marker='o', linewidth=2)
                 ax2.set_ylim(0, 110)
                 ax2.axhline(80, color='gray', linestyle='--', linewidth=1)
@@ -1336,7 +1314,6 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 ax.set_xlabel(df.columns[0], fontsize=12)
 
             ax.set_title('파레토(상위 항목 누적 기여도)', fontsize=14, fontweight='bold')
-            ax.grid(True, alpha=0.3)
 
         # 발산형 막대: 평균 등 기준값에서 좌우(또는 위아래)로 뻗어 "기준보다 얼마나 높은/낮은지"를
         # 바로 보여준다. 절대값 순위 막대와 달리 0(=기준) 위치가 항상 표시된다.
@@ -1377,7 +1354,6 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                                 textcoords='offset points', ha='center', fontsize=9)
 
             ax.set_title(f'{col} 평균({baseline:,.0f}) 대비 비교', fontsize=14, fontweight='bold')
-            ax.grid(True, alpha=0.3)
 
         # 히트맵 (두 범주 교차 비교)
         elif chart_type == 'heatmap':
@@ -1430,7 +1406,7 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                         offset = (idx - len(values.columns) / 2) * height + height / 2
                         col_values = values[col].iloc[rev].reset_index(drop=True)
                         ax.barh(y + offset, col_values, height, label=col,
-                                color=cmap(idx / len(values.columns)))
+                                color=_cat(idx))
                     ax.set_yticks(y)
                     ax.set_yticklabels(h_labels)
                     ax.legend(loc='best')
@@ -1442,17 +1418,14 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                     for idx, col in enumerate(values.columns):
                         offset = (idx - len(values.columns) / 2) * width + width / 2
                         ax.bar(x + offset, values[col], width, label=col,
-                               color=cmap(idx / len(values.columns)))
+                               color=_cat(idx))
                     ax.set_xticks(x)
                     ax.set_xticklabels(labels)
                     ax.legend(loc='best')
                     _set_axes(ax, xlabel=df.columns[0], ylabel='값', title=_chart_title('비교'), rotate_x=True)
                     _format_yaxis(ax)
 
-        buffer = io.BytesIO()
-        fig.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
-        buffer.seek(0)
-        image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+        image_base64 = base64.b64encode(rs.save_chart_png(fig)).decode('utf-8')
         matplotlib.pyplot.close(fig)
         return image_base64, data_json, None
 

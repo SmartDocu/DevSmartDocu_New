@@ -132,7 +132,7 @@ def run(ctx, params, tools) -> ModuleResult:
             "정합하면 재고가 쌓이는 항목과 빠지는 항목을 순증감으로 짚어라."
         ),
         params={"정합성": key_value["정합성"]}, label="stock_movement",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["차이"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(outputs=outputs, render=render)

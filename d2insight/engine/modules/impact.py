@@ -77,7 +77,7 @@ def run(ctx, params, tools) -> ModuleResult:
             "다음 스텝(항목별 증감)이 다룬다." + note_hint
         ),
         params={"측정값": schema.logical_name(measure), "순위 기준": basis},
-        label="dimension_impact", cache=params.get("_llm_render_cache"),
+        label="dimension_impact", required_columns=["Count", rank_col], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
         "순위 기준": basis,

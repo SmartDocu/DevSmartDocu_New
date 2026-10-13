@@ -131,7 +131,7 @@ def run(ctx, params, tools) -> ModuleResult:
         display, purpose="영업이익(EBIT) 증감을 매출·매출원가·판매관리비 요인으로 분해.",
         narrative_hint=summary, params={"기준": "EBIT 요인 분해"}, label="pnl_driver",
         chart_df=chart_df,
-        cache=params.get("_llm_render_cache"),
+        required_columns=["효과", "기여율"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(render=render)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from d2insight.engine import number_check
 from d2insight.engine.format import compare_period_label, korean_money_reference, table_to_markdown
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine._llm import chat
@@ -190,6 +191,23 @@ def build_conclusion(ctx, provider: str | None = None) -> Render:
     if not body:
         ctx.mark_failed("결론", "LLM이 빈 응답을 반환 (본문 요약으로 대체)")
         return _fallback(ctx)
+
+    # 결론에 쓴 숫자가 사실표에 있는지 확인한다 — 없는 숫자는 한 번 다시 쓰게 하고, 그래도 남으면 그 문장을 뺀다.
+    allowed = number_check.build_allowed(facts)
+
+    def _rewrite(bad):
+        feedback = (
+            "[숫자 검증 실패] 아래 숫자는 위 사실표에 없다: " + ", ".join(bad)
+            + "\n사실표에 있는 값으로 바꾸거나 그 문장을 빼서 같은 형식으로 다시 써라. 새 수치를 만들지 마라."
+        )
+        return chat(
+            [{"role": "user", "content": facts}, {"role": "assistant", "content": body},
+             {"role": "user", "content": feedback}],
+            grade="quality", system=_build_system(ctx), label="conclusion:renumber",
+            is_report=True, call_type="conclusion", stepnm="결론", provider=provider,
+        ).strip()
+
+    body, _ = number_check.enforce(body, allowed, rewrite=_rewrite, label="conclusion")
 
     tv = ctx.get("total_variance")
     summary = (

@@ -12,13 +12,17 @@ _shared.py)가 만든 DataFrame에서 LLM이 "무엇을 보여줄지"만 고른�
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 import pandas as pd
 
+from d2insight.engine import number_check
 from d2insight.engine._llm import chat
 from d2insight.engine.chart import chart_spec
-from d2insight.engine.format import korean_money_reference, table_to_markdown
+from d2insight.engine.format import df_facts, korean_money_reference, table_to_markdown
+
+log = logging.getLogger("d2insight.number_check")
 from d2insight.engine.types import Render
 
 MAX_SAMPLE_ROWS = 30
@@ -54,6 +58,24 @@ def _parse_json(text: str) -> dict:
     return data
 
 
+def _chat_json(prompt: str, system: str, *, label: str, call_type: str) -> dict:
+    """LLM 호출 + JSON 파싱. 파싱에 실패하면 한 번 다시 부른다.
+
+    해설 문장 안의 따옴표·줄바꿈 때문에 JSON이 깨지는 일이 가끔 있고, 그때 예외가 그대로 올라가면
+    그 단계가 통째로 "실패"로 기록된다(물량 단계가 보고서에서 빠진 사례, 2026-10-13).
+    """
+    last: Exception | None = None
+    for attempt in (1, 2):
+        text = chat([{"role": "user", "content": prompt}], grade="balanced", system=system,
+                    label=label, call_type=call_type)
+        try:
+            return _parse_json(text)
+        except Exception as e:
+            last = e
+            log.warning("[%s] JSON 파싱 실패(%d/2): %s", label, attempt, e)
+    raise last
+
+
 _PARAM_SYSTEM = """당신은 데이터 분석 보고서를 설계하는 애널리스트다.
 계산 함수를 어떤 파라미터로 부를지 후보 중에서 고른다. 계산은 하지 않는다 — 후보 중 선택만 한다.
 출력은 JSON 객체 하나만(키: 항목 이름, 값: 고른 후보). 다른 텍스트를 쓰지 마라."""
@@ -70,6 +92,10 @@ _RENDER_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트다.
    참고표]에 나온 값을 그대로 옮기고, 직접 억/만으로 환산하지 마라 — 직접 계산하면 자릿수를
    틀린 사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 통화기호는 임의로 붙이지 않는다.
 4. narrative: 표를 그대로 나열하지 말고 무엇이 두드러지는지 해석해 3~6문장으로 쓴다. 한국어 평문.
+   표에 보이는 행 밖의 항목에 대해 "유일하게", "모든", "대부분" 같은 전체 일반화는 [계산된 사실]이나
+   [추가 사실]에 근거가 있을 때만 쓴다. 비율·합계·비중은 그 [사실]에 있는 값만 쓰고 직접 만들지 않는다.
+   "더 크다/작다/절반 이상/상회" 같은 비교는 쓰기 전에 두 숫자의 크기를 확인한다(7.9는 26.2보다 작다, 42%는
+   절반 미만이다). 비중에는 분모를 밝힌 [사실]의 이름 그대로 쓰고, 표 밖의 항목 이름(예: 몇 월)을 지어내지 않는다.
 5. summary: narrative의 핵심만 1~2문장으로 압축한다(다른 스텝 결과와 함께 결론이 읽는 요약이다).
 6. 출력은 JSON 객체 하나:
    {"table_columns": ["열이름", ...], "chart": {"x": "열이름", "y": "열이름 또는 [열이름,...](여러 계열)",
@@ -88,6 +114,10 @@ _NARRATIVE_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트�
    참고표]에 나온 값을 그대로 옮기고, 직접 억/만으로 환산하지 마라 — 직접 계산하면 자릿수를
    틀린 사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 통화기호는 임의로 붙이지 않는다.
 3. narrative: 표를 그대로 나열하지 말고 무엇이 두드러지는지 해석해 3~6문장으로 쓴다. 한국어 평문.
+   표에 보이는 행 밖의 항목에 대해 "유일하게", "모든", "대부분" 같은 전체 일반화는 [계산된 사실]이나
+   [추가 사실]에 근거가 있을 때만 쓴다. 비율·합계·비중은 그 [사실]에 있는 값만 쓰고 직접 만들지 않는다.
+   "더 크다/작다/절반 이상/상회" 같은 비교는 쓰기 전에 두 숫자의 크기를 확인한다(7.9는 26.2보다 작다, 42%는
+   절반 미만이다). 비중에는 분모를 밝힌 [사실]의 이름 그대로 쓰고, 표 밖의 항목 이름(예: 몇 월)을 지어내지 않는다.
 4. summary: narrative의 핵심만 1~2문장으로 압축한다(다른 스텝 결과와 함께 결론이 읽는 요약이다).
 5. 출력은 JSON 객체 하나: {"narrative": "...", "summary": "..."} 다른 텍스트는 쓰지 마라."""
 
@@ -124,6 +154,8 @@ _CALC_SYSTEM = """당신은 데이터 분석 보고서를 준비하는 애널리
 출력은 JSON 객체 하나.
 필요 없으면 {"needed": false}
 필요하면 {"needed": true, "formula": "판다스 수식", "new_column": "새 열 이름(한글)"}
+비율을 만들 때는 100을 곱하지 않는다(0.4225처럼 소수로). 이름이 율·비율·비중으로 끝나는 열은 표시할 때
+자동으로 %가 붙고 100배 되므로, 이미 100을 곱하면 4225%처럼 부풀어 보인다.
 예: {"needed": true, "formula": "Contribution_Rate.cumsum()", "new_column": "누적 기여율"}
 다른 텍스트는 쓰지 마라."""
 
@@ -214,11 +246,68 @@ def _ensure_label_column(df: pd.DataFrame, cols: list[str]) -> list[str]:
     return cols
 
 
+def _with_required(df: pd.DataFrame, cols: list[str], required) -> list[str]:
+    """LLM이 고른 열에 모듈이 필수로 정한 열을 합친다(df의 열 순서 유지).
+
+    모듈이 만든 결과 열 중 문장이 읽는 핵심 열이 표에서 빠지면 표와 문장이 서로 다른 숫자를 말하게 된다
+    (단가 효과 표에 총 증감만 보이고 문장은 단가 효과 값을 쓴 사례). required는 열 이름 목록이거나
+    "all"(전체)이다. 이름은 모듈이 직접 계산해 붙인 열의 이름이며 사용자 데이터 컬럼명이 아니다.
+    """
+    if not required:
+        return cols
+    wanted = set(df.columns) if required == "all" else {c for c in required if c in df.columns}
+    keep = wanted | set(cols)
+    return [c for c in df.columns if c in keep]
+
+
+def _facts_block(table: pd.DataFrame, extra_facts: list[str] | None) -> str:
+    """프롬프트에 붙일 사실: 표에서 pandas가 계산한 값 + 모듈이 전체 데이터에서 계산해 넘긴 값."""
+    block = df_facts(table)
+    if extra_facts:
+        block += "\n[추가 사실 — 모듈이 전체 데이터에서 계산한 값]\n" + "\n".join(f"- {f}" for f in extra_facts)
+    return block
+
+
+def _verify_numbers(prompt: str, system: str, narrative: str, summary: str, *, label: str, call_type: str):
+    """해설·요약의 숫자가 프롬프트에 준 자료에 있는지 확인한다. 없으면 한 번 다시 쓰게 하고, 그래도
+    남으면 그 문장을 뺀다. 반환: (narrative, summary, 처음 감지된 근거 없는 숫자 목록)."""
+    allowed = number_check.build_allowed(prompt)
+    bad = number_check.find_unverified(narrative, allowed)
+    bad += [b for b in number_check.find_unverified(summary, allowed) if b not in bad]
+    if not bad:
+        return narrative, summary, []
+    first = list(bad)
+    feedback = (
+        "[숫자 검증 실패] 아래 숫자는 위 자료(표·계산된 사실·한글 단위 참고표)에 없다: "
+        + ", ".join(bad)
+        + "\n자료에 있는 값으로 바꾸거나 그 문장을 빼서, 같은 JSON 형식으로 다시 답하라. 새 수치를 만들지 마라."
+    )
+    try:
+        text = chat(
+            [{"role": "user", "content": prompt},
+             {"role": "assistant", "content": json.dumps({"narrative": narrative, "summary": summary}, ensure_ascii=False)},
+             {"role": "user", "content": feedback}],
+            grade="balanced", system=system, label=f"{label}:renumber", call_type=call_type,
+        )
+        redo = _parse_json(text)
+        n2, s2 = str(redo.get("narrative") or "").strip(), str(redo.get("summary") or "").strip()
+        redo_bad = number_check.find_unverified(n2, allowed) + number_check.find_unverified(s2, allowed)
+        if n2 and len(redo_bad) <= len(bad):
+            narrative, summary = n2, s2 or summary
+    except Exception as e:
+        log.warning("[number_check:%s] 다시 쓰기 실패: %s", label, e)
+    narrative, _ = number_check.enforce(narrative, allowed, label=f"{label}:narrative")
+    summary, _ = number_check.enforce(summary, allowed, label=f"{label}:summary")
+    log.warning("[number_check:%s] 근거 없는 숫자 %d개 처리: %s", label, len(first), first)
+    return narrative, summary, first
+
+
 def render_from_dataframe(
     df: pd.DataFrame | None, *, purpose: str, narrative_hint: str, params: dict,
     label: str = "", empty_summary: str = "해당 조건에 표시할 데이터가 없습니다.",
     chart_df: pd.DataFrame | None = None, cache: dict | None = None,
     columns: dict | None = None, extra_money: dict | None = None,
+    required_columns=None, extra_facts: list[str] | None = None,
 ) -> Render:
     """계산이 끝난 DataFrame → LLM이 표 열·차트·서술을 고른 Render.
 
@@ -230,6 +319,12 @@ def render_from_dataframe(
 
     extra_money: {표시 이름: 금액값} — 표의 행은 아니지만 서술에 필요한 집계값(예: 전체
     증감액). 안 주면 LLM이 보이는 행만으로 전체 규모를 암산하게 된다(korean_money_reference 참조).
+
+    required_columns: 표에 반드시 보일 열(모듈이 만든 결과 열 이름 목록, 또는 "all"). LLM이 열을 골라도
+    이 열은 빠지지 않는다 — 문장이 읽은 열과 표에 보이는 열이 어긋나는 것을 막는다.
+
+    extra_facts: 표에 안 보이는 전체 데이터에 대해 모듈이 pandas로 계산한 사실 문장 목록(예: "전체 165개
+    중 양수 12개"). LLM이 보이는 행만 보고 전체를 일반화하지 않게 근거로 준다.
 
     cache: 정기 보고서 재실행용 — 이전에 이 함수가 고른 표열·차트 구성(Render.llm_spec)을
     그대로 주면 그 구성(형식)만 재사용하고 LLM에 다시 묻지 않는다. 서술(narrative/summary)은
@@ -248,6 +343,7 @@ def render_from_dataframe(
 
     if cache:
         cols = [c for c in (cache.get("table_columns") or []) if c in df.columns]
+        cols = _with_required(df, cols, required_columns)
         cols = _ensure_label_column(df, cols)
         table = df[cols] if cols else df
         chart = _build_chart(cache.get("chart"), chart_source, purpose)
@@ -261,15 +357,16 @@ def render_from_dataframe(
             + (f"\n(전체 {len(table):,}행 중 {MAX_SAMPLE_ROWS}행만 표시 — 요약은 전체 기준으로 서술)"
                if len(table) > MAX_SAMPLE_ROWS else "")
             + korean_money_reference(sample, extra=extra_money)
+            + _facts_block(table, extra_facts)
         )
-        text = chat([{"role": "user", "content": prompt}], grade="balanced", system=_NARRATIVE_SYSTEM,
-                    label=f"{label}:narrative", call_type="module_narrative")
-        n_spec = _parse_json(text)
+        n_spec = _chat_json(prompt, _NARRATIVE_SYSTEM, label=f"{label}:narrative", call_type="module_narrative")
         narrative = str(n_spec.get("narrative") or "").strip()
         summary = str(n_spec.get("summary") or "").strip()
+        narrative, summary, unverified = _verify_numbers(
+            prompt, _NARRATIVE_SYSTEM, narrative, summary, label=label, call_type="module_narrative")
         # llm_spec은 구조(표열·차트)만 다음 회차로 넘긴다 — 서술은 캐시 대상이 아니므로 저장하지 않는다.
         out_spec = {"table_columns": cache.get("table_columns"), "chart": cache.get("chart"),
-                    "calc": cache.get("calc"), "describe": cache.get("describe")}
+                    "calc": cache.get("calc"), "describe": cache.get("describe"), "unverified": unverified}
         return Render(summary=summary or narrative or empty_summary, table=table, chart=chart,
                      narrative=narrative or None, llm_spec=out_spec)
 
@@ -284,18 +381,21 @@ def render_from_dataframe(
         + (f"\n[차트용 데이터 열 목록] {list(chart_source.columns)}(차트는 이 열 중에서 고른다)"
            if chart_df is not None else "")
         + korean_money_reference(sample, extra=extra_money)
+        + _facts_block(df, extra_facts)
     )
-    text = chat([{"role": "user", "content": prompt}], grade="balanced", system=_RENDER_SYSTEM,
-                label=f"{label}:render", call_type="module_render")
-    spec = _parse_json(text)
+    spec = _chat_json(prompt, _RENDER_SYSTEM, label=f"{label}:render", call_type="module_render")
 
     cols = [c for c in (spec.get("table_columns") or []) if c in df.columns]
+    cols = _with_required(df, cols, required_columns)
     cols = _ensure_label_column(df, cols)
     table = df[cols] if cols else df
     chart = _build_chart(spec.get("chart"), chart_source, purpose)
 
     narrative = str(spec.get("narrative") or "").strip()
     summary = str(spec.get("summary") or "").strip()
+    narrative, summary, unverified = _verify_numbers(
+        prompt, _RENDER_SYSTEM, narrative, summary, label=label, call_type="module_render")
+    spec["unverified"] = unverified
     spec["calc"] = calc_spec
     spec["describe"] = describe_notes
     return Render(summary=summary or narrative or empty_summary, table=table, chart=chart,

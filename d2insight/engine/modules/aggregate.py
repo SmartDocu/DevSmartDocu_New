@@ -118,7 +118,7 @@ def run_actual_aggregate(ctx, params, tools) -> ModuleResult:
     render = render_from_dataframe(
         shown, purpose="차원×항목 실적과 증감을 표·차트로 제시.", narrative_hint=hint,
         params={"차원": dim_name, "측정값": measure_name}, label="actual_aggregate",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["Actual_Value", "Variance"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {"차원": dim_name, "합계": f"{total_a:,.0f}", "증감": f"{total_v:+,.0f}"}
     return ModuleResult(render=render)
@@ -157,7 +157,7 @@ def run_composition(ctx, params, tools) -> ModuleResult:
         purpose="차원 항목별 구성비와 비중 변화를 제시.",
         narrative_hint="비중이 커진 항목과 줄어든 항목을 짚고, 집중도가 높아졌는지 낮아졌는지 말하라." + subst_note,
         params={"차원": dim_name, "측정값": measure_name}, label="composition",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["Share", "Share_Change"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {"1위": str(top["Item_Name"]), "1위 비중": f"{top['Share'] * 100:.1f}%"}
     return ModuleResult(render=render)
@@ -197,7 +197,7 @@ def run_ranking(ctx, params, tools) -> ModuleResult:
         purpose="항목 상/하위 순위를 제시.",
         narrative_hint="상위권의 규모 차이가 큰지 고른지 짚어라. 순위와 증감 방향이 어긋나면 그 점을 말하라." + subst_note,
         params={"차원": dim_name, "기준": basis, "정렬": label}, label="ranking",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["순위", sort_col], cache=params.get("_llm_render_cache"),
     )
     return ModuleResult(render=render)
 
@@ -248,7 +248,7 @@ def run_trend(ctx, params, tools) -> ModuleResult:
             + window_note
         ),
         params={"측정값": measure_name}, label="trend",
-        cache=params.get("_llm_render_cache"),
+        required_columns="all", cache=params.get("_llm_render_cache"),
     )
     render.layout = ["narrative", "key_value", "chart", "table"]
     render.key_value = {"기간수": len(totals_by_period), "최고 기간": str(peak)}
@@ -282,7 +282,7 @@ def run_cumulative_progress(ctx, params, tools) -> ModuleResult:
     render = render_from_dataframe(
         table, purpose="기간 누계와 진척률을 제시.", narrative_hint=hint,
         params={"측정값": measure_name}, label="cumulative_progress",
-        cache=params.get("_llm_render_cache"),
+        required_columns="all", cache=params.get("_llm_render_cache"),
     )
     render.layout = ["narrative", "key_value", "chart", "table"]
     render.key_value = key_value

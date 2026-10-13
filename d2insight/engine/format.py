@@ -99,7 +99,7 @@ def fmt_money(v, divisor: int, signed: bool = False) -> str:
 
 
 def to_korean_money(v) -> str:
-    """금액을 억/만 단위 한글 표기로 변환한다(예: 3,842,356,350 -> "38억 4,236만원").
+    """금액을 억/만 단위 한글 표기로 변환한다(예: 3,842,356,350 -> "38억 4,236만").
 
     LLM이 이 환산을 직접 하면 자릿수를 틀리는 사례가 있었다(예: 1.34억을 "134억"으로
     100배 부풀림). 계산은 파이썬이 하고, LLM은 이 문자열을 그대로 옮겨 쓰기만 한다.
@@ -115,9 +115,46 @@ def to_korean_money(v) -> str:
         parts.append(f"{eok:,}억")
     if man:
         parts.append(f"{man:,}만")
+    # 통화 단위는 붙이지 않는다 — 데이터가 원화인지 달러인지 여기서는 알 수 없다(달러 데이터에
+    # "134만원"이라고 찍힌 사례). 억/만 자릿수 표기만 한다.
     if not parts:
-        return f"{sign}{won:,}원"
-    return f"{sign}{' '.join(parts)}원"
+        return f"{sign}{won:,}"
+    return f"{sign}{' '.join(parts)}"
+
+
+def df_facts(df: pd.DataFrame, title: str = "표") -> str:
+    """표에서 pandas가 미리 계산한 사실(행 수, 양수·음수 개수, 상위 3행 합계 비중).
+
+    LLM이 표의 숫자 셋을 머릿속으로 더해 나눈 값("상위 3개 약 40%")은 틀린 사례가 있다(실제 18.9%).
+    문장에 쓸 만한 이런 값을 코드가 먼저 계산해 프롬프트에 주면 LLM이 계산할 이유가 없다. 이 표에 보이는
+    행 기준이다 — 표 밖 항목에 대한 값은 모듈이 따로 넘긴다(extra_facts). 열 이름을 가리지 않는다.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty or len(df) < 4:
+        return ""
+    lines: list[str] = [f"- {title} 행 수: {len(df):,}"]
+    for c in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            continue
+        col = df[c].dropna()
+        if col.empty:
+            continue
+        pos, neg = int((col > 0).sum()), int((col < 0).sum())
+        part = f"- {c}: 양수 {pos}행, 음수 {neg}행"
+        if col.abs().max() >= BIG_VALUE_THRESHOLD:
+            top3 = col.abs().nlargest(3).sum()
+            top3_signed = col.loc[col.abs().nlargest(3).index].sum()
+            total_abs = col.abs().sum()
+            total = col.sum()
+            part += f", 합계 {total:,.0f}"
+            part += f", 절댓값 큰 3행의 합 {top3_signed:,.0f}"
+            # 두 비중은 분모가 다르다 — 문장에서 "전체 대비"라고 쓸 값을 헷갈리지 않게 분모를 이름에 밝힌다.
+            if total and (top3_signed / total) > 0:
+                part += f", 그 3행의 합 ÷ 합계 = {top3_signed / total * 100:.1f}%"
+            if total_abs > 0:
+                part += f", 그 3행의 절댓값 ÷ 절댓값 총합 = {top3 / total_abs * 100:.1f}% (합계 대비가 아님)"
+        lines.append(part)
+    header = "\n[계산된 사실 — 이 표의 보이는 행 기준, 문장에서는 이 값을 그대로 인용한다]\n"
+    return header + "\n".join(lines)
 
 
 def korean_money_reference(df: pd.DataFrame, extra: dict | None = None) -> str:

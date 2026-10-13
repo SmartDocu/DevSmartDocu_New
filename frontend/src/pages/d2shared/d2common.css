@@ -85,7 +85,8 @@
   border-bottom: 1px solid #ddd;
 }
 
-.visualization-container th {
+/* 인라인 스타일이 있는 표(report_style 기본 스타일)는 제외 — 예전에 저장된 표에만 적용 */
+.visualization-container th:not([style]) {
   background: #f0f4f8 !important;
   font-weight: 600;
   color: #333 !important;

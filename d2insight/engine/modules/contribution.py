@@ -94,7 +94,7 @@ def run(ctx, params, tools) -> ModuleResult:
         ),
         params={"차원": dim_name, "상위 항목수": len(ranked)},
         extra_money={"전체 증감액": total_variance["variance"]},
-        label="within_contribution", cache=params.get("_llm_render_cache"),
+        label="within_contribution", required_columns=["Variance", "Contribution_Rate"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
         "차원": dim_name,

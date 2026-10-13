@@ -137,7 +137,7 @@ def run(ctx, params, tools) -> ModuleResult:
         ),
         params={"대상 차원": target_dims}, label="new_lost_detection",
         chart_df=chart_top if not chart_top.empty else None,
-        cache=params.get("_llm_render_cache"),
+        required_columns=["순효과", "유입 합계", "유출 합계"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(outputs={"count_summary": counts, "new_lost_items": items.head(top_n)}, render=render)

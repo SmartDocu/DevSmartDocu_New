@@ -75,7 +75,7 @@ def run(ctx, params, tools) -> ModuleResult:
             "결과보다 이 데이터 신뢰성 경고를 먼저 읽어야 한다는 것을 분명히 하라." + dim_note
         ),
         params={"감지 이슈": count}, label="data_validation",
-        cache=params.get("_llm_render_cache"),
+        required_columns="all", cache=params.get("_llm_render_cache"),
     )
     render.key_value = {"검증 결과": "주의", "감지 이슈": count}
     return ModuleResult(outputs={"validation_result": result}, render=render)

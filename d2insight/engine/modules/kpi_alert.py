@@ -251,7 +251,7 @@ def run(ctx, params, tools) -> ModuleResult:
             f"벗어났는지 짚어라. 판정 기준: {basis}.{note}"
         ),
         params={"판정 기준": basis}, label="kpi_alert",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["분석월", "기준선 평균", "증감률", "등급"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {
         "판정 기준": basis, "경보": len(alerts), "주의": len(watches), "판정 불가": len(undecidable),

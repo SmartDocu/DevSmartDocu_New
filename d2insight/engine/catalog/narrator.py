@@ -10,10 +10,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
+from d2insight.engine import number_check
 from d2insight.engine.format import compare_period_label, korean_money_reference, table_to_markdown
 from d2insight.engine._llm import chat
+
+log = logging.getLogger("d2insight.number_check")
 
 MAX_TABLE_ROWS = 30          # 해설자에게 보여줄 표 최대 행수
 _TIER_RANK = {"none": 0, "fast": 1, "balanced": 2, "quality": 3}
@@ -114,8 +118,9 @@ def narrate_step(step_label: str, items: list[dict], ctx) -> dict[str, str]:
         return {}
 
     grade = _pick_grade(items)
+    prompt = _build_prompt(step_label, items, ctx)
     text = chat(
-        [{"role": "user", "content": _build_prompt(step_label, items, ctx)}],
+        [{"role": "user", "content": prompt}],
         grade=grade,
         system=_SYSTEM,
         label=f"narrate:{step_label}",
@@ -124,4 +129,14 @@ def narrate_step(step_label: str, items: list[dict], ctx) -> dict[str, str]:
         stepnm=step_label,
         provider=(ctx.meta or {}).get("provider"),   # 채팅 요청이 고른 provider를 존중
     )
-    return _parse(text, items)
+    written = _parse(text, items)
+
+    # 해설자가 새로 만들어 낸 숫자는 걸러낸다. 그 모듈은 이미 숫자 검증을 통과한 초안을 그대로 쓴다
+    # (여기서 키를 빼면 엔진이 초안 해설을 유지한다).
+    allowed = number_check.build_allowed(prompt)
+    for key in list(written):
+        bad = number_check.find_unverified(written[key], allowed)
+        if bad:
+            log.warning("[number_check:narrate:%s] 해설자가 만든 근거 없는 숫자 %s → 초안 유지", key, bad)
+            del written[key]
+    return written

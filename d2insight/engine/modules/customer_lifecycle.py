@@ -66,7 +66,7 @@ def _render(sub: pd.DataFrame, label: str, stage_title: str, stages: list[str],
         ),
         params={"기준": label}, label="customer_lifecycle",
         empty_summary=f"{label} {stage_title} 대상이 없습니다.",
-        cache=params.get("_llm_render_cache"),
+        required_columns=["금액효과"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = key_value
     return ModuleResult(render=render)
