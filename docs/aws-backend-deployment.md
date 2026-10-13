@@ -76,7 +76,7 @@ aws ecs update-service --cluster smartdocu-cluster --service d2doc-service --for
 
 ## 후속 작업 (미완료)
 
-- [ ] **`d2doc-purge-daily-cron`(콘텐츠 삭제 스케줄) 재활성화 — 보류 중** — 2026-10-12 사용자가 DISABLED로 전환(삭제 범위 버그 발견). 원인: `content_purge.py`가 하위 데이터를 `tenantid`로만 찾는데 개인 영역은 모든 개인 사용자가 시스템 테넌트(tenantid=1)를 공유해, 한 사용자의 탈퇴/즉시삭제가 다른 사용자의 Doc/Chat/Insight까지 지울 수 있었음(10/08 Doc 6문서·9생성문서·20프로젝트 삭제 기록, Chat은 timeout으로 매일 실패 중이라 미삭제). 코드 수정 완료(개인 계정은 `projects.accountuid` 기준으로 범위 제한, insight_folders는 개인 영역에서 제외) — **백엔드 배포 후** 재활성화할 것. 재활성화 전 확인: 10/08 삭제분이 탈퇴 본인 데이터였는지(피해 확인) 및 Supabase 복구 가능 여부, 2026-10-12
+- [x] ~~`d2doc-purge-daily-cron`(콘텐츠 삭제 스케줄) 재활성화~~ — 2026-10-13 완료. 2026-10-12 삭제 범위 버그(개인 영역이 시스템 테넌트 tenantid=1 전체를 대상으로 삼아 다른 사용자의 Doc/Chat 데이터까지 삭제할 수 있었음; 10/08 Doc 문서 6개·생성 문서 9개 삭제 확인, Chat은 timeout으로 매일 실패) 발견 → 사용자가 스케줄 비활성화 → `content_purge.py`를 계정 단위(`projects.accountuid`)로 수정(insight_folders는 개인 영역에서 제외)하고 회귀 테스트 `backend/tests/test_content_purge_scope.py` 추가 → 10/12 `d2doc-service` 배포(digest 66d8447f…) → 스케줄 재활성화. 10/13 00:30 첫 실행 정상 확인: 처리 1건(탈퇴 계정 Chat, `scope: account`, 삭제 세션 0), 다른 사용자 데이터 변화 없음(채팅 163/611, 인사이트 378/263, 문서 14). 참고: 10/08에 삭제된 개인 영역 문서 6개(소유: mm4707·soyeongi·rootel2Doc·rootel2AG·audit-verify-test)의 DB 행은 복구 불가(무료 플랜, 백업 없음) — Storage의 생성 문서(.docx)·업로드 데이터 파일은 남아 있음
 
 - [x] ~~다크 테마를 본문 영역까지 확대 적용~~ — 2026-10-08 적용. `main.jsx`가 로그인 사용자의 `colorTheme==='dark'`일 때 antd `darkAlgorithm` + `<html data-theme="dark">`를 켜고, `frontend/src/theme-dark.css`가 CSS 변수(--panel-bg 등)와 인라인 style에 박힌 밝은 색(rgb 값 매칭)을 덮어씀. 문서 미리보기(.a4-frame)는 흰 바탕 유지. **남은 위험**: 위 목록에 없는 색을 직접 박은 화면, d2chat/d2insight 자체 CSS는 화면별 눈으로 확인 후 theme-dark.css에 규칙 추가 필요
 

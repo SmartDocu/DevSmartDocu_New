@@ -372,6 +372,12 @@ function summarizeError(msg) {
   return lines.length ? lines[lines.length - 1] : '-'
 }
 
+// 예전 건은 사유에 "챕터 처리 실패: <genchapteruid>"처럼 UID가 박혀 있어, 백엔드가 찾아준 챕터명으로 바꿔 보여준다
+function withChapterName(text, r) {
+  if (!text || !r.failed_genchapteruid || !r.failed_chapternm) return text
+  return text.replaceAll(r.failed_genchapteruid, r.failed_chapternm)
+}
+
 function GenFailuresTab() {
   const f = useFilterState()
   const [kind, setKind] = useState('doc')
@@ -401,14 +407,9 @@ function GenFailuresTab() {
         )
     ) },
     { title: t('thd.audit.errorcd'), dataIndex: 'errorcd', key: 'errorcd', width: 160, render: (v) => <Tag color="red">{v}</Tag> },
-    { title: t('thd.audit.errorsummary'), key: 'summary', render: (_, r) => {
-      // 예전 건은 "챕터 처리 실패: <genchapteruid>"로 저장돼 있어, 백엔드가 찾아준 챕터명으로 바꿔 보여준다
-      const summary = summarizeError(r.errormessage)
-      const shown = r.failed_genchapteruid && r.failed_chapternm
-        ? summary.replace(r.failed_genchapteruid, r.failed_chapternm)
-        : summary
-      return <span style={{ wordBreak: 'break-word' }}>{shown}</span>
-    } },
+    { title: t('thd.audit.errorsummary'), key: 'summary', render: (_, r) => (
+      <span style={{ wordBreak: 'break-word' }}>{withChapterName(summarizeError(r.errormessage), r)}</span>
+    ) },
   ]
 
   return (
@@ -448,7 +449,7 @@ function GenFailuresTab() {
           expandable={{
             expandedRowRender: (r) => (
               <pre style={{ margin: 0, maxHeight: 360, overflow: 'auto', fontSize: 12, background: '#f7f7f7', padding: 8, borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {r.errormessage || '-'}
+                {withChapterName(r.errormessage, r) || '-'}
               </pre>
             ),
           }}

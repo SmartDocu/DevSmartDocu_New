@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RLS 적용 우선순위</title>
+<style>
+:root{
+  --bg:#f5f6f8;
+  --surface:#ffffff;
+  --surface-2:#eef0f4;
+  --border:#dde1e8;
+  --text:#1a2030;
+  --text-muted:#5c6579;
+  --text-faint:#8991a3;
+  --accent:#33509e;
+  --accent-soft:#e8edf9;
+  --danger-bg:#fbe6e3;
+  --danger-fg:#a3311f;
+  --danger-bd:#f0c6bf;
+  --warn-bg:#fbf0dc;
+  --warn-fg:#8a5a10;
+  --warn-bd:#efd9a8;
+  --safe-bg:#e4f2e6;
+  --safe-fg:#276740;
+  --safe-bd:#c2e0c8;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14161c;
+    --surface:#1b1e26;
+    --surface-2:#20232c;
+    --border:#2c303c;
+    --text:#e8eaf0;
+    --text-muted:#9aa1b4;
+    --text-faint:#6c7386;
+    --accent:#8ba3e8;
+    --accent-soft:#232a42;
+    --danger-bg:#3a2320;
+    --danger-fg:#f0a394;
+    --danger-bd:#5c342c;
+    --warn-bg:#382d18;
+    --warn-fg:#e8c47c;
+    --warn-bd:#5a4823;
+    --safe-bg:#1c3126;
+    --safe-fg:#8fd3a4;
+    --safe-bd:#2c4d38;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14161c;
+  --surface:#1b1e26;
+  --surface-2:#20232c;
+  --border:#2c303c;
+  --text:#e8eaf0;
+  --text-muted:#9aa1b4;
+  --text-faint:#6c7386;
+  --accent:#8ba3e8;
+  --accent-soft:#232a42;
+  --danger-bg:#3a2320;
+  --danger-fg:#f0a394;
+  --danger-bd:#5c342c;
+  --warn-bg:#382d18;
+  --warn-fg:#e8c47c;
+  --warn-bd:#5a4823;
+  --safe-bg:#1c3126;
+  --safe-fg:#8fd3a4;
+  --safe-bd:#2c4d38;
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  margin:0;
+  padding:0 0 64px;
+}
+.wrap{max-width:1160px;margin:0 auto;padding:40px 28px 0;}
+
+header.page{margin-bottom:28px;}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:12px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin:0 0 10px;
+}
+h1{
+  font-size:30px;
+  font-weight:650;
+  letter-spacing:-.01em;
+  margin:0 0 8px;
+  text-wrap:balance;
+}
+.sub{
+  color:var(--text-muted);
+  font-size:15px;
+  line-height:1.6;
+  max-width:66ch;
+  margin:0;
+}
+
+/* ── 상단 요약 카드 ── */
+.summary{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+  margin:28px 0;
+}
+.stat{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:16px 18px;
+}
+.stat .n{
+  font-family:var(--mono);
+  font-size:26px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+  line-height:1;
+}
+.stat .lbl{font-size:12.5px;color:var(--text-muted);margin-top:6px;}
+.stat.r .n{color:var(--danger-fg);}
+.stat.d .n{color:var(--warn-fg);}
+.stat.n .n{color:var(--safe-fg);}
+
+/* ── 최우선 콜아웃 ── */
+.callout{
+  background:var(--danger-bg);
+  border:1px solid var(--danger-bd);
+  border-radius:12px;
+  padding:20px 22px;
+  margin:0 0 32px;
+}
+.callout h2{
+  font-size:15px;
+  font-weight:650;
+  margin:0 0 8px;
+  color:var(--danger-fg);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.callout p{
+  margin:0 0 10px;
+  font-size:14px;
+  line-height:1.65;
+  color:var(--text);
+}
+.callout p:last-child{margin-bottom:0;}
+.callout code{
+  font-family:var(--mono);
+  background:rgba(0,0,0,.06);
+  padding:1px 5px;
+  border-radius:4px;
+  font-size:.92em;
+}
+:root[data-theme="dark"] .callout code,
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .callout code{background:rgba(255,255,255,.08);}}
+
+/* ── 필터 바 ── */
+.filterbar{
+  position:sticky;
+  top:0;
+  z-index:5;
+  background:var(--bg);
+  padding:14px 0;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+  border-bottom:1px solid var(--border);
+  margin-bottom:2px;
+}
+.chip{
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:560;
+  padding:7px 14px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--text-muted);
+  cursor:pointer;
+  transition:background .12s,color .12s,border-color .12s;
+}
+.chip:hover{border-color:var(--accent);}
+.chip.active{background:var(--text);color:var(--surface);border-color:var(--text);}
+.chip.active.r{background:var(--danger-fg);border-color:var(--danger-fg);color:#fff;}
+.chip.active.d{background:var(--warn-fg);border-color:var(--warn-fg);color:#fff;}
+.chip.active.n{background:var(--safe-fg);border-color:var(--safe-fg);color:#fff;}
+.searchwrap{margin-left:auto;position:relative;}
+#search{
+  font-family:var(--sans);
+  font-size:13.5px;
+  padding:7px 12px 7px 30px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--text);
+  width:200px;
+  outline:none;
+}
+#search:focus{border-color:var(--accent);}
+.searchwrap::before{
+  content:'';
+  position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  width:12px;height:12px;
+  border:1.5px solid var(--text-faint);
+  border-radius:50%;
+}
+.searchwrap::after{
+  content:'';
+  position:absolute;left:19px;top:63%;
+  width:5px;height:1.5px;
+  background:var(--text-faint);
+  transform:rotate(45deg);
+}
+.count{font-size:12.5px;color:var(--text-faint);font-family:var(--mono);white-space:nowrap;}
+
+/* ── 도메인 그룹 ── */
+.domain{margin-top:26px;}
+.domain h3{
+  font-size:12px;
+  font-weight:650;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--text-faint);
+  margin:0 0 8px;
+  padding-left:2px;
+}
+.tablewrap{
+  border:1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+  background:var(--surface);
+}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+thead th{
+  text-align:left;
+  font-size:11px;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  color:var(--text-faint);
+  font-weight:600;
+  padding:9px 14px;
+  background:var(--surface-2);
+  border-bottom:1px solid var(--border);
+}
+tbody tr{border-top:1px solid var(--border);}
+tbody tr:first-child{border-top:none;}
+tbody tr.hide{display:none;}
+td{padding:9px 14px;vertical-align:top;line-height:1.5;}
+td.tname{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--text);}
+td.reason{color:var(--text-muted);}
+td.cat{white-space:nowrap;}
+.pill{
+  display:inline-block;
+  font-size:11.5px;
+  font-weight:600;
+  padding:3px 10px;
+  border-radius:999px;
+  border:1px solid transparent;
+}
+.pill.r{background:var(--danger-bg);color:var(--danger-fg);border-color:var(--danger-bd);}
+.pill.d{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-bd);}
+.pill.n{background:var(--safe-bg);color:var(--safe-fg);border-color:var(--safe-bd);}
+
+.empty{padding:40px;text-align:center;color:var(--text-faint);font-size:13.5px;}
+
+footer.note{
+  margin-top:40px;
+  padding-top:20px;
+  border-top:1px solid var(--border);
+  font-size:12.5px;
+  color:var(--text-faint);
+  line-height:1.7;
+}
+
+@media (max-width:640px){
+  .summary{grid-template-columns:1fr;}
+  .searchwrap{margin-left:0;width:100%;}
+  #search{width:100%;}
+}
+</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">sdoc 스키마 · 142개 테이블</p>
+    <h1>RLS 적용 우선순위</h1>
+    <p class="sub">코드베이스 전체(backend/utilsPrj/worker/d2chat/d2insight/d2shared)의 실제 테이블 접근 패턴을 조사해 분류했습니다. 현재 RLS 설정 상태는 조회 권한이 없어 반영하지 못했고, "이 테이블 성격상 RLS가 필요한가"만 기준으로 삼았습니다.</p>
+  </header>
+
+  <div class="summary">
+    <div class="stat r"><div class="n" id="stat-r">–</div><div class="lbl">적용 권장</div></div>
+    <div class="stat d"><div class="n" id="stat-d">–</div><div class="lbl">결정 필요</div></div>
+    <div class="stat n"><div class="n" id="stat-n">–</div><div class="lbl">적용 불필요</div></div>
+  </div>
+
+  <div class="callout">
+    <h2>⚠ 가장 시급한 4곳 — 백엔드를 완전히 우회하는 유일한 경로</h2>
+    <p><code>gendocs_realtimes</code>, <code>genchapters_realtimes</code>, <code>notifications</code>, <code>notification_users</code> — 이 4개는 프론트가 FastAPI를 거치지 않고 <strong>Supabase Realtime을 anon key + 사용자 JWT로 직접 구독</strong>합니다(<code>frontend/src/hooks/useJobNotifications.js</code>, <code>useNotifications.js</code> 등). 이번 세션 내내 다뤘던 백엔드 소유권 검증은 이 4개 테이블엔 전혀 적용되지 않습니다 — RLS가 없으면 <code>filter</code> 파라미터를 클라이언트가 조작해 다른 사용자의 알림/생성 상태를 그대로 구독할 수 있습니다.</p>
+    <p>같은 이유로 <code>chat_sessions</code>/<code>chat_qas</code>/<code>chat_favorites</code>도 우선순위가 높습니다 — <code>d2chat/history/supabase_storage.py</code> 코드 주석에 "라우터가 토큰으로 생성한 클라이언트(sb)를 받는다 (RLS 적용)"라고 명시돼 있어, 애초에 RLS가 켜져 있다는 전제로 설계된 테이블입니다.</p>
+  </div>
+
+  <div class="filterbar">
+    <button class="chip active" data-filter="all">전체</button>
+    <button class="chip r" data-filter="r">적용 권장</button>
+    <button class="chip d" data-filter="d">결정 필요</button>
+    <button class="chip n" data-filter="n">적용 불필요</button>
+    <div class="searchwrap"><input id="search" placeholder="테이블명 검색"></div>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div id="domains"></div>
+
+  <footer class="note">
+    <strong>참고</strong> — "결정 필요"의 상당수는 현재 service-role 전용이라 RLS를 걸어도 이 앱 자체의 접근 경로는 안 바뀝니다. 그래도 방어심층(키 유출, Supabase 대시보드 직접 접근, 향후 프론트 직접 접근 추가 등)을 위해 걸지 결정이 필요하다는 뜻으로 분류했습니다. "미사용으로 보임"이라고 적힌 항목은 코드 정적분석 기준이라 실제로는 쓰이고 있을 수 있습니다(이번 조사에서도 d2shared 경유 테이블 몇 개를 이렇게 놓쳤다가 다시 잡아냈습니다) — 결정 전에 한 번 더 확인을 권합니다. <code>삭제예정_</code>/<code>임시_</code> 접두사 테이블 24개와 RPC 함수는 이미 정리 대상으로 분류돼 있어 제외했습니다.
+  </footer>
+</div>
+
+<script>
+const DATA = [
+["핵심 아이덴티티 (테넌트/계정/사용자)", [
+["accounts","r","계정 핵심 테이블(accountuid/tenantid/useruid) — 이번 세션 내내 다룬 공유계정 모델의 근원"],
+["tenants","r","테넌트 마스터 — 이번 세션 전체의 중심 주제"],
+["tenantusers","r","테넌트 멤버십 — switch-tenant/get_service_permission의 근거가 되는 가장 중요한 테이블"],
+["users","r","사용자 마스터(useruid=auth.uid() 직결), user-JWT 다수 접근"],
+["accountservices","r","서비스 구독상태 — read/write 권한 게이트의 기반, user-JWT 경로 확인"],
+["projects","r","프로젝트 마스터, 핵심 소유권 테이블"],
+["projectusers","r","프로젝트 멤버, user-JWT 다수 접근"],
+["serviceusers","r","서비스별 마지막 선택 문서 등 개인 상태, user-JWT 다수 접근"],
+["favorites","r","사용자 즐겨찾기(메뉴), useruid 개인 데이터"],
+["whitelists","r","IP 화이트리스트(보안 설정), user-JWT 접근 확인 + 보안 민감"],
+]],
+["실시간 — 백엔드 우회 (최우선)", [
+["gendocs_realtimes","r","프론트가 Supabase Realtime으로 anon+JWT 직접 구독 — 백엔드 소유권 검증 완전히 우회"],
+["genchapters_realtimes","r","위와 동일"],
+["notifications","r","위와 동일"],
+["notification_users","r","위와 동일"],
+["notification_logs","d","알림 로그, 미사용으로 보이나 재확인 필요"],
+]],
+["문서 생성 파이프라인", [
+["docs","r","문서 마스터 — 이번 세션 소유권 버그(delete_doc) 발견된 테이블"],
+["chapters","r","문서 챕터 정의, user-JWT 다수 접근"],
+["docparams","r","문서 파라미터, user-JWT 접근"],
+["docparamdtls","r","문서 파라미터 상세, user-JWT 접근"],
+["docgroups","d","문서 그룹, 접근 클라이언트 종류 미확인(1건)"],
+["genchapters","r","생성된 챕터 — 이번 세션 소유권 버그 발견된 핵심 테이블"],
+["genobjects","r","생성된 항목 콘텐츠 — 이번 세션 소유권 버그 발견된 핵심 테이블"],
+["gendocs","r","생성된 문서 — 이번 세션 소유권 버그(delete_gendoc 등) 발견된 핵심 테이블"],
+["gendoc_params","r","생성 문서 파라미터, user-JWT 다수 접근"],
+["gendoc_genchapters","r","문서-챕터 생성 연결, user-JWT 접근"],
+["genlocks","r","생성 잠금 상태 — 과거 챕터 스코프 버그 이력 있음, user-JWT 다수 접근"],
+["doc_datas","r","문서-데이터 연결, user-JWT 다수 접근"],
+["doc_objectcounts","d","문서별 항목 카운트, service-role 전용"],
+["genchapterlogs","d","챕터 생성 로그, 접근 클라이언트 종류 미확인"],
+["gendoclogs","d","문서 생성 로그, 접근 클라이언트 종류 미확인"],
+["genobjectlogs","d","항목 생성 로그, 혼합 접근"],
+["genobjectrunlog","d","항목 실행 로그, 접근 클라이언트 종류 미확인"],
+["genobjectcounts","d","항목 카운트(크레딧 정산 기준), 대부분 service-role"],
+["genobjectcount_historys","d","항목 카운트 이력, 접근 클라이언트 종류 미확인"],
+["loggendoccloses","d","문서 마감 로그, user-JWT 접근 있으나 로그성 데이터"],
+]],
+["항목/콘텐츠 정의", [
+["objects","r","항목(챕터 구성요소), user-JWT 다수 접근"],
+["objectfilters","r","항목 필터 정의, user-JWT 접근"],
+["objectfiltermaps","r","항목 필터 매핑, user-JWT 접근"],
+["objectdefinitions","d","항목 정의(카탈로그성), service-role 전용"],
+["sentences","r","챕터 문장 정의, user-JWT 접근"],
+["charts","r","챕터 차트 정의, user-JWT 접근"],
+["tables","r","테이블형 콘텐츠(항목 유형), user-JWT 접근"],
+["prompts","r","AI 프롬프트(데이터 연결), user-JWT 접근"],
+["prompt_translations","d","프롬프트 다국어, 접근 클라이언트 종류 미확인(admin 경유 추정)"],
+]],
+["마스터 데이터 소스", [
+["datas","r","마스터 데이터 뷰 — 이번 세션 소유권 버그 다수 발견된 핵심 테이블"],
+["dataunits","r","데이터 원본 테이블(datas 뷰의 기반), user-JWT 다수 접근"],
+["datacols","r","데이터 컬럼 정의, user-JWT 다수 접근"],
+["datacolvalues","r","데이터 컬럼 값, user-JWT 접근"],
+["data_api_params","r","API 데이터소스 파라미터, user-JWT 접근"],
+["data_chatmetas","r","데이터 메타(챗 연동), user-JWT 접근"],
+["datasets","r","데이터셋 정의, user-JWT 접근"],
+["datasetmembers","r","데이터셋 구성원, user-JWT 다수 접근"],
+["project_datasets","r","프로젝트-데이터셋 연결, user-JWT 다수 접근"],
+["connectors","r","DB/API 커넥터 정의, tenantid + user-JWT 다수 접근"],
+["conn_apis","r","API 커넥터 설정, tenantid + user-JWT 접근"],
+["conn_api_credentials","r","API 커넥터 자격증명 참조 — 매우 민감"],
+]],
+["채팅 (d2chat)", [
+["chat_sessions","r","RLS 전제로 설계됨(코드 주석 명시) — sb(user-JWT)로만 접근"],
+["chat_qas","r","위와 동일 근거, 최우선"],
+["chat_favorites","r","위와 동일 근거, 최우선"],
+["chat_retention_policies","d","d2chat 관련 테이블이나 실사용 흔적 없음 — 향후 기능 대비 여부 확인 필요"],
+["chat_session_shares","d","위와 동일"],
+["chat_session_share_users","d","위와 동일"],
+["chat_snapshots","d","위와 동일"],
+]],
+["인사이트 (d2insight) · 시나리오/분석", [
+["insight_sessions","d","d2insight 전용 service-role 클라이언트(_sc)로만 접근하는 아키텍처 — 방어심층 여부 결정"],
+["insight_qas","d","위와 동일"],
+["insight_folders","d","위와 동일"],
+["insight_favorites","d","위와 동일"],
+["insight_qa_shares","d","위와 동일"],
+["insightscheduleshares","d","위와 동일"],
+["insight_retention_policies","d","위와 동일"],
+["analyticmodules","d","d2insight 서비스롤 전용, 방어심층 검토"],
+["analytics","d","위와 동일"],
+["analyticsteps","d","위와 동일"],
+["analytictemplates","d","위와 동일"],
+["scenariomodules","d","d2insight 엔진에서 실사용 확인되나 접근 클라이언트 종류 미확인 — 재조사 필요"],
+["scenarios","d","위와 동일"],
+["scenariosteps","d","위와 동일"],
+["scenariomoduletools","d","위와 동일"],
+]],
+["결제 · 구독 · 크레딧", [
+["llmapikeys","d","LLM API 키(자격증명!) — service-role 전용이나 최고 민감도, 우선 검토 대상"],
+["payments","d","결제 원장 — service-role 전용이나 최고 민감도"],
+["payment_methods","d","결제수단 정보 — service-role 전용이나 최고 민감도"],
+["payment_attempts","d","결제 시도 이력, service-role 전용이나 민감"],
+["payment_refunds","d","환불 이력, service-role 전용이나 민감"],
+["payment_webhook_logs","d","결제 웹훅 로그, service-role 전용"],
+["payment_method_verifications","d","결제수단 인증, 미사용으로 보이나 재확인 필요"],
+["payment_receipts","d","결제 영수증, 미사용으로 보이나 재확인 필요"],
+["invoices","d","청구서, service-role 전용이나 민감"],
+["invoice_items","d","청구서 항목, service-role 전용이나 민감"],
+["invoice_subscriptions","d","청구-구독 연결, 미사용으로 보이나 재확인 필요"],
+["taxinvoices","d","세금계산서, 미사용으로 보이나 재확인 필요"],
+["taxinvoice_invoices","d","세금계산서 연결, 미사용으로 보이나 재확인 필요"],
+["taxinvoice_items","d","세금계산서 항목, 미사용으로 보이나 재확인 필요"],
+["subscriptions","d","구독 원장, service-role 전용이나 민감"],
+["subscription_credits","d","구독 크레딧, service-role 전용이나 민감"],
+["subscription_features","d","구독 기능 플래그, service-role 전용"],
+["creditbuckets","d","크레딧 잔액 — 민감하나 현재 service-role 전용"],
+["creditbucketuses","d","크레딧 사용내역, service-role 전용"],
+["creditbucket_historys","d","크레딧 버킷 이력, service-role 전용"],
+["credit_historys","d","크레딧 이력, 미사용 확인됨, 삭제 예정"],
+["creditledgers","d","크레딧 원장, 미사용 확인됨, 삭제 예정"],
+["account_billing","d","결제 청구 데이터, service-role 전용이나 민감도 높음"],
+["account_features","d","계정별 기능 플래그, tenantid 소유권 있으나 민감도 낮음"],
+["userregreqs","d","가입 신청, service-role 전용이나 개인정보 포함"],
+["config_tenants","d","테넌트별 보안설정(MFA/SSO/IP화이트리스트 토글), service-role 전용이나 민감"],
+]],
+["감사/시스템 로그", [
+["work_logs","d","감사로그(append-only, 컴플라이언스 성격) — service-role 전용이나 위변조 방지 관점 검토 가치"],
+["privacy_consent_logs","d","개인정보 동의 로그(법정 5년 보관) — service-role 전용이나 컴플라이언스 민감"],
+["qnas","d","문의/Q&A, creator 있으나 현재 service-role 전용"],
+["popupdeactivates","d","사용자별 팝업 숨김 상태, useruid 있으나 민감도 낮음"],
+["schedules","d","미사용으로 보이나 재확인 필요, accountuid 있음"],
+["admin_action_logs","n","roleid=7 관리자 전용 화면에서만 service-role로 접근"],
+["login_logs","n","로그인 로그, service-role 전용(감사용)"],
+["tenantlogs","n","테넌트 변경 로그, service-role 전용(감사용)"],
+["tenantuserlogs","n","테넌트 사용자 변경 로그, service-role 전용(감사용)"],
+["userlogs","n","사용자 변경 로그, service-role 전용(감사용)"],
+["llm_api_logs","n","LLM API 로그, 미사용으로 보임"],
+["llmchatlogs","n","미사용으로 보임"],
+["llmdoclogs","n","미사용으로 보임"],
+["llminsightlogs","n","d2insight 서비스롤 전용"],
+]],
+["전역 참조 · 카탈로그 (비민감)", [
+["codes","n","코드 테이블, 전역 참조(관리자만 등록)"],
+["code_translations","n","코드값 다국어, 전역 참조"],
+["languages","n","언어 코드, 전역 참조"],
+["timezones","n","시간대 코드, 전역 참조"],
+["currencies","n","통화 코드, 미사용 확인됨, 삭제 예정"],
+["menus","n","메뉴 정의, 전역 참조"],
+["menu_translations","n","메뉴 다국어, 전역 참조"],
+["terms","n","용어 카탈로그, 전역 참조"],
+["term_translations","n","용어 다국어, 전역 참조"],
+["messages","n","메시지 카탈로그, 전역 참조"],
+["message_translations","n","메시지 다국어, 전역 참조"],
+["ui_terms","n","뷰(UNION) — RLS는 기반 테이블에 적용해야 함"],
+["ui_term_translations","n","뷰(UNION) — RLS는 기반 테이블에 적용해야 함"],
+["vw_creditbucketsums","n","뷰 — RLS는 기반 테이블(creditbuckets)에 적용해야 함"],
+["configs","n","전역 시스템 설정"],
+["config_plans","n","플랜별 설정값, 전역 참조"],
+["config_price","n","가격 카탈로그, 전역 참조"],
+["products","n","상품 카탈로그, 전역 참조"],
+["apps","n","앱 카탈로그, 전역 참조"],
+["app_translations","n","앱 카탈로그 다국어, 전역 참조"],
+["popups","n","팝업 정의, 전역/관리자 참조"],
+["popup_translations","n","팝업 다국어, 전역 참조"],
+["helps","n","도움말 콘텐츠, 관리자 전용 전역 참조"],
+["llmmodels","n","LLM 모델 카탈로그, 전역 참조"],
+]],
+];
+
+const grid = document.getElementById('domains');
+let total = {r:0,d:0,n:0};
+
+DATA.forEach(([domain, rows]) => {
+  const section = document.createElement('div');
+  section.className = 'domain';
+  const h = document.createElement('h3');
+  h.textContent = domain;
+  section.appendChild(h);
+
+  const tw = document.createElement('div');
+  tw.className = 'tablewrap';
+  const table = document.createElement('table');
+  table.innerHTML = '<thead><tr><th style="width:220px">테이블</th><th style="width:120px">분류</th><th>근거</th></tr></thead>';
+  const tbody = document.createElement('tbody');
+
+  rows.forEach(([name, cat, reason]) => {
+    total[cat]++;
+    const tr = document.createElement('tr');
+    tr.dataset.cat = cat;
+    tr.dataset.name = name.toLowerCase();
+    const label = cat === 'r' ? '적용 권장' : cat === 'd' ? '결정 필요' : '적용 불필요';
+    tr.innerHTML = `<td class="tname">${name}</td><td class="cat"><span class="pill ${cat}">${label}</span></td><td class="reason">${reason}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  tw.appendChild(table);
+  section.appendChild(tw);
+  grid.appendChild(section);
+});
+
+document.getElementById('stat-r').textContent = total.r;
+document.getElementById('stat-d').textContent = total.d;
+document.getElementById('stat-n').textContent = total.n;
+
+const allRows = () => Array.from(document.querySelectorAll('tbody tr'));
+const allDomains = () => Array.from(document.querySelectorAll('.domain'));
+let activeFilter = 'all';
+
+function applyFilters(){
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  let visible = 0;
+  allRows().forEach(tr => {
+    const matchCat = activeFilter === 'all' || tr.dataset.cat === activeFilter;
+    const matchQ = !q || tr.dataset.name.includes(q);
+    const show = matchCat && matchQ;
+    tr.classList.toggle('hide', !show);
+    if (show) visible++;
+  });
+  allDomains().forEach(d => {
+    const anyVisible = Array.from(d.querySelectorAll('tbody tr')).some(tr => !tr.classList.contains('hide'));
+    d.style.display = anyVisible ? '' : 'none';
+  });
+  document.getElementById('count').textContent = visible + ' / ' + allRows().length;
+}
+
+document.querySelectorAll('.chip[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.chip[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    applyFilters();
+  });
+});
+document.getElementById('search').addEventListener('input', applyFilters);
+applyFilters();
+</script>
+</body>
+</html>

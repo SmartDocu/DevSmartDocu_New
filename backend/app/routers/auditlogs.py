@@ -5,6 +5,7 @@ append-only 테이블을 조회 전용으로 노출한다. 쓰기(수정/삭제)
 의도적으로 만들지 않는다 — DB 트리거가 이미 append-only를 강제하고 있고,
 이 화면은 조회 전용이어야 하기 때문.
 """
+import re
 from datetime import date, timedelta, timezone
 from typing import Optional
 
@@ -204,6 +205,54 @@ def list_work_logs(
 #  4. 문서/챕터 생성 실패 이력 (gendocs_realtimes / genchapters_realtimes)
 # ══════════════════════════════════════════════════════
 
+_UID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+# "챕터 처리 실패: <uid>"(워커 전파 메시지)와 "챕터 <uid> 데이터 로드 실패"(병합 단계) 두 형태 모두
+_FAILED_CHAPTER_RE = re.compile(rf"챕터(?: 처리 실패:)? ({_UID})")
+
+
+def _attach_target_names(sb, items: list, kind: str) -> None:
+    """실패 건에 대상 이름을 붙인다(items를 직접 수정).
+    - chapter: chapternm / docnm
+    - doc: 사유가 "챕터 처리 실패: <genchapteruid>" 형태로 저장된 건은 failed_genchapteruid / failed_chapternm
+    """
+    if kind == "chapter":
+        chapteruids = list({r["chapteruid"] for r in items if r.get("chapteruid")})
+        docids = list({r["docid"] for r in items if r.get("docid") is not None})
+        chap_map = {}
+        if chapteruids:
+            rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapteruid,chapternm").in_("chapteruid", chapteruids).execute().data or []
+            chap_map = {r["chapteruid"]: r["chapternm"] for r in rows}
+        doc_map = {}
+        if docids:
+            rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid,docnm").in_("docid", docids).execute().data or []
+            doc_map = {r["docid"]: r["docnm"] for r in rows}
+        for r in items:
+            r["chapternm"] = chap_map.get(r.get("chapteruid"), "")
+            r["docnm"] = doc_map.get(r.get("docid"), "")
+        return
+
+    found = {}
+    for r in items:
+        m = _FAILED_CHAPTER_RE.search(r.get("errormessage") or "")
+        if m:
+            found[r["gendocjobuid"]] = m.group(1)
+    if not found:
+        return
+    gc_rows = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("genchapteruid,chapteruid") \
+        .in_("genchapteruid", list(set(found.values()))).execute().data or []
+    gc_to_chap = {x["genchapteruid"]: x["chapteruid"] for x in gc_rows}
+    ch_rows = []
+    if gc_to_chap:
+        ch_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapteruid,chapternm") \
+            .in_("chapteruid", list(set(gc_to_chap.values()))).execute().data or []
+    ch_nm = {x["chapteruid"]: x["chapternm"] for x in ch_rows}
+    for r in items:
+        guid = found.get(r["gendocjobuid"])
+        if guid:
+            r["failed_genchapteruid"] = guid
+            r["failed_chapternm"] = ch_nm.get(gc_to_chap.get(guid), "")
+
+
 @router.get("/gen-failures")
 def list_gen_failures(
     kind: str = Query("doc", pattern="^(doc|chapter)$"),
@@ -240,45 +289,7 @@ def list_gen_failures(
     res = q.order("startdts", desc=True).range(offset, offset + page_size - 1).execute()
     items, total = res.data or [], res.count or 0
 
-    # 대상 이름 보강 — 문서: gendocnm은 이미 있음 / 챕터: chapters.chapternm + docs.docnm
-    if kind == "chapter":
-        chapteruids = list({r["chapteruid"] for r in items if r.get("chapteruid")})
-        docids = list({r["docid"] for r in items if r.get("docid") is not None})
-        chap_map = {}
-        if chapteruids:
-            rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapteruid,chapternm").in_("chapteruid", chapteruids).execute().data or []
-            chap_map = {r["chapteruid"]: r["chapternm"] for r in rows}
-        doc_map = {}
-        if docids:
-            rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid,docnm").in_("docid", docids).execute().data or []
-            doc_map = {r["docid"]: r["docnm"] for r in rows}
-        for r in items:
-            r["chapternm"] = chap_map.get(r.get("chapteruid"), "")
-            r["docnm"] = doc_map.get(r.get("docid"), "")
-
-    # 문서 단위 실패 사유가 "챕터 처리 실패: <genchapteruid>" 형태로 저장된 건은 챕터명을 찾아 같이 내려준다
-    if kind == "doc":
-        import re
-        # "챕터 처리 실패: <uid>"(워커 전파 메시지)와 "챕터 <uid> 데이터 로드 실패"(병합 단계) 두 형태 모두
-        uid_re = re.compile(r"챕터(?: 처리 실패:)? ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
-        found = {}
-        for r in items:
-            m = uid_re.search(r.get("errormessage") or "")
-            if m:
-                found[r["gendocjobuid"]] = m.group(1)
-        if found:
-            gc_rows = sb.schema(SUPABASE_SCHEMA).table("genchapters").select("genchapteruid,chapteruid") \
-                .in_("genchapteruid", list(set(found.values()))).execute().data or []
-            gc_to_chap = {x["genchapteruid"]: x["chapteruid"] for x in gc_rows}
-            ch_rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapteruid,chapternm") \
-                .in_("chapteruid", list(set(gc_to_chap.values()))).execute().data or [] if gc_to_chap else []
-            ch_nm = {x["chapteruid"]: x["chapternm"] for x in ch_rows}
-            for r in items:
-                guid = found.get(r["gendocjobuid"])
-                if guid:
-                    r["failed_genchapteruid"] = guid
-                    r["failed_chapternm"] = ch_nm.get(gc_to_chap.get(guid), "")
-
+    _attach_target_names(sb, items, kind)
     items = _attach_user_info(sb, items, key="creator")
     for r in items:
         r["startdts"] = _fmt_dt(r.get("startdts"), offsetminutes)

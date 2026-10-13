@@ -34,6 +34,7 @@ const MasterChartsPage = lazy(() => import('@/pages/master/MasterChartsPage'))
 const MasterSentencesPage = lazy(() => import('@/pages/master/MasterSentencesPage'))
 const ReqDocListPage = lazy(() => import('@/pages/req/ReqDocListPage'))
 const ReqDocStatusPage = lazy(() => import('@/pages/req/ReqDocStatusPage'))
+const ReqGenFailuresPage = lazy(() => import('@/pages/req/ReqGenFailuresPage'))
 const ReqChaptersReadPage = lazy(() => import('@/pages/req/ReqChaptersReadPage'))
 const ReqChapterObjectsPage = lazy(() => import('@/pages/req/ReqChapterObjectsPage'))
 const ReqDocWritePage = lazy(() => import('@/pages/req/ReqDocWritePage'))
@@ -169,6 +170,7 @@ export const router = createBrowserRouter([
       // Stage 5: 문서 요청/생성
       { path: 'req/list', element: <ReqDocListPage /> },
       { path: 'req/doc-status', element: <ReqDocStatusPage /> },
+      { path: 'req/gen-failures', element: <ReqGenFailuresPage /> },
       { path: 'req/chapters-read', element: <ReqChaptersReadPage /> },
       { path: 'req/chapter-objects', element: <ReqChapterObjectsPage /> },
       { path: 'req/write', element: <ReqDocWritePage /> },
