@@ -7,6 +7,7 @@ import {
   useAdminActionLogs,
   useWorkLogs,
   useLoginLogs,
+  useGenFailures,
 } from '@/hooks/useAuditLogs'
 
 const { RangePicker } = DatePicker
@@ -30,6 +31,10 @@ const EVENT_TYPE_OPTIONS = [
   { value: 'login', label: 'lbl.audit.eventtype.login' },
   { value: 'logout', label: 'lbl.audit.eventtype.logout' },
 ]
+
+const GEN_KIND_OPTIONS = ['doc', 'chapter'].map((v) => ({ value: v, label: `lbl.audit.genkind.${v}` }))
+const GEN_ERRORCD_OPTIONS = ['ERR', 'CRASH', 'START', 'CHAPTER', 'MERGE', 'TEMPLATE_EMPTY']
+  .map((v) => ({ value: v, label: `lbl.audit.errorcd.${v}` }))
 
 function JsonCell({ value }) {
   if (!value) return <span style={{ color: '#bbb' }}>-</span>
@@ -359,6 +364,100 @@ function LoginLogsTab() {
   )
 }
 
+// ─── 4. 문서/챕터 생성 실패 이력 ─────────────────────────────────────────────
+
+// traceback이면 마지막 줄(예외 종류와 메시지), 짧은 문구면 그대로 요약으로 쓴다
+function summarizeError(msg) {
+  const lines = String(msg || '').split('\n').map((s) => s.trim()).filter(Boolean)
+  return lines.length ? lines[lines.length - 1] : '-'
+}
+
+function GenFailuresTab() {
+  const f = useFilterState()
+  const [kind, setKind] = useState('doc')
+  const [errorcd, setErrorcd] = useState(undefined)
+  const params = {
+    kind,
+    start_date: f.dates[0]?.format('YYYY-MM-DD'),
+    end_date: f.dates[1]?.format('YYYY-MM-DD'),
+    email: f.email || undefined,
+    errorcd,
+    page: f.page,
+    page_size: f.pageSize,
+  }
+  const { data = {}, isLoading } = useGenFailures(params)
+
+  const columns = [
+    { title: t('thd.audit.createdts'), dataIndex: 'startdts', key: 'startdts', width: 140 },
+    { title: t('thd.audit.user'), key: 'user', render: (_, r) => <UserCell record={r} /> },
+    { title: t('thd.audit.target'), key: 'target', render: (_, r) => (
+      kind === 'doc'
+        ? <div>{r.gendocnm || '-'}</div>
+        : (
+          <div>
+            <div>{r.chapternm || '-'}</div>
+            <div style={{ fontSize: 12, color: '#888' }}>{r.docnm || ''}</div>
+          </div>
+        )
+    ) },
+    { title: t('thd.audit.errorcd'), dataIndex: 'errorcd', key: 'errorcd', width: 160, render: (v) => <Tag color="red">{v}</Tag> },
+    { title: t('thd.audit.errorsummary'), key: 'summary', render: (_, r) => (
+      <span style={{ wordBreak: 'break-word' }}>{summarizeError(r.errormessage)}</span>
+    ) },
+  ]
+
+  return (
+    <div>
+      <FilterBar
+        {...f}
+        extra={
+          <>
+            <div className="filter-item">
+              <label style={{ fontWeight: 'bold' }}>{t('thd.audit.genkind')}</label>
+              <Select
+                style={{ width: 140 }}
+                value={kind}
+                onChange={(v) => { setKind(v); f.setPage(1) }}
+                options={GEN_KIND_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+              />
+            </div>
+            <div className="filter-item">
+              <label style={{ fontWeight: 'bold' }}>{t('thd.audit.errorcd')}</label>
+              <Select
+                allowClear
+                style={{ width: 280 }}
+                value={errorcd}
+                onChange={(v) => { setErrorcd(v); f.setPage(1) }}
+                options={GEN_ERRORCD_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+              />
+            </div>
+          </>
+        }
+      />
+      <div className="panel-section">
+        <Table
+          rowKey={kind === 'doc' ? 'gendocjobuid' : 'genchapterjobuid'}
+          columns={columns}
+          dataSource={data.items || []}
+          loading={isLoading}
+          expandable={{
+            expandedRowRender: (r) => (
+              <pre style={{ margin: 0, maxHeight: 360, overflow: 'auto', fontSize: 12, background: '#f7f7f7', padding: 8, borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {r.errormessage || '-'}
+              </pre>
+            ),
+          }}
+          pagination={{
+            current: f.page, pageSize: f.pageSize, total: data.total || 0, position: ['bottomCenter'],
+            onChange: f.setPage, showSizeChanger: false,
+          }}
+          size="small"
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── 페이지 루트 ─────────────────────────────────────────────────────────────
 
 export default function AdminAuditLogsPage() {
@@ -369,6 +468,7 @@ export default function AdminAuditLogsPage() {
     { key: 'admin', label: t('ttl.audit.admin_log'), children: <AdminActionsTab /> },
     { key: 'work', label: t('ttl.audit.work'), children: <WorkLogsTab /> },
     { key: 'login', label: t('ttl.audit.login'), children: <LoginLogsTab /> },
+    { key: 'genfail', label: t('ttl.audit.genfail'), children: <GenFailuresTab /> },
   ]
 
   return (

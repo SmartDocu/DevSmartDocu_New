@@ -200,6 +200,69 @@ def list_work_logs(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+# ══════════════════════════════════════════════════════
+#  4. 문서/챕터 생성 실패 이력 (gendocs_realtimes / genchapters_realtimes)
+# ══════════════════════════════════════════════════════
+
+@router.get("/gen-failures")
+def list_gen_failures(
+    kind: str = Query("doc", pattern="^(doc|chapter)$"),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    email: Optional[str] = None,
+    errorcd: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    token: str = Depends(get_token),
+    tenantid: Optional[str] = Depends(get_tenantid),
+):
+    """errorcd가 기록된 문서/챕터 생성 작업(시스템 관리자 전용). errormessage(traceback 원문)를 그대로 반환한다."""
+    admin = _require_admin(token)
+    sb = _sb_service()
+    offsetminutes = _get_offsetminutes(sb, str(admin.id), tenantid)
+    sd, ed = _default_dates(start_date, end_date)
+    creators = _search_useruids(sb, email)
+    if creators == []:
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+    table = "gendocs_realtimes" if kind == "doc" else "genchapters_realtimes"
+    q = (
+        sb.schema(SUPABASE_SCHEMA).table(table).select("*", count="exact")
+        .not_.is_("errorcd", "null")
+        .gte("startdts", sd)
+        .lt("startdts", (date.fromisoformat(ed) + timedelta(days=1)).isoformat())
+    )
+    if creators is not None:
+        q = q.in_("creator", creators)
+    if errorcd:
+        q = q.eq("errorcd", errorcd)
+    offset = (page - 1) * page_size
+    res = q.order("startdts", desc=True).range(offset, offset + page_size - 1).execute()
+    items, total = res.data or [], res.count or 0
+
+    # 대상 이름 보강 — 문서: gendocnm은 이미 있음 / 챕터: chapters.chapternm + docs.docnm
+    if kind == "chapter":
+        chapteruids = list({r["chapteruid"] for r in items if r.get("chapteruid")})
+        docids = list({r["docid"] for r in items if r.get("docid") is not None})
+        chap_map = {}
+        if chapteruids:
+            rows = sb.schema(SUPABASE_SCHEMA).table("chapters").select("chapteruid,chapternm").in_("chapteruid", chapteruids).execute().data or []
+            chap_map = {r["chapteruid"]: r["chapternm"] for r in rows}
+        doc_map = {}
+        if docids:
+            rows = sb.schema(SUPABASE_SCHEMA).table("docs").select("docid,docnm").in_("docid", docids).execute().data or []
+            doc_map = {r["docid"]: r["docnm"] for r in rows}
+        for r in items:
+            r["chapternm"] = chap_map.get(r.get("chapteruid"), "")
+            r["docnm"] = doc_map.get(r.get("docid"), "")
+
+    items = _attach_user_info(sb, items, key="creator")
+    for r in items:
+        r["startdts"] = _fmt_dt(r.get("startdts"), offsetminutes)
+        r["enddts"] = _fmt_dt(r.get("enddts"), offsetminutes)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
 @router.get("/login")
 def list_login_logs(
     start_date: Optional[str] = None,

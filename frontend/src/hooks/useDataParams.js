@@ -27,6 +27,8 @@ export function useSaveDataParam() {
     onSuccess: (_, body) => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['data-params', String(body.docid)] })
+      // 데이터셋 매핑 화면(master/datasets)이 같은 docparams를 doc-params API로 따로 읽는다
+      qc.invalidateQueries({ queryKey: ['doc-datasets', String(body.docid)] })
     },
     onError: (err) => {
       const detail = err.response?.data?.detail
@@ -43,6 +45,7 @@ export function useDeleteDataParam(docid) {
     onSuccess: () => {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['data-params', String(docid)] })
+      qc.invalidateQueries({ queryKey: ['doc-datasets', String(docid)] })
     },
     onError: (err) => {
       const detail = err.response?.data?.detail

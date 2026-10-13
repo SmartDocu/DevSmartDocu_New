@@ -168,6 +168,51 @@ def _check_credit_gate(sb, sb_svc, accountuid: Optional[str], chapteruids: list)
     return None
 
 
+def _precheck_generation(sb, sb_svc, gendocuid: str, chapteruids: list) -> tuple[Optional[dict], Optional[dict]]:
+    """작성 요청 사전 검증. (차단 응답, 경고 응답)을 반환하고 해당 없으면 각각 None.
+
+    - 차단: texttemplate이 NULL인 챕터 — 워커가 템플릿 파서에서 죽는다(TEMPLATE_EMPTY).
+    - 경고: 매개변수/데이터셋 매핑 누락 — 오류 없이 필터 없는 전체 데이터가 쓰이는 조용한 문제라
+      막지 않고 사용자 확인 후 진행(confirm_warnings)하게 한다. 매핑은 문서(docid) 단위다.
+    사용자 문구는 프론트가 t()로 조합하도록 코드와 이름 목록만 내려준다.
+    """
+    S = SUPABASE_SCHEMA
+    if chapteruids:
+        rows = sb.schema(S).table("chapters").select("chapteruid,chapternm,texttemplate") \
+            .in_("chapteruid", chapteruids).execute().data or []
+        empty = sorted((r.get("chapternm") or r["chapteruid"]) for r in rows if r.get("texttemplate") is None)
+        if empty:
+            return {"precheck_failed": True, "reasoncd": "template_empty", "items": empty}, None
+
+    gd = sb.schema(S).table("gendocs").select("docid").eq("gendocuid", gendocuid).execute().data or []
+    docid = gd[0]["docid"] if gd else None
+    if docid is None:
+        return None, None
+    params = sb_svc.schema(S).table("docparams").select("paramuid,paramnm").eq("docid", docid).execute().data or []
+    if not params:
+        return None, None
+
+    dtls = sb_svc.schema(S).table("docparamdtls").select("paramuid").eq("docid", docid).execute().data or []
+    mapped_params = {d["paramuid"] for d in dtls}
+    param_nm = {p["paramuid"]: (p.get("paramnm") or p["paramuid"]) for p in params}
+
+    warnings: dict = {}
+    unmapped_params = [param_nm[u] for u in param_nm if u not in mapped_params]
+    if unmapped_params:
+        warnings["unmapped_params"] = unmapped_params
+
+    # 매핑 없는 '데이터셋'은 경고하지 않는다 — 고정 API·정적 데이터셋은 매개변수가 필요 없어 정상 구성인 경우가 많고
+    # (최근 문서 26건 중 12건이 해당), 매핑은 매개변수×데이터셋 관계라 '매핑 안 된 매개변수'로 같은 문제를 잡는다.
+    gp =sb_svc.schema(S).table("gendoc_params").select("paramuid,paramvalue").eq("gendocuid", gendocuid).execute().data or []
+    empty_values = [param_nm[r["paramuid"]] for r in gp
+                    if r["paramuid"] in mapped_params and r["paramuid"] in param_nm
+                    and not str(r.get("paramvalue") if r.get("paramvalue") is not None else "").strip()]
+    if empty_values:
+        warnings["empty_values"] = empty_values
+
+    return None, ({"precheck_warning": True, "warnings": warnings} if warnings else None)
+
+
 def _get_offsetminutes(sb, user_id: str, tenantid: Optional[str] = None) -> Optional[int]:
     """tenantid를 주면 그 테넌트 기준으로, 없으면(다중 테넌트일 때 모호해질 수 있어) 활성(useyn=True) 소속 행을 사용."""
     try:
@@ -1017,6 +1062,7 @@ class RewriteChapterRequest(BaseModel):
     projectid: Optional[int] = None
     tenantid: Optional[int] = None
     accountuid: Optional[str] = None
+    confirm_warnings: bool = False   # 매핑 누락 경고를 사용자가 확인하고 진행할 때 true
 
 
 @router.post("/genchapters/{genchapteruid}/rewrite", dependencies=[Depends(require_doc_write)])
@@ -1039,9 +1085,16 @@ def rewrite_chapter(genchapteruid: str, request: Request, body: RewriteChapterRe
     sb_svc = get_service_client()
 
     # 크레딧 체크 — 대상 챕터의 objects 건수 + 정산 대기 건수가 잔여 크레딧을 초과하면 차단
+    precheck_block, precheck_warn = _precheck_generation(sb, sb_svc, gendocuid, [chapteruid])
+    if precheck_block:
+        return precheck_block
+
     credit_block = _check_credit_gate(sb, sb_svc, body.accountuid, [chapteruid])
     if credit_block:
         return credit_block
+
+    if precheck_warn and not body.confirm_warnings:
+        return precheck_warn
 
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()
@@ -1334,6 +1387,7 @@ class GenerateRequest(BaseModel):
     projectid: Optional[int] = None
     tenantid: Optional[int] = None
     accountuid: Optional[str] = None
+    confirm_warnings: bool = False   # 매핑 누락 경고를 사용자가 확인하고 진행할 때 true
 
 
 @router.post("/{gendocuid}/generate", dependencies=[Depends(require_doc_write)])
@@ -1352,9 +1406,17 @@ def generate_doc(gendocuid: str, body: GenerateRequest, request: Request, token:
     sb_svc = get_service_client()
 
     # 크레딧 체크 — 대상 챕터들의 objects 건수 + 정산 대기 건수가 잔여 크레딧을 초과하면 차단
-    credit_block = _check_credit_gate(sb, sb_svc, body.accountuid, _get_chapteruids_for_gendoc(sb, gendocuid))
+    target_chapteruids = _get_chapteruids_for_gendoc(sb, gendocuid)
+    precheck_block, precheck_warn = _precheck_generation(sb, sb_svc, gendocuid, target_chapteruids)
+    if precheck_block:
+        return precheck_block
+
+    credit_block = _check_credit_gate(sb, sb_svc, body.accountuid, target_chapteruids)
     if credit_block:
         return credit_block
+
+    if precheck_warn and not body.confirm_warnings:
+        return precheck_warn
 
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()

@@ -203,15 +203,15 @@ export default function MasterConditionsPage() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
           <div className="table-container">
-            <table className="table table-bordered table-sm">
+            <table className="table table-bordered table-sm" style={{ tableLayout: 'fixed', overflowWrap: 'anywhere' }}>
               <thead>
                 <tr>
                   <th style={{ width: '10%', textAlign: 'center' }}>{t('thd.orderno_thd')}</th>
-                  <th>{t('thd.paramnm_thd')}</th>
+                  <th style={{ width: '22%' }}>{t('thd.paramnm_thd')}</th>
                   <th style={{ width: '15%', textAlign: 'center' }}>{t('thd.operator_thd')}</th>
-                  <th>{t('thd.samplevalue_thd')}</th>
+                  <th style={{ width: '18%' }}>{t('thd.samplevalue_thd')}</th>
                   <th style={{ width: '14%', textAlign: 'center' }}>{t('thd.datatypecd')}</th>
-                  <th>{t('thd.datanm_thd')}</th>
+                  <th style={{ width: '21%' }}>{t('thd.datanm_thd')}</th>
                 </tr>
               </thead>
               <tbody>

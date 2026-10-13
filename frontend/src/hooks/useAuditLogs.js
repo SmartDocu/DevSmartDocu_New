@@ -27,6 +27,14 @@ export function useWorkLogs(params) {
   })
 }
 
+export function useGenFailures(params) {
+  return useQuery({
+    queryKey: ['audit-gen-failures', params],
+    queryFn: () => apiClient.get('/auditlogs/gen-failures', { params }).then((r) => r.data),
+    placeholderData: (prev) => prev,
+  })
+}
+
 export function useLoginLogs(params) {
   return useQuery({
     queryKey: ['audit-login', params],

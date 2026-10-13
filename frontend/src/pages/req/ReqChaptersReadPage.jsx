@@ -20,7 +20,7 @@ const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
 export default function ReqChaptersReadPage() {
   useLangStore((s) => s.translations)
 
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const openInTab = useOpenInTab()
   const { accessToken, user } = useAuthStore()
   const editbuttonyn = user?.editbuttonyn === 'Y'
@@ -167,15 +167,45 @@ export default function ReqChaptersReadPage() {
     if (selectedChap) loadContent(selectedChap.genchapteruid, type)
   }
 
+  // ── 작성 요청 사전 검증 응답 처리 ────────────────────────────────────────────
+  // precheck_failed: 템플릿이 빈 챕터가 있어 막힌 경우(챕터명 안내) / precheck_warning: 매핑 누락 경고 후
+  // 사용자가 확인하면 retry()로 confirm 플래그를 실어 다시 요청한다. 처리했으면 true.
+  const handlePrecheck = (data, retry) => {
+    if (data.precheck_failed) {
+      message.warning({
+        content: <span style={{ whiteSpace: 'pre-line' }}>{`${t('msg.precheck.template_empty')}\n${(data.items || []).join(', ')}`}</span>,
+        duration: 6,
+      })
+      return true
+    }
+    if (data.precheck_warning) {
+      const w = data.warnings || {}
+      modal.confirm({
+        content: (
+          <div style={{ whiteSpace: 'pre-line' }}>
+            {w.unmapped_params?.length > 0 && <div style={{ marginBottom: 8 }}><b>{t('msg.precheck.warn.unmapped_params')}</b>{`\n${w.unmapped_params.join(', ')}`}</div>}
+            {w.empty_values?.length > 0 && <div style={{ marginBottom: 8 }}><b>{t('msg.precheck.warn.empty_values')}</b>{`\n${w.empty_values.join(', ')}`}</div>}
+            <div>{t('msg.precheck.warn.confirm')}</div>
+          </div>
+        ),
+        onOk: () => { retry() },
+      })
+      return true
+    }
+    return false
+  }
+
   // ── 챕터 재작성 (SQS 비동기) ─────────────────────────────────────────────────
-  const handleRewrite = async () => {
+  const handleRewrite = async ({ confirm = false } = {}) => {
     if (!selectedChap) return
     setRequestLoadingMsg(t('msg.chapter.write.requesting'))
     setRequestLoading(true)
     try {
       const res = await apiClient.post(`/gendocs/genchapters/${selectedChap.genchapteruid}/rewrite`, {
         projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
+        confirm_warnings: confirm,
       })
+      if (handlePrecheck(res.data, () => handleRewrite({ confirm: true }))) return
       if (res.data.locked) {
         message.warning(res.data.message || t('msg.chapter.already.writing'))
         return
@@ -249,7 +279,7 @@ export default function ReqChaptersReadPage() {
   }
 
   // ── 문서 일괄 작성 (SQS 비동기) ─────────────────────────────────────────────
-  const handleDocRewrite = async () => {
+  const handleDocRewrite = async ({ confirm = false } = {}) => {
     if (!selectedGendocuid) return
     const results = chapters.map((c) => ({ genchapteruid: c.genchapteruid, mode: 'all' }))
     setRequestLoadingMsg(t('msg.doc.write.requesting'))
@@ -257,7 +287,9 @@ export default function ReqChaptersReadPage() {
     try {
       const res = await apiClient.post(`/gendocs/${selectedGendocuid}/generate`, {
         results, projectid: user?.projectid, tenantid: user?.tenantid, accountuid: user?.accountuid,
+        confirm_warnings: confirm,
       })
+      if (handlePrecheck(res.data, () => handleDocRewrite({ confirm: true }))) return
       if (res.data.locked) {
         message.warning(res.data.message || t('msg.doc.already.writing'))
         return

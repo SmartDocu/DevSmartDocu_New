@@ -6,6 +6,7 @@ const GEN_ERROR_KEYS = {
   CHAPTER: 'msg.gen.error.chapter',
   MERGE: 'msg.gen.error.merge',
   CRASH: 'msg.gen.error.crash',
+  TEMPLATE_EMPTY: 'msg.gen.error.template_empty',
 }
 
 export function getGenErrorKey(errorcd) {

@@ -174,6 +174,10 @@ SQS_CHAPTER_QUEUE_URL = settings.SQS_CHAPTER_QUEUE_URL
 AWS_REGION = settings.AWS_REGION
 
 
+class TemplateEmptyError(Exception):
+    """챕터 texttemplate이 NULL(미입력)인 데이터 문제 — errorcd='TEMPLATE_EMPTY'로 기록한다."""
+
+
 def _update_queue(sb_svc, gendocjobuid, job_status_cd, *,
                   error_cd=None, error_msg=None, end_dts=None):
     row = {"jobstatuscd": job_status_cd}
@@ -570,6 +574,9 @@ def process_chapter_message(msg):
         # 템플릿 처리 → flattexttemplate → genobjects
         _chap = sb.schema(SUPABASE_SCHEMA).table("chapters").select("texttemplate").eq("chapteruid", chapteruid).execute().data
         _tt = _chap[0]["texttemplate"] if _chap else ""
+        if _tt is None:
+            # 템플릿 미입력(NULL) 챕터는 아래 파서에서 TypeError로 죽으므로, 원인을 알 수 있게 미리 중단한다.
+            raise TemplateEmptyError(f"챕터 템플릿이 비어 있습니다: {chapternm or chapteruid}")
         _atv = extract_at_variables(_tt)
         _ctx = _build_context(sb, _atv["unique"], req, docid)
         _reg = FunctionRegistry()
@@ -664,13 +671,18 @@ def process_chapter_message(msg):
             except Exception:
                 logger.exception("완료 체크 실패: %s", gendocuid)
 
-    except Exception:
+    except Exception as chapter_exc:
         logger.exception("챕터 오류: %s", genchapteruid)
+        # 데이터 문제(빈 템플릿)는 traceback 없이 원인 문구와 전용 코드를 남긴다.
+        _is_tmpl_empty = isinstance(chapter_exc, TemplateEmptyError)
+        _chapter_err_cd = "TEMPLATE_EMPTY" if _is_tmpl_empty else "CHAPTER"
         try:
             import traceback
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_chapter_queue(sb_svc, genchapterjobuid, "E",
-                                   error_cd="CHAPTER", error_msg=traceback.format_exc(), end_dts=end_iso)
+                                   error_cd=_chapter_err_cd,
+                                   error_msg=str(chapter_exc) if _is_tmpl_empty else traceback.format_exc(),
+                                   end_dts=end_iso)
             if not is_start_doc:
                 tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                 create_notification(
@@ -691,7 +703,9 @@ def process_chapter_message(msg):
                 if doc_rt and doc_rt[0].get("jobstatuscd") not in ("E", "merging"):
                     end_iso = datetime.now(timezone.utc).isoformat()
                     _update_queue(sb_svc, gendocjobuid, "E",
-                                  error_cd="CHAPTER", error_msg=f"챕터 처리 실패: {genchapteruid}", end_dts=end_iso)
+                                  error_cd=_chapter_err_cd,
+                                  error_msg=str(chapter_exc) if _is_tmpl_empty else f"챕터 처리 실패: {genchapteruid}",
+                                  end_dts=end_iso)
                     tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                     create_notification(
                         sb_svc, category="doc", status="error",
