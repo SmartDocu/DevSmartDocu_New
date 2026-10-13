@@ -351,7 +351,7 @@ def _run_merge_and_upload(sb, sb_svc, req, gendocuid, docid, gendocnm, user_id, 
             import traceback
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_queue(sb_svc, gendocjobuid, "E",
-                          error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+                          error_cd="MERGE", error_msg=traceback.format_exc(), end_dts=end_iso)
             tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
             create_notification(
                 sb_svc, category="doc", status="error",
@@ -487,7 +487,7 @@ def process_message(msg):
             import traceback
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_queue(sb_svc, gendocjobuid, "E",
-                          error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+                          error_cd="START", error_msg=traceback.format_exc(), end_dts=end_iso)
             tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
             create_notification(
                 sb_svc, category="doc", status="error",
@@ -670,7 +670,7 @@ def process_chapter_message(msg):
             import traceback
             end_iso = datetime.now(timezone.utc).isoformat()
             _update_chapter_queue(sb_svc, genchapterjobuid, "E",
-                                   error_cd="ERR", error_msg=traceback.format_exc(), end_dts=end_iso)
+                                   error_cd="CHAPTER", error_msg=traceback.format_exc(), end_dts=end_iso)
             if not is_start_doc:
                 tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                 create_notification(
@@ -691,7 +691,7 @@ def process_chapter_message(msg):
                 if doc_rt and doc_rt[0].get("jobstatuscd") not in ("E", "merging"):
                     end_iso = datetime.now(timezone.utc).isoformat()
                     _update_queue(sb_svc, gendocjobuid, "E",
-                                  error_cd="ERR", error_msg=f"챕터 처리 실패: {genchapteruid}", end_dts=end_iso)
+                                  error_cd="CHAPTER", error_msg=f"챕터 처리 실패: {genchapteruid}", end_dts=end_iso)
                     tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                     create_notification(
                         sb_svc, category="doc", status="error",

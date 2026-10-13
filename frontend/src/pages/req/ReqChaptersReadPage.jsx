@@ -13,6 +13,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useReqStore } from '@/stores/reqStore'
 import { useOpenInTab } from '@/hooks/useOpenInTab'
 import { getErrorDetail } from '@/utils/apiError'
+import { getGenErrorKey } from '@/utils/genError'
 
 const TODAY = dayjs().format('YYYY-MM-DD')
 const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
@@ -108,7 +109,7 @@ export default function ReqChaptersReadPage() {
         (payload) => {
           if (payload.new.jobstatuscd !== 'E') return  // 'S'->'P'(워커 선점)->'E' 순서로 바뀌므로 'E'일 때만 완료로 판단
           setRewriting(false)
-          if (payload.new.errorcd) message.error(payload.new.errormessage || t('msg.server.error'))
+          if (payload.new.errorcd) message.error(t(getGenErrorKey(payload.new.errorcd)))
           else { refetch(); loadContent(selectedChap.genchapteruid, viewType) }
         })
       .subscribe()
@@ -125,6 +126,7 @@ export default function ReqChaptersReadPage() {
         (payload) => {
           if (payload.new.jobstatuscd !== 'E') return  // 'S'->'merging'->'E' 순서로 바뀌므로 'E'일 때만 완료로 판단
           setGenerating(false)
+          if (payload.new.errorcd) message.error(t(getGenErrorKey(payload.new.errorcd)))
           refetch()
         })
       .subscribe()
