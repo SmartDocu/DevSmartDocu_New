@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabaseClient'
 import { useAuthStore } from '@/stores/authStore'
 import { useLangStore, t } from '@/stores/langStore'
 import { getErrorDetail } from '@/utils/apiError'
-import { getGenErrorKey } from '@/utils/genError'
 
 // 라디오 초기값 계산: createfiledts vs updatefiledts 비교
 function getInitialMode(ch) {
@@ -75,10 +74,7 @@ export default function ReqDocWritePage() {
         (payload) => {
           if (payload.new.jobstatuscd !== 'E') return  // 'S'->'merging'->'E' 순서로 바뀌므로 'E'일 때만 완료로 판단
           setGenerating(false)
-          if (payload.new.errorcd) {
-            message.error(t(getGenErrorKey(payload.new.errorcd)))
-            return
-          }
+          if (payload.new.errorcd) return  // 실패 토스트는 전역 useJobNotifications가 띄운다
           message.success(`${t('msg.doc.write.complete')}: ${gendoc.gendocnm || ''}`)
           navigate(`/app/${appcd}/req/doc-read?gendocs=${gendocuid}&type=auto`)
         })

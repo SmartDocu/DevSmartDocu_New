@@ -4,6 +4,7 @@ import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import { useAuthStore } from '@/stores/authStore'
 import { supabase } from '@/lib/supabaseClient'
+import { getGenErrorKey } from '@/utils/genError'
 
 export function useJobNotifications() {
   const userId = useAuthStore((s) => s.user?.id)
@@ -16,7 +17,7 @@ export function useJobNotifications() {
     const handleDone = (payload, completedKey) => {
       if (payload.new.jobstatuscd !== 'E') return
       if (payload.new.errorcd) {
-        message.error(payload.new.errormessage || t('msg.server.error'))
+        message.error(t(getGenErrorKey(payload.new.errorcd)))
       } else {
         message.success(t(completedKey))
       }
