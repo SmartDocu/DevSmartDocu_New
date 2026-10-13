@@ -76,7 +76,7 @@ def _purge_do_service_content(sd, accountuid: str, tenantid: int, personal: bool
     objectfilteruids = [f["objectfilteruid"] for f in _select_in(sd, "objectfilters", "objectfilteruid", "objectuid", objectuids)]
 
     _bulk_delete(sd, "genlocks", "gendocuid", gendocuids)
-    _bulk_delete(sd, "gendoc_genchapters", "gendocuid", gendocuids)
+    # _bulk_delete(sd, "gendoc_genchapters", "gendocuid", gendocuids)    # jeff 20261013
     _bulk_delete(sd, "genobjects", "genchapteruid", genchapteruids)
     _bulk_delete(sd, "genchapters_realtimes", "genchapteruid", genchapteruids)
     _bulk_delete(sd, "gendocs_realtimes", "gendocuid", gendocuids)

@@ -868,16 +868,17 @@ def apply_chapter_objects(genchapteruid: str, request: Request, token: str = Dep
         "createfiledts": now,
     }).eq("genchapteruid", genchapteruid).execute()
 
-    # Insert log
-    try:
-        sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
-            "gendocuid": gendocuid,
-            "genchapteruid": genchapteruid,
-            "creator": user_id,
-            "createdts": now,
-        }).execute()
-    except Exception:
-        pass
+    # jeff 20261013
+    # # Insert log
+    # try:
+    #     sb.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
+    #         "gendocuid": gendocuid,
+    #         "genchapteruid": genchapteruid,
+    #         "creator": user_id,
+    #         "createdts": now,
+    #     }).execute()
+    # except Exception:
+    #     pass
 
     after = snapshot_row(sb, "genchapters", "genchapteruid", genchapteruid)
     log_work_action(
@@ -1421,23 +1422,53 @@ def generate_doc(gendocuid: str, body: GenerateRequest, request: Request, token:
         "gendocjobuid": gendocjobuid,
     }).eq("gendocuid", gendocuid).execute()
 
+    # # SQS 메시지 전송
+    # sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+    # sqs.send_message(
+    #     QueueUrl=settings.SQS_QUEUE_URL,
+    #     MessageBody=json.dumps({
+    #         "gendocuid": gendocuid,
+    #         "gendocjobuid": gendocjobuid,
+    #         "user_id": user_id,
+    #         "access_token": token,
+    #         "results": results,
+    #         "docid": docid,
+    #         "tenantid": body.tenantid,
+    #         "projectid": body.projectid,
+    #         "accountuid": body.accountuid,
+    #         "gendocnm": gendocnm,
+    #     }, ensure_ascii=False),
+    # )
+
+    # jeff 20261012
     # SQS 메시지 전송
-    sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
-    sqs.send_message(
-        QueueUrl=settings.SQS_QUEUE_URL,
-        MessageBody=json.dumps({
-            "gendocuid": gendocuid,
-            "gendocjobuid": gendocjobuid,
-            "user_id": user_id,
-            "access_token": token,
-            "results": results,
-            "docid": docid,
-            "tenantid": body.tenantid,
-            "projectid": body.projectid,
-            "accountuid": body.accountuid,
-            "gendocnm": gendocnm,
-        }, ensure_ascii=False),
-    )
+    message_body = json.dumps({
+        "gendocuid": gendocuid,
+        "gendocjobuid": gendocjobuid,
+        "user_id": user_id,
+        "access_token": token,
+        "results": results,
+        "docid": docid,
+        "tenantid": body.tenantid,
+        "projectid": body.projectid,
+        "accountuid": body.accountuid,
+        "gendocnm": gendocnm,
+    }, ensure_ascii=False)
+
+    # 로컬 확인용 — DOC_RUN_LOCAL이 켜져 있으면 SQS 대신 이 프로세스의 스레드에서 워커의
+    # 문서 처리 함수를 직접 부른다. 배포 환경은 끈다.    # jeff 20261012
+    import os
+    if os.getenv("DOC_RUN_LOCAL", "").strip().lower() in ("1", "true", "yes"):
+        import threading
+        from worker.main import process_message
+        threading.Thread(
+            target=process_message, args=({"Body": message_body},), daemon=True,
+        ).start()
+    else:
+        sqs = boto3.client("sqs", region_name=settings.AWS_REGION)
+        sqs.send_message(QueueUrl=settings.SQS_QUEUE_URL, MessageBody=message_body)
+    #####
+
 
     # SQS 비동기 — 실제 작성 완료는 worker/main.py가 처리(여기선 아직 콘텐츠가 없음).
     # 완료 시점 기록(actioncd="create")은 worker/main.py의 _run_merge_and_upload()가 남긴다.

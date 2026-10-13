@@ -1,7 +1,6 @@
 """
 llm_logger.py — LLM API 호출 로그 저장.
 d2doc → sdoc.llmdoclogs, d2chat → sdoc.llmchatlogs, d2insight → sdoc.llminsightlogs
-(기존 단일 테이블 sdoc.llm_api_logs를 서비스별로 분리)
 """
 from datetime import datetime
 from typing import Optional

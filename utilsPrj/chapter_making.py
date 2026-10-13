@@ -68,19 +68,20 @@ def queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, objectuid, o
     _log_queue.put(log_data)
 
 
-def queue_genobject_run_log(genobjectuid, objecttypecd, sourcebase, inputtoken, tenantid, useruid, run_start_dts):
-    """로그를 큐에 추가 (즉시 DB 호출 안 함)"""
-    log_data = {
-        'type': 'genobjectrunlog',
-        'genobjectuid': genobjectuid,
-        'objecttypecd': objecttypecd,
-        'sourcebase': sourcebase,
-        'timestamp': run_start_dts,
-        'inputtoken': inputtoken,
-        'tenantid': tenantid,
-        'useruid': useruid
-    }
-    _log_queue.put(log_data)
+# jeff 20261012
+# def queue_genobject_run_log(genobjectuid, objecttypecd, sourcebase, inputtoken, tenantid, useruid, run_start_dts):
+#     """로그를 큐에 추가 (즉시 DB 호출 안 함)"""
+#     log_data = {
+#         'type': 'genobjectrunlog',
+#         'genobjectuid': genobjectuid,
+#         'objecttypecd': objecttypecd,
+#         'sourcebase': sourcebase,
+#         'timestamp': run_start_dts,
+#         'inputtoken': inputtoken,
+#         'tenantid': tenantid,
+#         'useruid': useruid
+#     }
+#     _log_queue.put(log_data)
 
 def queue_genobject_result(genobjectuid, genchapteruid, chapteruid, objectuid, objecttypecd, 
                            sourcebase, sourcetext, resulttext, user_id, run_start_dts):
@@ -108,7 +109,7 @@ def flush_logs_to_db(supabase, log_source="AI"):
     genobject_updates = {}
     genobject_results = {}
 
-    genobjectrunlog_inserts = []
+    # genobjectrunlog_inserts = []    # jeff 20261012
     
     while not _log_queue.empty():
         log = _log_queue.get()
@@ -134,17 +135,18 @@ def flush_logs_to_db(supabase, log_source="AI"):
                         'progressrate': log['progressrate'],
                         "createdts": log['timestamp']
                     }
-        
-        elif log['type'] == 'genobjectrunlog':
-            genobjectrunlog_inserts.append({
-                'genobjectuid': log['genobjectuid'],
-                'objecttypecd': log['objecttypecd'],
-                'sourcebase': log['sourcebase'],
-                'rundts': log['timestamp'],
-                'inputtoken': log['inputtoken'],
-                'tenantid': log['tenantid'],
-                'useruid': log['useruid']
-            })
+
+        # jeff 20261012        
+        # elif log['type'] == 'genobjectrunlog':
+        #     genobjectrunlog_inserts.append({
+        #         'genobjectuid': log['genobjectuid'],
+        #         'objecttypecd': log['objecttypecd'],
+        #         'sourcebase': log['sourcebase'],
+        #         'rundts': log['timestamp'],
+        #         'inputtoken': log['inputtoken'],
+        #         'tenantid': log['tenantid'],
+        #         'useruid': log['useruid']
+        #     })
 
         elif log['type'] == 'genobject_result':
             uid = log['genobjectuid']
@@ -177,13 +179,11 @@ def flush_logs_to_db(supabase, log_source="AI"):
                     {'progressrate': rate}
                 ).in_('genobjectuid', uids).execute()
                 # print(f"[Batch-{log_source}] genobject updated: progressrate={rate}, {len(uids)}개 (1회 호출)")
-        
 
-
-
-        if genobjectrunlog_inserts:
-            supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(genobjectrunlog_inserts).execute()
-            # print(f"[Batch-{log_source}] genobjectrunlog inserted: {len(genobjectrunlog_inserts)}개 (1회 호출)")
+        # jeff 20261012
+        # if genobjectrunlog_inserts:
+        #     supabase.schema(SUPABASE_SCHEMA).table('genobjectrunlog').insert(genobjectrunlog_inserts).execute()
+        #     # print(f"[Batch-{log_source}] genobjectrunlog inserted: {len(genobjectrunlog_inserts)}개 (1회 호출)")
 
         if genobject_results:
             result_list = list(genobject_results.values())
@@ -227,8 +227,9 @@ def process_ui_object(data_item, html_result, text_template, gen_chapter_uid, us
         'objecttypecd': data_item['objecttypecd'],
         'sourcebase': data_item['sourcebase'],
         'sourcetext': data_item['sourcetext'],
-        'resulttext': html_result,
-        # 'resulttext': text_template,
+        'resulttext': ' ',          # jeff 20261012
+        # 'resulttext': html_result,
+        # # 'resulttext': text_template,
         'progressrate': 100,
         'creator': user_id,
         'createdts': run_start_dts
@@ -383,7 +384,7 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
         _write_doc_log(_is_success, _error_message, total_tokens["input_tokens"], total_tokens["output_tokens"], _llm_start_dts, _llm_end_dts)
 
         run_start_dts = datetime.now(timezone.utc).isoformat()
-        queue_genobject_run_log(data_item['genobjectuid'], data_item['objecttypecd'], data_item['sourcebase'], total_tokens["input_tokens"], tenant_id, user_id, run_start_dts)
+        # queue_genobject_run_log(data_item['genobjectuid'], data_item['objecttypecd'], data_item['sourcebase'], total_tokens["input_tokens"], tenant_id, user_id, run_start_dts)    # jeff 20261012
         queue_genobject_log(genobjectuid, gen_chapter_uid, chapter_uid, 
                         data_item['objectuid'], data_item['objecttypecd'], user_id, 60, run_start_dts)
 
@@ -423,7 +424,8 @@ def process_ai_object(data_item, request, docid, gendoc_uid, chapter_uid, user_i
             'objecttypecd': data_item['objecttypecd'],
             'sourcebase': data_item['sourcebase'],
             'sourcetext': data_item['sourcetext'],
-            'resulttext': final_result,
+            'resulttext': ' ' if response.get("status") in ("chart_drawn", "data_table") else final_result,    # jeff 20261012
+            # 'resulttext': final_result,
             'progressrate': 100,
             'creator': user_id,
             'createdts': run_start_dts,
@@ -1012,15 +1014,15 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                 elif place_holder in text_template:
                     text_template = text_template.replace(place_holder, final_result)
 
-                # text_template += '<p></p>'
+                # # text_template += '<p></p>'    # jeff 20261007
 
-                if sep == "Not":
-                    update_genchapters(supabase, {
-                        'genchapteruid': gen_chapter_uid,
-                        'gentexttemplate': text_template,
-                        'createuserid': user_id,
-                        'createfiledts': datetime.now(timezone.utc).isoformat()
-                    }, gen_chapter_uid)
+                # if sep == "Not":
+                #     update_genchapters(supabase, {
+                #         'genchapteruid': gen_chapter_uid,
+                #         'gentexttemplate': text_template,
+                #         'createuserid': user_id,
+                #         'createfiledts': datetime.now(timezone.utc).isoformat()
+                #     }, gen_chapter_uid)               # jeff 20261012
 
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
                 # 성공 시 이전 실패 흔적(errorcd/errormessage) 제거
@@ -1277,13 +1279,14 @@ def replace_doc(request, supabase, user_id, gen_chapter_uid, make_type, obj, sep
                     }
                 update_genchapters(supabase, genchapters, gen_chapter_uid)
 
-                gendoc_genchapters = {
-                    'gendocuid': gendoc_uid,
-                    'genchapteruid': gen_chapter_uid,
-                    'creator': user_id,
-                    'createdts': now
-                }
-                save_gendoc_genchapters(supabase, gendoc_genchapters)
+                # jeff 20261013
+                # gendoc_genchapters = {
+                #     'gendocuid': gendoc_uid,
+                #     'genchapteruid': gen_chapter_uid,
+                #     'creator': user_id,
+                #     'createdts': now
+                # }
+                # save_gendoc_genchapters(supabase, gendoc_genchapters)
         
         if doc_write == True:
             yield {
@@ -1356,13 +1359,13 @@ def update_genchapters(supabase, genchapters, gen_chapter_uid):
         # print(f'ErrorMessage(update_genchapters): {e}')
         return {'success': False, 'message': str(e)}
 
-
-def save_gendoc_genchapters(supabase, gendoc_genchapters):
-    try:
-        supabase.schema(SUPABASE_SCHEMA).table('gendoc_genchapters').insert(gendoc_genchapters).execute().data
-    except Exception as e:
-        # print(f'ErrorMessage: {e}')
-        return {'success': False, 'message': str(e)}
+# jeff 20261013
+# def save_gendoc_genchapters(supabase, gendoc_genchapters):
+#     try:
+#         supabase.schema(SUPABASE_SCHEMA).table('gendoc_genchapters').insert(gendoc_genchapters).execute().data
+#     except Exception as e:
+#         # print(f'ErrorMessage: {e}')
+#         return {'success': False, 'message': str(e)}
     
 def update_genobjects(supabase, genobjects):
     try:

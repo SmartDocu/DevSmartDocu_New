@@ -382,7 +382,10 @@ def process_message(msg):
     projectid = body.get("projectid")
     accountuid = body.get("accountuid")
     gendocnm = body.get("gendocnm", "")
-    receipt_handle = msg["ReceiptHandle"]
+
+    # receipt_handle = msg["ReceiptHandle"]
+    # 로컬 확인용(DOC_RUN_LOCAL)으로 라우터가 직접 부르면 SQS 메시지가 없어 ReceiptHandle도 없다.    # jeff 20261012
+    receipt_handle = msg.get("ReceiptHandle")
 
     sb = get_thread_supabase(access_token=access_token)
     sb_svc = get_service_client()
@@ -397,7 +400,10 @@ def process_message(msg):
                                    selected_chapters=body.get("chapters"), tenantid=tenantid)
         finally:
             try:
-                sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+                # sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+                if receipt_handle:    # jeff 20261012
+                    sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+
             except Exception:
                 logger.exception("SQS 메시지 삭제 실패 (조합 작성): %s", gendocuid)
         return
@@ -430,24 +436,46 @@ def process_message(msg):
             sb_svc.schema(SUPABASE_SCHEMA).table("genchapters").update({
                 "genchapterjobuid": genchapterjobuid,
             }).eq("genchapteruid", genchapteruid).execute()
-            sqs.send_message(
-                QueueUrl=SQS_CHAPTER_QUEUE_URL,
-                MessageBody=json.dumps({
-                    "genchapteruid": genchapteruid,
-                    "genchapterjobuid": genchapterjobuid,
-                    "gendocuid": gendocuid,
-                    "gendocjobuid": gendocjobuid,
-                    "chapteruid": chapteruid,
-                    "docid": docid,
-                    "tenantid": tenantid,
-                    "projectid": projectid,
-                    "accountuid": accountuid,
-                    "user_id": user_id,
-                    "access_token": access_token,
-                    "gendocnm": gendocnm,
-                    "is_start_doc": True,
-                }, ensure_ascii=False),
-            )
+            # sqs.send_message(
+            #     QueueUrl=SQS_CHAPTER_QUEUE_URL,
+            #     MessageBody=json.dumps({
+            #         "genchapteruid": genchapteruid,
+            #         "genchapterjobuid": genchapterjobuid,
+            #         "gendocuid": gendocuid,
+            #         "gendocjobuid": gendocjobuid,
+            #         "chapteruid": chapteruid,
+            #         "docid": docid,
+            #         "tenantid": tenantid,
+            #         "projectid": projectid,
+            #         "accountuid": accountuid,
+            #         "user_id": user_id,
+            #         "access_token": access_token,
+            #         "gendocnm": gendocnm,
+            #         "is_start_doc": True,
+            #     }, ensure_ascii=False),
+            # )
+            chapter_body = json.dumps({
+                "genchapteruid": genchapteruid,
+                "genchapterjobuid": genchapterjobuid,
+                "gendocuid": gendocuid,
+                "gendocjobuid": gendocjobuid,
+                "chapteruid": chapteruid,
+                "docid": docid,
+                "tenantid": tenantid,
+                "projectid": projectid,
+                "accountuid": accountuid,
+                "user_id": user_id,
+                "access_token": access_token,
+                "gendocnm": gendocnm,
+                "is_start_doc": True,
+            }, ensure_ascii=False)
+            # 로컬 확인용(DOC_RUN_LOCAL) — SQS 대신 챕터를 하나씩 차례로 직접 처리한다.    # jeff 20261012
+            import os
+            if os.getenv("DOC_RUN_LOCAL", "").strip().lower() in ("1", "true", "yes"):
+                process_chapter_message({"Body": chapter_body})
+            else:
+                sqs.send_message(QueueUrl=SQS_CHAPTER_QUEUE_URL, MessageBody=chapter_body)
+
             logger.info("챕터 큐 전송: %s", genchapteruid)
 
         fan_out_success = True
@@ -481,7 +509,10 @@ def process_message(msg):
             except Exception:
                 logger.exception("잠금 해제 실패: %s", gendocuid)
         try:
-            sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+            # sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+            if receipt_handle:    # jeff 20261012
+                sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+
         except Exception:
             logger.exception("SQS 메시지 삭제 실패: %s", gendocuid)
 
@@ -566,15 +597,16 @@ def process_chapter_message(msg):
             if progress_data.get("type") == "error":
                 raise Exception(progress_data.get("message", "콘텐츠 생성 오류"))
 
-        try:
-            sb_svc.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
-                "gendocuid": gendocuid,
-                "genchapteruid": genchapteruid,
-                "creator": user_id,
-                "createdts": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-        except Exception:
-            pass
+        # jeff 20261013
+        # try:
+        #     sb_svc.schema(SUPABASE_SCHEMA).table("gendoc_genchapters").insert({
+        #         "gendocuid": gendocuid,
+        #         "genchapteruid": genchapteruid,
+        #         "creator": user_id,
+        #         "createdts": datetime.now(timezone.utc).isoformat(),
+        #     }).execute()
+        # except Exception:
+        #     pass
 
         end_iso = datetime.now(timezone.utc).isoformat()
         _update_chapter_queue(sb_svc, genchapterjobuid, "E", end_dts=end_iso)
