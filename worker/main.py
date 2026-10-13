@@ -704,7 +704,7 @@ def process_chapter_message(msg):
                     end_iso = datetime.now(timezone.utc).isoformat()
                     _update_queue(sb_svc, gendocjobuid, "E",
                                   error_cd=_chapter_err_cd,
-                                  error_msg=str(chapter_exc) if _is_tmpl_empty else f"챕터 처리 실패: {genchapteruid}",
+                                  error_msg=str(chapter_exc) if _is_tmpl_empty else f"챕터 처리 실패: {chapternm or genchapteruid}",
                                   end_dts=end_iso)
                     tenant_tag = notification_tenant_tag_by_id(sb_svc.schema(SUPABASE_SCHEMA), tenantid)
                     create_notification(
