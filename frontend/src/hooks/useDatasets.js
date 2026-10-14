@@ -4,6 +4,7 @@ import { App } from 'antd'
 import apiClient from '@/api/client'
 import { t } from '@/stores/langStore'
 import { getErrorMessage } from '@/utils/apiError'
+import { invalidateDocDataLists } from '@/hooks/invalidateDocData'
 
 export function useDatasets() {
   return useQuery({
@@ -20,6 +21,7 @@ export function useSaveDataset() {
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datasets'] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => {
       message.error(getErrorMessage(err, 'msg.save.error'))
@@ -35,6 +37,7 @@ export function useDeleteDataset() {
     onSuccess: () => {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['datasets'] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => {
       message.error(getErrorMessage(err, 'msg.delete.error'))
@@ -58,6 +61,7 @@ export function useSaveDatasetMembers(datasetuid) {
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['dataset-members', datasetuid] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => {
       message.error(getErrorMessage(err, 'msg.save.error'))
@@ -81,6 +85,7 @@ export function useSaveDatasetProjects(datasetuid) {
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['dataset-projects', datasetuid] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => {
       message.error(getErrorMessage(err, 'msg.save.error'))
@@ -129,6 +134,7 @@ export function useSaveDatasetAll() {
     onSuccess: (data) => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datasets'] })
+      invalidateDocDataLists(qc)
       if (data?.datasetuid) {
         qc.invalidateQueries({ queryKey: ['dataset-members', data.datasetuid] })
         qc.invalidateQueries({ queryKey: ['dataset-projects', data.datasetuid] })

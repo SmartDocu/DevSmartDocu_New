@@ -366,12 +366,14 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
                 for t in (tenants_info.data or [])
             ]
 
-            # 기본 tenantid: users.default_tenantid 직접 사용
+            # 기본 tenantid: users.default_tenantid 사용. 단 지금도 활성 소속(tenantids)일 때만 — 기업이 해지돼
+            # 잠긴 뒤에도 이 값이 그 기업을 가리키면, 남은 활성 기업이 1개일 때 기업 선택 화면 없이 잠긴 기업
+            # 컨텍스트로 로그인되고 기업 전환 UI도 뜨지 않아 스스로 벗어날 수 없다(2026-10-14 발견).
             active_tenantid = None
             if user_row.data and user_row.data.get("default_tenantid"):
                 active_tenantid = user_row.data["default_tenantid"]
 
-            if not active_tenantid and tenantids:
+            if active_tenantid not in tenantids and tenantids:
                 active_tenantid = tenantids[0]
 
             if active_tenantid:
@@ -555,7 +557,8 @@ def _load_user_context(supabase, user_id: str, email: str) -> UserContext:
             else:
                 acc = sd.table("accounts").select("accountuid, accountstatus").eq("tenantid", int(ctx.tenantid)).maybe_single().execute()
                 # 기업 테넌트: tenantusers.rolecd = "M" 이면 accountmanager
-                tu_row = sd.table("tenantusers").select("rolecd").eq("tenantid", int(ctx.tenantid)).eq("useruid", user_id).maybe_single().execute()
+                # useyn=True인 활성 소속만 — 잠긴(해지된) 기업의 옛 매니저에게 관리 메뉴가 보이지 않게
+                tu_row = sd.table("tenantusers").select("rolecd").eq("tenantid", int(ctx.tenantid)).eq("useruid", user_id).eq("useyn", True).maybe_single().execute()
                 ctx.accountmanager = "Y" if tu_row and tu_row.data and tu_row.data.get("rolecd") == "M" else "N"
 
             if acc and acc.data:

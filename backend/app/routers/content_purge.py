@@ -8,6 +8,7 @@ payments.py의 run_billing_cycle()과 동일한 패턴: 로그인 세션이 아�
 BILLING_CRON_SECRET을 재사용하지 않고 별도 PURGE_CRON_SECRET을 쓰는 이유: 결제 배치는
 실패해도 재시도/롤백이 가능하지만 이 배치는 하드 DELETE라 되돌릴 수 없다 — 시크릿 하나가
 유출됐을 때의 피해 범위(blast radius)를 분리해둔다."""
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,6 +20,7 @@ from utilsPrj.notifications import create_notification
 from utilsPrj.audit_log import log_work_action
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 프로젝트 관례상 자동화 배치 작업의 creator/useruid 플레이스홀더(payments.py:SYSTEM_USER_ID와 동일 값)
 _SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"
@@ -204,17 +206,61 @@ def _purge_accountservice_content(sd, accsvc_row: dict) -> dict:
     return {"result": "purged", **detail}
 
 
+def _delete_tenant_secret(tenantid: int) -> None:
+    """AWS Secrets Manager의 기업 시크릿(커넥터 자격증명) 삭제. 테스트에서 가짜로 바꿀 수 있게 분리했다."""
+    from utilsPrj.secrets_cache import delete_tenant_secret
+    delete_tenant_secret(tenantid)
+
+
+def _purge_tenant_residual_data(sd, tenantid: int) -> dict:
+    """회사 기업이 완전히 잠기는 시점에, 서비스별 삭제(_purge_*_content)가 건드리지 않는 기업 소유의
+    자격증명·데이터 소스 정의·설정을 삭제한다(2026-10-14 정책 확정). 반드시 회사 기업에만 호출할 것 —
+    시스템 기업은 여러 개인이 공유하므로 tenantid 단위로 지우면 다른 사용자 데이터가 지워진다.
+
+    삭제하지 않는 것: tenants/tenantusers/accounts/accountservices/subscriptions, 결제·크레딧·사용량 기록,
+    projects/projectusers/serviceusers 행 자체(projects.encapikey 값만 비운다).
+    스키마에 외래키가 거의 없어(13개, 이 테이블들과 무관) 삭제 순서 제약은 없다. 여러 번 실행해도 안전하다(멱등)."""
+    connuids = [c["connuid"] for c in (sd.table("connectors").select("connuid").eq("tenantid", tenantid).execute().data or [])]
+    datauids = [d["datauid"] for d in (sd.table("dataunits").select("datauid").eq("tenantid", tenantid).execute().data or [])]
+
+    # 외부 저장소(AWS)의 자격증명을 가장 먼저 지운다 — 실패하면 예외로 올라가 DB 행이 그대로 남고 다음 배치가 재시도한다
+    _delete_tenant_secret(tenantid)
+
+    _bulk_delete(sd, "conn_api_credentials", "connuid", connuids)
+    _bulk_delete(sd, "conn_apis", "tenantid", [tenantid])
+    _bulk_delete(sd, "connectors", "tenantid", [tenantid])
+    _bulk_delete(sd, "llmapikeys", "tenantid", [tenantid])
+    sd.table("projects").update({"encapikey": None}).eq("tenantid", tenantid).execute()
+
+    for child in ("datacols", "datacolvalues", "data_api_params", "data_chatmetas"):
+        _bulk_delete(sd, child, "datauid", datauids)
+    _bulk_delete(sd, "dataunits", "tenantid", [tenantid])
+    _bulk_delete(sd, "datasetmembers", "tenantid", [tenantid])
+    _bulk_delete(sd, "project_datasets", "tenantid", [tenantid])
+    _bulk_delete(sd, "datasets", "tenantid", [tenantid])
+
+    _bulk_delete(sd, "objectdefinitions", "tenantid", [tenantid])
+    _bulk_delete(sd, "whitelists", "tenantid", [tenantid])
+    _bulk_delete(sd, "config_tenants", "tenantid", [tenantid])
+
+    return {"connectors": len(connuids), "dataunits": len(datauids)}
+
+
 def _lock_tenant_if_fully_deleted(sd, accountuid: str, tenantid: int) -> None:
     """테넌트 해지가 신청된(tenants.cancel_requested_dt IS NOT NULL) 계정의 서비스가 방금
     Deleted로 전이됐다면, 이 계정의 accountservices가 전부 Deleted인지 확인하고 그렇다면
-    테넌트 전체를 잠근다(tenants.useyn=False + 소속 tenantusers.useyn=False 일괄).
+    기업 소유 자격증명·설정을 지운 뒤 테넌트 전체를 잠근다(tenants.useyn=False + 소속 tenantusers.useyn=False 일괄).
+    삭제가 실패하면 잠그지 않고 돌아간다 — run_content_purge_cycle의 재시도 단계가 다음 배치에서 다시 부른다.
     tenants/accounts row 자체는 지우지 않는다 — Do 서비스 purge가 projects 컨테이너를
     안 지우는 것과 동일한 원칙(결제/감사 기록 보존)."""
-    tenant_row = sd.table("tenants").select("tenantnm,cancel_requested_dt,useyn").eq(
+    tenant_row = sd.table("tenants").select("tenantnm,cancel_requested_dt,useyn,issystemtenant").eq(
         "tenantid", tenantid
     ).maybe_single().execute()
     tenant = tenant_row.data if tenant_row else None
     if not tenant or not tenant.get("cancel_requested_dt") or not tenant.get("useyn", True):
+        return
+    # 시스템 기업은 개인 계정들이 공유한다 — 기업 단위 삭제·잠금 대상이 될 수 없다(못 읽으면 시스템으로 간주)
+    if tenant.get("issystemtenant", True):
         return
 
     remaining = sd.table("accountservices").select("servicecd").eq(
@@ -222,6 +268,22 @@ def _lock_tenant_if_fully_deleted(sd, accountuid: str, tenantid: int) -> None:
     ).neq("servicestatus", "Deleted").execute().data or []
     if remaining:
         return
+
+    try:
+        residual = _purge_tenant_residual_data(sd, tenantid)
+    except Exception as e:
+        logger.exception("기업 잔여 데이터 삭제 실패 tenantid=%s — 잠그지 않고 다음 배치에서 재시도", tenantid)
+        log_work_action(
+            useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd="Tenant",
+            actioncd="delete", targettype="content-purge/tenant-residual-error", targetid=str(tenantid),
+            detail={"error": str(e)[:500]},
+        )
+        return
+    log_work_action(
+        useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd="Tenant",
+        actioncd="delete", targettype="content-purge/tenant-residual", targetid=str(tenantid),
+        after=residual,
+    )
 
     # useyn=False로 잠그기 전에 현재 활성 멤버 목록을 먼저 구해서 전원에게 최종 알림을 보낸다
     # (신청 시점엔 매니저에게만 알림/이메일이 갔지만, 실제로 접근이 막히는 이 순간은 일반
@@ -244,6 +306,9 @@ def _lock_tenant_if_fully_deleted(sd, accountuid: str, tenantid: int) -> None:
 
     sd.table("tenants").update({"useyn": False}).eq("tenantid", tenantid).execute()
     sd.table("tenantusers").update({"useyn": False}).eq("tenantid", tenantid).execute()
+    # 이 기업을 기본 기업으로 가진 사용자의 기본값을 비운다 — 안 비우면 다음 로그인이 잠긴 기업을 가리킨다
+    # (로그인 쪽도 활성 소속이 아니면 무시하지만, 낡은 값을 남기지 않는다)
+    sd.table("users").update({"default_tenantid": None}).eq("default_tenantid", tenantid).execute()
 
     log_work_action(
         useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd="Tenant",
@@ -281,7 +346,24 @@ def run_content_purge_cycle(request: Request):
             result = {"result": "error", "message": str(e)}
         results.append({"accountuid": row["accountuid"], "servicecd": row["servicecd"], **result})
 
-    return {"processed": len(results), "results": results}
+    # 재시도 단계: 해지 신청이 있고 아직 잠기지 않은 회사 기업을 다시 확인한다. 서비스 삭제 시점에 기업 잔여 데이터
+    # 삭제가 실패했거나, 가입한 서비스가 아예 없어 삭제로 잠글 계기가 없던 기업이 여기서 마무리된다(멱등).
+    finalized = []
+    pending = sd.table("tenants").select("tenantid,cancel_requested_dt").eq("issystemtenant", False).eq("useyn", True).execute().data or []
+    for t in pending:
+        if not t.get("cancel_requested_dt"):
+            continue
+        try:
+            for acc in (sd.table("accounts").select("accountuid").eq("tenantid", t["tenantid"]).execute().data or []):
+                _lock_tenant_if_fully_deleted(sd, acc["accountuid"], t["tenantid"])
+            still = sd.table("tenants").select("useyn").eq("tenantid", t["tenantid"]).maybe_single().execute()
+            if still and still.data and still.data.get("useyn") is False:
+                finalized.append(t["tenantid"])
+        except Exception as e:
+            logger.exception("기업 잠금 재시도 실패 tenantid=%s", t["tenantid"])
+            results.append({"tenantid": t["tenantid"], "result": "error", "message": str(e)})
+
+    return {"processed": len(results), "results": results, "tenants_finalized": finalized}
 
 
 @router.post("/run-audit-log-purge")

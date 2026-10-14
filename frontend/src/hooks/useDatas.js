@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { t } from '@/stores/langStore'
+import { invalidateDocDataLists } from '@/hooks/invalidateDocData'
 import apiClient from '@/api/client'
 import { getErrorMessage } from '@/utils/apiError'
 
@@ -109,6 +110,7 @@ export function useSaveDbData() {
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'db'] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -123,6 +125,7 @@ export function useSaveExData() {
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'ex'] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -136,6 +139,7 @@ export function useSaveAiData() {
     onSuccess: () => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df'] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -149,6 +153,7 @@ export function useDeleteData(datasourcecd) {
     onSuccess: () => {
       message.success(t('msg.delete.success'))
       if (datasourcecd) qc.invalidateQueries({ queryKey: ['datas', datasourcecd] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })
@@ -160,6 +165,7 @@ export function useCreateDatacols() {
     mutationFn: (body) => apiClient.post('/datas/datacols/create', body).then((r) => r.data),
     onSuccess: (_data, body) => {
       qc.invalidateQueries({ queryKey: ['datacols', body.datauid] })
+      invalidateDocDataLists(qc)
     },
   })
 }
@@ -172,6 +178,7 @@ export function useSaveDatacols() {
     onSuccess: (_data, cols) => {
       message.success(t('msg.save.success'))
       if (cols.length > 0) qc.invalidateQueries({ queryKey: ['datacols', cols[0].datauid] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -193,6 +200,7 @@ export function useSaveDfData() {
     onSuccess: (_, body) => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.projectid] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -206,6 +214,7 @@ export function useSaveDfvData() {
     onSuccess: (_, body) => {
       message.success(t('msg.save.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', body.projectid] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -240,6 +249,7 @@ export function useSaveApiData() {
     mutationFn: (body) => apiClient.post('/datas/api', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['datas', 'api'] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.save.error')) },
   })
@@ -261,6 +271,7 @@ export function useDeleteDfData() {
     onSuccess: (_, { projectid }) => {
       message.success(t('msg.delete.success'))
       qc.invalidateQueries({ queryKey: ['datas', 'df-list', projectid] })
+      invalidateDocDataLists(qc)
     },
     onError: (err) => { message.error(getErrorMessage(err, 'msg.delete.error')) },
   })

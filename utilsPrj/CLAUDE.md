@@ -47,7 +47,6 @@
 |------|------|
 | `crypto_helper.py` | Fernet 암호화/복호화 |
 | `sms_sender.py` | Naver Cloud SMS 발송 |
-| `errorlogs.py` | 에러 로그 기록 |
 
 ### 사용자 표시 정보
 

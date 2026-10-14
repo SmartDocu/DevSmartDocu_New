@@ -124,6 +124,29 @@ def delete_connector_secret(tenantid: str, connuid: str) -> None:
     invalidate_tenant(tenantid)
 
 
+def delete_tenant_secret(tenantid) -> None:
+    """기업 해지 시 테넌트 시크릿(smartdocu/{tenantid}/connectors) 전체를 삭제한다.
+
+    delete_connector_secret과 달리 실패를 삼키지 않고 올린다 — 호출 쪽(content_purge)이 자격증명이 아직
+    남아 있다는 걸 알고 기업을 잠그지 않은 채 다음 배치에서 재시도할 수 있어야 하기 때문.
+    없는 시크릿과 이미 삭제 예약된 시크릿(재시도)은 정상으로 취급한다. 복구 기간은 기존 삭제와 동일(기본값)."""
+    client = _client()
+    try:
+        client.delete_secret(SecretId=_secret_name(str(tenantid)), ForceDeleteWithoutRecovery=False)
+    except client.exceptions.ResourceNotFoundException:
+        pass
+    except client.exceptions.InvalidRequestException as exc:
+        if "marked for deletion" not in str(exc):
+            raise
+    finally:
+        # 캐시 키가 str/int 어느 쪽으로 들어왔어도 지워지도록 둘 다 무효화
+        invalidate_tenant(str(tenantid))
+        try:
+            invalidate_tenant(int(tenantid))
+        except (TypeError, ValueError):
+            pass
+
+
 def invalidate_tenant(tenantid: str) -> None:
     """테넌트 캐시 무효화."""
     with _lock:

@@ -762,9 +762,11 @@ def get_chapter_objects(genchapteruid: str, token: str = Depends(get_token), ten
 
         # 설정 미반영 — 항목(objects) 설정이 이 genobject 콘텐츠가 생성된 시점보다 나중에 바뀌었으면 True
         new_objectyn = bool(obj_modified_dt and go_created_dt and obj_modified_dt > go_created_dt)
-        # 항목 미반영 — 아직 한 번도 생성 안 됐거나(resulttext 없음), genobject 콘텐츠가 챕터 파일
-        # 확정(createfiledts)보다 나중에 생성/재작성됐으면 True (예: 항목만 단독 재작성한 경우)
-        new_genobjectyn = (not bool(go.get("resulttext"))) or bool(
+        # 항목 미반영 — genobject 콘텐츠가 챕터 파일 확정(createfiledts)보다 나중에 생성/재작성됐으면 True
+        # (예: 항목만 단독 재작성한 경우). req/doc-read 헤더의 "미반영 항목"(DB fn_gendoc_status__r의
+        # new_object_cnt)과 같은 기준이다. 결과(resulttext)가 아직 없는 항목은 반영할 내용이 없고,
+        # apply가 그 자리를 빈 문자열로 바꾸게 되므로 미반영으로 치지 않는다.
+        new_genobjectyn = bool(
             go_created_dt and createfiledts_dt and go_created_dt > createfiledts_dt
         )
 
