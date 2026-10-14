@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { App } from 'antd'
+import { App, Modal } from 'antd'
 import { PaperClipOutlined } from '@ant-design/icons'
 import { marked } from 'marked'
 import apiClient from '@/api/client'
@@ -13,6 +13,15 @@ import './d2insight.css'
 import { getErrorMessage, getErrorDetail } from '@/utils/apiError'
 
 const CHAT_TIMEOUT = { timeout: 3600000 } // 보고서 생성 최대 6분
+
+// 이어가기·재작성 때 보고서 이름의 기본값 — 요청 문장에서 처음 나오는 "보고서"까지만 쓴다
+// ("2013년 9월 … 원인분석 보고서를 작성해주세요." → "2013년 9월 … 원인분석 보고서").
+// "보고서"가 없으면 문장 전체를 쓴다. DB에 보고서 이름 컬럼이 생기면 그 값으로 바꾼다.
+const reportNameFromRequest = (question) => {
+  const text = (question || '').trim()
+  const idx = text.indexOf('보고서')
+  return idx >= 0 ? text.slice(0, idx + '보고서'.length) : text
+}
 
 const GRAIN_CYCLE_LABEL = { month: '월', quarter: '분기', half: '반기', year: '년', week: '주간' }
 const WEEKDAY_LABELS_KO = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'] // cron 관례 0=일요일
@@ -45,7 +54,20 @@ export default function D2InsightPage() {
   // ── 대화 상태 ──────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState(null)
   const sessionIdRef = useRef(null)
-  const updateSessionId = (id) => { setSessionId(id); sessionIdRef.current = id }
+  // 새로고침해도 지금 작업 중인 대화창을 이어 보려고 대화 번호를 이 탭의 sessionStorage에 둔다.
+  // 보관된 이력(읽기 전용 조회)은 이 값과 무관하다 — 여기에는 "지금 쓰는 대화" 하나만 들어간다.
+  const sessionStorageKey = userId ? `d2insight.currentSession.${userId}` : null
+  const updateSessionId = (id) => {
+    setSessionId(id)
+    sessionIdRef.current = id
+    if (!sessionStorageKey) return
+    try {
+      if (id) sessionStorage.setItem(sessionStorageKey, id)
+      else sessionStorage.removeItem(sessionStorageKey)
+    } catch { /* 저장소를 못 쓰면 복원만 안 될 뿐이다 */ }
+  }
+  const restoredRef = useRef(false)
+  const pendingQauidsRef = useRef(new Set()) // 아직 워커가 작성 중인 보고서 qauid
 
   const [messages, setMessages] = useState([getInitialMessage()])
   const [isLoading, setIsLoading] = useState(false)
@@ -84,6 +106,12 @@ export default function D2InsightPage() {
   const [previewData, setPreviewData] = useState(null)
   const [previewOriginalMessage, setPreviewOriginalMessage] = useState('')
   const [previewFileName, setPreviewFileName] = useState('')
+  // 이미 작성된 보고서의 옵션을 불러와 고치는 중이면 true — "이대로 작성"이 바로 작성하지 않고,
+  // 요청 문장(기간 등)을 확인·수정하는 팝업을 먼저 띄운다. 처음 요청한 preview는 false.
+  const [previewFromReport, setPreviewFromReport] = useState(false)
+  const [rewriteModalOpen, setRewriteModalOpen] = useState(false)
+  const [rewriteText, setRewriteText] = useState('')
+  const [rewriteName, setRewriteName] = useState('')
 
   // 생성 중인 보고서(확정~완료 전) — 오른쪽 패널에 이 보고서의 스텝을 계속 보여준다.
   const [generatingReport, setGeneratingReport] = useState(null) // { qauid, scenario, appliedSteps } | null
@@ -373,21 +401,42 @@ export default function D2InsightPage() {
     }
   }
 
-  const handleContinue = async ({ question, answer, fileurl, reportPath }) => {
+  // 이미 작성된 보고서의 옵션을 오른쪽 패널에 "수정 가능한" 상태로 연다 — 처음 요청 때 뜨는
+  // preview와 같은 화면이다. 기간 등은 옵션이 아니라 요청 문장에서 읽으므로 문장은 원래 질문을
+  // 그대로 가져오고, "이대로 작성" 때 팝업에서 고칠 수 있다.
+  const openEditFromReport = ({ question, appliedSteps, scenario = null }) => {
+    setPreviewData({
+      scenario,
+      report_title: '',
+      applied_steps: JSON.parse(JSON.stringify(appliedSteps)),
+    })
+    setPreviewOriginalMessage(question || '')
+    setPreviewFileName(reportNameFromRequest(question))
+    setPreviewFromReport(true)
+  }
+
+  const handleContinue = async ({ question, answer, fileurl, reportPath, appliedSteps, scenario }) => {
     try {
+      const hasSteps = Array.isArray(appliedSteps) && appliedSteps.length > 0
       const { data } = await apiClient.post('/d2insight/session/inject', {
         session_id: sessionId,
         user_id: userId,
         project_id: user?.myprojectid ?? null,
         question, answer, report_path: reportPath,
+        applied_steps: hasSteps ? appliedSteps : null,
       })
       if (data.session_id) updateSessionId(data.session_id)
 
       setMessages((prev) => [
         ...prev,
         { role: 'user', content: question },
-        { role: 'assistant', content: answer, fileurl, reportPath },
+        { role: 'assistant', content: answer, fileurl, reportPath, appliedSteps: hasSteps ? appliedSteps : null, scenario },
+        ...(hasSteps ? [{
+          role: 'assistant',
+          content: `보고서에 적용된 옵션을 수정하여 보고서를 다시 작성할 수 있습니다.\n작성되는 보고서는 '${question}'입니다.\n'이대로 작성'을 누르면 보고서가 작성됩니다.`,
+        }] : []),
       ])
+      if (hasSteps) openEditFromReport({ question, appliedSteps, scenario })
       setViewingSessionId(null)
       setViewingFavoriteQauid(null)
       setViewingScheduleQauid(null)
@@ -399,38 +448,81 @@ export default function D2InsightPage() {
     }
   }
 
-  // 비동기 보고서 완료를 폴링해 "지금 보고 있는 대화창"에 그대로 반영한다 — 세션을 닫았다
-  // 다시 열 필요 없이 그 말풍선만 새 내용으로 바뀐다(완료 알림과는 별개로 화면도 갱신).
+  // 비동기 보고서 완료를 "지금 보고 있는 대화창"에 그대로 반영한다 — 세션을 닫았다 다시 열 필요 없이
+  // 그 말풍선만 새 내용으로 바뀐다. 완료는 알림(Realtime)이 도착하면 바로 확인하고(아래 useEffect),
+  // 알림을 놓친 경우(연결 끊김 등)를 위해 1분 간격으로 최대 60분만 보조로 확인한다.
+  // 보고서 하나가 13~21분 걸리므로(2026-10-13·14 실측) 예전의 10초×60회(10분)는 완료 전에 멈췄다.
+  const checkPendingReport = async (sid, qauid) => {
+    try {
+      const { data } = await apiClient.get(`/d2insight/history/${userId}/${sid}`)
+      const updated = (data.messages || []).find((m) => m.qauid === qauid && m.role === 'assistant')
+      if (updated && updated.jobstatuscd !== 'S' && updated.jobstatuscd !== 'P') {
+        setMessages((prev) => prev.map((m) => (
+          m.qauid === qauid && m.role === 'assistant'
+            ? {
+                ...m,
+                content: updated.content,
+                fileurl: updated.fileurl,
+                mdurl: updated.mdurl,
+                reportPath: updated.reportPath,
+                appliedSteps: updated.appliedSteps,
+                scenario: updated.scenario || m.scenario || null,
+                pending: false,
+              }
+            : m
+        )))
+        setGeneratingReport((g) => (g?.qauid === qauid ? null : g))
+        pendingQauidsRef.current.delete(qauid)
+        return true
+      }
+    } catch {
+      // 다음 확인에서 재시도
+    }
+    return false
+  }
+
   const pollPendingReport = (sid, qauid, attemptsLeft = 60) => {
+    pendingQauidsRef.current.add(qauid)
     if (attemptsLeft <= 0) return
     setTimeout(async () => {
+      if (!pendingQauidsRef.current.has(qauid)) return // 알림으로 이미 반영됨
       if (sessionIdRef.current !== sid) return // 그 사이 다른 대화로 이동했으면 중단
-      try {
-        const { data } = await apiClient.get(`/d2insight/history/${userId}/${sid}`)
-        const updated = (data.messages || []).find((m) => m.qauid === qauid && m.role === 'assistant')
-        if (updated && updated.jobstatuscd !== 'S' && updated.jobstatuscd !== 'P') {
-          setMessages((prev) => prev.map((m) => (
-            m.qauid === qauid && m.role === 'assistant'
-              ? {
-                  ...m,
-                  content: updated.content,
-                  fileurl: updated.fileurl,
-                  mdurl: updated.mdurl,
-                  reportPath: updated.reportPath,
-                  appliedSteps: updated.appliedSteps,
-                  pending: false,
-                }
-              : m
-          )))
-          setGeneratingReport((g) => (g?.qauid === qauid ? null : g))
-          return // 완료 — 폴링 중단
-        }
-      } catch {
-        // 다음 시도에서 재시도
-      }
+      if (await checkPendingReport(sid, qauid)) return
       pollPendingReport(sid, qauid, attemptsLeft - 1)
-    }, 10000)
+    }, 60000)
   }
+
+  // 완료 알림 도착 → 작성 중이던 보고서면 즉시 말풍선 갱신 (알림 구독은 useNotifications.js)
+  useEffect(() => {
+    const onDone = (e) => {
+      const qauid = e.detail?.qauid
+      if (qauid && pendingQauidsRef.current.has(qauid) && sessionIdRef.current) {
+        checkPendingReport(sessionIdRef.current, qauid)
+      }
+    }
+    window.addEventListener('insight-report-done', onDone)
+    return () => window.removeEventListener('insight-report-done', onDone)
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 새로고침 후 복원 — 이 탭에서 쓰던 현재 대화를 서버에서 다시 읽어 대화창에 채운다.
+  useEffect(() => {
+    if (!userId || restoredRef.current) return
+    restoredRef.current = true
+    let sid = null
+    try { sid = sessionStorage.getItem(sessionStorageKey) } catch { /* 무시 */ }
+    if (!sid || sessionIdRef.current) return
+    apiClient.get(`/d2insight/history/${userId}/${sid}`).then(({ data }) => {
+      if (sessionIdRef.current) return // 복원 응답 전에 이미 새 대화를 시작했다
+      const restored = (data.messages || []).map((m) => (
+        m.role === 'assistant' ? { ...m, pending: m.jobstatuscd === 'S' || m.jobstatuscd === 'P' } : m
+      ))
+      if (!restored.length) { updateSessionId(null); return }
+      updateSessionId(sid)
+      setMessages([getInitialMessage(), ...restored])
+      restored.filter((m) => m.role === 'assistant' && m.pending && m.qauid)
+        .forEach((m) => pollPendingReport(sid, m.qauid))
+    }).catch(() => { updateSessionId(null) }) // 지워졌거나 못 읽는 대화면 새 대화로 시작
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 실제 /chat 실행 — sendMessage(preview 흐름 성공 시) 또는 handleConfirmPreview에서 호출.
   const _executeChat = async (text, options = null, fileTitle = null) => {
@@ -466,6 +558,7 @@ export default function D2InsightPage() {
           reportPath: data.report_path || null,
           qauid: data.qauid || null,
           appliedSteps: data.applied_steps || null,
+          scenario: options?.scenario || null,
           pending: data.pending || false,
         },
       ])
@@ -484,22 +577,43 @@ export default function D2InsightPage() {
   // "이대로 작성" 클릭 — preview 확정 후 /chat 실제 실행. 옵션은 서버가 이해할 형태로 전달.
   // 큐-워커라 /chat이 곧장 반환하므로, 생성 완료 전까지는 previewData 대신 generatingReport로
   // 이 보고서의 스텝을 오른쪽 패널에 계속 보여준다(pollPendingReport가 완료 시 정리).
-  const handleConfirmPreview = async () => {
+  const handleConfirmPreview = () => {
     if (!previewData || isLoading) return
-    const text = previewOriginalMessage
+    // 기존 보고서의 옵션을 고치는 중이면 요청 문장(기간 등)을 먼저 확인받는다.
+    if (previewFromReport) {
+      setRewriteText(previewOriginalMessage)
+      setRewriteName(previewFileName)
+      setRewriteModalOpen(true)
+      return
+    }
+    runConfirmedPreview(previewOriginalMessage, previewFileName)
+  }
+
+  const runConfirmedPreview = async (text, fileName = '') => {
+    if (!previewData || isLoading) return
     const scenario = previewData.scenario
     const appliedSteps = previewData.applied_steps
     const options = { scenario, applied_steps: appliedSteps }
+    // 재작성은 sendMessage를 거치지 않아 사용자 말풍선이 없다 — 여기서 넣는다.
+    if (previewFromReport) setMessages((prev) => [...prev, { role: 'user', content: text }])
     setIsLoading(true)
     try {
-      const data = await _executeChat(text, options, previewFileName.trim() || null)
+      const data = await _executeChat(text, options, fileName.trim() || null)
       if (data?.pending && data.qauid) setGeneratingReport({ qauid: data.qauid, scenario, appliedSteps })
     } finally {
       setPreviewData(null)
       setPreviewOriginalMessage('')
       setPreviewFileName('')
+      setPreviewFromReport(false)
       setIsLoading(false)
     }
+  }
+
+  const handleRewriteOk = () => {
+    const text = rewriteText.trim()
+    if (!text) return
+    setRewriteModalOpen(false)
+    runConfirmedPreview(text, rewriteName)
   }
 
   // JSON 편집 저장 시 스키마 기준 재검증(LLM 호출 없음) — 활성/비활성 상태를 다시 계산.
@@ -579,6 +693,7 @@ export default function D2InsightPage() {
         return
       }
       if (previewResp.data?.applied_steps?.length) {
+        setPreviewFromReport(false)
         setPreviewData(previewResp.data)
         setPreviewOriginalMessage(text)
         setPreviewFileName(previewResp.data.default_name || '')
@@ -1419,6 +1534,8 @@ export default function D2InsightPage() {
                                     answer: nextMsg?.content || '',
                                     fileurl: nextMsg?.fileurl || null,
                                     reportPath: nextMsg?.reportPath || null,
+                                    appliedSteps: nextMsg?.appliedSteps || null,
+                                    scenario: nextMsg?.scenario || null,
                                   })
                                 }}
                               >{t('btn.d2insight.continue')}</button>
@@ -1449,7 +1566,15 @@ export default function D2InsightPage() {
           preview={previewData}
           previewGenerating={isLoading}
           onConfirmPreview={handleConfirmPreview}
-          onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage(''); setPreviewFileName('') }}
+          onCancelPreview={() => { setPreviewData(null); setPreviewOriginalMessage(''); setPreviewFileName(''); setPreviewFromReport(false) }}
+          onReopenForEdit={viewMode === 'chat' && activeReportMessage?.appliedSteps?.length ? () => {
+            const prevMsg = activeMessages[activeReportMsgIndex - 1]
+            openEditFromReport({
+              question: prevMsg?.role === 'user' ? prevMsg.content : '',
+              appliedSteps: activeReportMessage.appliedSteps,
+              scenario: activeReportMessage.scenario || null,
+            })
+          } : null}
           onReorderPreviewSteps={(newSteps) =>
             setPreviewData((prev) => (prev ? { ...prev, applied_steps: newSteps } : prev))
           }
@@ -1462,6 +1587,33 @@ export default function D2InsightPage() {
           onChangePreviewFileName={setPreviewFileName}
         />
       </div>
+
+      {/* 재작성 확인 팝업 — 기존 보고서의 옵션을 고쳐 다시 작성할 때, 요청 문장(기간 등)을 확인·수정한다. */}
+      <Modal
+        open={rewriteModalOpen}
+        title="이대로 작성할까요?"
+        okText="작성"
+        cancelText="취소"
+        okButtonProps={{ disabled: !rewriteText.trim() }}
+        onOk={handleRewriteOk}
+        onCancel={() => setRewriteModalOpen(false)}
+        destroyOnHidden
+      >
+        <p style={{ marginBottom: 8 }}>기간 등을 바꾸려면 아래 문장을 고쳐주세요.</p>
+        <textarea
+          value={rewriteText}
+          onChange={(e) => setRewriteText(e.target.value)}
+          rows={3}
+          style={{ width: '100%', padding: '6px 8px', fontSize: 14, border: '1px solid #ddd', borderRadius: 4 }}
+        />
+        <p style={{ margin: '12px 0 8px' }}>보고서 이름</p>
+        <input
+          type="text"
+          value={rewriteName}
+          onChange={(e) => setRewriteName(e.target.value)}
+          style={{ width: '100%', padding: '6px 8px', fontSize: 14, border: '1px solid #ddd', borderRadius: 4 }}
+        />
+      </Modal>
 
       {/* 공유 모달 */}
       {shareTarget && (
@@ -1666,7 +1818,7 @@ function ReportOptionsPanel({
   preview, previewGenerating, onConfirmPreview, onCancelPreview, onReorderPreviewSteps,
   onValidateSteps, onDescribeStep, onEditStep,
   forceCompose, onToggleForceCompose,
-  previewFileName, onChangePreviewFileName,
+  previewFileName, onChangePreviewFileName, onReopenForEdit,
 }) {
   useLangStore((s) => s.translations)
   const { modal } = App.useApp()
@@ -2085,6 +2237,14 @@ function ReportOptionsPanel({
           <p className="options-panel-empty">이 말풍선에는 적용된 보고서 옵션이 없습니다.</p>
         ) : (
           <>
+            {onReopenForEdit && (
+              <div className="opt-schedule">
+                <button type="button" className="opt-schedule-toggle" onClick={onReopenForEdit}>
+                  ✏️ 수정하여 재작성
+                </button>
+              </div>
+            )}
+
             {reportQauid && !scheduleSettings && isTemplate && (
               <div className="opt-schedule opt-schedule-done">
                 📅 이미 정기 보고서로 등록된 보고서입니다.

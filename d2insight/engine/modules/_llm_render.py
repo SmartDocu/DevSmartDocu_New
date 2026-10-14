@@ -99,7 +99,9 @@ _RENDER_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트다.
 5. summary: narrative의 핵심만 1~2문장으로 압축한다(다른 스텝 결과와 함께 결론이 읽는 요약이다).
 6. 출력은 JSON 객체 하나:
    {"table_columns": ["열이름", ...], "chart": {"x": "열이름", "y": "열이름 또는 [열이름,...](여러 계열)",
-   "type": "bar|line|pie"} 또는 null,
+   "type": "bar|line|pie", "title": "차트 제목"} 또는 null,
+   (차트 제목은 명사형 20자 이내의 짧은 이름이다. "~를 제시", "~를 보여준다" 같은 서술문이나 분석 목적 문장을
+   쓰지 않는다. 예: "월별 총 주문 금액 추이", "상품별 물량 효과 상위 10". 시간 순서 추이는 line을 고른다.)
    "narrative": "...", "summary": "..."}
    다른 텍스트는 쓰지 마라."""
 
@@ -228,7 +230,12 @@ def _build_chart(c: dict | None, chart_source: pd.DataFrame, purpose: str):
     y = c.get("y")
     y_cols = [y] if isinstance(y, str) else [col for col in (y or []) if col in chart_source.columns]
     if y_cols and all(col in chart_source.columns for col in y_cols):
-        return chart_spec(chart_source[[c["x"], *y_cols]].head(MAX_CHART_ROWS), c.get("type") or "bar", purpose)
+        # 제목은 짧은 이름이어야 한다. 예전엔 분석 목적 문장(purpose)을 그대로 넘겨 "…를 제시." 같은 서술문이
+        # 차트 제목이 됐다(2026-10-14). LLM이 준 제목이 없거나 서술문 같으면 열 이름으로 만든다.
+        title = str(c.get("title") or "").strip()
+        if not title or len(title) > 30 or title.endswith(("다.", "다", "라.", "제시.", "제시")):
+            title = f"{', '.join(map(str, y_cols))} ({c['x']}별)"
+        return chart_spec(chart_source[[c["x"], *y_cols]].head(MAX_CHART_ROWS), c.get("type") or "bar", title)
     return None
 
 
@@ -258,6 +265,32 @@ def _with_required(df: pd.DataFrame, cols: list[str], required) -> list[str]:
     wanted = set(df.columns) if required == "all" else {c for c in required if c in df.columns}
     keep = wanted | set(cols)
     return [c for c in df.columns if c in keep]
+
+
+def _drop_uninformative(df: pd.DataFrame, cols: list[str], required) -> list[str]:
+    """표에 보여줄 열에서 정보가 없는 열을 뺀다 — 값이 전부 비었거나 한 가지뿐인 열, 0/1(참/거짓) 표시만 있는 열.
+
+    모듈이 계산 중간에 쓰는 표시 열(신규·이탈 표시, 주요 항목 여부 등)이 표에 그대로 나와 헤더만 여러 줄을
+    차지하고 값은 비어 있거나 전부 같은 사례가 있었다(2026-10-14). 열 이름은 보지 않고 값의 모양만 본다.
+    required에 든 열은 남긴다. cols가 비면(LLM이 열을 안 골랐으면) 전체 열이 대상이다. 행이 3개 미만이면
+    값이 하나뿐인 것이 당연하므로 손대지 않는다.
+    """
+    base = list(cols) if cols else list(df.columns)
+    if len(df) < 3:
+        return cols
+    keep = set(df.columns) if required == "all" else set(required or [])
+    out: list[str] = []
+    for c in base:
+        if c in keep:
+            out.append(c)
+            continue
+        s = df[c].dropna()
+        if s.empty or s.astype(str).str.strip().eq("").all() or s.nunique() <= 1:
+            continue
+        if set(s.unique()) <= {0, 1, True, False}:
+            continue
+        out.append(c)
+    return out or cols
 
 
 def _facts_block(table: pd.DataFrame, extra_facts: list[str] | None) -> str:
@@ -343,7 +376,7 @@ def render_from_dataframe(
 
     if cache:
         cols = [c for c in (cache.get("table_columns") or []) if c in df.columns]
-        cols = _with_required(df, cols, required_columns)
+        cols = _drop_uninformative(df, _with_required(df, cols, required_columns), required_columns)
         cols = _ensure_label_column(df, cols)
         table = df[cols] if cols else df
         chart = _build_chart(cache.get("chart"), chart_source, purpose)
@@ -386,7 +419,7 @@ def render_from_dataframe(
     spec = _chat_json(prompt, _RENDER_SYSTEM, label=f"{label}:render", call_type="module_render")
 
     cols = [c for c in (spec.get("table_columns") or []) if c in df.columns]
-    cols = _with_required(df, cols, required_columns)
+    cols = _drop_uninformative(df, _with_required(df, cols, required_columns), required_columns)
     cols = _ensure_label_column(df, cols)
     table = df[cols] if cols else df
     chart = _build_chart(spec.get("chart"), chart_source, purpose)

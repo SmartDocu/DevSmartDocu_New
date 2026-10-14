@@ -122,6 +122,8 @@ class InjectRequest(BaseModel):
     visualization_type: str = "none"
     table_html: str | None = None
     report_path: str | None = None
+    # 이어가기로 붙는 턴에도 원래 보고서의 옵션을 남겨, 그 턴을 클릭해 수정·재작성할 수 있게 한다.
+    applied_steps: list | None = None
 
 
 class ScheduleRegisterRequest(BaseModel):
@@ -273,6 +275,9 @@ def chat_endpoint(req: ChatRequest, token: str = Depends(get_token)) -> ChatResp
             if req.options.get("scenario"):
                 intent["tool"] = "report"
                 intent["report_type"] = req.options["scenario"]
+            elif req.options.get("applied_steps"):
+                # 이력의 옵션을 불러와 재작성하는 경우 — 시나리오 이름이 저장돼 있지 않아도 보고서로 실행한다.
+                intent["tool"] = "report"
         tool = intent.get("tool", "chat")
         target_month = intent.get("target_month")
         months_back = intent.get("months_back", 3)
@@ -612,6 +617,8 @@ def inject_qa(body: InjectRequest, token: str = Depends(get_token)):
             "visualization_type": body.visualization_type,
             "table_html": body.table_html,
         }
+        if body.applied_steps:
+            answer_json["applied_steps"] = body.applied_steps
         _session.append_qa(sid, body.question, answer_json, user_id=body.user_id, project_id=body.project_id, filenm=body.report_path)
     except Exception as e:
         # print(f"[inject] append_qa 실패: {e}")

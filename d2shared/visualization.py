@@ -444,6 +444,8 @@ def decide_bar_orientation(df: pd.DataFrame, question: str) -> str:
     """막대류 차트를 세로('v')로 그릴지 가로('h')로 그릴지 결정한다.
     순위/기준대비 성격의 질문이거나, 라벨이 길거나 항목이 많으면 가로가 더 읽기 좋다."""
     q = (question or '').lower()
+    if df is not None and not df.empty and _looks_like_time_labels(df.iloc[:, 0]):
+        return 'v'            # 시간은 가로축(왼쪽→오른쪽)으로 흐른다 — 제목에 "대비"가 있어도 세로
     if any(kw in q for kw in _RANK_KEYWORDS) or '대비' in q:
         return 'h'
     if df is None or df.empty:
@@ -839,6 +841,12 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
     # (2026-08-19, 고객 데모용 보고서 리뷰에서 발견). 호출부가 넘겨준 question(예: "2013년
     # 3월 카테고리별 매출 비교")이 섹션 맥락을 담고 있으므로 이걸 제목으로 쓰고, question이
     # 없을 때만 기존 자리표시자로 폴백한다. 차트 폭에 비해 너무 길면 잘라낸다.
+    def _legend_above(ax, n_series: int) -> None:
+        """범례를 그래프 안이 아니라 제목 아래·그래프 위 바깥에 한 줄로 둔다 — 안쪽에 두면 막대·선을 가린다.
+        한 줄에 4개까지만 두고(report_style._legend_one_row 와 같은 기준) 그 이상은 줄을 나눈다."""
+        ax.legend(loc='lower left', bbox_to_anchor=(0.0, 1.0), ncol=min(max(n_series, 1), 4), frameon=False)
+        ax.set_title(ax.get_title(), fontsize=14, fontweight='bold', pad=30)
+
     def _chart_title(fallback: str) -> str:
         q = (question or '').strip()
         if not q:
@@ -870,7 +878,9 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
         # 시간축(line)·단계 순서가 의미 있는(waterfall)·이미 자체 정렬 로직이 있는(pareto)·
         # 순서가 의미 없는(heatmap 등) 차트는 원래 순서를 그대로 둔다.
         _SORT_EXCLUDED_TYPES = {'line', 'waterfall', 'heatmap', 'scatter', 'histogram', 'boxplot', 'subplot', 'pareto', 'diverging_bar'}
-        if chart_type not in _SORT_EXCLUDED_TYPES and len(df.columns) >= 2:
+        # 시간(월·분기·날짜) 라벨은 시간 순서가 의미이므로 값 크기로 재정렬하지 않는다(월이 06,07,09,03…으로 섞임).
+        if (chart_type not in _SORT_EXCLUDED_TYPES and len(df.columns) >= 2
+                and not _looks_like_time_labels(df.iloc[:, 0])):
             _sort_col = df.columns[1]
             if pd.api.types.is_numeric_dtype(df[_sort_col]):
                 df = df.sort_values(_sort_col, ascending=False).reset_index(drop=True)
@@ -1157,11 +1167,12 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                 for idx, col in enumerate(values.columns):
                     ax.plot(x_pos, values[col].values, marker="o", label=col,
                             color=_cat(idx), linewidth=2)
-                ax.legend(loc="best")
 
             ax.set_xticks(x_pos)
             ax.set_xticklabels(labels_display)
-            _set_axes(ax, xlabel=df.columns[0], ylabel='값', title='추이', rotate_x=True)
+            _set_axes(ax, xlabel=df.columns[0], ylabel='값', title=_chart_title('추이'), rotate_x=True)
+            if len(values.columns) > 1:
+                _legend_above(ax, len(values.columns))
             _format_yaxis(ax)
 
         elif chart_type == 'scatter':
@@ -1409,8 +1420,8 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                                 color=_cat(idx))
                     ax.set_yticks(y)
                     ax.set_yticklabels(h_labels)
-                    ax.legend(loc='best')
                     _set_axes(ax, xlabel='값', ylabel=df.columns[0], title=_chart_title('비교'))
+                    _legend_above(ax, len(values.columns))
                     _format_xaxis(ax)
                 else:
                     x = np.arange(len(labels))
@@ -1421,8 +1432,8 @@ def dataframe_to_chart_image(df: pd.DataFrame, question: str, chart_type: str = 
                                color=_cat(idx))
                     ax.set_xticks(x)
                     ax.set_xticklabels(labels)
-                    ax.legend(loc='best')
                     _set_axes(ax, xlabel=df.columns[0], ylabel='값', title=_chart_title('비교'), rotate_x=True)
+                    _legend_above(ax, len(values.columns))
                     _format_yaxis(ax)
 
         image_base64 = base64.b64encode(rs.save_chart_png(fig)).decode('utf-8')

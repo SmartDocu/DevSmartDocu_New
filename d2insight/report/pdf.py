@@ -157,7 +157,7 @@ def _detect_numeric_columns(col_values: list[list[str]]) -> list[bool]:
     return result
 
 
-_SHORT_HEADER_CHARS = 4   # 이 글자 수 이하의 헤더 단어("순위", "증감률", "Rate")는 단어 중간에서 끊지 않는다
+_SHORT_HEADER_CHARS = 6   # 이 글자 수 이하의 헤더 단어("순위", "증감률", "Reason", "amount")는 단어 중간에서 끊지 않는다
 
 
 def _header_pieces(header: str) -> list[str]:
@@ -188,11 +188,14 @@ def _calculate_table_column_widths(headers: list[str], rows: list[list[str]]) ->
       보고 가장 넓은 조각만 잰다(헤더 전체가 아니다). 글자 열은 값 전체 폭(90퍼센타일)을 원하지만,
       항목 이름 열(첫 글자 열)은 이름이 잘리지 않게 최댓값을 원한다.
     - 폭이 남으면 원하는 폭에 비례해 나눠 본문 폭을 채운다.
-    - 모자라면 아래 순서로 양보한다.
-        1) 값보다 헤더 때문에 넓어진 열: 헤더가 단어 중간에서 끊기도록 줄인다(짧은 헤더는 제외).
-        2) 항목 이름 열이 아닌 글자 열: 가장 긴 단어까지 줄바꿈으로 줄인다.
-        3) 항목 이름 열: 가장 긴 단어까지.
-        4) 그래도 모자라면 전체를 비례해서 줄인다.
+    - 모자라면 아래 순서로 양보한다. 이름·설명 같은 글자는 공백에서 줄바꿈하면 읽히지만, 헤더가 단어 중간에서
+      3줄 이상 끊기거나 한 글자씩 세로로 서는 것은 못 읽으므로 글자 열이 먼저 양보한다(2026-10-14).
+        1) 글자 열(항목 이름 열 포함): 원하는 폭의 절반(두 줄)까지, 단 가장 긴 단어보다는 좁히지 않는다.
+        1-2) 글자 열: 원하는 폭의 3분의 1(세 줄)까지.
+        2) 헤더가 넓어서 넓어진 열: 헤더의 긴 조각을 두 줄로 끊을 수 있는 폭까지(짧은 헤더는 제외).
+        3) 글자 열: 가장 긴 단어까지.
+        4) 모든 열: 값이 한 줄로 들어가는 폭까지(헤더는 글자 단위로 끊긴다). 값(숫자)은 끊지 않는다.
+        5) 그래도 모자라면 전체를 비례해서 줄인다.
     - 어느 열이 항목 이름 열인지는 컬럼명이 아니라 형태(숫자가 아닌 첫 열)로 판단한다.
     """
     n_cols = len(headers)
@@ -213,12 +216,17 @@ def _calculate_table_column_widths(headers: list[str], rows: list[list[str]]) ->
     cap = usable_pt * _MAX_COLUMN_RATIO
 
     widths: list[float] = []
-    floor_header: list[float] = []   # 1단계 하한: 값 폭 + (끊지 않는 짧은 헤더)
-    floor_word: list[float] = []     # 2·3단계 하한: 값의 가장 긴 단어
+    floor_two: list[float] = []      # 1단계 하한(글자 열): 두 줄까지
+    floor_third: list[float] = []    # 1-2단계 하한(글자 열): 세 줄까지
+    floor_half: list[float] = []     # 2단계 하한: 값 폭 + 헤더 긴 조각을 두 줄로 끊은 폭
+    floor_word: list[float] = []     # 3단계 하한: 값의 가장 긴 단어
+    floor_value: list[float] = []    # 4단계 하한: 값이 한 줄로 들어가는 폭
     for i, header in enumerate(headers):
         pieces = _header_pieces(header)
         piece_w = max((pdfmetrics.stringWidth(p, bold_font, size) for p in pieces), default=0.0)
-        protected_w = piece_w if all(len(p) <= _SHORT_HEADER_CHARS for p in pieces) else 0.0
+        # 짧은 헤더는 끊지 않고, 긴 조각은 두 줄까지 끊는다(절반 폭)
+        half_w = max((pdfmetrics.stringWidth(p, bold_font, size) / (1 if len(p) <= _SHORT_HEADER_CHARS else 2)
+                      for p in pieces), default=0.0)
 
         whole = [pdfmetrics.stringWidth(v.strip(), regular_font, size) for v in col_values[i]]
         words = [_longest_token_width(v, regular_font, size) for v in col_values[i]]
@@ -235,10 +243,17 @@ def _calculate_table_column_widths(headers: list[str], rows: list[list[str]]) ->
             ideal = min(ideal, max(cap, value_min + pad))
         ideal = max(ideal, _MIN_COLUMN_PT)
         widths.append(ideal)
-        floor_header.append(min(ideal, max(value_ideal, protected_w) + pad, ideal))
-        floor_word.append(min(ideal, max(value_min, protected_w) + pad))
-    floor_header = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_header, widths)]
+        w_word = max(value_min, half_w) + pad
+        floor_word.append(min(ideal, w_word))
+        floor_value.append(min(ideal, (value_ideal if numeric_cols[i] else value_min) + pad))
+        floor_half.append(min(ideal, max(value_ideal if numeric_cols[i] else value_min, half_w) + pad))
+        floor_two.append(min(ideal, max(ideal * 0.5, w_word)) if not numeric_cols[i] else ideal)
+        floor_third.append(min(ideal, max(ideal / 3, w_word)) if not numeric_cols[i] else ideal)
+    floor_two = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_two, widths)]
+    floor_third = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_third, widths)]
+    floor_half = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_half, widths)]
     floor_word = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_word, widths)]
+    floor_value = [max(f, min(_MIN_COLUMN_PT, w)) for f, w in zip(floor_value, widths)]
 
     total = sum(widths)
     if total <= usable_pt:
@@ -247,11 +262,12 @@ def _calculate_table_column_widths(headers: list[str], rows: list[list[str]]) ->
 
     deficit = total - usable_pt
     all_idx = list(range(n_cols))
-    deficit = _shrink_toward(widths, floor_header, all_idx, deficit)
-    text_idx = [i for i in all_idx if not numeric_cols[i] and i != label_idx]
+    text_idx = [i for i in all_idx if not numeric_cols[i]]
+    deficit = _shrink_toward(widths, floor_two, text_idx, deficit)
+    deficit = _shrink_toward(widths, floor_third, text_idx, deficit)
+    deficit = _shrink_toward(widths, floor_half, all_idx, deficit)
     deficit = _shrink_toward(widths, floor_word, text_idx, deficit)
-    if label_idx is not None:
-        deficit = _shrink_toward(widths, floor_word, [label_idx], deficit)
+    deficit = _shrink_toward(widths, floor_value, all_idx, deficit)
     if deficit > 1e-6:
         scale = usable_pt / sum(widths)
         widths = [w * scale for w in widths]

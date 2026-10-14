@@ -394,10 +394,18 @@ def get_session_messages(session_uid: str) -> list[dict]:
             if isinstance(obj, dict):
                 answer_text = obj.get("answer", "")
                 applied_steps = obj.get("applied_steps")
+                analytic_uid = obj.get("analytic_uid")
             else:
-                answer_text, applied_steps = str(obj), None
+                answer_text, applied_steps, analytic_uid = str(obj), None, None
         except (json.JSONDecodeError, TypeError):
-            answer_text, applied_steps = row["answer"] or "", None
+            answer_text, applied_steps, analytic_uid = row["answer"] or "", None, None
+        # 이어가기·재작성이 원본과 같은 시나리오로 작성되도록, 기록된 분석(analytics)에서 시나리오 이름을 찾아 함께 내려준다.
+        scenario = None
+        if applied_steps and analytic_uid:
+            try:
+                scenario = get_analytic_scenario_nm(analytic_uid)
+            except Exception:
+                scenario = None
         filenm = row.get("filenm")
         messages.append({
             "role": "assistant",
@@ -407,6 +415,7 @@ def get_session_messages(session_uid: str) -> list[dict]:
             "mdurl": resolve_md_url(row.get("fileurl")),
             "qauid": row["qauid"],
             "appliedSteps": applied_steps,
+            "scenario": scenario,
             "isTemplate": bool(filenm) and filenm in scheduled_filenms,
             # 비동기 보고서 진행 상태 — 'S'(접수)/'P'(처리중)이면 아직 워커가 안 끝난 것.
             # 동기 turn(챗/헬스 등)은 이 컬럼 자체가 없어 None → 프론트는 "완료된 turn"으로 취급.
