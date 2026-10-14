@@ -243,6 +243,13 @@ export default function D2InsightPage() {
     setScheduleSettings(null)
     setActiveReportIndex(null)
     setGeneratingReport(null)
+    setPreviewData(null)
+    setPreviewOriginalMessage('')
+    setPreviewFileName('')
+    setPreviewFromReport(false)
+    setRewriteModalOpen(false)
+    setRewriteText('')
+    setRewriteName('')
     setViewMode('chat')
     setInputValue('')
   }
