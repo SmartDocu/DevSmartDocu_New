@@ -307,11 +307,12 @@ def _lock_tenant_if_fully_deleted(sd, accountuid: str, tenantid: int) -> None:
             target_useruid=row["useruid"],
         )
 
-    sd.table("tenants").update({"useyn": False}).eq("tenantid", tenantid).execute()
-    sd.table("tenantusers").update({"useyn": False}).eq("tenantid", tenantid).execute()
+    now_iso = datetime.now(timezone.utc).isoformat()   # 변경한 행에 updatedts를 같이 남긴다(다른 라우터와 같은 UTC isoformat)
+    sd.table("tenants").update({"useyn": False, "updatedts": now_iso}).eq("tenantid", tenantid).execute()
+    sd.table("tenantusers").update({"useyn": False, "updatedts": now_iso}).eq("tenantid", tenantid).execute()
     # 이 기업을 기본 기업으로 가진 사용자의 기본값을 비운다 — 안 비우면 다음 로그인이 잠긴 기업을 가리킨다
     # (로그인 쪽도 활성 소속이 아니면 무시하지만, 낡은 값을 남기지 않는다)
-    sd.table("users").update({"default_tenantid": None}).eq("default_tenantid", tenantid).execute()
+    sd.table("users").update({"default_tenantid": None, "updatedts": now_iso}).eq("default_tenantid", tenantid).execute()
 
     log_work_action(
         useruid=_SYSTEM_USER_ID, tenantid=tenantid, servicecd="Tenant",

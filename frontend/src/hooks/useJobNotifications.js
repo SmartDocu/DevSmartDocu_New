@@ -25,6 +25,8 @@ export function useJobNotifications() {
       // 작업이 끝나면 항목 내용·미반영 집계가 바뀌므로 해당 화면 캐시도 무효화 (staleTime 5분 동안 낡은 값을 보여주지 않게)
       qc.invalidateQueries({ queryKey: ['chapter-objects'] })
       qc.invalidateQueries({ queryKey: ['gendoc-status'] })
+      qc.invalidateQueries({ queryKey: ['gendocs'] })        // 문서 목록(최종 작성 시각 등)
+      qc.invalidateQueries({ queryKey: ['gen-failures'] })   // 작업이 실패로 끝났다면 작성 실패 이력에 새 행이 생긴다
     }
 
     const docChannel = supabase

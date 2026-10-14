@@ -9,6 +9,7 @@ import { useLangStore, t } from '@/stores/langStore'
 import { useReqStore } from '@/stores/reqStore'
 import { useGendocs, useGenchapters } from '@/hooks/useGendocs'
 import { getErrorDetail } from '@/utils/apiError'
+import { FRESH_ON_OPEN } from '@/hooks/freshOnOpen'
 
 const TODAY = dayjs().format('YYYY-MM-DD')
 const ONE_YEAR_AGO = dayjs().subtract(365, 'day').format('YYYY-MM-DD')
@@ -20,7 +21,7 @@ function useChapterObjects(genchapteruid) {
     enabled: !!genchapteruid,
     // 항목 내용(resulttext)은 챕터 재작성·문서 작성(워커)이 이 화면 밖에서 바꾼다 — 전역 staleTime(5분) 동안
     // 낡은 목록(예: 재작성 시작 시 비워진 내용)을 보여주지 않도록 열 때마다 새로 읽는다.
-    staleTime: 0,
+    ...FRESH_ON_OPEN,
   })
 }
 
@@ -31,6 +32,7 @@ function useRewriteObject(genchapteruid) {
       apiClient.post(`/gendocs/genchapters/${genchapteruid}/objects/${objectuid}/rewrite`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['chapter-objects', genchapteruid] })
+      qc.invalidateQueries({ queryKey: ['gendoc-status'] })   // 항목 재작성은 doc-read 헤더의 미반영 항목 수를 바꾼다
     },
   })
 }
@@ -42,6 +44,8 @@ function useApplyObjects(genchapteruid) {
       apiClient.post(`/gendocs/genchapters/${genchapteruid}/apply`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['chapter-objects', genchapteruid] })
+      qc.invalidateQueries({ queryKey: ['gendoc-status'] })   // 반영하면 챕터 확정 시각이 바뀌어 미반영 집계가 줄어든다
+      qc.invalidateQueries({ queryKey: ['genchapters'] })     // 챕터 조회 목록의 작성 시각
     },
   })
 }

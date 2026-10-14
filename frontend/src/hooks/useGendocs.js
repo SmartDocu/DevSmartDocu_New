@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
+import { FRESH_ON_OPEN } from '@/hooks/freshOnOpen'
 
 export function useGendocs(startDate, endDate, docid, searchBy, docgroupid) {
   return useQuery({
@@ -17,7 +18,8 @@ export function useGendocs(startDate, endDate, docid, searchBy, docgroupid) {
     // 브라우저 탭을 잠깐 안 보다가 다시 포커스했을 때 조용히 갱신되던 게 아니라
     // 전체 화면 로딩 오버레이(isFetching 연동)가 떠서 매번 "로딩"처럼 보였다 — 자동 refetch를 끈다.
     // 조회 버튼(생성 기간 변경)은 쿼리 키 자체가 바뀌므로 이 옵션과 무관하게 그대로 재조회된다.
-    refetchOnWindowFocus: false,
+    // (FRESH_ON_OPEN: 화면을 열 때마다 새로 읽는다 — 다른 화면·워커가 문서를 바꾼 결과가 5분 동안 안 보이던 문제)
+    ...FRESH_ON_OPEN,
   })
 }
 
@@ -25,6 +27,7 @@ export function useDataparams() {
   return useQuery({
     queryKey: ['gendocs-dataparams'],
     queryFn: () => apiClient.get('/gendocs/dataparams').then((r) => r.data),
+    ...FRESH_ON_OPEN,
   })
 }
 
@@ -33,6 +36,7 @@ export function useGendocStatus(gendocuid) {
     queryKey: ['gendoc-status', gendocuid],
     queryFn: () => apiClient.get(`/gendocs/${gendocuid}/status`).then((r) => r.data),
     enabled: !!gendocuid,
+    ...FRESH_ON_OPEN,
   })
 }
 
@@ -41,6 +45,7 @@ export function useGenchapters(gendocuid) {
     queryKey: ['genchapters', gendocuid],
     queryFn: () => apiClient.get(`/gendocs/${gendocuid}/chapters`).then((r) => r.data),
     enabled: !!gendocuid,
+    ...FRESH_ON_OPEN,
     refetchInterval: (data) => {
       // Auto-refetch if chapters are still generating
       const chapters = data?.chapters || []
