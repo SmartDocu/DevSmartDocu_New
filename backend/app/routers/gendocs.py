@@ -203,10 +203,13 @@ def _precheck_generation(sb, sb_svc, gendocuid: str, chapteruids: list) -> tuple
 
     # 매핑 없는 '데이터셋'은 경고하지 않는다 — 고정 API·정적 데이터셋은 매개변수가 필요 없어 정상 구성인 경우가 많고
     # (최근 문서 26건 중 12건이 해당), 매핑은 매개변수×데이터셋 관계라 '매핑 안 된 매개변수'로 같은 문제를 잡는다.
-    gp =sb_svc.schema(S).table("gendoc_params").select("paramuid,paramvalue").eq("gendocuid", gendocuid).execute().data or []
-    empty_values = [param_nm[r["paramuid"]] for r in gp
-                    if r["paramuid"] in mapped_params and r["paramuid"] in param_nm
-                    and not str(r.get("paramvalue") if r.get("paramvalue") is not None else "").strip()]
+    # 값이 비었다 = 값 행이 없거나(문서를 만든 뒤 추가된 매개변수 — update_gendoc_params는 기존 행만 UPDATE하고
+    # 파일 생성 뒤에는 수정도 막혀 있어 사용자가 채울 수 없음) 값이 공백인 경우. 둘 다 매핑된 매개변수에 대해서만:
+    # 데이터 조회 시 값 없는 조건은 조용히 빠져 필터 없이 전체 데이터가 쓰인다(process_data_db의 dropna).
+    gp = {r["paramuid"]: r.get("paramvalue")
+          for r in (sb_svc.schema(S).table("gendoc_params").select("paramuid,paramvalue").eq("gendocuid", gendocuid).execute().data or [])}
+    empty_values = [param_nm[u] for u in param_nm
+                    if u in mapped_params and not str(gp.get(u) if gp.get(u) is not None else "").strip()]
     if empty_values:
         warnings["empty_values"] = empty_values
 

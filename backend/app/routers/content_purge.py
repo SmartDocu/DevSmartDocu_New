@@ -98,11 +98,14 @@ def _purge_do_service_content(sd, accountuid: str, tenantid: int, personal: bool
     _bulk_delete(sd, "docparamdtls", "docid", docids)
     _bulk_delete(sd, "docparams", "docid", docids)
     _bulk_delete(sd, "docs", "docid", docids)
+    # 문서 그룹(프로젝트별 분류 이름) — docs보다 먼저 지우면 docs.docgroupid가 끊기므로 문서 삭제 뒤에, 프로젝트 기준으로 지운다
+    docgroupids = [g["docgroupid"] for g in _select_in(sd, "docgroups", "docgroupid", "projectid", projectids)]
+    _bulk_delete(sd, "docgroups", "docgroupid", docgroupids)
 
     deleted_files = delete_private_prefix(get_service_client(), build_private_path(accountuid, "Doc"))
 
     return {
-        "projects": len(projectids), "docs": len(docids), "chapters": len(chapteruids),
+        "projects": len(projectids), "docs": len(docids), "docgroups": len(docgroupids), "chapters": len(chapteruids),
         "objects": len(objectuids), "gendocs": len(gendocuids), "genchapters": len(genchapteruids),
         "storage_files_deleted": deleted_files,
     }

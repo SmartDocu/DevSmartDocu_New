@@ -18,6 +18,9 @@ function useChapterObjects(genchapteruid) {
     queryKey: ['chapter-objects', genchapteruid],
     queryFn: () => apiClient.get(`/gendocs/genchapters/${genchapteruid}/objects`).then((r) => r.data),
     enabled: !!genchapteruid,
+    // 항목 내용(resulttext)은 챕터 재작성·문서 작성(워커)이 이 화면 밖에서 바꾼다 — 전역 staleTime(5분) 동안
+    // 낡은 목록(예: 재작성 시작 시 비워진 내용)을 보여주지 않도록 열 때마다 새로 읽는다.
+    staleTime: 0,
   })
 }
 
@@ -88,7 +91,6 @@ export default function ReqChapterObjectsPage() {
   const rewriteMutation = useRewriteObject(selectedGenchapteruid)
   const applyMutation = useApplyObjects(selectedGenchapteruid)
 
-  const [selectedRow, setSelectedRow] = useState(null)
   const [loadingText, setLoadingText] = useState('')
   const [showLoading, setShowLoading] = useState(false)
 
@@ -96,6 +98,11 @@ export default function ReqChapterObjectsPage() {
     objects = [],
     closeyn = false,
   } = data
+
+  // 선택은 항목 키만 기억하고 행은 최신 목록에서 다시 찾는다 — 행 객체를 그대로 들고 있으면
+  // 항목 재작성·재조회 뒤에도 예전 내용(또는 "내용 없음")이 미리보기에 남는다.
+  const [selectedKey, setSelectedKey] = useState(null)
+  const selectedRow = objects.find((o) => o.genobjectuid === selectedKey) || null
 
   // chapters-read에서 챕터 선택 시 동기화
   useEffect(() => {
@@ -105,7 +112,7 @@ export default function ReqChapterObjectsPage() {
 
   // 챕터 변경 시 선택 초기화
   useEffect(() => {
-    setSelectedRow(null)
+    setSelectedKey(null)
   }, [selectedGenchapteruid])
 
   const handleRewrite = async (row) => {
@@ -114,7 +121,6 @@ export default function ReqChapterObjectsPage() {
     try {
       await rewriteMutation.mutateAsync(row.objectuid)
       message.success(t('msg.object.write.complete'))
-      setSelectedRow((prev) => prev)
     } catch (err) {
       message.error(t('msg.server.error') + ': ' + (getErrorDetail(err) || err.message))
     } finally {
@@ -216,8 +222,8 @@ export default function ReqChapterObjectsPage() {
                 {objects.map((obj) => (
                   <tr
                     key={obj.genobjectuid || obj.objectuid || obj.objectnm}
-                    className={selectedRow?.genobjectuid === obj.genobjectuid ? 'selected-row' : ''}
-                    onClick={() => setSelectedRow(obj)}
+                    className={selectedKey === obj.genobjectuid ? 'selected-row' : ''}
+                    onClick={() => setSelectedKey(obj.genobjectuid)}
                     style={{ cursor: 'pointer' }}
                   >
                     <td>{obj.objectnm}</td>

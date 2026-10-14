@@ -22,6 +22,9 @@ export function useJobNotifications() {
         message.success(t(completedKey))
       }
       qc.invalidateQueries({ queryKey: ['genchapters'] })
+      // 작업이 끝나면 항목 내용·미반영 집계가 바뀌므로 해당 화면 캐시도 무효화 (staleTime 5분 동안 낡은 값을 보여주지 않게)
+      qc.invalidateQueries({ queryKey: ['chapter-objects'] })
+      qc.invalidateQueries({ queryKey: ['gendoc-status'] })
     }
 
     const docChannel = supabase
