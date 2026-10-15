@@ -62,7 +62,7 @@ export default function MasterSentencesPage() {
   useEffect(() => {
     if (!selectedDatauid) { setDataRows([]); return }
     setDataLoading(true)
-    apiClient.get('/datas/rows', { params: { datauid: selectedDatauid, docid: user?.docid || undefined } })
+    apiClient.get('/datas/rows', { params: { datauid: selectedDatauid, docid: user?.docid || undefined, projectid: user?.projectid || undefined } })
       .then((r) => setDataRows(r.data.data || []))
       .catch(() => setDataRows([]))
       .finally(() => setDataLoading(false))

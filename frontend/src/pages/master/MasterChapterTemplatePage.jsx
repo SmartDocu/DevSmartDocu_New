@@ -1228,6 +1228,10 @@ export default function MasterChapterTemplatePage() {
       message.success(t('msg.saved.name').replace('{name}', chapter.chapternm))
       initialized.current = false
       qc.invalidateQueries({ queryKey: ['chapter-template', chapteruid] })
+      // 템플릿 저장은 서버에서 이 챕터의 항목(objects)을 추가·삭제·수정하고 항목 필터도 바꾼다 —
+      // 이미 열려 있는 master/object(와 차트·표·문장 화면)의 항목 목록이 전역 staleTime(5분) 동안 옛 목록으로 남지 않게 한다.
+      qc.invalidateQueries({ queryKey: ['objects', chapteruid] })
+      qc.invalidateQueries({ queryKey: ['objectfilter-datauid'] })
     },
     onError: (err) => {
       setSaveLoading(false)
@@ -1327,12 +1331,14 @@ export default function MasterChapterTemplatePage() {
       setFormats(prev => prev.map(f =>
         f.objectUID === filterModalFmt?.objectUID ? { ...f, isFilterMapped: true } : f
       ))
+      qc.invalidateQueries({ queryKey: ['objects', chapteruid] })   // 항목의 필터 매핑 여부(is_filtermapped)가 바뀐다
+      qc.invalidateQueries({ queryKey: ['objectfilter-datauid'] })
       message.success(t('msg.filter.map.saved'))
       setFilterModalFmt(null)
     } catch {
       message.error(t('msg.filter.save.error'))
     }
-  }, [filterInfo, filterSelectedDatauid, filterColMappings, filterModalFmt, message])
+  }, [filterInfo, filterSelectedDatauid, filterColMappings, filterModalFmt, message, qc, chapteruid])
 
   // ✅ 수정: 챕터 목록 로딩 중이면 스피너, 목록 없으면 안내
   if (!chapteruid) {

@@ -3,12 +3,15 @@ import { App } from 'antd'
 import { t } from '@/stores/langStore'
 import apiClient from '@/api/client'
 import { getErrorMessage } from '@/utils/apiError'
+import { FRESH_ON_OPEN } from '@/hooks/freshOnOpen'
 
 export function useObjects(chapteruid) {
   return useQuery({
     queryKey: ['objects', chapteruid],
     queryFn: () => apiClient.get('/objects', { params: { chapteruid } }).then((r) => r.data.objects),
     enabled: !!chapteruid,
+    // 항목은 챕터 템플릿 화면에서도 추가·삭제된다 — 열 때마다 새로 읽어 낡은 목록을 보여주지 않는다.
+    ...FRESH_ON_OPEN,
   })
 }
 

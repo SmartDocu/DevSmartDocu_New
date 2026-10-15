@@ -1412,7 +1412,7 @@ def create_datacols(body: dict, token: str = Depends(get_token), tenantid: Optio
 
 
 @router.get("/rows", dependencies=[Depends(require_login)])
-def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional[str] = None):
+def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional[str] = None, projectid: Optional[int] = None):
     """데이터 미리보기 — 최대 15행 반환"""
     _get_user(token)
     sb = _sb(token)
@@ -1420,12 +1420,14 @@ def get_data_rows(datauid: str, token: str = Depends(get_token), docid: Optional
     from utilsPrj.process_data import process_data, apply_column_display_mapping
 
     class _FakeRequest:
-        def __init__(self, access_token):
+        def __init__(self, access_token, projectid=None):
             self.session = {"access_token": access_token, "refresh_token": None}
             self.method = "GET"
+            if projectid:   # AI 데이터셋(df/dfv)은 프로젝트 기준으로 LLM 키를 찾는다
+                self.projectid = projectid
 
     try:
-        req = _FakeRequest(token)
+        req = _FakeRequest(token, projectid)
         df = process_data(req, datauid=datauid, docid=docid)
         raw_columns = df.columns.tolist()
         raw_rows = df.head(15).values.tolist()

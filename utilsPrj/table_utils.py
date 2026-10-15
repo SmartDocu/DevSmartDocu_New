@@ -5,8 +5,18 @@ import inspect
 
 locale.setlocale(locale.LC_ALL, '')
 
+
+def _is_blank(v):
+    """빈 값 판정 — None, NaN(엑셀/DB의 빈 셀이 pandas에서 읽히는 값), NaT(빈 날짜).
+    그대로 str()에 넣으면 'nan'/'NaT'가 표에 찍힌다."""
+    return v is None or (isinstance(v, float) and v != v) or type(v).__name__ == "NaTType"
+
+
 def draw_table(request, columns, dict_rows, tablejson, coljson):
     try:
+        # 빈 값(NaN/NaT)을 None으로 통일 — 정렬(None은 뒤로)과 표시(빈 칸) 모두 이 값을 기준으로 한다.
+        dict_rows = [{k: (None if _is_blank(v) else v) for k, v in row.items()} for row in dict_rows]
+
         def style_to_css(style_dict, border_color=None):
             styles = [
                 f"background-color: {style_dict.get('bgcolor', '#ffffff')}",
@@ -91,6 +101,8 @@ def draw_table(request, columns, dict_rows, tablejson, coljson):
             html.append('<tr>')
             for col in enabled_cols:
                 val = row.get(col, "")
+                if val is None:
+                    val = ""    # 빈 값은 빈 칸으로 표시 ('nan'/'None' 문자열이 찍히지 않게)
                 col_style = coljson.get(col, {})
                 border_color = tablejson.get('row_bordercolor', table_bordercolor)
                 css = style_to_css(col_style, border_color)

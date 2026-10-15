@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { t } from '@/stores/langStore'
+import { FRESH_ON_OPEN } from '@/hooks/freshOnOpen'
 import { invalidateDocDataLists } from '@/hooks/invalidateDocData'
 import apiClient from '@/api/client'
 import { getErrorMessage } from '@/utils/apiError'
@@ -22,6 +23,8 @@ export function useChapterDatas(chapteruid) {
       }),
     enabled: !!chapteruid,
     retry: 1,
+    // 데이터는 다른 화면(데이터 등록·챕터 템플릿)에서 추가된다 — 열 때마다 새로 읽어 낡은 목록을 보여주지 않는다.
+    ...FRESH_ON_OPEN,
   })
 }
 
