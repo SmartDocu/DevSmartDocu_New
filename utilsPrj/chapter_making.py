@@ -1357,6 +1357,7 @@ def update_genchapters(supabase, genchapters, gen_chapter_uid):
         supabase.schema(SUPABASE_SCHEMA).table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
     except Exception as e:
         # print(f'ErrorMessage(update_genchapters): {e}')
+        logging.getLogger(__name__).warning("update_genchapters 실패 (%s): %s", gen_chapter_uid, e)   # min 20261015 조용히 묻히지 않게
         return {'success': False, 'message': str(e)}
 
 # jeff 20261013

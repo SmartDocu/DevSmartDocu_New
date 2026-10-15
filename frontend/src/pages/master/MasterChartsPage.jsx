@@ -219,6 +219,7 @@ export default function MasterChartsPage() {
           selected_datauid: selectedDatauid,
           selected_chart_type: selectedChartType,
           docid: user?.docid || null,
+          projectid: user?.projectid || undefined,
           properties: { ...chartConfig, chart_width: chartWidth, chart_height: chartHeight },
           chart_width: chartWidth,
           chart_height: chartHeight,

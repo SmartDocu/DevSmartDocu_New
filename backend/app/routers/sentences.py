@@ -24,6 +24,7 @@ class SentencePreviewRequest(BaseModel):
     objectnm: str
     selected_datauid: str
     docid: Optional[int] = None
+    projectid: Optional[int] = None
     template_text: str
 
 
@@ -120,12 +121,14 @@ def preview_sentence(body: SentencePreviewRequest, token: str = Depends(get_toke
     from utilsPrj.sentences_utils import draw_sentences
 
     class _FakeRequest:
-        def __init__(self, access_token: str):
+        def __init__(self, access_token: str, projectid=None):
             self.session = {"access_token": access_token, "refresh_token": None}
             self.method = "GET"
+            if projectid:   # AI 데이터셋(df/dfv)은 프로젝트 기준으로 LLM 키를 찾는다
+                self.projectid = projectid
 
     try:
-        req = _FakeRequest(token)
+        req = _FakeRequest(token, body.projectid)
         df = process_data(req, datauid=body.selected_datauid, docid=body.docid)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"데이터 처리 오류: {e}")

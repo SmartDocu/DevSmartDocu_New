@@ -31,6 +31,7 @@ class ChartPreviewRequest(BaseModel):
     selected_datauid: str
     selected_chart_type: str
     docid: Optional[int] = None
+    projectid: Optional[int] = None
     properties: Optional[dict] = None
     chart_width: Optional[int] = 500
     chart_height: Optional[int] = 250
@@ -157,12 +158,14 @@ def preview_chart(body: ChartPreviewRequest, token: str = Depends(get_token)):
     import matplotlib.pyplot as plt
 
     class _FakeRequest:
-        def __init__(self, access_token: str, docid):
+        def __init__(self, access_token: str, docid, projectid=None):
             self.session = {"access_token": access_token, "refresh_token": None}
             self.method = "GET"
+            if projectid:   # AI 데이터셋(df/dfv)은 프로젝트 기준으로 LLM 키를 찾는다
+                self.projectid = projectid
 
     try:
-        req = _FakeRequest(token, body.docid)
+        req = _FakeRequest(token, body.docid, body.projectid)
         df = process_data(req, datauid=body.selected_datauid, docid=body.docid)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"데이터 처리 오류: {e}")

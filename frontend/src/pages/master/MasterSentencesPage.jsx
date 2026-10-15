@@ -84,6 +84,7 @@ export default function MasterSentencesPage() {
         chapteruid, objectnm,
         selected_datauid: selectedDatauid,
         docid: user?.docid || null,
+        projectid: user?.projectid || undefined,
         template_text: templateText,
       })
       setPreviewResult(resp.data.result || '')

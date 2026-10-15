@@ -217,6 +217,7 @@ export default function MasterTablesPage() {
       const resp = await apiClient.post('/tables/preview', {
         selected_datauid: selectedDatauid,
         docid:     user?.docid || null,
+        projectid: user?.projectid || undefined,
         tablejson: buildFinalTablejson(),
         coljson:   buildFinalColjson(),
       })

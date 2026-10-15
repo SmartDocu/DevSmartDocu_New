@@ -24,6 +24,7 @@ class TableSaveRequest(BaseModel):
 class TablePreviewRequest(BaseModel):
     selected_datauid: str
     docid: Optional[Any] = None
+    projectid: Optional[int] = None
     tablejson: Optional[dict] = None
     coljson: Optional[dict] = None
 
@@ -117,12 +118,14 @@ def preview_table(body: TablePreviewRequest, token: str = Depends(get_token)):
     from utilsPrj.process_data import process_data, apply_column_display_mapping
 
     class _FakeRequest:
-        def __init__(self, access_token):
+        def __init__(self, access_token, projectid=None):
             self.session = {"access_token": access_token, "refresh_token": None}
             self.method = "GET"
+            if projectid:   # AI 데이터셋(df/dfv)은 프로젝트 기준으로 LLM 키를 찾는다
+                self.projectid = projectid
 
     try:
-        req = _FakeRequest(token)
+        req = _FakeRequest(token, body.projectid)
         df = process_data(req, datauid=body.selected_datauid, docid=body.docid)
         raw_columns = df.columns.tolist()
         raw_rows = df.head(15).values.tolist()
