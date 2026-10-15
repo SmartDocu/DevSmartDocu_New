@@ -222,9 +222,6 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
     """
     step_renders: dict[str, list[tuple[ModuleInstance, Render]]] = {}
 
-    from d2insight.engine import _diag_dump                                  # [진단-덤프] 확인 후 삭제
-    _diag_dump.begin_run()                                                   # [진단-덤프] 확인 후 삭제
-
     for inst in order:
         missing = ctx.missing_requires(inst.spec.requires)
         if missing:

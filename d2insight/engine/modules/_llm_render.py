@@ -369,8 +369,7 @@ def render_from_dataframe(
 
     calc_spec = cache.get("calc") if cache else _decide_calc(df, purpose, narrative_hint, label)
     df, calc_notes = _apply_calc(df, calc_spec)
-    from d2insight.engine import _diag_dump                                  # [진단-덤프] 확인 후 삭제
-    _diag_dump.dump_df(f"{label}_해설입력", df)                               # [진단-덤프] 확인 후 삭제
+
     describe_notes = cache.get("describe") if cache else _describe_columns(df, purpose, narrative_hint, label)
     columns = {**(columns or {}), **calc_notes, **(describe_notes or {})}
 

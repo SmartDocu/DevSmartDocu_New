@@ -93,9 +93,6 @@ def chat(
         startdts=_start, enddts=_end,
     )
 
-    from d2insight.engine import _diag_dump                                  # [진단-덤프] 확인 후 삭제
-    _diag_dump.dump_llm(label, system, messages, resp.content)               # [진단-덤프] 확인 후 삭제
-
     content = resp.content
     if isinstance(content, str):
         return content
