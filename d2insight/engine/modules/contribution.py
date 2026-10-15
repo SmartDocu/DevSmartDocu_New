@@ -89,11 +89,16 @@ def run(ctx, params, tools) -> ModuleResult:
             "같은 괄호 안에 나열하지 마라 — 어느 항목이든 형식을 통일해, Rate는 '(금액, 자체 "
             "증감률)'로, Contribution_Rate는 '전체 증감의 N%를 차지/잠식'처럼 반드시 '전체 증감의'를 "
             "붙여 뒤따로 밝혀라. \"상위 N개\"라고 개수를 말할 때는 직접 세지 말고 순위 열의 "
-            "값을 그대로 옮겨라 — 세다가 하나씩 밀린 사례가 있었다."
-            + "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in frames["notes"])
+            "값을 그대로 옮겨라."
         ),
         params={"차원": dim_name, "상위 항목수": len(ranked)},
-        extra_money={"전체 증감액": total_variance["variance"]},
+        extra_facts={
+            "기여율의 분모": f"{schema.logical_name(used)} 전체 증감",
+            "기여율의 분모 값": round(total_variance["variance"], 2),
+            **({"요청한 측정값 → 실제 사용한 측정값": {schema.logical_name(k): schema.logical_name(v)
+                                                for k, v in frames["used"].items() if k != v}}
+               if any(k != v for k, v in frames["used"].items()) else {}),
+        },
         label="within_contribution", required_columns=["Variance", "Contribution_Rate"], cache=params.get("_llm_render_cache"),
     )
     render.key_value = {

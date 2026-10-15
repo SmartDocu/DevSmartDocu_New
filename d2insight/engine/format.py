@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 BIG_VALUE_THRESHOLD = 1000.0     # 이 이상이면 금액성 열로 보고 소수점을 버린다
@@ -98,98 +100,45 @@ def fmt_money(v, divisor: int, signed: bool = False) -> str:
     return format(v / divisor, spec)
 
 
-def to_korean_money(v) -> str:
-    """금액을 억/만 단위 한글 표기로 변환한다(예: 3,842,356,350 -> "38억 4,236만").
-
-    LLM이 이 환산을 직접 하면 자릿수를 틀리는 사례가 있었다(예: 1.34억을 "134억"으로
-    100배 부풀림). 계산은 파이썬이 하고, LLM은 이 문자열을 그대로 옮겨 쓰기만 한다.
-    """
-    if pd.isna(v):
-        return ""
-    sign = "-" if v < 0 else ""
-    n = int(round(abs(v)))
-    eok, rem = divmod(n, 100_000_000)
-    man, won = divmod(rem, 10_000)
-    parts = []
-    if eok:
-        parts.append(f"{eok:,}억")
-    if man:
-        parts.append(f"{man:,}만")
-    # 통화 단위는 붙이지 않는다 — 데이터가 원화인지 달러인지 여기서는 알 수 없다(달러 데이터에
-    # "134만원"이라고 찍힌 사례). 억/만 자릿수 표기만 한다.
-    if not parts:
-        return f"{sign}{won:,}"
-    return f"{sign}{' '.join(parts)}"
+def facts_json(facts: dict) -> str:
+    """키: 값 묶음을 LLM에 줄 JSON 문자열로. 문장은 만들지 않는다."""
+    return json.dumps(facts, ensure_ascii=False, indent=1, default=str)
 
 
-def df_facts(df: pd.DataFrame, title: str = "표") -> str:
-    """표에서 pandas가 미리 계산한 사실(행 수, 양수·음수 개수, 상위 3행 합계 비중).
+def df_facts(df: pd.DataFrame) -> str:
+    """표에서 pandas가 계산한 값을 키: 값(JSON)으로 만든다 — 행 수, 열별 양수·음수 행 수, 합계, 절댓값 상위 3행.
 
-    LLM이 표의 숫자 셋을 머릿속으로 더해 나눈 값("상위 3개 약 40%")은 틀린 사례가 있다(실제 18.9%).
-    문장에 쓸 만한 이런 값을 코드가 먼저 계산해 프롬프트에 주면 LLM이 계산할 이유가 없다. 이 표에 보이는
-    행 기준이다 — 표 밖 항목에 대한 값은 모듈이 따로 넘긴다(extra_facts). 열 이름을 가리지 않는다.
+    이 표에 보이는 행 기준이다. 표 밖 항목에 대한 값은 모듈이 따로 넘긴다(extra_facts).
+    열 이름을 가리지 않는다. 항목 이름은 첫 문자열 열에서 가져온다.
     """
     if not isinstance(df, pd.DataFrame) or df.empty or len(df) < 4:
         return ""
-    lines: list[str] = [f"- {title} 행 수: {len(df):,}"]
+    df = df.reset_index(drop=True)
+    label_col = next((c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])), None)
+    stats: dict = {"행 수": len(df)}
     for c in df.columns:
         if not pd.api.types.is_numeric_dtype(df[c]):
             continue
         col = df[c].dropna()
         if col.empty:
             continue
-        pos, neg = int((col > 0).sum()), int((col < 0).sum())
-        part = f"- {c}: 양수 {pos}행, 음수 {neg}행"
+        item = {"양수 행 수": int((col > 0).sum()), "음수 행 수": int((col < 0).sum())}
         if col.abs().max() >= BIG_VALUE_THRESHOLD:
-            top3 = col.abs().nlargest(3).sum()
-            top3_signed = col.loc[col.abs().nlargest(3).index].sum()
-            total_abs = col.abs().sum()
-            total = col.sum()
-            part += f", 합계 {total:,.0f}"
-            part += f", 절댓값 큰 3행의 합 {top3_signed:,.0f}"
-            # 두 비중은 분모가 다르다 — 문장에서 "전체 대비"라고 쓸 값을 헷갈리지 않게 분모를 이름에 밝힌다.
-            if total and (top3_signed / total) > 0:
-                part += f", 그 3행의 합 ÷ 합계 = {top3_signed / total * 100:.1f}%"
-            if total_abs > 0:
-                part += f", 그 3행의 절댓값 ÷ 절댓값 총합 = {top3 / total_abs * 100:.1f}% (합계 대비가 아님)"
-        lines.append(part)
-    header = "\n[계산된 사실 — 이 표의 보이는 행 기준, 문장에서는 이 값을 그대로 인용한다]\n"
-    return header + "\n".join(lines)
-
-
-def korean_money_reference(df: pd.DataFrame, extra: dict | None = None) -> str:
-    """금액성 열(BIG_VALUE_THRESHOLD 이상)의 억/만 표기를 미리 계산해 표로 만든다.
-
-    LLM(모듈 해설·해설자·결론)이 억/만 단위로 쓸 때 직접 환산하면 자릿수를 틀린
-    사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 파이썬이 계산한 값을
-    프롬프트에 같이 주고 LLM은 그대로 옮기게 한다. 금액성 열이 없으면 빈 문자열.
-
-    extra: {표시 이름: 금액값} — 표에 행으로 없는 집계값(예: 전체 증감액)도 같은 참고표에
-    싣는다. 서술 지침이 "전체 대비"를 요구하는데 그 전체값이 표의 행이 아닐 때, 모듈이
-    이미 갖고 있는 그 값을 넘기지 않으면 LLM이 보이는 행들만으로 전체 규모를 암산하게 되고,
-    그 추정이 크게 틀어진 사례가 있었다(2026-09-15).
-    """
-    lines: list[str] = []
-    if isinstance(df, pd.DataFrame) and not df.empty:
-        money_cols = [
-            c for c in df.columns
-            if pd.api.types.is_numeric_dtype(df[c]) and not df[c].dropna().empty
-            and df[c].dropna().abs().max() >= BIG_VALUE_THRESHOLD
-        ]
-        if money_cols:
-            label_col = df.columns[0]
-            ref = pd.DataFrame({label_col: df[label_col]})
-            for c in money_cols:
-                ref[c] = df[c].map(to_korean_money)
-            lines.append(ref.to_markdown(index=False))
-    if extra:
-        lines += [f"- {k}: {to_korean_money(v)}" for k, v in extra.items() if pd.notna(v)]
-    if not lines:
-        return ""
-    return (
-        "\n[한글 단위 참고표 — 억/만으로 쓸 때는 반드시 이 값을 그대로 옮긴다. 직접 계산 금지]\n"
-        + "\n".join(lines)
-    )
+            top = col.loc[col.abs().nlargest(3).index]
+            total, total_abs = float(col.sum()), float(col.abs().sum())
+            item["합계"] = round(total, 2)
+            item["절댓값 총합"] = round(total_abs, 2)
+            item["절댓값 상위 3행"] = [
+                {"항목": (df.at[i, label_col] if label_col else int(i)), "값": round(float(v), 2)}
+                for i, v in top.items()
+            ]
+            item["상위 3행 값의 합"] = round(float(top.sum()), 2)
+            if total:
+                item["상위 3행 값의 합 ÷ 합계(%)"] = round(float(top.sum()) / total * 100, 1)
+            if total_abs:
+                item["상위 3행 절댓값의 합 ÷ 절댓값 총합(%)"] = round(float(top.abs().sum()) / total_abs * 100, 1)
+        stats[c] = item
+    return "\n[표 통계 — 이 표에 보이는 행 기준(JSON)]\n" + facts_json(stats)
 
 
 # compare_type("MoM" 등)은 grain에 따라 뜻이 달라지는 내부 코드값이라, 그대로 LLM에 보여주면

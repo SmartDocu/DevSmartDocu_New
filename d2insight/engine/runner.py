@@ -44,7 +44,6 @@ class Catalog(Protocol):
     """실행 엔진이 카탈로그에 요구하는 최소 인터페이스 (실제 레지스트리는 이 형태를 만족)."""
     def get_module(self, module_id: str) -> ModuleSpec: ...
     def get_step(self, step_id: str) -> dict: ...        # {"title","default_modules"}
-    def narrate_step(self, step_label: str, items: list[dict], ctx: SharedContext) -> dict: ...
 
 
 @dataclass
@@ -223,6 +222,9 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
     """
     step_renders: dict[str, list[tuple[ModuleInstance, Render]]] = {}
 
+    from d2insight.engine import _diag_dump                                  # [진단-덤프] 확인 후 삭제
+    _diag_dump.begin_run()                                                   # [진단-덤프] 확인 후 삭제
+
     for inst in order:
         missing = ctx.missing_requires(inst.spec.requires)
         if missing:
@@ -242,6 +244,14 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
             print(f"[진단-실행] 실패 {inst.ref}: {result.error or '알 수 없는 실패'}")  # [진단] 확인 후 삭제
             continue
 
+        for lbl, val in result.outputs.items():                                  # [진단-덤프] 확인 후 삭제
+            _diag_dump.dump_df(f"{inst.ref}_out_{lbl}", val)                     # [진단-덤프] 확인 후 삭제
+        if result.render is not None:                                            # [진단-덤프] 확인 후 삭제
+            _diag_dump.dump_json("render", inst.ref, {                           # [진단-덤프] 확인 후 삭제
+                "summary": result.render.summary, "key_value": result.render.key_value,
+                "narrative": result.render.narrative, "params": inst.params})    # [진단-덤프] 확인 후 삭제
+            _diag_dump.dump_df(f"{inst.ref}_표", result.render.table)            # [진단-덤프] 확인 후 삭제
+
         for lbl, val in result.outputs.items():
             # 모듈은 이름표를 평범한 이름으로 읽는다(ctx.get("outlier_result")). 같은 모듈이
             # 대상만 바꿔 여러 번 돌면 뒤엣것이 앞엣것을 덮는데, 소비자는 위상정렬로 자기
@@ -256,57 +266,7 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
     return step_renders
 
 
-# ── 4. 해설 (스텝 단위 LLM 1회, 결정 2026-07-14) ─────────────────────────────
-def narrate(step_order: list[str],
-            step_renders: dict[str, list[tuple[ModuleInstance, Render]]],
-            catalog: Catalog, ctx: SharedContext) -> None:
-    """스텝에 모듈이 2개 이상이면 해설자를 1회 호출해 서로 이어지게 다듬는다(제자리 수정).
-
-    2026-08-27 재설계 이후 각 모듈이 자기 narrative를 이미 스스로 채워온다(모듈 단위 LLM
-    호출). 모듈이 하나뿐인 스텝은 그 narrative를 그대로 쓰면 되므로 이 단계를 건너뛴다.
-    모듈이 여럿인 스텝만, 그 narrative들이 하나의 이야기로 읽히도록 해설자가 다시 다듬는다
-    (처음부터 새로 쓰는 게 아니라 편집).
-
-    해설 실패는 본문을 죽이지 않는다. 실패를 기록하고 각자의 narrative를 그대로 둔다.
-    """
-    for label in step_order:
-        entries = step_renders.get(label)
-        if not entries or len(entries) < 2:
-            continue
-
-        # 같은 모듈이 파라미터만 달리해 여러 번 실행될 수 있다(§3.4-2). module_id를 키로 쓰면
-        # 해설이 서로 덮어써져 엉뚱한 표에 붙는다 → 인스턴스마다 고유 키를 준다.
-        seen: dict[str, int] = {}
-        keys: list[str] = []
-        for inst, _ in entries:
-            n = seen.get(inst.module_id, 0) + 1
-            seen[inst.module_id] = n
-            keys.append(inst.module_id if n == 1 else f"{inst.module_id}#{n}")
-
-        items = [{
-            "key": key,
-            "module_id": inst.module_id,
-            "purpose": inst.spec.purpose,
-            "narrative_hint": inst.spec.narrative_hint,
-            "model_tier": inst.spec.model_tier,
-            "params": inst.params,          # 어느 차원의 표인지 구분하려면 파라미터가 필요하다
-            "summary": render.summary,
-            "key_value": render.key_value,
-            "table": render.table,
-            "narrative": render.narrative,  # 모듈이 이미 쓴 해설 — 해설자는 이걸 다듬는다
-        } for key, (inst, render) in zip(keys, entries)]
-
-        try:
-            written = catalog.narrate_step(label, items, ctx) or {}
-        except Exception as e:
-            ctx.mark_failed(f"{label} / 해설", f"{type(e).__name__}: {e} (각 모듈 해설 그대로 사용)")
-            written = {}
-
-        for key, (_, render) in zip(keys, entries):
-            render.narrative = written.get(key) or render.narrative or render.summary
-
-
-# ── 5. 보고서 조립 ───────────────────────────────────────────────────────────
+# ── 4. 보고서 조립 ───────────────────────────────────────────────────────────
 def _render_block(render: Render, layout: list[str] | None = None) -> list[str]:
     """layout 순서대로 블록을 찍는다. summary는 본문에 넣지 않는다(결론 전용).
 
@@ -386,7 +346,7 @@ def assemble(plan: dict, step_order: list[str],
 def run_plan(plan: dict, catalog: Catalog, ctx: SharedContext | None = None) -> dict:
     """조합(plan JSON) 하나를 실행해 보고서를 만든다. 자동/수동 공통 진입점.
 
-    계산(execute) → 해설(narrate) → 조립 순서다. 결론도 execute 단계의 스텝 하나로 실행된다
+    계산(execute) → 조립 순서다. 결론도 execute 단계의 스텝 하나로 실행된다
     (requires가 없어 plan에서 맨 뒤에 있는 한 항상 마지막에 돈다, 2026-07-28 7단계). 해설이
     계산을 되돌리지 않으므로 공용 수치는 한 번만 계산된다(재계산 금지 §6.2).
 
@@ -404,7 +364,6 @@ def run_plan(plan: dict, catalog: Catalog, ctx: SharedContext | None = None) -> 
                       "원인을 알 수 없습니다.")
         raise DataLoadError(f"분석할 데이터를 가져오지 못했습니다. {reason}")
 
-    narrate(step_order, step_renders, catalog, ctx)
     markdown, lead_summary = assemble(plan, step_order, step_renders, ctx)
     return {
         "markdown": markdown,

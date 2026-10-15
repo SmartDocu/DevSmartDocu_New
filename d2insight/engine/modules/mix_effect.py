@@ -57,34 +57,41 @@ def _run_bridge_effect(ctx, params, *, effect_col: str, effect_label: str,
     direction = direction_up if amount >= 0 else direction_down
     top_n = int(params.get("top_n") or 10)
 
-    # 표에는 상위 top_n개만 보인다. 전체 항목에 대한 사실(몇 개 중 양수가 몇 개인지, 상위 몇 개의 비중)은
-    # LLM이 보이는 행만 보고 일반화하거나 암산하지 않도록 여기서 pandas로 계산해 넘긴다.
+    # 표에는 상위 top_n개만 보인다. 전체 항목에 대한 값(양수·음수 항목 수, 비중의 분모)은 LLM이 보이는
+    # 행만 보고 일반화하거나 분모를 짐작하지 않도록 여기서 계산해 키: 값으로 넘긴다.
     all_effects = item_df[effect_col].astype(float)
-    shown_effects = item_df.reindex(all_effects.abs().sort_values(ascending=False).index).head(top_n)[effect_col]
-    extra_facts = [
-        f"두 기간 모두 판매된 항목 {len(all_effects):,}개 중 {effect_label} 효과가 양수인 항목 "
-        f"{int((all_effects > 0).sum()):,}개, 음수인 항목 {int((all_effects < 0).sum()):,}개",
-        f"표에 보이는 상위 {len(shown_effects)}개 항목의 효과 합계 {shown_effects.sum():+,.0f}",
-    ]
+    top_idx = all_effects.abs().sort_values(ascending=False).index
+    top3 = item_df.reindex(top_idx).head(3)
+    name_col = item_df.columns[0]
+    extra_facts = {
+        "효과": effect_label,
+        "효과 합계": round(amount, 2),
+        "방향": direction,
+        "비중(%)": round(share, 1),
+        "비중의 분모": f"{effects['amount_name']} 증감",
+        "비중의 분모 값": round(total_variance, 2),
+        "대상 항목 수(두 기간 모두 존재)": len(all_effects),
+        "효과가 양수인 항목 수": int((all_effects > 0).sum()),
+        "효과가 음수인 항목 수": int((all_effects < 0).sum()),
+        "효과 절댓값 상위 3 항목": [{"항목": r[name_col], "값": round(float(r[effect_col]), 2)} for _, r in top3.iterrows()],
+        "상위 3 항목 효과의 합": round(float(top3[effect_col].sum()), 2),
+    }
     if amount:
-        top3 = float(shown_effects.head(3).sum())
-        extra_facts.append(
-            f"상위 3개 항목의 효과 합계 {top3:+,.0f} (전체 효과 합계 {amount:+,.0f}의 {top3 / amount * 100:.1f}%)"
-        )
+        extra_facts["상위 3 항목 효과의 합 ÷ 효과 합계(%)"] = round(float(top3[effect_col].sum()) / amount * 100, 1)
+    if effects.get("substituted"):
+        extra_facts["요청한 측정값 → 실제 사용한 측정값"] = effects["substituted"]
 
     render = render_from_dataframe(
         _bridge_item_top(item_df, effect_col, top_n),
         purpose=f"두 기간 모두 판매된 기존 항목 기준 {effect_label} 효과 상위 항목을 제시.",
         narrative_hint=(
-            f"{effect_label} 효과 합계 {amount:+,.0f}(전체 증감액의 {share:+.1f}%, {direction} 방향)를 "
-            "밝히고, 어느 항목이 그 효과를 가장 크게 냈는지 짚어라. "
+            "효과 합계와 비중(분모 이름 포함), 방향을 밝히고, 어느 항목이 그 효과를 가장 크게 냈는지 짚어라. "
             "신규·단종 등 그 외 효과는 이 표 대상이 아니라는 것도 언급하라."
-            + "".join(f" {n} — 이 사실을 한 문장으로 밝혀라." for n in effects.get("notes") or [])
         ),
         params={"효과": effect_label}, label="bridge_item_effect",
         required_columns=[effect_col], extra_facts=extra_facts, cache=params.get("_llm_render_cache"),
     )
-    render.key_value = {f"{effect_label}(전체 증감액 대비)": f"{share:+.1f}%",
+    render.key_value = {f"{effect_label} 비중({effects['amount_name']} 증감 대비)": f"{share:+.1f}%",
                         effect_label: f"{amount:+,.0f}"}
     return ModuleResult(render=render)
 

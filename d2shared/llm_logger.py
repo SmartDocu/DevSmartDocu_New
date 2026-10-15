@@ -10,9 +10,18 @@ from utilsPrj.supabase_client import get_supabase_client, SUPABASE_SCHEMA
 _SERVICE_TABLE = {"Ch": "llmchatlogs", "In": "llminsightlogs"}
 
 
-def _q(table: str):
-    return get_supabase_client().schema(SUPABASE_SCHEMA).table(table)
+# jeff 20261015 1723 속도 문제로 대체
+# def _q(table: str):
+#     return get_supabase_client().schema(SUPABASE_SCHEMA).table(table)
+# 시작
+_client = None
 
+def _q(table: str):
+    global _client
+    if _client is None:
+        _client = get_supabase_client()
+    return _client.schema(SUPABASE_SCHEMA).table(table)
+# 끝
 
 def log_llm_call(
     log_ctx: Optional[dict],
@@ -39,9 +48,11 @@ def log_llm_call(
     table = _SERVICE_TABLE.get(log_ctx.get("servicecd"))
     if not table:
         # print(f"[llm_logger] 알 수 없는 servicecd={log_ctx.get('servicecd')!r} — 로그 생략")
-        pass
+        print(f"[진단-llm_logger] 알 수 없는 servicecd={log_ctx.get('servicecd')!r} — 로그 생략")   # [진단] 확인 후 삭제
         return
     try:
+        if table == "llminsightlogs":   # [진단] 확인 후 삭제
+            print(f"[진단-llm_logger] llminsightlogs 기록 시도: stepnm={stepnm!r} model={llmmodelnm}")   # [진단] 확인 후 삭제
         _q(table).insert({
             "qauid":             log_ctx.get("qauid"),
             "questiontypecd":    log_ctx.get("questiontypecd", "S"),
@@ -62,8 +73,12 @@ def log_llm_call(
             "startdts":          startdts.isoformat() if startdts else None,
             "enddts":            enddts.isoformat() if enddts else None,
         }).execute()
+        if table == "llminsightlogs":   # [진단] 확인 후 삭제
+            print("[진단-llm_logger] llminsightlogs 기록 성공")   # [진단] 확인 후 삭제
     except Exception as e:
         # print(f"[llm_logger] 로그 저장 실패: {e}")
+        if table == "llminsightlogs":   # [진단] 확인 후 삭제
+            print(f"[진단-llm_logger] llminsightlogs 기록 실패: {type(e).__name__}: {e}")   # [진단] 확인 후 삭제
         pass
 
 

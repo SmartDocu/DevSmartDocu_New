@@ -16,7 +16,7 @@ from __future__ import annotations
 import pandas as pd
 
 from d2insight.engine import number_check
-from d2insight.engine.format import compare_period_label, korean_money_reference, table_to_markdown
+from d2insight.engine.format import compare_period_label, table_to_markdown
 from d2insight.engine.types import ModuleResult, Render
 from d2insight.engine._llm import chat
 
@@ -29,8 +29,7 @@ _BASE_RULES = """당신은 경영진 보고서의 결론을 쓰는 애널리스�
 1. 주어진 사실표·요약에 있는 숫자만 인용한다. **새 수치·비율을 계산하거나 추정하지 않는다.**
    - 표에 없는 합계·비율을 만들지 마라. "두 항목 합계 -77,210", "전체 감소의 36%", "손실의 33%"처럼
      직접 더하거나 나눈 값은 금지다. 개별 값을 그대로 나열하라.
-   - 단위 환산(만/억)은 기본적으로 하지 않는다. 쓰고 싶으면 반드시 [한글 단위 참고표]의 값을
-     그대로 옮기고 직접 환산하지 마라(직접 계산하면 자릿수를 틀린 사례가 있다). 통화기호는
+   - 숫자는 자료에 나온 그대로 쓴다. 억·만 같은 한글 단위로 환산하지 않는다. 통화기호는
      임의로 붙이지 않는다.
 2. **이상징후라고 부를 수 있는 것은 [이상징후] 표에 있는 항목뿐이다.** 다른 표(기여도·순위 등)의
    항목에 "이상 판정", "z-score 기준 이상" 같은 표현을 붙이지 마라. 감소가 크다는 사실만 말하라.
@@ -82,7 +81,7 @@ def _table_block(title: str, df, cols: list[str] | None = None) -> list[str]:
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return []
     view = df[[c for c in (cols or df.columns) if c in df.columns]].head(MAX_ROWS)
-    return [f"[{title}]", table_to_markdown(view) + korean_money_reference(view), ""]
+    return [f"[{title}]", table_to_markdown(view), ""]
 
 
 def _grouped_table_block(title: str, df, group_col: str, cols: list[str] | None = None) -> list[str]:
@@ -98,7 +97,7 @@ def _grouped_table_block(title: str, df, group_col: str, cols: list[str] | None 
     top_per_group = df.groupby(group_col, sort=False).head(1).head(MAX_ROWS)
     view = top_per_group[[c for c in (cols or df.columns) if c in top_per_group.columns]]
     return [f"[{title} — 이상 항목별 최대 설명 하위 그룹]",
-           table_to_markdown(view) + korean_money_reference(view), ""]
+           table_to_markdown(view), ""]
 
 
 def _facts(ctx) -> str:
@@ -222,8 +221,7 @@ def run(ctx, params, tools) -> ModuleResult:
     위한 얇은 래퍼일 뿐, 계산·프롬프트는 전부 build_conclusion 그대로다(2026-07-28,
     7단계 — 결론 스텝화). params/tools는 안 쓴다 — 결론은 본문이 이미 낸 값만 읽는다.
 
-    이 모듈은 narrative를 스스로 채워서 반환한다(다른 모듈과 다른 유일한 예외) — runner.narrate가
-    이미 채워진 narrative는 다시 쓰지 않고 건너뛴다.
+    이 모듈은 narrative를 스스로 채워서 반환한다.
     """
     render = build_conclusion(ctx, provider=(ctx.meta or {}).get("provider"))
     return ModuleResult(render=render)

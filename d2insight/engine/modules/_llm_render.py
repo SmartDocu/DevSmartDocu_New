@@ -20,7 +20,7 @@ import pandas as pd
 from d2insight.engine import number_check
 from d2insight.engine._llm import chat
 from d2insight.engine.chart import chart_spec
-from d2insight.engine.format import df_facts, korean_money_reference, table_to_markdown
+from d2insight.engine.format import df_facts, facts_json, table_to_markdown
 
 log = logging.getLogger("d2insight.number_check")
 from d2insight.engine.types import Render
@@ -88,14 +88,15 @@ _RENDER_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트다.
    차원·열 이름 그대로 부른다(예: 표가 '상품명'이면 상품) — 표에 없는 대상(고객·사용자·지역 등)으로
    바꿔 부르거나 새로 만들어 붙이지 않는다.
 2. 표의 열 개수·구성은 정해져 있지 않다 — 분석 목적에 맞게 직접 고른다(전부 써도, 일부만 써도 된다).
-3. 숫자는 원본 그대로 옮기는 게 기본이다. 억/만 등 한글 단위로 쓰고 싶으면 반드시 [한글 단위
-   참고표]에 나온 값을 그대로 옮기고, 직접 억/만으로 환산하지 마라 — 직접 계산하면 자릿수를
-   틀린 사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 통화기호는 임의로 붙이지 않는다.
+3. 숫자는 자료에 나온 그대로 옮긴다(천단위 쉼표 포함). 억·만 같은 한글 단위로 환산하지 않는다.
+   통화기호는 임의로 붙이지 않는다.
 4. narrative: 표를 그대로 나열하지 말고 무엇이 두드러지는지 해석해 3~6문장으로 쓴다. 한국어 평문.
-   표에 보이는 행 밖의 항목에 대해 "유일하게", "모든", "대부분" 같은 전체 일반화는 [계산된 사실]이나
-   [추가 사실]에 근거가 있을 때만 쓴다. 비율·합계·비중은 그 [사실]에 있는 값만 쓰고 직접 만들지 않는다.
-   "더 크다/작다/절반 이상/상회" 같은 비교는 쓰기 전에 두 숫자의 크기를 확인한다(7.9는 26.2보다 작다, 42%는
-   절반 미만이다). 비중에는 분모를 밝힌 [사실]의 이름 그대로 쓰고, 표 밖의 항목 이름(예: 몇 월)을 지어내지 않는다.
+   표에 보이는 행 밖의 항목에 대해 "유일하게", "모든", "대부분" 같은 전체 일반화는 [표 통계]나
+   [추가 값]에 근거가 있을 때만 쓴다. 비율·합계·비중은 [표 통계]와 [추가 값]에 있는 값만 쓰고 직접 만들지 않는다.
+   "더 크다/작다/절반 이상/상회" 같은 비교는 쓰기 전에 두 숫자의 크기를 확인한다. 비중에는 [추가 값]에 적힌
+   분모 이름을 그대로 쓴다. 상위 몇 개를 말할 때는 [표 통계]의 "절댓값 상위 3행"에 적힌 항목과 값을 그대로 쓴다.
+   항목 이름은 자료에 적힌 그대로 쓰고 번역하지 않으며, 자료에 없는 이름을 지어내지 않는다.
+   [추가 값]에 "요청한 측정값 → 실제 사용한 측정값"이 있으면 그 사실을 한 문장으로 밝힌다.
 5. summary: narrative의 핵심만 1~2문장으로 압축한다(다른 스텝 결과와 함께 결론이 읽는 요약이다).
 6. 출력은 JSON 객체 하나:
    {"table_columns": ["열이름", ...], "chart": {"x": "열이름", "y": "열이름 또는 [열이름,...](여러 계열)",
@@ -112,14 +113,15 @@ _NARRATIVE_SYSTEM = """당신은 데이터 분석 보고서의 애널리스트�
 1. 주어진 표에 있는 값만 쓴다. 새 수치를 계산하거나 추정하지 않는다. 분석 대상은 표에 나온
    차원·열 이름 그대로 부른다(예: 표가 '상품명'이면 상품) — 표에 없는 대상(고객·사용자·지역 등)으로
    바꿔 부르거나 새로 만들어 붙이지 않는다.
-2. 숫자는 원본 그대로 옮기는 게 기본이다. 억/만 등 한글 단위로 쓰고 싶으면 반드시 [한글 단위
-   참고표]에 나온 값을 그대로 옮기고, 직접 억/만으로 환산하지 마라 — 직접 계산하면 자릿수를
-   틀린 사례가 있다(예: 1.34억을 "134억"으로 100배 부풀림). 통화기호는 임의로 붙이지 않는다.
+2. 숫자는 자료에 나온 그대로 옮긴다(천단위 쉼표 포함). 억·만 같은 한글 단위로 환산하지 않는다.
+   통화기호는 임의로 붙이지 않는다.
 3. narrative: 표를 그대로 나열하지 말고 무엇이 두드러지는지 해석해 3~6문장으로 쓴다. 한국어 평문.
-   표에 보이는 행 밖의 항목에 대해 "유일하게", "모든", "대부분" 같은 전체 일반화는 [계산된 사실]이나
-   [추가 사실]에 근거가 있을 때만 쓴다. 비율·합계·비중은 그 [사실]에 있는 값만 쓰고 직접 만들지 않는다.
-   "더 크다/작다/절반 이상/상회" 같은 비교는 쓰기 전에 두 숫자의 크기를 확인한다(7.9는 26.2보다 작다, 42%는
-   절반 미만이다). 비중에는 분모를 밝힌 [사실]의 이름 그대로 쓰고, 표 밖의 항목 이름(예: 몇 월)을 지어내지 않는다.
+   표에 보이는 행 밖의 항목에 대해 "유일하게", "모든", "대부분" 같은 전체 일반화는 [표 통계]나
+   [추가 값]에 근거가 있을 때만 쓴다. 비율·합계·비중은 [표 통계]와 [추가 값]에 있는 값만 쓰고 직접 만들지 않는다.
+   "더 크다/작다/절반 이상/상회" 같은 비교는 쓰기 전에 두 숫자의 크기를 확인한다. 비중에는 [추가 값]에 적힌
+   분모 이름을 그대로 쓴다. 상위 몇 개를 말할 때는 [표 통계]의 "절댓값 상위 3행"에 적힌 항목과 값을 그대로 쓴다.
+   항목 이름은 자료에 적힌 그대로 쓰고 번역하지 않으며, 자료에 없는 이름을 지어내지 않는다.
+   [추가 값]에 "요청한 측정값 → 실제 사용한 측정값"이 있으면 그 사실을 한 문장으로 밝힌다.
 4. summary: narrative의 핵심만 1~2문장으로 압축한다(다른 스텝 결과와 함께 결론이 읽는 요약이다).
 5. 출력은 JSON 객체 하나: {"narrative": "...", "summary": "..."} 다른 텍스트는 쓰지 마라."""
 
@@ -293,11 +295,11 @@ def _drop_uninformative(df: pd.DataFrame, cols: list[str], required) -> list[str
     return out or cols
 
 
-def _facts_block(table: pd.DataFrame, extra_facts: list[str] | None) -> str:
-    """프롬프트에 붙일 사실: 표에서 pandas가 계산한 값 + 모듈이 전체 데이터에서 계산해 넘긴 값."""
+def _facts_block(table: pd.DataFrame, extra_facts: dict | None) -> str:
+    """프롬프트에 붙일 값: 표에서 pandas가 계산한 값 + 모듈이 전체 데이터에서 계산해 넘긴 값(둘 다 키: 값)."""
     block = df_facts(table)
     if extra_facts:
-        block += "\n[추가 사실 — 모듈이 전체 데이터에서 계산한 값]\n" + "\n".join(f"- {f}" for f in extra_facts)
+        block += "\n[추가 값 — 모듈이 전체 데이터에서 계산한 값(JSON)]\n" + facts_json(extra_facts)
     return block
 
 
@@ -339,8 +341,8 @@ def render_from_dataframe(
     df: pd.DataFrame | None, *, purpose: str, narrative_hint: str, params: dict,
     label: str = "", empty_summary: str = "해당 조건에 표시할 데이터가 없습니다.",
     chart_df: pd.DataFrame | None = None, cache: dict | None = None,
-    columns: dict | None = None, extra_money: dict | None = None,
-    required_columns=None, extra_facts: list[str] | None = None,
+    columns: dict | None = None,
+    required_columns=None, extra_facts: dict | None = None,
 ) -> Render:
     """계산이 끝난 DataFrame → LLM이 표 열·차트·서술을 고른 Render.
 
@@ -350,14 +352,12 @@ def render_from_dataframe(
     columns: {열이름: 뜻} — 이 표에만 해당하는 임시 메타. 등록 메타를 고치지 않는다.
     계산으로 만든 열은 이름만으로 뜻이 안 통하므로 모듈이 붙여 보낸다(column_notes 참조).
 
-    extra_money: {표시 이름: 금액값} — 표의 행은 아니지만 서술에 필요한 집계값(예: 전체
-    증감액). 안 주면 LLM이 보이는 행만으로 전체 규모를 암산하게 된다(korean_money_reference 참조).
-
     required_columns: 표에 반드시 보일 열(모듈이 만든 결과 열 이름 목록, 또는 "all"). LLM이 열을 골라도
     이 열은 빠지지 않는다 — 문장이 읽은 열과 표에 보이는 열이 어긋나는 것을 막는다.
 
-    extra_facts: 표에 안 보이는 전체 데이터에 대해 모듈이 pandas로 계산한 사실 문장 목록(예: "전체 165개
-    중 양수 12개"). LLM이 보이는 행만 보고 전체를 일반화하지 않게 근거로 준다.
+    extra_facts: 표에 안 보이는 전체 데이터에 대해 모듈이 계산한 값 {키: 값}(예: 전체 항목 수, 비중의
+    분모 이름과 값). 키는 값의 뜻이 그것만 보고 분명해야 한다. LLM이 보이는 행만 보고 전체를 일반화하거나
+    비중의 분모를 짐작하지 않게 근거로 준다. 문장이 아니라 값만 넘긴다.
 
     cache: 정기 보고서 재실행용 — 이전에 이 함수가 고른 표열·차트 구성(Render.llm_spec)을
     그대로 주면 그 구성(형식)만 재사용하고 LLM에 다시 묻지 않는다. 서술(narrative/summary)은
@@ -369,6 +369,8 @@ def render_from_dataframe(
 
     calc_spec = cache.get("calc") if cache else _decide_calc(df, purpose, narrative_hint, label)
     df, calc_notes = _apply_calc(df, calc_spec)
+    from d2insight.engine import _diag_dump                                  # [진단-덤프] 확인 후 삭제
+    _diag_dump.dump_df(f"{label}_해설입력", df)                               # [진단-덤프] 확인 후 삭제
     describe_notes = cache.get("describe") if cache else _describe_columns(df, purpose, narrative_hint, label)
     columns = {**(columns or {}), **calc_notes, **(describe_notes or {})}
 
@@ -389,7 +391,6 @@ def render_from_dataframe(
             + f"[표]\n{table_to_markdown(sample)}"
             + (f"\n(전체 {len(table):,}행 중 {MAX_SAMPLE_ROWS}행만 표시 — 요약은 전체 기준으로 서술)"
                if len(table) > MAX_SAMPLE_ROWS else "")
-            + korean_money_reference(sample, extra=extra_money)
             + _facts_block(table, extra_facts)
         )
         n_spec = _chat_json(prompt, _NARRATIVE_SYSTEM, label=f"{label}:narrative", call_type="module_narrative")
@@ -413,7 +414,6 @@ def render_from_dataframe(
            if len(df) > MAX_SAMPLE_ROWS else "")
         + (f"\n[차트용 데이터 열 목록] {list(chart_source.columns)}(차트는 이 열 중에서 고른다)"
            if chart_df is not None else "")
-        + korean_money_reference(sample, extra=extra_money)
         + _facts_block(df, extra_facts)
     )
     spec = _chat_json(prompt, _RENDER_SYSTEM, label=f"{label}:render", call_type="module_render")

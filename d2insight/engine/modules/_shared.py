@@ -628,6 +628,9 @@ def get_bridge_effects(ctx, params: dict | None = None) -> dict:
 
         return {
             "total_variance": total,
+            "amount_name": schema.logical_name(amount),     # total_variance가 어느 측정값의 증감인지
+            "substituted": {schema.logical_name(k): schema.logical_name(v)
+                            for k, v in frames["used"].items() if k != v},   # 요청 측정값 → 실제 쓴 측정값
             "views": views,
             "item_effects": item_effects,
             "lifecycle_based": lifecycle_available,

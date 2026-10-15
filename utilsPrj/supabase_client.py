@@ -63,8 +63,8 @@ def get_thread_supabase(access_token=None, refresh_token=None):
     """
     if not hasattr(_thread_local, 'client') or not hasattr(_thread_local, 'http_client'):
         # HTTP Client 생성 (연결 풀 관리)
-        # _thread_local.http_client = httpx.Client(
-        _thread_local.http_client = LockedClient(    # jeff 20260106 1015
+        _thread_local.http_client = httpx.Client(    # jeff 20261015 1715 다시 복귀 : 속도가 너무 느려서 확인하고자 함
+        # _thread_local.http_client = LockedClient(    # jeff 20260106 1015
             limits=httpx.Limits(
                 max_connections=10,      # 스레드당 최대 10개 연결
                 max_keepalive_connections=5,  # Keep-alive 5개
