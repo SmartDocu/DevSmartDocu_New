@@ -973,6 +973,8 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
     # replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data if item['replacestring'] is not None}
     replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data}
 
+    applied_any = False     # min 20261015 성공한 AI 결과가 템플릿에 하나라도 반영됐는지
+
     for original_idx, data_item in ai_objects:
         
         if original_idx in ai_results.keys():
@@ -1016,14 +1018,7 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
 
                 # # text_template += '<p></p>'    # jeff 20261007
 
-                # min 20261015 복원 — jeff 20261012에서 주석 처리돼 AI 전용 챕터의 재작성 결과(gentexttemplate)·작성일시(createfiledts)가 저장되지 않았다
-                if sep == "Not":
-                    update_genchapters(supabase, {
-                        'genchapteruid': gen_chapter_uid,
-                        'gentexttemplate': text_template,
-                        'createuserid': user_id,
-                        'createfiledts': datetime.now(timezone.utc).isoformat()
-                    }, gen_chapter_uid)
+                applied_any = True      # 저장은 아래 루프 종료 후 한 번만 (항목마다 쓰면 genchapterlogs에 본문 전체가 항목 수만큼 복사됨)
 
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
                 # 성공 시 이전 실패 흔적(errorcd/errormessage) 제거
@@ -1031,7 +1026,17 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
                 result_data['result']['errorcd'] = None
                 result_data['result']['errormessage'] = None
                 update_genobjects(supabase, [result_data['result']])
-            
+
+    # min 20261015 jeff 20261012에서 주석 처리돼 AI 전용 챕터의 재작성 결과(gentexttemplate)·작성일시(createfiledts)가 저장되지 않던 것을
+    # 복원하되, 항목마다가 아니라 모든 결과 반영 후 한 번만 저장한다.
+    if sep == "Not" and applied_any:
+        update_genchapters(supabase, {
+            'genchapteruid': gen_chapter_uid,
+            'gentexttemplate': text_template,
+            'createuserid': user_id,
+            'createfiledts': datetime.now(timezone.utc).isoformat()
+        }, gen_chapter_uid)
+
     return text_template
 
 
