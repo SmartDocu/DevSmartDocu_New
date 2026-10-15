@@ -1354,7 +1354,9 @@ def preprocess_html(html: str) -> str:
 
 def update_genchapters(supabase, genchapters, gen_chapter_uid):
     try:
-        supabase.schema(SUPABASE_SCHEMA).table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
+        res = supabase.schema(SUPABASE_SCHEMA).table('genchapters').update(genchapters).eq('genchapteruid', gen_chapter_uid).execute()
+        # min 20261015 RLS 등으로 0행이면 예외 없이 지나가므로, 호출 여부와 수정 행 수를 남긴다
+        logging.getLogger(__name__).info("update_genchapters: %s rows=%s keys=%s", gen_chapter_uid, len(res.data or []), sorted(genchapters.keys()))
     except Exception as e:
         # print(f'ErrorMessage(update_genchapters): {e}')
         logging.getLogger(__name__).warning("update_genchapters 실패 (%s): %s", gen_chapter_uid, e)   # min 20261015 조용히 묻히지 않게
