@@ -1016,13 +1016,14 @@ def apply_ai_results_to_template(supabase, ai_objects, ai_results, text_template
 
                 # # text_template += '<p></p>'    # jeff 20261007
 
-                # if sep == "Not":
-                #     update_genchapters(supabase, {
-                #         'genchapteruid': gen_chapter_uid,
-                #         'gentexttemplate': text_template,
-                #         'createuserid': user_id,
-                #         'createfiledts': datetime.now(timezone.utc).isoformat()
-                #     }, gen_chapter_uid)               # jeff 20261012
+                # min 20261015 복원 — jeff 20261012에서 주석 처리돼 AI 전용 챕터의 재작성 결과(gentexttemplate)·작성일시(createfiledts)가 저장되지 않았다
+                if sep == "Not":
+                    update_genchapters(supabase, {
+                        'genchapteruid': gen_chapter_uid,
+                        'gentexttemplate': text_template,
+                        'createuserid': user_id,
+                        'createfiledts': datetime.now(timezone.utc).isoformat()
+                    }, gen_chapter_uid)
 
             if result_data.get('result') and isinstance(result_data.get('result'), dict):
                 # 성공 시 이전 실패 흔적(errorcd/errormessage) 제거
