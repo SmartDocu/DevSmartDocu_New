@@ -606,6 +606,8 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
     replace_data = supabase.schema(SUPABASE_SCHEMA).table('genobjects').select('genobjectuid', 'replacestring').eq('genchapteruid', gen_chapter_uid).execute().data
     replace_dict = {item['genobjectuid']: item['replacestring'] for item in replace_data}
 
+    pending_genchapters = None      # min 20261015 항목마다 쓰지 않고 루프 종료 후 한 번만 저장할 챕터 갱신값
+
     # for ui_idx, (original_idx, data_item) in enumerate(ui_objects):
     for ui_idx, (original_idx, data_item) in enumerate(ui_objects):
         genobjectuid = None
@@ -658,21 +660,13 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             result['gencontenttypecd'] = gencontenttypecd
             update_genobjects(supabase, [result])
 
-            if sep == "Not":
-                genchapters = {
-                    'genchapteruid': gen_chapter_uid,
-                    'gentexttemplate': result_text_template,
-                    'createuserid': result['creator'],
-                    'createfiledts': datetime.now(timezone.utc).isoformat()
-                }
-            else:
-                genchapters = {
-                    'genchapteruid': gen_chapter_uid,
-                    'gentexttemplate': result_text_template,
-                    'createuserid': result['creator'],
-                }
-
-            update_genchapters(supabase, genchapters, gen_chapter_uid)
+            # min 20261015 항목마다 update_genchapters를 부르면 DB 트리거가 genchapterlogs에 본문 전체를 항목 수만큼 복사한다.
+            # 최신 본문만 모아 두었다가 루프 종료 후 한 번만 저장한다.
+            pending_genchapters = {
+                'genchapteruid': gen_chapter_uid,
+                'gentexttemplate': result_text_template,
+                'createuserid': result['creator'],
+            }
 
             queue_genobject_result(
                 result['genobjectuid'],
@@ -714,7 +708,15 @@ def process_ui_objects_sequentially(request, supabase, ui_objects, datas, docid,
             }
 
             continue
-    
+
+    # min 20261015 UI 항목 처리 결과를 챕터에 한 번만 저장 (성공한 항목이 없으면 저장하지 않음 — 기존과 동일).
+    # 챕터 전체 작성(sep == "Not")은 모든 항목이 끝난 시점을 완료 일시로 기록한다
+    # (항목마다 기록하면 첫 항목 시각이 박혀 이후 항목이 '미반영'으로 보일 수 있다).
+    if pending_genchapters is not None:
+        if sep == "Not":
+            pending_genchapters['createfiledts'] = datetime.now(timezone.utc).isoformat()
+        update_genchapters(supabase, pending_genchapters, gen_chapter_uid)
+
     # UI 객체 로그 일괄 저장
     if ui_objects:
         flush_logs_to_db(supabase, log_source="UI")
