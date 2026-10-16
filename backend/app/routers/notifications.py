@@ -93,7 +93,7 @@ def _fetch_merged_notifications(sb, uid: str):
                 continue
             nu = nu_map[n["notificationuid"]]
             n["is_read"] = bool(nu.get("is_read"))
-            n["readts"] = nu.get("readdts")
+            n["readdts"] = nu.get("readdts")
             shared_rows.append(n)
 
     rows = own_rows + shared_rows
@@ -160,7 +160,7 @@ def mark_notification_read(notificationuid: str, token: str = Depends(get_token)
     if not nu_result.data:
         sb.schema(SUPABASE_SCHEMA).table("notifications").update({
             "is_read": True,
-            "readts": now_iso,
+            "readdts": now_iso,
         }).eq("notificationuid", notificationuid).eq("target_useruid", uid).execute()
     return {"message": "읽음 처리되었습니다."}
 
@@ -175,7 +175,7 @@ def mark_all_notifications_read(token: str = Depends(get_token)):
     # is_read가 NULL인 row는 .eq("is_read", False)로 걸면 제외되므로 무조건 업데이트(멱등적이라 안전)
     sb.schema(SUPABASE_SCHEMA).table("notifications").update({
         "is_read": True,
-        "readts": now_iso,
+        "readdts": now_iso,
     }).eq("target_useruid", uid).execute()
     sb.schema(SUPABASE_SCHEMA).table("notification_users").update({
         "is_read": True,

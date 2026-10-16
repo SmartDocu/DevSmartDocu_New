@@ -637,9 +637,9 @@ def execute_charge(sd, user_id: str, tenantid: int, method: dict, amount: float,
     if status_code == 200:
         sd.table("payments").update({
             "payment_status": "Success",
-            "succesful_payment_methoduid": payment_methoduid,
-            "succesful_attemptuid": attemptuid,
-            "succesful_attemptdts": datetime.now(timezone.utc).isoformat(),
+            "successful_payment_methoduid": payment_methoduid,
+            "successful_attemptuid": attemptuid,
+            "successful_attemptdts": datetime.now(timezone.utc).isoformat(),
         }).eq("paymentuid", paymentuid).execute()
         sd.table("payment_attempts").update({"attempt_status": "Success"}).eq("attemptuid", attemptuid).execute()
         create_notification(
