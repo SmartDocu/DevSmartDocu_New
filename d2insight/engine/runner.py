@@ -241,14 +241,6 @@ def execute(order: list[ModuleInstance], ctx: SharedContext) -> dict[str, list[t
             print(f"[진단-실행] 실패 {inst.ref}: {result.error or '알 수 없는 실패'}")  # [진단] 확인 후 삭제
             continue
 
-        for lbl, val in result.outputs.items():                                  # [진단-덤프] 확인 후 삭제
-            _diag_dump.dump_df(f"{inst.ref}_out_{lbl}", val)                     # [진단-덤프] 확인 후 삭제
-        if result.render is not None:                                            # [진단-덤프] 확인 후 삭제
-            _diag_dump.dump_json("render", inst.ref, {                           # [진단-덤프] 확인 후 삭제
-                "summary": result.render.summary, "key_value": result.render.key_value,
-                "narrative": result.render.narrative, "params": inst.params})    # [진단-덤프] 확인 후 삭제
-            _diag_dump.dump_df(f"{inst.ref}_표", result.render.table)            # [진단-덤프] 확인 후 삭제
-
         for lbl, val in result.outputs.items():
             # 모듈은 이름표를 평범한 이름으로 읽는다(ctx.get("outlier_result")). 같은 모듈이
             # 대상만 바꿔 여러 번 돌면 뒤엣것이 앞엣것을 덮는데, 소비자는 위상정렬로 자기
