@@ -6,7 +6,7 @@ class MessageItem(BaseModel):
     messagekey: str
     messagetypecd: Optional[str] = None
     default_message: Optional[str] = None
-    description: Optional[str] = None
+    desc: Optional[str] = None
     useyn: Optional[bool] = True
 
 
@@ -18,7 +18,7 @@ class MessageSaveRequest(BaseModel):
     messagekey: str
     messagetypecd: Optional[str] = None
     default_message: Optional[str] = None
-    description: Optional[str] = None
+    desc: Optional[str] = None
     useyn: Optional[bool] = True
 
 

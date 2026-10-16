@@ -6,7 +6,7 @@ class TermItem(BaseModel):
     termkey: str
     termgroupcd: Optional[str] = None
     default_text: Optional[str] = None
-    description: Optional[str] = None
+    desc: Optional[str] = None
     useyn: Optional[bool] = True
 
 
@@ -18,7 +18,7 @@ class TermSaveRequest(BaseModel):
     termkey: str
     termgroupcd: Optional[str] = None
     default_text: Optional[str] = None
-    description: Optional[str] = None
+    desc: Optional[str] = None
     useyn: Optional[bool] = True
 
 

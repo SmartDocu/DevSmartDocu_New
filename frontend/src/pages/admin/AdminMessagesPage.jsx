@@ -18,7 +18,7 @@ const EMPTY_MESSAGE = {
   messagekey: '',
   messagetypecd: '',
   default_message: '',
-  description: '',
+  desc: '',
   useyn: true,
 }
 
@@ -73,7 +73,7 @@ setSelectedMessage(msg)
       messagekey: msg.messagekey,
       messagetypecd: msg.messagetypecd || '',
       default_message: msg.default_message || '',
-      description: msg.description || '',
+      desc: msg.desc || '',
       useyn: msg.useyn ?? true,
     })
   }
@@ -277,8 +277,8 @@ setSelectedMessage(msg)
               id="msg-description"
               rows={3}
               style={{ resize: 'vertical' }}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              value={form.desc}
+              onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
             />
           </div>
           <div className="form-group">

@@ -45,7 +45,7 @@ def create_message(body: MessageSaveRequest, token: str = Depends(get_token)):
         "messagekey": body.messagekey,
         "messagetypecd": body.messagetypecd,
         "default_message": body.default_message,
-        "description": body.description,
+        "desc": body.desc,
         "useyn": body.useyn,
         "creator": user_id,
     }
@@ -72,7 +72,7 @@ def update_message(messagekey: str, body: MessageSaveRequest, token: str = Depen
     record = {
         "messagetypecd": body.messagetypecd,
         "default_message": body.default_message,
-        "description": body.description,
+        "desc": body.desc,
         "useyn": body.useyn,
     }
     try:

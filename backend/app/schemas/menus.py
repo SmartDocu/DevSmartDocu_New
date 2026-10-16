@@ -5,7 +5,7 @@ from pydantic import BaseModel
 class MenuItem(BaseModel):
     menucd: str
     default_text: Optional[str] = None
-    description: Optional[str] = None
+    desc: Optional[str] = None
     iconnm: Optional[str] = None
     orderno: Optional[int] = None
     useyn: Optional[bool] = True
@@ -21,7 +21,7 @@ class MenusListResponse(BaseModel):
 class MenuSaveRequest(BaseModel):
     menucd: str
     default_text: Optional[str] = None
-    description: Optional[str] = None
+    desc: Optional[str] = None
     iconnm: Optional[str] = None
     orderno: Optional[int] = None
     useyn: Optional[bool] = True

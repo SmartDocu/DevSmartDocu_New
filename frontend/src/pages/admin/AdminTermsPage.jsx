@@ -18,7 +18,7 @@ const EMPTY_TERM = {
   termkey: '',
   termgroupcd: '',
   default_text: '',
-  description: '',
+  desc: '',
   useyn: true,
 }
 
@@ -73,7 +73,7 @@ export default function AdminTermsPage() {
       termkey: term.termkey,
       termgroupcd: term.termgroupcd || '',
       default_text: term.default_text || '',
-      description: term.description || '',
+      desc: term.desc || '',
       useyn: term.useyn ?? true,
     })
   }
@@ -282,8 +282,8 @@ export default function AdminTermsPage() {
               id="term-description"
               rows={3}
               style={{ resize: 'vertical' }}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              value={form.desc}
+              onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
             />
           </div>
           <div className="form-group">

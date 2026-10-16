@@ -20,7 +20,7 @@ const PAGE_SIZE = 15
 const EMPTY_MENU = {
   menucd: '',
   default_text: '',
-  description: '',
+  desc: '',
   iconnm: '',
   orderno: '',
   useyn: true,
@@ -81,7 +81,7 @@ export default function AdminMenusPage() {
     setForm({
       menucd: menu.menucd,
       default_text: menu.default_text || '',
-      description: menu.description || '',
+      desc: menu.desc || '',
       iconnm: menu.iconnm || '',
       orderno: menu.orderno ?? '',
       useyn: menu.useyn ?? true,
@@ -280,8 +280,8 @@ export default function AdminMenusPage() {
               id="menu-description"
               rows={3}
               style={{ resize: 'vertical' }}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              value={form.desc}
+              onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))}
             />
           </div>
           <div className="form-group">

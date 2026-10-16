@@ -142,7 +142,7 @@ def create_menu(body: MenuSaveRequest, token: str = Depends(get_token)):
     record = {
         "menucd": body.menucd,
         "default_text": body.default_text,
-        "description": body.description,
+        "desc": body.desc,
         "iconnm": body.iconnm,
         "orderno": body.orderno,
         "useyn": body.useyn,
@@ -173,7 +173,7 @@ def update_menu(menucd: str, body: MenuSaveRequest, token: str = Depends(get_tok
 
     record = {
         "default_text": body.default_text,
-        "description": body.description,
+        "desc": body.desc,
         "iconnm": body.iconnm,
         "orderno": body.orderno,
         "useyn": body.useyn,

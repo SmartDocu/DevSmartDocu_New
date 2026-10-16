@@ -47,7 +47,7 @@ def create_term(body: TermSaveRequest, token: str = Depends(get_token)):
         "termkey": body.termkey,
         "termgroupcd": body.termgroupcd,
         "default_text": body.default_text,
-        "description": body.description,
+        "desc": body.desc,
         "useyn": body.useyn,
         "creator": user_id,
     }
@@ -76,7 +76,7 @@ def update_term(termkey: str, termgroupcd: str, body: TermSaveRequest, token: st
     record = {
         "termgroupcd": body.termgroupcd,
         "default_text": body.default_text,
-        "description": body.description,
+        "desc": body.desc,
         "useyn": body.useyn,
     }
     try:
