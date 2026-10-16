@@ -130,7 +130,7 @@ create table sdoc.conn_api_credentials (
   authorization_type character varying null,
   redirect_url character varying null,
   scope character varying null,
-  access_token_end character varying null,
+  access_token_enc character varying null,
   expires_at timestamp with time zone null default now(),
   refresh_expires_at timestamp with time zone null default now(),
   auth_statuscd character varying null,

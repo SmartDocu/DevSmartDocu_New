@@ -349,7 +349,7 @@ function LoginLogsTab() {
       />
       <div className="panel-section">
         <Table
-          rowKey="login_logui"
+          rowKey="loginloguid"
           columns={columns}
           dataSource={data.items || []}
           loading={isLoading}
